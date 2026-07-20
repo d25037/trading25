@@ -33,7 +33,7 @@ description: Use when FastAPI (:3002) 契約に沿った ts/web・shared api-cli
 - 接続先ポートは `3002` を前提にする。
 - API ドキュメント UI は `/doc` 前提で扱う。
 - 旧 `GET /api/analytics/screening` は 410。screening integration は `POST /api/analytics/screening/jobs`、job status/cancel、`GET /api/analytics/screening/result/{job_id}` を使い、deprecated query を再導入しない。
-- Market-backed response は backend の schema v4 / `local_projection_v2_event_time` 契約を前提とする。ts 側で旧DB compatibilityや current/latest fallbackを実装しない。
+- Market-backed response は backend の schema v5 / `provider_adjusted_v1` 契約を前提とする。provider vintage と current-basis state は FastAPI response を SoT とし、ts 側で旧DB compatibility、legacy basis、current/latest fallback、standalone adjusted-metrics recovery を実装しない。
 
 ## Verification
 

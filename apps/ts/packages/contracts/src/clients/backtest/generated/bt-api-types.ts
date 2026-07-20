@@ -1285,58 +1285,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/db/adjusted-metrics/materialize": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Start event-time PIT adjusted metrics materialization job */
-        post: operations["start_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/db/adjusted-metrics/materialize/jobs/{jobId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get adjusted metrics materialization job status */
-        get: operations["get_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs__jobId__get"];
-        put?: never;
-        post?: never;
-        /** Cancel adjusted metrics materialization job */
-        delete: operations["cancel_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs__jobId__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/db/adjusted-metrics/materialize/jobs/active": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get active adjusted metrics materialization job status */
-        get: operations["get_active_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs_active_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/db/intraday/sync": {
         parameters: {
             query?: never;
@@ -1515,9 +1463,9 @@ export interface paths {
          *     **Data Sources**:
          *     - Financial statements: local `market.duckdb`
          *     - Valuation/per-share summary: local `daily_valuation` in `market.duckdb`
-         *     - Historical adjustment basis, exact stock-master snapshot, and PIT-consistent
-         *       adjusted metrics are required; unavailable PIT inputs return 409 with
-         *       `adjusted_metrics_pit` recovery guidance.
+         *     - Provider vintage, exact stock-master snapshot, and PIT-consistent current-basis
+         *       fundamentals are required; unavailable inputs return 409 with normal
+         *       `market_db_sync` recovery guidance.
          *
          *     **Response includes**:
          *     - `data`: Array of fundamental data points sorted by date (descending)
@@ -2920,168 +2868,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** AdjustedMetricsMaterializeJobResponse */
-        AdjustedMetricsMaterializeJobResponse: {
-            /** Completedat */
-            completedAt?: string | null;
-            /** Error */
-            error?: string | null;
-            /** Jobid */
-            jobId: string;
-            maintenance?: components["schemas"]["MarketMaintenanceRecord"];
-            /**
-             * Mode
-             * @default full
-             */
-            mode: string;
-            progress?: components["schemas"]["SyncProgress"] | null;
-            result?: components["schemas"]["AdjustedMetricsMaterializeResult"] | null;
-            /** Startedat */
-            startedAt: string;
-            /** Status */
-            status: string;
-        };
-        /** AdjustedMetricsMaterializeResult */
-        AdjustedMetricsMaterializeResult: {
-            /** Completedcodes */
-            completedCodes: number;
-            /** Currentbasisstatementcount */
-            currentBasisStatementCount: number;
-            /** Dailytechnicalmetricrows */
-            dailyTechnicalMetricRows: number;
-            /** Dailyvaluationlatestdate */
-            dailyValuationLatestDate: string | null;
-            /** Dailyvaluationrows */
-            dailyValuationRows: number;
-            /** Fundamentalsadjustmentbasisdate */
-            fundamentalsAdjustmentBasisDate: string | null;
-            /** Pendingcurrentbasiscodecount */
-            pendingCurrentBasisCodeCount: number;
-            /** Success */
-            success: boolean;
-            /** Totalcodes */
-            totalCodes: number;
-        };
-        /** AdjustedMetricsStats */
-        AdjustedMetricsStats: {
-            /**
-             * Currentbasisstatecount
-             * @default 0
-             */
-            currentBasisStateCount: number;
-            /**
-             * Currentbasisstatementcount
-             * @default 0
-             */
-            currentBasisStatementCount: number;
-            /**
-             * Dailytechnicalmetricrows
-             * @default 0
-             */
-            dailyTechnicalMetricRows: number;
-            /**
-             * Dailyvaluationlatestcodecount
-             * @default 0
-             */
-            dailyValuationLatestCodeCount: number;
-            /** Dailyvaluationlatestdate */
-            dailyValuationLatestDate?: string | null;
-            /**
-             * Dailyvaluationpreviouscodecount
-             * @default 0
-             */
-            dailyValuationPreviousCodeCount: number;
-            /**
-             * Dailyvaluationrows
-             * @default 0
-             */
-            dailyValuationRows: number;
-            /**
-             * Expectedadjustedstatementrows
-             * @default 0
-             */
-            expectedAdjustedStatementRows: number;
-            /**
-             * Extraadjustedstatementrows
-             * @default 0
-             */
-            extraAdjustedStatementRows: number;
-            /**
-             * Extradailyvaluationrows
-             * @default 0
-             */
-            extraDailyValuationRows: number;
-            /** Fundamentalsadjustmentbasisdate */
-            fundamentalsAdjustmentBasisDate?: string | null;
-            /**
-             * Invalidcurrentbasisstatecount
-             * @default 0
-             */
-            invalidCurrentBasisStateCount: number;
-            /**
-             * Missingadjustedstatementrows
-             * @default 0
-             */
-            missingAdjustedStatementRows: number;
-            /**
-             * Missingdailyvaluationrows
-             * @default 0
-             */
-            missingDailyValuationRows: number;
-            /**
-             * Orphanadjustedstatementrows
-             * @default 0
-             */
-            orphanAdjustedStatementRows: number;
-            /**
-             * Orphandailyvaluationrows
-             * @default 0
-             */
-            orphanDailyValuationRows: number;
-            /**
-             * Pendingcurrentbasiscodecount
-             * @default 0
-             */
-            pendingCurrentBasisCodeCount: number;
-            /**
-             * Providerwindowcount
-             * @default 0
-             */
-            providerWindowCount: number;
-            /** Providerwindowcoveragefrontier */
-            providerWindowCoverageFrontier?: string | null;
-            /**
-             * Readyproviderwindowcount
-             * @default 0
-             */
-            readyProviderWindowCount: number;
-            /**
-             * Sourcestatementkeycount
-             * @default 0
-             */
-            sourceStatementKeyCount: number;
-            /**
-             * Staleadjustedstatementrows
-             * @default 0
-             */
-            staleAdjustedStatementRows: number;
-            /**
-             * Status
-             * @default empty_source
-             * @enum {string}
-             */
-            status: "ready" | "missing" | "stale" | "incomplete_coverage" | "invalid_lineage" | "empty_source";
-            /**
-             * Wrongbasisadjustedstatementrows
-             * @default 0
-             */
-            wrongBasisAdjustedStatementRows: number;
-            /**
-             * Wrongbasisdailyvaluationrows
-             * @default 0
-             */
-            wrongBasisDailyValuationRows: number;
-        };
         /** AdjustmentEvent */
         AdjustmentEvent: {
             /** Adjustmentfactor */
@@ -3915,26 +3701,6 @@ export interface components {
              * @description Compiled timeframe
              */
             timeframe: string;
-        };
-        /** CreateAdjustedMetricsMaterializeJobResponse */
-        CreateAdjustedMetricsMaterializeJobResponse: {
-            /** Jobid */
-            jobId: string;
-            /**
-             * Message
-             * @default Adjusted metrics materialization job started
-             */
-            message: string;
-            /**
-             * Mode
-             * @default full
-             */
-            mode: string;
-            /**
-             * Status
-             * @default pending
-             */
-            status: string;
         };
         /** CreateSyncJobResponse */
         CreateSyncJobResponse: {
@@ -7417,7 +7183,7 @@ export interface components {
             current: boolean;
             /**
              * Requiredversion
-             * @default 4
+             * @default 5
              */
             requiredVersion: number;
             /** Version */
@@ -7462,7 +7228,6 @@ export interface components {
         };
         /** MarketStatsResponse */
         MarketStatsResponse: {
-            adjustedMetrics?: components["schemas"]["AdjustedMetricsStats"];
             /** Databasesize */
             databaseSize: number;
             fundamentals: components["schemas"]["FundamentalsStats"];
@@ -7479,6 +7244,7 @@ export interface components {
             maintenance?: components["schemas"]["MarketMaintenanceRecord"];
             margin: components["schemas"]["MarginStats"];
             options225: components["schemas"]["Options225Stats"];
+            providerVintage?: components["schemas"]["ProviderVintageStats"];
             schema?: components["schemas"]["MarketSchemaStats"];
             stockData: components["schemas"]["StockDataStats"];
             stockMaster?: components["schemas"]["StockMasterCoverageStats"];
@@ -7515,7 +7281,6 @@ export interface components {
         };
         /** MarketValidationResponse */
         MarketValidationResponse: {
-            adjustedMetrics?: components["schemas"]["AdjustedMetricsStats"];
             /** Adjustmentevents */
             adjustmentEvents?: components["schemas"]["AdjustmentEvent"][];
             /**
@@ -7552,6 +7317,7 @@ export interface components {
             lastUpdated: string;
             margin: components["schemas"]["MarginValidation"];
             options225: components["schemas"]["Options225Validation"];
+            providerVintage?: components["schemas"]["ProviderVintageStats"];
             /** Recommendations */
             recommendations?: string[];
             sampleWindows: components["schemas"]["ValidationSampleWindows"];
@@ -8519,6 +8285,121 @@ export interface components {
             description?: string | null;
             /** Name */
             name?: string | null;
+        };
+        /** ProviderVintageStats */
+        ProviderVintageStats: {
+            /**
+             * Adjustmenteventcount
+             * @default 0
+             */
+            adjustmentEventCount: number;
+            /**
+             * Adjustmenteventfingerprintcount
+             * @default 0
+             */
+            adjustmentEventFingerprintCount: number;
+            /**
+             * Currentbasisstatecount
+             * @default 0
+             */
+            currentBasisStateCount: number;
+            /**
+             * Currentbasisstatementcount
+             * @default 0
+             */
+            currentBasisStatementCount: number;
+            effectiveCoverage?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            /**
+             * Expectedadjustedstatementrows
+             * @default 0
+             */
+            expectedAdjustedStatementRows: number;
+            /**
+             * Extraadjustedstatementrows
+             * @default 0
+             */
+            extraAdjustedStatementRows: number;
+            /** Fundamentalsadjustmentbasisdate */
+            fundamentalsAdjustmentBasisDate?: string | null;
+            /**
+             * Invalidadjustmenteventcount
+             * @default 0
+             */
+            invalidAdjustmentEventCount: number;
+            /**
+             * Invalidcurrentbasisstatecount
+             * @default 0
+             */
+            invalidCurrentBasisStateCount: number;
+            /**
+             * Invalidproviderwindowcount
+             * @default 0
+             */
+            invalidProviderWindowCount: number;
+            /**
+             * Missingadjustedstatementrows
+             * @default 0
+             */
+            missingAdjustedStatementRows: number;
+            /**
+             * Orphanadjustedstatementrows
+             * @default 0
+             */
+            orphanAdjustedStatementRows: number;
+            /**
+             * Pendingcurrentbasiscodecount
+             * @default 0
+             */
+            pendingCurrentBasisCodeCount: number;
+            /**
+             * Provideradjustedmismatchcount
+             * @default 0
+             */
+            providerAdjustedMismatchCount: number;
+            /** Providerasof */
+            providerAsOf?: string | null;
+            /** Providerplan */
+            providerPlan?: string | null;
+            /**
+             * Providerwindowcount
+             * @default 0
+             */
+            providerWindowCount: number;
+            /**
+             * Providerwindowfingerprintcount
+             * @default 0
+             */
+            providerWindowFingerprintCount: number;
+            /**
+             * Readyproviderwindowcount
+             * @default 0
+             */
+            readyProviderWindowCount: number;
+            /** Recoverystage */
+            recoveryStage?: "market_db_sync" | null;
+            /** Sourcefingerprint */
+            sourceFingerprint?: string | null;
+            /**
+             * Sourcestatementkeycount
+             * @default 0
+             */
+            sourceStatementKeyCount: number;
+            /**
+             * Staleadjustedstatementrows
+             * @default 0
+             */
+            staleAdjustedStatementRows: number;
+            /**
+             * Status
+             * @default empty_source
+             * @enum {string}
+             */
+            status: "ready" | "missing" | "stale" | "pending" | "invalid" | "empty_source";
+            /**
+             * Wrongbasisadjustedstatementrows
+             * @default 0
+             */
+            wrongBasisAdjustedStatementRows: number;
         };
         /** PublishedReadoutSection */
         PublishedReadoutSection: {
@@ -16246,216 +16127,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    start_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CreateAdjustedMetricsMaterializeJobResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    get_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs__jobId__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                jobId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdjustedMetricsMaterializeJobResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    cancel_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs__jobId__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                jobId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CancelJobResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    get_active_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs_active_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdjustedMetricsMaterializeJobResponse"] | null;
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Internal Server Error */

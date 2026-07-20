@@ -1,303 +1,6 @@
 {
   "components": {
     "schemas": {
-      "AdjustedMetricsMaterializeJobResponse": {
-        "properties": {
-          "completedAt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Completedat"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          },
-          "jobId": {
-            "title": "Jobid",
-            "type": "string"
-          },
-          "maintenance": {
-            "$ref": "#/components/schemas/MarketMaintenanceRecord"
-          },
-          "mode": {
-            "default": "full",
-            "title": "Mode",
-            "type": "string"
-          },
-          "progress": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SyncProgress"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "result": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AdjustedMetricsMaterializeResult"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "startedAt": {
-            "title": "Startedat",
-            "type": "string"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "jobId",
-          "status",
-          "startedAt"
-        ],
-        "title": "AdjustedMetricsMaterializeJobResponse",
-        "type": "object"
-      },
-      "AdjustedMetricsMaterializeResult": {
-        "properties": {
-          "completedCodes": {
-            "title": "Completedcodes",
-            "type": "integer"
-          },
-          "currentBasisStatementCount": {
-            "title": "Currentbasisstatementcount",
-            "type": "integer"
-          },
-          "dailyTechnicalMetricRows": {
-            "title": "Dailytechnicalmetricrows",
-            "type": "integer"
-          },
-          "dailyValuationLatestDate": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dailyvaluationlatestdate"
-          },
-          "dailyValuationRows": {
-            "title": "Dailyvaluationrows",
-            "type": "integer"
-          },
-          "fundamentalsAdjustmentBasisDate": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Fundamentalsadjustmentbasisdate"
-          },
-          "pendingCurrentBasisCodeCount": {
-            "title": "Pendingcurrentbasiscodecount",
-            "type": "integer"
-          },
-          "success": {
-            "title": "Success",
-            "type": "boolean"
-          },
-          "totalCodes": {
-            "title": "Totalcodes",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "success",
-          "completedCodes",
-          "totalCodes",
-          "currentBasisStatementCount",
-          "pendingCurrentBasisCodeCount",
-          "dailyValuationRows",
-          "dailyTechnicalMetricRows",
-          "dailyValuationLatestDate",
-          "fundamentalsAdjustmentBasisDate"
-        ],
-        "title": "AdjustedMetricsMaterializeResult",
-        "type": "object"
-      },
-      "AdjustedMetricsStats": {
-        "properties": {
-          "currentBasisStateCount": {
-            "default": 0,
-            "title": "Currentbasisstatecount",
-            "type": "integer"
-          },
-          "currentBasisStatementCount": {
-            "default": 0,
-            "title": "Currentbasisstatementcount",
-            "type": "integer"
-          },
-          "dailyTechnicalMetricRows": {
-            "default": 0,
-            "title": "Dailytechnicalmetricrows",
-            "type": "integer"
-          },
-          "dailyValuationLatestCodeCount": {
-            "default": 0,
-            "title": "Dailyvaluationlatestcodecount",
-            "type": "integer"
-          },
-          "dailyValuationLatestDate": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dailyvaluationlatestdate"
-          },
-          "dailyValuationPreviousCodeCount": {
-            "default": 0,
-            "title": "Dailyvaluationpreviouscodecount",
-            "type": "integer"
-          },
-          "dailyValuationRows": {
-            "default": 0,
-            "title": "Dailyvaluationrows",
-            "type": "integer"
-          },
-          "expectedAdjustedStatementRows": {
-            "default": 0,
-            "title": "Expectedadjustedstatementrows",
-            "type": "integer"
-          },
-          "extraAdjustedStatementRows": {
-            "default": 0,
-            "title": "Extraadjustedstatementrows",
-            "type": "integer"
-          },
-          "extraDailyValuationRows": {
-            "default": 0,
-            "title": "Extradailyvaluationrows",
-            "type": "integer"
-          },
-          "fundamentalsAdjustmentBasisDate": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Fundamentalsadjustmentbasisdate"
-          },
-          "invalidCurrentBasisStateCount": {
-            "default": 0,
-            "title": "Invalidcurrentbasisstatecount",
-            "type": "integer"
-          },
-          "missingAdjustedStatementRows": {
-            "default": 0,
-            "title": "Missingadjustedstatementrows",
-            "type": "integer"
-          },
-          "missingDailyValuationRows": {
-            "default": 0,
-            "title": "Missingdailyvaluationrows",
-            "type": "integer"
-          },
-          "orphanAdjustedStatementRows": {
-            "default": 0,
-            "title": "Orphanadjustedstatementrows",
-            "type": "integer"
-          },
-          "orphanDailyValuationRows": {
-            "default": 0,
-            "title": "Orphandailyvaluationrows",
-            "type": "integer"
-          },
-          "pendingCurrentBasisCodeCount": {
-            "default": 0,
-            "title": "Pendingcurrentbasiscodecount",
-            "type": "integer"
-          },
-          "providerWindowCount": {
-            "default": 0,
-            "title": "Providerwindowcount",
-            "type": "integer"
-          },
-          "providerWindowCoverageFrontier": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Providerwindowcoveragefrontier"
-          },
-          "readyProviderWindowCount": {
-            "default": 0,
-            "title": "Readyproviderwindowcount",
-            "type": "integer"
-          },
-          "sourceStatementKeyCount": {
-            "default": 0,
-            "title": "Sourcestatementkeycount",
-            "type": "integer"
-          },
-          "staleAdjustedStatementRows": {
-            "default": 0,
-            "title": "Staleadjustedstatementrows",
-            "type": "integer"
-          },
-          "status": {
-            "default": "empty_source",
-            "enum": [
-              "ready",
-              "missing",
-              "stale",
-              "incomplete_coverage",
-              "invalid_lineage",
-              "empty_source"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "wrongBasisAdjustedStatementRows": {
-            "default": 0,
-            "title": "Wrongbasisadjustedstatementrows",
-            "type": "integer"
-          },
-          "wrongBasisDailyValuationRows": {
-            "default": 0,
-            "title": "Wrongbasisdailyvaluationrows",
-            "type": "integer"
-          }
-        },
-        "title": "AdjustedMetricsStats",
-        "type": "object"
-      },
       "AdjustmentEvent": {
         "properties": {
           "adjustmentFactor": {
@@ -1937,34 +1640,6 @@
           "timeframe"
         ],
         "title": "CompiledStrategyIR",
-        "type": "object"
-      },
-      "CreateAdjustedMetricsMaterializeJobResponse": {
-        "properties": {
-          "jobId": {
-            "title": "Jobid",
-            "type": "string"
-          },
-          "message": {
-            "default": "Adjusted metrics materialization job started",
-            "title": "Message",
-            "type": "string"
-          },
-          "mode": {
-            "default": "full",
-            "title": "Mode",
-            "type": "string"
-          },
-          "status": {
-            "default": "pending",
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "jobId"
-        ],
-        "title": "CreateAdjustedMetricsMaterializeJobResponse",
         "type": "object"
       },
       "CreateSyncJobResponse": {
@@ -9093,7 +8768,7 @@
             "type": "boolean"
           },
           "requiredVersion": {
-            "default": 4,
+            "default": 5,
             "title": "Requiredversion",
             "type": "integer"
           },
@@ -9211,9 +8886,6 @@
       },
       "MarketStatsResponse": {
         "properties": {
-          "adjustedMetrics": {
-            "$ref": "#/components/schemas/AdjustedMetricsStats"
-          },
           "databaseSize": {
             "title": "Databasesize",
             "type": "integer"
@@ -9265,6 +8937,9 @@
           },
           "options225": {
             "$ref": "#/components/schemas/Options225Stats"
+          },
+          "providerVintage": {
+            "$ref": "#/components/schemas/ProviderVintageStats"
           },
           "schema": {
             "$ref": "#/components/schemas/MarketSchemaStats"
@@ -9343,9 +9018,6 @@
       },
       "MarketValidationResponse": {
         "properties": {
-          "adjustedMetrics": {
-            "$ref": "#/components/schemas/AdjustedMetricsStats"
-          },
           "adjustmentEvents": {
             "items": {
               "$ref": "#/components/schemas/AdjustmentEvent"
@@ -9437,6 +9109,9 @@
           },
           "options225": {
             "$ref": "#/components/schemas/Options225Validation"
+          },
+          "providerVintage": {
+            "$ref": "#/components/schemas/ProviderVintageStats"
           },
           "recommendations": {
             "items": {
@@ -12054,6 +11729,186 @@
           }
         },
         "title": "PortfolioUpdateRequest",
+        "type": "object"
+      },
+      "ProviderVintageStats": {
+        "properties": {
+          "adjustmentEventCount": {
+            "default": 0,
+            "title": "Adjustmenteventcount",
+            "type": "integer"
+          },
+          "adjustmentEventFingerprintCount": {
+            "default": 0,
+            "title": "Adjustmenteventfingerprintcount",
+            "type": "integer"
+          },
+          "currentBasisStateCount": {
+            "default": 0,
+            "title": "Currentbasisstatecount",
+            "type": "integer"
+          },
+          "currentBasisStatementCount": {
+            "default": 0,
+            "title": "Currentbasisstatementcount",
+            "type": "integer"
+          },
+          "effectiveCoverage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expectedAdjustedStatementRows": {
+            "default": 0,
+            "title": "Expectedadjustedstatementrows",
+            "type": "integer"
+          },
+          "extraAdjustedStatementRows": {
+            "default": 0,
+            "title": "Extraadjustedstatementrows",
+            "type": "integer"
+          },
+          "fundamentalsAdjustmentBasisDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fundamentalsadjustmentbasisdate"
+          },
+          "invalidAdjustmentEventCount": {
+            "default": 0,
+            "title": "Invalidadjustmenteventcount",
+            "type": "integer"
+          },
+          "invalidCurrentBasisStateCount": {
+            "default": 0,
+            "title": "Invalidcurrentbasisstatecount",
+            "type": "integer"
+          },
+          "invalidProviderWindowCount": {
+            "default": 0,
+            "title": "Invalidproviderwindowcount",
+            "type": "integer"
+          },
+          "missingAdjustedStatementRows": {
+            "default": 0,
+            "title": "Missingadjustedstatementrows",
+            "type": "integer"
+          },
+          "orphanAdjustedStatementRows": {
+            "default": 0,
+            "title": "Orphanadjustedstatementrows",
+            "type": "integer"
+          },
+          "pendingCurrentBasisCodeCount": {
+            "default": 0,
+            "title": "Pendingcurrentbasiscodecount",
+            "type": "integer"
+          },
+          "providerAdjustedMismatchCount": {
+            "default": 0,
+            "title": "Provideradjustedmismatchcount",
+            "type": "integer"
+          },
+          "providerAsOf": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Providerasof"
+          },
+          "providerPlan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Providerplan"
+          },
+          "providerWindowCount": {
+            "default": 0,
+            "title": "Providerwindowcount",
+            "type": "integer"
+          },
+          "providerWindowFingerprintCount": {
+            "default": 0,
+            "title": "Providerwindowfingerprintcount",
+            "type": "integer"
+          },
+          "readyProviderWindowCount": {
+            "default": 0,
+            "title": "Readyproviderwindowcount",
+            "type": "integer"
+          },
+          "recoveryStage": {
+            "anyOf": [
+              {
+                "const": "market_db_sync",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recoverystage"
+          },
+          "sourceFingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcefingerprint"
+          },
+          "sourceStatementKeyCount": {
+            "default": 0,
+            "title": "Sourcestatementkeycount",
+            "type": "integer"
+          },
+          "staleAdjustedStatementRows": {
+            "default": 0,
+            "title": "Staleadjustedstatementrows",
+            "type": "integer"
+          },
+          "status": {
+            "default": "empty_source",
+            "enum": [
+              "ready",
+              "missing",
+              "stale",
+              "pending",
+              "invalid",
+              "empty_source"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "wrongBasisAdjustedStatementRows": {
+            "default": 0,
+            "title": "Wrongbasisadjustedstatementrows",
+            "type": "integer"
+          }
+        },
+        "title": "ProviderVintageStats",
         "type": "object"
       },
       "PublishedReadoutSection": {
@@ -26918,258 +26773,6 @@
         ]
       }
     },
-    "/api/db/adjusted-metrics/materialize": {
-      "post": {
-        "operationId": "start_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_post",
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CreateAdjustedMetricsMaterializeJobResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal Server Error"
-          }
-        },
-        "summary": "Start event-time PIT adjusted metrics materialization job",
-        "tags": [
-          "Database"
-        ]
-      }
-    },
-    "/api/db/adjusted-metrics/materialize/jobs/{jobId}": {
-      "delete": {
-        "operationId": "cancel_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs__jobId__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "jobId",
-            "required": true,
-            "schema": {
-              "title": "Jobid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CancelJobResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal Server Error"
-          }
-        },
-        "summary": "Cancel adjusted metrics materialization job",
-        "tags": [
-          "Database"
-        ]
-      },
-      "get": {
-        "operationId": "get_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs__jobId__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "jobId",
-            "required": true,
-            "schema": {
-              "title": "Jobid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdjustedMetricsMaterializeJobResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal Server Error"
-          }
-        },
-        "summary": "Get adjusted metrics materialization job status",
-        "tags": [
-          "Database"
-        ]
-      }
-    },
-    "/api/db/adjusted-metrics/materialize/jobs/active": {
-      "get": {
-        "operationId": "get_active_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs_active_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/AdjustedMetricsMaterializeJobResponse"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ],
-                  "title": "Response Get Active Adjusted Metrics Materialize Job Api Db Adjusted Metrics Materialize Jobs Active Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal Server Error"
-          }
-        },
-        "summary": "Get active adjusted metrics materialization job status",
-        "tags": [
-          "Database"
-        ]
-      }
-    },
     "/api/db/intraday/sync": {
       "post": {
         "operationId": "sync_intraday_api_db_intraday_sync_post",
@@ -27832,7 +27435,7 @@
     },
     "/api/fundamentals/compute": {
       "post": {
-        "description": "Compute fundamental analysis metrics for a stock symbol.\n\n**Calculated Metrics** (17 types):\n- **Valuation**: PER, PBR\n- **Profitability**: ROE, ROA, Operating Margin, Net Margin\n- **Per-share**: EPS, BPS, Diluted EPS\n- **FCF**: FCF, FCF Yield, FCF Margin\n- **Time-series**: Daily PER/PBR valuation\n- **Forecast**: Forecast EPS, Forecast Change Rate\n\n**Data Sources**:\n- Financial statements: local `market.duckdb`\n- Valuation/per-share summary: local `daily_valuation` in `market.duckdb`\n- Historical adjustment basis, exact stock-master snapshot, and PIT-consistent\n  adjusted metrics are required; unavailable PIT inputs return 409 with\n  `adjusted_metrics_pit` recovery guidance.\n\n**Response includes**:\n- `data`: Array of fundamental data points sorted by date (descending)\n- `latestMetrics`: Summary metrics composed from `daily_valuation` and latest disclosure data\n- `latestMetricsSource`: Source tables/dates used to compose `latestMetrics`\n- `dailyValuation`: Daily PER/PBR time-series for charting",
+        "description": "Compute fundamental analysis metrics for a stock symbol.\n\n**Calculated Metrics** (17 types):\n- **Valuation**: PER, PBR\n- **Profitability**: ROE, ROA, Operating Margin, Net Margin\n- **Per-share**: EPS, BPS, Diluted EPS\n- **FCF**: FCF, FCF Yield, FCF Margin\n- **Time-series**: Daily PER/PBR valuation\n- **Forecast**: Forecast EPS, Forecast Change Rate\n\n**Data Sources**:\n- Financial statements: local `market.duckdb`\n- Valuation/per-share summary: local `daily_valuation` in `market.duckdb`\n- Provider vintage, exact stock-master snapshot, and PIT-consistent current-basis\n  fundamentals are required; unavailable inputs return 409 with normal\n  `market_db_sync` recovery guidance.\n\n**Response includes**:\n- `data`: Array of fundamental data points sorted by date (descending)\n- `latestMetrics`: Summary metrics composed from `daily_valuation` and latest disclosure data\n- `latestMetricsSource`: Source tables/dates used to compose `latestMetrics`\n- `dailyValuation`: Daily PER/PBR time-series for charting",
         "operationId": "compute_fundamentals_api_fundamentals_compute_post",
         "requestBody": {
           "content": {

@@ -27,10 +27,6 @@ from src.application.services.market_maintenance_finalizer import (
     MarketMaintenanceFinalizer,
     finalize_market_operation_joined,
 )
-from src.application.services.adjusted_metrics_materialization_run import (
-    MaterializationProgress,
-    run_shielded_materialization,
-)
 from src.infrastructure.db.market.market_db import (
     PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
     MARKET_SCHEMA_VERSION,
@@ -39,7 +35,6 @@ from src.infrastructure.db.market.market_db import (
 )
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.application.contracts.market_data_plane import SyncProgress, SyncResult
-from src.application.contracts.market_data_plane import AdjustedMetricsMaterializeResult
 from src.application.services.generic_job_manager import GenericJobManager, JobInfo
 from src.application.services.sync_stream_manager import (
     SyncStreamEvent,
@@ -53,7 +48,6 @@ from src.application.services.sync_strategies import (
     get_strategy,
 )
 from src.shared.config.reliability import (
-    ADJUSTED_METRICS_MATERIALIZATION_TIMEOUT_MINUTES,
     INITIAL_SYNC_JOB_TIMEOUT_MINUTES,
     SYNC_JOB_TIMEOUT_MINUTES,
 )
@@ -101,23 +95,10 @@ class SyncJobData:
     )
 
 
-@dataclass
-class AdjustedMetricsMaterializeJobData:
-    mode: str = "full"
-    maintenance: maintenance_contracts.MarketMaintenanceRecord = field(
-        default_factory=maintenance_contracts.MarketMaintenanceRecord.never_run
-    )
-
-
 # Module-level manager instance
 sync_job_manager: GenericJobManager[SyncJobData, SyncProgress, SyncResult] = (
     GenericJobManager()
 )
-adjusted_metrics_materialize_job_manager: GenericJobManager[
-    AdjustedMetricsMaterializeJobData,
-    SyncProgress,
-    AdjustedMetricsMaterializeResult,
-] = GenericJobManager()
 _MAX_FETCH_DETAILS = 200
 
 
@@ -200,182 +181,6 @@ def _prepare_market_db_for_sync(market_db: SyncServiceMarketDbLike) -> None:
         METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"],
         PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
     )
-
-
-async def start_adjusted_metrics_materialization(
-    market_db: MarketDb,
-    *,
-    market_finalizer: MarketMaintenanceFinalizer
-    | MarketFinalizerProvider
-    | None = None,
-) -> (
-    JobInfo[
-        AdjustedMetricsMaterializeJobData,
-        SyncProgress,
-        AdjustedMetricsMaterializeResult,
-    ]
-    | None
-):
-    """Start a standalone full adjusted metrics materialization job."""
-    job = await adjusted_metrics_materialize_job_manager.create_job(
-        AdjustedMetricsMaterializeJobData()
-    )
-    if job is None:
-        return None
-
-    def on_progress(progress: MaterializationProgress) -> None:
-        pct = (
-            progress.completed_codes / progress.total_codes * 100
-            if progress.total_codes > 0
-            else 0
-        )
-        adjusted_metrics_materialize_job_manager.update_progress(
-            job.job_id,
-            SyncProgress(
-                stage=progress.stage,
-                current=progress.completed_codes,
-                total=progress.total_codes,
-                percentage=pct,
-                message=(
-                    f"Materializing code {progress.current_code}"
-                    if progress.current_code is not None
-                    else "Materializing adjusted metrics"
-                ),
-                completedCodes=progress.completed_codes,
-                totalCodes=progress.total_codes,
-                currentCode=progress.current_code,
-                currentBasisStatementCount=progress.current_basis_statement_count,
-            ),
-        )
-
-    async def _run() -> None:
-        operation_outcome = maintenance_contracts.MarketOperationOutcome.SUCCEEDED
-        operation_error: str | None = None
-        response: AdjustedMetricsMaterializeResult | None = None
-        propagate_cancel = False
-        try:
-            result = await run_shielded_materialization(
-                AdjustedMetricsMaterializer(market_db),
-                timeout_seconds=ADJUSTED_METRICS_MATERIALIZATION_TIMEOUT_MINUTES * 60,
-                on_progress=on_progress,
-            )
-            response = AdjustedMetricsMaterializeResult(
-                success=True,
-                completedCodes=result.completed_codes,
-                totalCodes=result.total_codes,
-                currentBasisStatementCount=result.current_basis_statement_count,
-                pendingCurrentBasisCodeCount=result.pending_current_basis_code_count,
-                dailyValuationRows=result.daily_valuation_rows,
-                dailyTechnicalMetricRows=result.daily_technical_metric_rows,
-                dailyValuationLatestDate=result.daily_valuation_latest_date,
-                fundamentalsAdjustmentBasisDate=(
-                    result.fundamentals_adjustment_basis_date
-                ),
-            )
-            adjusted_metrics_materialize_job_manager.update_progress(
-                job.job_id,
-                SyncProgress(
-                    stage="complete",
-                    current=result.completed_codes,
-                    total=result.total_codes,
-                    percentage=100,
-                    message="Adjusted and technical metrics materialization complete.",
-                    completedCodes=result.completed_codes,
-                    totalCodes=result.total_codes,
-                    currentCode=None,
-                    currentBasisStatementCount=(
-                        result.current_basis_statement_count
-                    ),
-                ),
-            )
-        except asyncio.CancelledError:
-            operation_outcome = maintenance_contracts.MarketOperationOutcome.CANCELLED
-            propagate_cancel = (
-                not adjusted_metrics_materialize_job_manager.is_cancelled(job.job_id)
-            )
-        except asyncio.TimeoutError:
-            operation_outcome = maintenance_contracts.MarketOperationOutcome.TIMED_OUT
-            operation_error = (
-                "Adjusted metrics materialization timed out after "
-                f"{ADJUSTED_METRICS_MATERIALIZATION_TIMEOUT_MINUTES} minutes"
-            )
-        except Exception as e:
-            logger.exception(
-                f"Adjusted metrics materialization job {job.job_id} failed: {e}"
-            )
-            operation_outcome = maintenance_contracts.MarketOperationOutcome.FAILED
-            operation_error = str(e)
-
-        def commit_terminal(decision: MarketFinalizationDecision) -> None:
-            job.data.maintenance = decision.maintenance
-            if (
-                decision.terminal_outcome is maintenance_contracts.MarketOperationOutcome.SUCCEEDED
-                and adjusted_metrics_materialize_job_manager.is_cancelled(job.job_id)
-            ):
-                status = JobStatus.CANCELLED
-            elif decision.terminal_outcome is maintenance_contracts.MarketOperationOutcome.SUCCEEDED:
-                status = JobStatus.COMPLETED
-            elif decision.terminal_outcome is maintenance_contracts.MarketOperationOutcome.CANCELLED:
-                status = JobStatus.CANCELLED
-            else:
-                status = JobStatus.FAILED
-            adjusted_metrics_materialize_job_manager.finalize_job(
-                job.job_id,
-                status=status,
-                result=response,
-                error=decision.error,
-            )
-
-        if market_finalizer is not None:
-            resolved_finalizer = (
-                market_finalizer() if callable(market_finalizer) else market_finalizer
-            )
-            loop = asyncio.get_running_loop()
-            provisional_terminal: list[MarketFinalizationDecision] = []
-
-            def publish_from_worker(decision: MarketFinalizationDecision) -> None:
-                if len(provisional_terminal) != 1:
-                    raise RuntimeError(
-                        "Materialization terminal decision was not staged exactly once"
-                    )
-                committed = threading.Event()
-                publication_error: list[BaseException] = []
-
-                def publish_on_loop() -> None:
-                    try:
-                        commit_terminal(decision)
-                    except BaseException as exc:
-                        publication_error.append(exc)
-                    finally:
-                        committed.set()
-
-                loop.call_soon_threadsafe(publish_on_loop)
-                committed.wait()
-                if publication_error:
-                    raise publication_error[0]
-
-            await finalize_market_operation_joined(
-                resolved_finalizer,
-                operation_outcome=operation_outcome,
-                operation_error=operation_error,
-                stage_terminal=provisional_terminal.append,
-                publish_terminal=publish_from_worker,
-            )
-        else:
-            commit_terminal(
-                MarketFinalizationDecision(
-                    terminal_outcome=operation_outcome,
-                    maintenance=maintenance_contracts.MarketMaintenanceRecord.never_run(),
-                    error=operation_error,
-                )
-            )
-
-        if propagate_cancel:
-            raise asyncio.CancelledError
-
-    task = asyncio.create_task(_run())
-    job.task = task
-    return job
 
 
 async def start_sync(

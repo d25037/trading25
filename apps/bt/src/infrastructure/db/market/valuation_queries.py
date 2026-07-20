@@ -13,6 +13,11 @@ from src.infrastructure.db.market.query_helpers import normalize_stock_code
 
 
 _SOURCE_DIAGNOSTIC_DEFAULTS: dict[str, int] = {
+    "providerWindowFingerprintCount": 0,
+    "invalidProviderWindowCount": 0,
+    "adjustmentEventFingerprintCount": 0,
+    "invalidAdjustmentEventCount": 0,
+    "providerAdjustedMismatchCount": 0,
     "sourceStatementKeyCount": 0,
     "expectedAdjustedStatementRows": 0,
     "missingAdjustedStatementRows": 0,
@@ -31,6 +36,84 @@ def get_adjusted_metrics_source_diagnostics(
 ) -> dict[str, int]:
     """Compare current-basis metrics with statement/provider-window sources."""
     diagnostics = dict(_SOURCE_DIAGNOSTIC_DEFAULTS)
+    provider_required = {
+        "stock_data_raw",
+        "stock_data",
+        "stock_provider_windows",
+        "stock_adjustment_events",
+    }
+    if all(table_exists(table) for table in provider_required):
+        provider_row = fetchone(
+            """
+            WITH raw_bounds AS (
+                SELECT code, MIN(date) AS coverage_start, MAX(date) AS coverage_end
+                FROM stock_data_raw GROUP BY code
+            ), invalid_windows AS (
+                SELECT provider_window.code
+                FROM stock_provider_windows AS provider_window
+                LEFT JOIN raw_bounds AS raw USING (code)
+                WHERE trim(provider_window.source_fingerprint) = ''
+                   OR provider_window.coverage_start > provider_window.coverage_end
+                   OR provider_window.provider_as_of < provider_window.coverage_end
+                   OR raw.code IS NULL
+                   OR raw.coverage_start IS DISTINCT FROM provider_window.coverage_start
+                   OR raw.coverage_end IS DISTINCT FROM provider_window.coverage_end
+            ), ledger_comparison AS (
+                SELECT
+                    coalesce(raw.code, event.code) AS code,
+                    coalesce(raw.date, event.date) AS date,
+                    raw.adjustment_factor AS raw_factor,
+                    event.adjustment_factor AS event_factor,
+                    event.source_fingerprint AS event_fingerprint
+                FROM (
+                    SELECT code, date, adjustment_factor
+                    FROM stock_data_raw
+                    WHERE adjustment_factor <> 1
+                ) AS raw
+                FULL OUTER JOIN stock_adjustment_events AS event USING (code, date)
+            ), adjusted_comparison AS (
+                SELECT coalesce(raw.code, adjusted.code) AS code,
+                       coalesce(raw.date, adjusted.date) AS date,
+                       raw.code IS NULL
+                       OR adjusted.code IS NULL
+                       OR raw.adjusted_open IS DISTINCT FROM adjusted.open
+                       OR raw.adjusted_high IS DISTINCT FROM adjusted.high
+                       OR raw.adjusted_low IS DISTINCT FROM adjusted.low
+                       OR raw.adjusted_close IS DISTINCT FROM adjusted.close
+                       OR raw.adjusted_volume IS DISTINCT FROM adjusted.volume AS invalid
+                FROM stock_data_raw AS raw
+                FULL OUTER JOIN stock_data AS adjusted USING (code, date)
+            )
+            SELECT
+                (SELECT COUNT(*) FROM stock_provider_windows
+                 WHERE trim(source_fingerprint) <> ''),
+                (SELECT COUNT(*) FROM invalid_windows),
+                (SELECT COUNT(*) FROM stock_adjustment_events
+                 WHERE trim(source_fingerprint) <> ''),
+                (SELECT COUNT(*) FROM ledger_comparison
+                 WHERE raw_factor IS NULL
+                    OR event_factor IS NULL
+                    OR raw_factor IS DISTINCT FROM event_factor
+                    OR trim(coalesce(event_fingerprint, '')) = ''),
+                (SELECT COUNT(*) FROM adjusted_comparison WHERE invalid)
+            """,
+            None,
+        )
+        if provider_row is not None:
+            provider_keys = (
+                "providerWindowFingerprintCount",
+                "invalidProviderWindowCount",
+                "adjustmentEventFingerprintCount",
+                "invalidAdjustmentEventCount",
+                "providerAdjustedMismatchCount",
+            )
+            diagnostics.update(
+                {
+                    key: int(value or 0)
+                    for key, value in zip(provider_keys, provider_row, strict=True)
+                }
+            )
+
     required = {
         "statements",
         "stock_provider_windows",

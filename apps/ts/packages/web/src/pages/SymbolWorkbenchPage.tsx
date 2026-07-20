@@ -253,8 +253,8 @@ function ErrorState({ error }: { error: unknown }) {
 function FundamentalsErrorNotice({ error }: { error: unknown }) {
   const message = error instanceof Error ? error.message : 'Unable to load fundamentals data.';
   const correlationId = error instanceof HttpRequestError ? error.correlationId : undefined;
-  const showAdjustedMetricsRecovery =
-    error instanceof HttpRequestError && error.status === 409 && error.recovery === 'adjusted_metrics_pit';
+  const showMarketDbSyncRecovery =
+    error instanceof HttpRequestError && error.status === 409 && error.recovery === 'market_db_sync';
 
   return (
     <Surface className="border-amber-500/30 bg-amber-500/10 px-4 py-3" role="alert">
@@ -266,11 +266,9 @@ function FundamentalsErrorNotice({ error }: { error: unknown }) {
             <p className="text-xs text-muted-foreground">Correlation ID: {correlationId}</p>
           ) : null}
         </div>
-        {showAdjustedMetricsRecovery ? (
+        {showMarketDbSyncRecovery ? (
           <Button variant="outline" asChild className="shrink-0">
-            <Link to="/market-db" hash="adjusted-metrics">
-              Open adjusted metrics recovery
-            </Link>
+            <Link to="/market-db">Open Market DB sync</Link>
           </Button>
         ) : null}
       </div>

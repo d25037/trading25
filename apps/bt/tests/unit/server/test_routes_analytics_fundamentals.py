@@ -144,12 +144,12 @@ class TestGetFundamentals:
             recovery = [item for item in body["details"] if item["field"] == "recovery"]
             if status == 409:
                 assert recovery == [
-                    {"field": "recovery", "message": "adjusted_metrics_pit"}
+                    {"field": "recovery", "message": "market_db_sync"}
                 ]
             else:
                 assert recovery == []
 
-    def test_get_and_post_map_total_valuation_loss_to_adjusted_metrics_recovery(
+    def test_get_and_post_map_provider_vintage_loss_to_normal_sync_recovery(
         self, client: TestClient
     ) -> None:
         error = FundamentalsPitSnapshotError(
@@ -177,7 +177,7 @@ class TestGetFundamentals:
             assert {"field": "reason", "message": "pit_snapshot_inconsistent"} in response.json()[
                 "details"
             ]
-            assert {"field": "recovery", "message": "adjusted_metrics_pit"} in response.json()[
+            assert {"field": "recovery", "message": "market_db_sync"} in response.json()[
                 "details"
             ]
 

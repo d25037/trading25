@@ -19,7 +19,7 @@ FUNDAMENTALS_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
 def raise_fundamentals_http_error(exc: FundamentalsPitSnapshotError) -> NoReturn:
     """Map one typed PIT failure identically for every Fundamentals endpoint."""
     status = 404 if exc.reason == "stock_not_listed_as_of" else 409
-    recovery = None if status == 404 else "adjusted_metrics_pit"
+    recovery = None if status == 404 else "market_db_sync"
     raise build_structured_http_exception(
         status,
         str(exc),

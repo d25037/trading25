@@ -376,7 +376,8 @@ def test_fundamentals_contracts_share_date_and_response_semantics(openapi_schema
     assert query_parameters["to"]["schema"]["anyOf"][0]["format"] == "date"
     assert "display lower bound" in query_parameters["from"]["description"]
     assert "knowledge/event cutoff" in query_parameters["to"]["description"]
-    assert "adjustment basis" in post["description"]
+    assert "Provider vintage" in post["description"]
+    assert "market_db_sync" in post["description"]
 
 
 def test_stabilize_date_range_refs_discovers_portfolio_owner_from_response_ref() -> None:

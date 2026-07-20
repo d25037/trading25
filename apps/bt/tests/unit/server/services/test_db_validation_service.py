@@ -69,8 +69,11 @@ class DummyMarketDb:
         self._schema_version = schema_version
         self._adjusted_metrics_snapshot = adjusted_metrics_snapshot or {
             "currentBasisStatementCount": 4,
+            "currentBasisStateCount": 2,
             "dailyValuationRows": 10,
             "fundamentalsAdjustmentBasisDate": "9999-12-31",
+            "providerWindowCount": 2,
+            "readyProviderWindowCount": 2,
         }
         self._adjusted_metrics_source_diagnostics = (
             adjusted_metrics_source_diagnostics or {}
@@ -79,6 +82,11 @@ class DummyMarketDb:
             "init_completed": "true",
             "last_sync_date": "2026-02-28T00:00:00+00:00",
             "last_stocks_refresh": "2026-02-28T00:00:00+00:00",
+            METADATA_KEYS["PROVIDER_PLAN"]: "standard",
+            METADATA_KEYS["PROVIDER_AS_OF"]: "2026-02-27",
+            METADATA_KEYS["PROVIDER_COVERAGE_START"]: "2016-02-29",
+            METADATA_KEYS["PROVIDER_COVERAGE_END"]: "2026-02-27",
+            METADATA_KEYS["PROVIDER_SOURCE_FINGERPRINT"]: "provider-sha256",
         }
 
     def is_initialized(self) -> bool:
@@ -241,8 +249,10 @@ def test_validate_market_db_warns_when_adjusted_metrics_are_missing_with_raw_sou
 
     assert result.status == "warning"
     assert result.healthDomains.coreDailyStatus == "warning"
-    assert result.adjustedMetrics.status == "missing"
-    assert any("adjusted_metrics_pit" in rec for rec in result.recommendations)
+    assert result.providerVintage.status == "missing"
+    assert result.providerVintage.recoveryStage == "market_db_sync"
+    assert any("normal Market DB sync" in rec for rec in result.recommendations)
+    assert not any("adjusted_metrics_pit" in rec for rec in result.recommendations)
 
 
 def test_validate_market_db_treats_empty_adjusted_metrics_as_info_without_raw_sources() -> None:
@@ -267,7 +277,7 @@ def test_validate_market_db_treats_empty_adjusted_metrics_as_info_without_raw_so
 
     result = validate_market_db(market_db=market_db, time_series_store=store)
 
-    assert result.adjustedMetrics.status == "empty_source"
+    assert result.providerVintage.status == "empty_source"
     assert not any("Rebuild adjusted fundamentals" in rec for rec in result.recommendations)
 
 
@@ -308,10 +318,10 @@ def test_validate_market_db_reports_ready_provider_windows() -> None:
 
     result = validate_market_db(market_db=market_db, time_series_store=store)
 
-    assert result.adjustedMetrics.status == "ready"
-    assert result.adjustedMetrics.providerWindowCount == 2
-    assert result.adjustedMetrics.readyProviderWindowCount == 2
-    assert result.adjustedMetrics.pendingCurrentBasisCodeCount == 0
+    assert result.providerVintage.status == "ready"
+    assert result.providerVintage.providerWindowCount == 2
+    assert result.providerVintage.readyProviderWindowCount == 2
+    assert result.providerVintage.pendingCurrentBasisCodeCount == 0
 
 
 def test_validate_market_db_reports_pending_current_basis_health() -> None:
@@ -352,20 +362,21 @@ def test_validate_market_db_reports_pending_current_basis_health() -> None:
     result = validate_market_db(market_db=market_db, time_series_store=store)
 
     assert result.status == "warning"
-    assert result.adjustedMetrics.status == "incomplete_coverage"
-    assert any("adjusted_metrics_pit" in rec for rec in result.recommendations)
+    assert result.providerVintage.status == "pending"
+    assert result.providerVintage.recoveryStage == "market_db_sync"
+    assert any("normal Market DB sync" in rec for rec in result.recommendations)
+    assert not any("adjusted_metrics_pit" in rec for rec in result.recommendations)
 
 
 @pytest.mark.parametrize(
     ("diagnostics", "expected_status", "expected_health"),
     [
         ({"wrongBasisAdjustedStatementRows": 1}, "invalid_lineage", "error"),
-        ({"wrongBasisDailyValuationRows": 1}, "invalid_lineage", "error"),
+        ({"providerAdjustedMismatchCount": 1}, "invalid_lineage", "error"),
         ({"missingAdjustedStatementRows": 1}, "incomplete_coverage", "warning"),
-        ({"missingDailyValuationRows": 1}, "incomplete_coverage", "warning"),
         ({"staleAdjustedStatementRows": 1}, "stale", "warning"),
         ({"extraAdjustedStatementRows": 1}, "stale", "warning"),
-        ({"extraDailyValuationRows": 1}, "stale", "warning"),
+        ({"invalidAdjustmentEventCount": 1}, "invalid_lineage", "error"),
     ],
 )
 def test_validate_market_db_maps_source_diagnostics_to_recovery_status(
@@ -399,9 +410,16 @@ def test_validate_market_db_maps_source_diagnostics_to_recovery_status(
 
     result = validate_market_db(market_db=market_db, time_series_store=store)
 
-    assert result.adjustedMetrics.status == expected_status
+    expected_provider_status = {
+        "invalid_lineage": "invalid",
+        "incomplete_coverage": "missing",
+        "stale": "stale",
+    }[expected_status]
+    assert result.providerVintage.status == expected_provider_status
+    assert result.providerVintage.recoveryStage == "market_db_sync"
     assert result.status == expected_health
-    assert any("adjusted_metrics_pit" in rec for rec in result.recommendations)
+    assert any("normal Market DB sync" in rec for rec in result.recommendations)
+    assert not any("adjusted_metrics_pit" in rec for rec in result.recommendations)
 
 
 def test_validate_market_db_returns_error_and_recommendations_for_uninitialized_store() -> None:

@@ -2,7 +2,7 @@
 
 Generated from `apps/ts/packages/contracts/openapi/bt-openapi.json`. Do not edit manually.
 
-Total paths: **145**
+Total paths: **142**
 
 ## /api/analytics
 
@@ -99,9 +99,6 @@ Total paths: **145**
 
 | Path | Methods |
 |---|---|
-| `/api/db/adjusted-metrics/materialize` | `POST` |
-| `/api/db/adjusted-metrics/materialize/jobs/active` | `GET` |
-| `/api/db/adjusted-metrics/materialize/jobs/{jobId}` | `GET, DELETE` |
 | `/api/db/intraday/sync` | `POST` |
 | `/api/db/stats` | `GET` |
 | `/api/db/stocks/refresh` | `POST` |

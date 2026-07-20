@@ -15,10 +15,7 @@ import type {
   ResponseDiagnostics,
 } from './api-types';
 import type {
-  AdjustedMetricsMaterializeJobResponse,
-  AdjustedMetricsMaterializeResult,
   CancelDatasetJobResponse,
-  CreateAdjustedMetricsMaterializeJobResponse,
   CreateSyncJobResponse,
   DatasetCreateJobResponse,
   DatasetCreateRequest,
@@ -65,6 +62,7 @@ import type {
   PortfolioSummaryResponse,
   PortfolioUpdateRequest,
   PortfolioWithItemsResponse,
+  ProviderVintageStats,
   RefreshStockResult,
   ScreeningJobRequest,
   ScreeningJobResponse,
@@ -131,11 +129,7 @@ type SyncContracts = [
   Expect<Equal<SyncJobResult, Schemas['SyncResult']>>,
   Expect<Equal<CreateSyncJobResponse, Schemas['CreateSyncJobResponse']>>,
   Expect<Equal<SyncJobResponse, Schemas['SyncJobResponse']>>,
-  Expect<Equal<AdjustedMetricsMaterializeResult, Schemas['AdjustedMetricsMaterializeResult']>>,
-  Expect<
-    Equal<CreateAdjustedMetricsMaterializeJobResponse, Schemas['CreateAdjustedMetricsMaterializeJobResponse']>
-  >,
-  Expect<Equal<AdjustedMetricsMaterializeJobResponse, Schemas['AdjustedMetricsMaterializeJobResponse']>>,
+  Expect<Equal<ProviderVintageStats, Schemas['ProviderVintageStats']>>,
   Expect<Equal<StartSyncRequest, Schemas['SyncRequest']>>,
   Expect<Equal<JobStatus, Schemas['JobStatus']>>,
 ];

@@ -60,7 +60,7 @@ import type {
   WatchlistWithItemsResponse,
 } from './api-response-types';
 
-type GeneratedAdjustedMetrics = BtApiComponents['schemas']['AdjustedMetricsStats'];
+type GeneratedProviderVintage = BtApiComponents['schemas']['ProviderVintageStats'];
 
 const fundamentalRankings: FundamentalRankings = {};
 const valueCompositeRanking: ValueCompositeRankingResponse = {
@@ -136,37 +136,40 @@ describe('api fundamentals contracts', () => {
 });
 
 describe('api-response-types market validation contracts', () => {
-  it('exposes the generated adjusted-metrics diagnostics shape', () => {
-    const adjustedMetrics: GeneratedAdjustedMetrics = {
+  it('exposes the generated provider-vintage diagnostics shape', () => {
+    const providerVintage: GeneratedProviderVintage = {
+      providerPlan: 'standard',
+      providerAsOf: '2026-07-20',
+      effectiveCoverage: { min: '2016-07-20', max: '2026-07-18' },
+      sourceFingerprint: 'provider-sha256',
+      providerWindowFingerprintCount: 2,
+      invalidProviderWindowCount: 0,
+      adjustmentEventCount: 3,
+      adjustmentEventFingerprintCount: 3,
+      invalidAdjustmentEventCount: 0,
+      providerAdjustedMismatchCount: 0,
       currentBasisStateCount: 2,
       currentBasisStatementCount: 16,
-      dailyTechnicalMetricRows: 3,
-      dailyValuationLatestCodeCount: 4,
-      dailyValuationPreviousCodeCount: 5,
-      dailyValuationRows: 6,
       expectedAdjustedStatementRows: 7,
       extraAdjustedStatementRows: 8,
-      extraDailyValuationRows: 9,
       invalidCurrentBasisStateCount: 0,
       missingAdjustedStatementRows: 10,
-      missingDailyValuationRows: 11,
       orphanAdjustedStatementRows: 12,
-      orphanDailyValuationRows: 13,
       pendingCurrentBasisCodeCount: 1,
       providerWindowCount: 2,
       readyProviderWindowCount: 1,
       sourceStatementKeyCount: 14,
       staleAdjustedStatementRows: 15,
-      status: 'incomplete_coverage',
+      status: 'pending',
+      recoveryStage: 'market_db_sync',
       wrongBasisAdjustedStatementRows: 17,
-      wrongBasisDailyValuationRows: 18,
     };
-    const response: Pick<MarketValidationResponse, 'adjustedMetrics'> = {
-      adjustedMetrics,
+    const response: Pick<MarketValidationResponse, 'providerVintage'> = {
+      providerVintage,
     };
 
-    expect(response.adjustedMetrics?.sourceStatementKeyCount).toBe(14);
-    expect(response.adjustedMetrics?.wrongBasisDailyValuationRows).toBe(18);
+    expect(response.providerVintage?.sourceStatementKeyCount).toBe(14);
+    expect(response.providerVintage?.recoveryStage).toBe('market_db_sync');
   });
 });
 

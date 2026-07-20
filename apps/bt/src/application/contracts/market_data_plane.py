@@ -41,14 +41,15 @@ Options225CoverageStatusLiteral = Literal[
     "stale",
     "partial",
 ]
-AdjustedMetricsStatusLiteral = Literal[
+ProviderVintageStatusLiteral = Literal[
     "ready",
     "missing",
     "stale",
-    "incomplete_coverage",
-    "invalid_lineage",
+    "pending",
+    "invalid",
     "empty_source",
 ]
+ProviderVintageRecoveryStageLiteral = Literal["market_db_sync"]
 
 
 class IntradayFreshness(BaseModel):
@@ -77,7 +78,7 @@ class StockStats(BaseModel):
 
 class MarketSchemaStats(BaseModel):
     version: int | None = None
-    requiredVersion: int = 4
+    requiredVersion: int = 5
     current: bool = False
 
 
@@ -146,32 +147,33 @@ class FundamentalsStats(BaseModel):
     listedMarketCoverage: ListedMarketCoverage
 
 
-class AdjustedMetricsStats(BaseModel):
+class ProviderVintageStats(BaseModel):
+    providerPlan: str | None = None
+    providerAsOf: str | None = None
+    effectiveCoverage: DateRange | None = None
+    sourceFingerprint: str | None = None
+    providerWindowCount: int = 0
+    readyProviderWindowCount: int = 0
+    providerWindowFingerprintCount: int = 0
+    invalidProviderWindowCount: int = 0
+    adjustmentEventCount: int = 0
+    adjustmentEventFingerprintCount: int = 0
+    invalidAdjustmentEventCount: int = 0
+    providerAdjustedMismatchCount: int = 0
     currentBasisStatementCount: int = 0
     currentBasisStateCount: int = 0
     invalidCurrentBasisStateCount: int = 0
-    dailyValuationRows: int = 0
-    dailyTechnicalMetricRows: int = 0
-    dailyValuationLatestDate: str | None = None
-    dailyValuationLatestCodeCount: int = 0
-    dailyValuationPreviousCodeCount: int = 0
     fundamentalsAdjustmentBasisDate: str | None = None
-    providerWindowCount: int = 0
-    readyProviderWindowCount: int = 0
-    providerWindowCoverageFrontier: str | None = None
     pendingCurrentBasisCodeCount: int = 0
-    orphanAdjustedStatementRows: int = 0
-    orphanDailyValuationRows: int = 0
     sourceStatementKeyCount: int = 0
     expectedAdjustedStatementRows: int = 0
     missingAdjustedStatementRows: int = 0
     extraAdjustedStatementRows: int = 0
     staleAdjustedStatementRows: int = 0
     wrongBasisAdjustedStatementRows: int = 0
-    missingDailyValuationRows: int = 0
-    extraDailyValuationRows: int = 0
-    wrongBasisDailyValuationRows: int = 0
-    status: AdjustedMetricsStatusLiteral = "empty_source"
+    orphanAdjustedStatementRows: int = 0
+    status: ProviderVintageStatusLiteral = "empty_source"
+    recoveryStage: ProviderVintageRecoveryStageLiteral | None = None
 
 
 class MarketStatsResponse(BaseModel):
@@ -200,7 +202,7 @@ class MarketStatsResponse(BaseModel):
     options225: Options225Stats
     margin: MarginStats
     fundamentals: FundamentalsStats
-    adjustedMetrics: AdjustedMetricsStats = Field(default_factory=AdjustedMetricsStats)
+    providerVintage: ProviderVintageStats = Field(default_factory=ProviderVintageStats)
     intradayFreshness: IntradayFreshness
     lastUpdated: str
 
@@ -324,7 +326,7 @@ class MarketValidationResponse(BaseModel):
     options225: Options225Validation
     margin: MarginValidation
     fundamentals: FundamentalsValidation
-    adjustedMetrics: AdjustedMetricsStats = Field(default_factory=AdjustedMetricsStats)
+    providerVintage: ProviderVintageStats = Field(default_factory=ProviderVintageStats)
     failedDates: list[str] = Field(default_factory=list)
     failedDatesCount: int = 0
     adjustmentEvents: list[AdjustmentEvent] = Field(default_factory=list)
@@ -376,18 +378,6 @@ class SyncResult(BaseModel):
     fundamentalsDatesProcessed: int = 0
     failedDates: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
-
-
-class AdjustedMetricsMaterializeResult(BaseModel):
-    success: bool
-    completedCodes: int
-    totalCodes: int
-    currentBasisStatementCount: int
-    pendingCurrentBasisCodeCount: int
-    dailyValuationRows: int
-    dailyTechnicalMetricRows: int
-    dailyValuationLatestDate: str | None
-    fundamentalsAdjustmentBasisDate: str | None
 
 
 # --- Intraday Sync ---
