@@ -204,9 +204,19 @@ def test_provider_vintage_uses_constant_query_count_for_multiple_windows(
         if "SELECT code, coverage_start" in sql:
             return windows
         if "FROM stock_data_raw AS raw" in sql:
-            return raw_rows
-        if "FROM stock_adjustment_events AS event" in sql:
-            return []
+            return [
+                {
+                    "code": row["code"],
+                    "calculated_fingerprint": provider_stock_source_fingerprint([row]),
+                    "raw_min": row["date"],
+                    "raw_max": row["date"],
+                    "expected_event_count": 0,
+                    "adjustment_event_count": 0,
+                    "matched_expected_event_count": 0,
+                    "valid_event_count": 0,
+                }
+                for row in raw_rows
+            ]
         raise AssertionError(f"unexpected query: {sql}")
 
     snapshot = get_provider_vintage_snapshot(
@@ -216,7 +226,7 @@ def test_provider_vintage_uses_constant_query_count_for_multiple_windows(
 
     assert snapshot["providerWindowFingerprintCount"] == 2
     assert snapshot["invalidProviderWindowCount"] == 0
-    assert len(queries) == 3
+    assert len(queries) == 2
 
 
 def test_current_basis_snapshot_marks_stale_provenance_state_unready(

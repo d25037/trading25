@@ -295,6 +295,45 @@ def test_validate_market_db_treats_empty_adjusted_metrics_as_info_without_raw_so
     assert not any("Rebuild adjusted fundamentals" in rec for rec in result.recommendations)
 
 
+def test_validate_fresh_empty_market_does_not_require_provider_plan() -> None:
+    market_db = DummyMarketDb(
+        adjusted_metrics_snapshot={
+            "currentBasisStatementCount": 0,
+            "currentBasisStateCount": 0,
+            "dailyValuationRows": 0,
+            "providerWindowCount": 0,
+            "readyProviderWindowCount": 0,
+            "fundamentalsAdjustmentBasisDate": None,
+        },
+        provider_vintage_snapshot={
+            "providerWindowCoherent": False,
+            "providerWindowFingerprintCount": 0,
+            "invalidProviderWindowCount": 0,
+            "adjustmentEventCount": 0,
+            "adjustmentEventFingerprintCount": 0,
+            "invalidAdjustmentEventCount": 0,
+        },
+    )
+    market_db._metadata.pop(METADATA_KEYS["PROVIDER_PLAN"])
+    store = DummyTimeSeriesStore(
+        TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=0,
+            stock_count=0,
+            stock_date_count=0,
+            indices_count=0,
+            statements_count=0,
+            statement_codes=set(),
+        )
+    )
+
+    result = validate_market_db(market_db=market_db, time_series_store=store)
+
+    assert result.providerVintage.status == "empty_source"
+    assert result.providerVintage.recoveryStage is None
+    assert not any("Provider vintage is invalid" in rec for rec in result.recommendations)
+
+
 def test_validate_market_db_reports_ready_provider_windows() -> None:
     market_db = DummyMarketDb(
         adjusted_metrics_snapshot={

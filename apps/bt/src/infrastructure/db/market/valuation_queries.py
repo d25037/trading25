@@ -75,29 +75,112 @@ def get_provider_vintage_snapshot(
     if not windows:
         return defaults
 
-    raw_rows_by_code: dict[str, list[dict[str, Any]]] = {}
-    for row in fetchall_dicts(
-        """
-        SELECT raw.*
-        FROM stock_data_raw AS raw
-        INNER JOIN stock_provider_windows AS provider_window USING (code)
-        ORDER BY raw.code, raw.date
-        """,
-        None,
-    ):
-        raw_rows_by_code.setdefault(str(row.get("code", "")), []).append(row)
-    events_by_code: dict[str, list[dict[str, Any]]] = {}
-    for row in fetchall_dicts(
-        """
-        SELECT event.code, event.date, event.adjustment_factor,
-               event.source_fingerprint
-        FROM stock_adjustment_events AS event
-        INNER JOIN stock_provider_windows AS provider_window USING (code)
-        ORDER BY event.code, event.date
-        """,
-        None,
-    ):
-        events_by_code.setdefault(str(row.get("code", "")), []).append(row)
+    evidence_by_code = {
+        str(row.get("code", "")): row
+        for row in fetchall_dicts(
+            """
+        WITH window_codes AS MATERIALIZED (
+            SELECT code FROM stock_provider_windows
+        ),
+        provider_rows AS MATERIALIZED (
+            SELECT raw.*
+            FROM stock_data_raw AS raw
+            INNER JOIN window_codes USING (code)
+        ),
+        row_hashes AS (
+            SELECT
+                code,
+                date,
+                adjustment_factor,
+                from_hex(
+                    sha256(
+                        to_json(
+                            struct_pack(
+                                adjusted_close := adjusted_close,
+                                adjusted_high := adjusted_high,
+                                adjusted_low := adjusted_low,
+                                adjusted_open := adjusted_open,
+                                adjusted_volume := adjusted_volume,
+                                adjustment_factor := adjustment_factor,
+                                close := close,
+                                code := code,
+                                date := date,
+                                high := high,
+                                low := low,
+                                open := open,
+                                turnover_value := turnover_value,
+                                volume := volume
+                            )
+                        )
+                    )
+                )::BIT AS row_hash
+            FROM provider_rows
+        ),
+        raw_summary AS (
+            SELECT
+                code,
+                lower(hex(bit_xor(row_hash)::BLOB)) AS calculated_fingerprint,
+                min(date) AS raw_min,
+                max(date) AS raw_max,
+                count(*) FILTER (
+                    WHERE adjustment_factor IS NOT NULL
+                      AND adjustment_factor != 1.0
+                ) AS expected_event_count
+            FROM row_hashes
+            GROUP BY code
+        ),
+        fingerprints AS MATERIALIZED (
+            SELECT
+                window_codes.code,
+                coalesce(raw_summary.calculated_fingerprint, repeat('0', 64))
+                    AS calculated_fingerprint,
+                raw_summary.raw_min,
+                raw_summary.raw_max,
+                coalesce(raw_summary.expected_event_count, 0)
+                    AS expected_event_count
+            FROM window_codes
+            LEFT JOIN raw_summary USING (code)
+        ),
+        event_summary AS (
+            SELECT
+                event.code,
+                count(*) AS adjustment_event_count,
+                count(*) FILTER (
+                    WHERE raw.date IS NOT NULL
+                      AND raw.adjustment_factor IS NOT NULL
+                      AND raw.adjustment_factor != 1.0
+                ) AS matched_expected_event_count,
+                count(*) FILTER (
+                    WHERE raw.date IS NOT NULL
+                      AND raw.adjustment_factor IS NOT NULL
+                      AND raw.adjustment_factor != 1.0
+                      AND event.adjustment_factor = raw.adjustment_factor
+                      AND event.source_fingerprint = fingerprints.calculated_fingerprint
+                ) AS valid_event_count
+            FROM stock_adjustment_events AS event
+            INNER JOIN window_codes USING (code)
+            INNER JOIN fingerprints USING (code)
+            LEFT JOIN provider_rows AS raw USING (code, date)
+            GROUP BY event.code
+        )
+        SELECT
+            fingerprints.code,
+            fingerprints.calculated_fingerprint,
+            fingerprints.raw_min,
+            fingerprints.raw_max,
+            fingerprints.expected_event_count,
+            coalesce(event_summary.adjustment_event_count, 0)
+                AS adjustment_event_count,
+            coalesce(event_summary.matched_expected_event_count, 0)
+                AS matched_expected_event_count,
+            coalesce(event_summary.valid_event_count, 0) AS valid_event_count
+        FROM fingerprints
+        LEFT JOIN event_summary USING (code)
+        ORDER BY fingerprints.code
+            """,
+            None,
+        )
+    }
 
     valid_fingerprints: list[str] = []
     starts: list[str] = []
@@ -130,10 +213,13 @@ def get_provider_vintage_snapshot(
         except ValueError:
             metadata_valid = False
 
-        raw_rows = raw_rows_by_code.get(code, [])
-        calculated_fingerprint = provider_stock_source_fingerprint(raw_rows)
-        raw_dates = [str(row.get("date", "")) for row in raw_rows]
-        bounds_valid = bool(raw_dates) and raw_dates[0] == coverage_start and raw_dates[-1] == coverage_end
+        evidence = evidence_by_code.get(code, {})
+        calculated_fingerprint = str(
+            evidence.get("calculated_fingerprint", provider_stock_source_fingerprint(()))
+        )
+        raw_min = evidence.get("raw_min")
+        raw_max = evidence.get("raw_max")
+        bounds_valid = bool(raw_min and raw_max) and str(raw_min) == coverage_start and str(raw_max) == coverage_end
         fingerprint_valid = owned_fingerprint == calculated_fingerprint
         window_valid = metadata_valid and bounds_valid and fingerprint_valid
         if window_valid:
@@ -143,29 +229,22 @@ def get_provider_vintage_snapshot(
             ends.append(coverage_end)
             as_ofs.append(provider_as_of)
 
-        actual_events = events_by_code.get(code, [])
-        expected_events = {
-            str(row["date"]): float(row["adjustment_factor"])
-            for row in raw_rows
-            if row.get("adjustment_factor") is not None
-            and float(row["adjustment_factor"]) != 1.0
-        }
-        actual_dates: set[str] = set()
-        for event in actual_events:
-            event_count += 1
-            event_date = str(event.get("date", ""))
-            actual_dates.add(event_date)
-            valid = (
-                event_date in expected_events
-                and float(event.get("adjustment_factor", 0)) == expected_events[event_date]
-                and str(event.get("source_fingerprint", "")) == calculated_fingerprint
-                and window_valid
-            )
-            if valid:
-                valid_event_count += 1
-            else:
-                invalid_event_count += 1
-        invalid_event_count += len(set(expected_events) - actual_dates)
+        code_event_count = int(evidence.get("adjustment_event_count", 0) or 0)
+        expected_event_count = int(evidence.get("expected_event_count", 0) or 0)
+        matched_expected_event_count = int(
+            evidence.get("matched_expected_event_count", 0) or 0
+        )
+        code_valid_event_count = int(evidence.get("valid_event_count", 0) or 0)
+        if not window_valid:
+            code_valid_event_count = 0
+        event_count += code_event_count
+        valid_event_count += code_valid_event_count
+        invalid_event_count += (
+            code_event_count
+            - code_valid_event_count
+            + expected_event_count
+            - matched_expected_event_count
+        )
 
     coherent = valid_window_count == len(windows) and max(starts) <= min(ends)
     return {

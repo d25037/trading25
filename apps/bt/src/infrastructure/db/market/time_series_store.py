@@ -1359,6 +1359,7 @@ class DuckDbParquetTimeSeriesStore:
             if row.get("adjustment_factor") is not None
             and float(row["adjustment_factor"]) != 1.0
         ]
+        rebound_event_count = 0
         transaction_started = False
         try:
             self._conn.execute("BEGIN TRANSACTION")
@@ -1395,14 +1396,17 @@ class DuckDbParquetTimeSeriesStore:
                 [METADATA_KEYS["PROVIDER_PLAN"], provider_plan, updated_at],
             )
             for code, desired in desired_ledgers.items():
-                self._conn.execute(
-                    """
-                    UPDATE stock_adjustment_events
-                    SET source_fingerprint = ?
-                    WHERE code = ?
-                      AND source_fingerprint IS DISTINCT FROM ?
-                    """,
-                    [desired[3], code, desired[3]],
+                rebound_event_count += len(
+                    self._conn.execute(
+                        """
+                        UPDATE stock_adjustment_events
+                        SET source_fingerprint = ?
+                        WHERE code = ?
+                          AND source_fingerprint IS DISTINCT FROM ?
+                        RETURNING code
+                        """,
+                        [desired[3], code, desired[3]],
+                    ).fetchall()
                 )
             for code, desired in desired_ledgers.items():
                 if existing_ledgers[code] == desired:
@@ -1450,7 +1454,7 @@ class DuckDbParquetTimeSeriesStore:
             self._dirty_partition_dates.setdefault("stock_data", set()).update(
                 affected_dates
             )
-        if event_result.mutated_rows:
+        if event_result.mutated_rows or rebound_event_count:
             self._dirty_tables.add("stock_adjustment_events")
         if raw_result.mutated_rows:
             return raw_result

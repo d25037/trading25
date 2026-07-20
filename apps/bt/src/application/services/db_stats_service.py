@@ -474,11 +474,34 @@ def _build_provider_vintage_stats(
         snapshot.get("wrongBasisAdjustedStatementRows", 0) or 0
     )
     has_raw_source = source_stock_count > 0 or source_statement_count > 0
-    try:
-        provider_plan = validate_provider_plan(provider_plan)
-        provider_plan_valid = True
-    except ValueError:
-        provider_plan_valid = False
+    is_empty_source = not any(
+        (
+            has_raw_source,
+            provider_window_count,
+            adjustment_event_count,
+            current_basis_state_count,
+            current_basis_statement_count,
+            invalid_current_basis_state_count,
+            pending_current_basis_code_count,
+            source_statement_key_count,
+            expected_adjusted_statement_rows,
+            missing_adjusted_statement_rows,
+            extra_adjusted_statement_rows,
+            stale_adjusted_statement_rows,
+            wrong_basis_adjusted_statement_rows,
+            orphan_adjusted_statement_rows,
+            invalid_provider_window_count,
+            invalid_adjustment_event_count,
+            provider_adjusted_mismatch_count,
+        )
+    )
+    provider_plan_valid = is_empty_source
+    if not is_empty_source:
+        try:
+            provider_plan = validate_provider_plan(provider_plan)
+            provider_plan_valid = True
+        except ValueError:
+            provider_plan_valid = False
     provider_metadata_valid = bool(
         provider_window_coherent
         and provider_as_of_min
@@ -489,7 +512,9 @@ def _build_provider_vintage_stats(
         and coverage_start <= coverage_end
         and provider_as_of_min >= coverage_end
     )
-    if (
+    if is_empty_source:
+        status = "empty_source"
+    elif (
         invalid_current_basis_state_count > 0
         or wrong_basis_adjusted_statement_rows > 0
         or invalid_provider_window_count > 0
@@ -509,8 +534,6 @@ def _build_provider_vintage_stats(
         or orphan_adjusted_statement_rows > 0
     ):
         status = "stale"
-    elif provider_window_count <= 0 and not has_raw_source:
-        status = "empty_source"
     elif provider_window_count <= 0 or (source_statement_count > 0 and current_basis_statement_count <= 0):
         status = "missing"
     else:

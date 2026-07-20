@@ -3,6 +3,7 @@ from __future__ import annotations
 import builtins
 import os
 import hashlib
+from datetime import date, timedelta
 from pathlib import Path
 from threading import Barrier, Lock, RLock, Thread
 from time import sleep
@@ -12,6 +13,7 @@ import duckdb
 import pytest
 
 from src.infrastructure.db.market.time_series_store import DuckDbParquetTimeSeriesStore
+from src.infrastructure.db.market.valuation_queries import get_provider_vintage_snapshot
 from src.shared.provider_stock_window import (
     provider_stock_source_fingerprint,
 )
@@ -1766,6 +1768,73 @@ def test_append_rebinds_historical_adjustment_event_to_window_fingerprint(
     assert store._conn.execute(  # noqa: SLF001
         "SELECT source_fingerprint FROM stock_adjustment_events WHERE code = '7203'"
     ).fetchone() == (window_fingerprint,)
+    store.close()
+
+
+def test_append_rebound_event_fingerprint_is_exported_to_parquet(tmp_path: Path) -> None:
+    parquet_dir = tmp_path / "market-timeseries" / "parquet"
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(parquet_dir),
+    )
+    _publish_stock_data(
+        store,
+        [_provider_stock_row("2026-02-10", factor=0.5)],
+    )
+    store.index_stock_data()
+    _publish_stock_data(store, [_provider_stock_row("2026-02-11")])
+    store.index_stock_data()
+
+    duckdb_fingerprint = store._conn.execute(  # noqa: SLF001
+        "SELECT source_fingerprint FROM stock_adjustment_events WHERE code = '7203'"
+    ).fetchone()[0]
+    parquet_fingerprint = store._conn.execute(  # noqa: SLF001
+        "SELECT source_fingerprint FROM read_parquet(?) WHERE code = '7203'",
+        [str(parquet_dir / "stock_adjustment_events.parquet")],
+    ).fetchone()[0]
+
+    assert parquet_fingerprint == duckdb_fingerprint
+    store.close()
+
+
+def test_provider_vintage_sql_fingerprint_matches_python_with_symbol_bounded_evidence(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    first_day = date(2024, 1, 1)
+    rows: list[dict[str, Any]] = []
+    for code in ("7203", "72030"):
+        for offset in range(200):
+            row = _provider_stock_row(
+                (first_day + timedelta(days=offset)).isoformat(),
+                code=code,
+            )
+            row["open"] = 0.1 + offset
+            row["adjusted_open"] = 0.1 + offset
+            row["turnover_value"] = None if offset % 7 == 0 else 200.25 + offset
+            rows.append(row)
+    _publish_stock_data(store, list(reversed(rows)))
+    materialized_rows: list[int] = []
+
+    def fetchall_dicts(
+        sql: str,
+        params: list[Any] | tuple[Any, ...] | None,
+    ) -> list[dict[str, Any]]:
+        result = store._conn.execute(sql) if params is None else store._conn.execute(sql, params)  # noqa: SLF001
+        columns = [str(desc[0]) for desc in result.description]
+        values = [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+        materialized_rows.append(len(values))
+        return values
+
+    snapshot = get_provider_vintage_snapshot(lambda _table: True, fetchall_dicts)
+
+    assert snapshot["providerWindowFingerprintCount"] == 2
+    assert snapshot["invalidProviderWindowCount"] == 0
+    assert len(materialized_rows) <= 3
+    assert sum(materialized_rows) <= 4
     store.close()
 
 

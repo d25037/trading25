@@ -18,7 +18,8 @@
 ## Guardrails
 - verification 系 route / service は live J-Quants client を import しない。許可対象は proxy / sync / bootstrap のみ。
 - chart fundamentals / margin / signal overlay は local market DB だけを読む。
-- provider-adjusted OHLCVはJ-Quants publication値を永続化し、raw rows・per-code window・event ledgerのcanonical fingerprintをexact照合する。local reprojectionやcurrent/latest fallbackは行わない。
+- provider-adjusted OHLCVはJ-Quants publication値を永続化し、raw rows・per-code window・event ledgerのcanonical fingerprintをDuckDB側のset-based aggregateでexact照合する。Pythonへはper-symbol evidenceだけを返し、local reprojectionやcurrent/latest fallbackは行わない。
+- provider planはraw/window/event/current-basis sourceが存在する場合に必須とし、完全なfresh empty DBは`empty_source` informationalとして扱う。appendでwindow fingerprintが変わる場合はhistorical event ownershipも同一transactionで更新し、event Parquet exportをdirtyにする。
 - normal market syncが`statement_metrics_adjusted` / `daily_valuation`のcurrent provider-basis materializationを担う。standalone materialize routeは持たず、read requestもmaterializationやservice-local adjustmentを行わない。
 - fundamentals / ranking / screening が valuation、PSR、forecast sales、または adjusted per-share fields を必要とする場合は `statement_metrics_adjusted` / `daily_valuation` を優先し、raw `statements` から silent recompute しない。
 - Fundamentals GET/POSTは同一PIT bundleを読み、`to`をknowledge cutoff、`from`をdisplay lower boundとして厳格なISO date validationを行う。current/latest fallbackと`stocks_latest` fallbackは禁止し、missing/inconsistent basisまたはexact master snapshotの欠損は409、未上場は404、開示なしは200 empty dataで返す。
