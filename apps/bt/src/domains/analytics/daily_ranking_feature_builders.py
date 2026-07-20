@@ -210,6 +210,20 @@ _LONG_SCAFFOLD_SCHEMA: RelationSchema = (
     ("value_composite_equal_score", "DOUBLE"),
 )
 _LONG_LEADERSHIP_SCHEMA: RelationSchema = _LONG_SCAFFOLD_SCHEMA[:12]
+
+
+def _long_leadership_schema(windows: tuple[int, ...]) -> RelationSchema:
+    return _LONG_LEADERSHIP_SCHEMA + tuple(
+        (column, "DOUBLE")
+        for window in windows
+        for column in (
+            f"sector_index_{window}d_rank",
+            f"sector_constituent_{window}d_rank",
+            f"sector_breadth_{window}d_rank",
+        )
+    )
+
+
 _ROLLING_TREND_SCHEMA: RelationSchema = (
     ("price_lr_slope_20_pct", "DOUBLE"),
     ("price_lr_slope_60_pct", "DOUBLE"),
@@ -1098,6 +1112,7 @@ def build_long_leadership_features(
     source = request.source
     sector = request.sector_features
     windows = request.leadership_windows
+    feature_schema = _long_leadership_schema(windows)
     validate_daily_ranking_signal_relation(
         conn,
         source,
@@ -1193,6 +1208,10 @@ def build_long_leadership_features(
     )
     momentum_key_select = ", ".join(f"source.{column}" for column in source.key_columns)
     featured_key_select = ", ".join(f"source.{column}" for column in source.key_columns)
+    window_rank_select = ",\n                   ".join(
+        f"state.{column}"
+        for column, _ in feature_schema[len(_LONG_LEADERSHIP_SCHEMA) :]
+    )
     ctes = f"""
         sector_index_map(sector_33_code, sector_index_code) AS (
             VALUES {_SECTOR_INDEX_MAP_VALUES}
@@ -1289,6 +1308,7 @@ def build_long_leadership_features(
                    state.long_index_leadership_score,
                    state.long_constituent_breadth_leadership_score,
                    state.long_hybrid_leadership_score,
+                   {window_rank_select},
                    CASE
                        WHEN state.sector_33_code IS NULL THEN NULL
                        WHEN dependency.sector_strength_bucket = 'sector_strong'
@@ -1325,14 +1345,14 @@ def build_long_leadership_features(
     """
     feature_select = ",\n                ".join(
         f"CAST(featured.{column} AS {sql_type}) AS {column}"
-        for column, sql_type in _LONG_LEADERSHIP_SCHEMA
+        for column, sql_type in feature_schema
     )
     return _materialize(
         conn,
         source=source,
         namespace=request.namespace,
         family="long_leadership",
-        feature_schema=_LONG_LEADERSHIP_SCHEMA,
+        feature_schema=feature_schema,
         source_sql="featured",
         ctes_sql=ctes,
         select_sql=feature_select,

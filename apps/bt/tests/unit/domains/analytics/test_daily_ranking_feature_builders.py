@@ -568,6 +568,7 @@ def _public_long_leadership(
     sector: RelationRef,
     *,
     namespace: str,
+    leadership_windows: tuple[int, ...] = (20, 60),
 ) -> RelationRef:
     request_type = getattr(
         feature_builders,
@@ -587,8 +588,22 @@ def _public_long_leadership(
             source=source,
             sector_features=sector,
             namespace=namespace,
-            leadership_windows=(20, 60),
+            leadership_windows=leadership_windows,
         ),
+    )
+
+
+def _long_leadership_rank_schema(
+    windows: tuple[int, ...],
+) -> tuple[tuple[str, str], ...]:
+    return tuple(
+        (column, "DOUBLE")
+        for window in windows
+        for column in (
+            f"sector_index_{window}d_rank",
+            f"sector_constituent_{window}d_rank",
+            f"sector_breadth_{window}d_rank",
+        )
     )
 
 
@@ -653,6 +668,9 @@ def test_all_public_builders_publish_generation_safe_explicit_signal_relations(
         ("long", long),
         ("long_leadership", leadership),
     ):
+        expected_schema = _EXPECTED_FEATURE_SCHEMAS[family]
+        if family == "long_leadership":
+            expected_schema += _long_leadership_rank_schema((20, 60))
         assert (
             tuple(
                 zip(
@@ -661,8 +679,81 @@ def test_all_public_builders_publish_generation_safe_explicit_signal_relations(
                     strict=True,
                 )
             )
-            == _EXPECTED_FEATURE_SCHEMAS[family]
+            == expected_schema
         )
+
+
+def test_long_leadership_publishes_requested_window_ranks_in_request_order(
+    feature_connection: Any,
+) -> None:
+    conn = feature_connection
+    source = _relation_ref(conn)
+    sector = build_sector_strength_features(
+        conn,
+        SectorStrengthFeaturesRequest(
+            source=source,
+            population_source=source,
+            namespace="sector_window_ranks",
+        ),
+    )
+    windows = (60, 20)
+    result = _public_long_leadership(
+        conn,
+        source,
+        sector,
+        namespace="leadership_window_ranks",
+        leadership_windows=windows,
+    )
+
+    _assert_feature_contract(conn, result, source)
+    assert tuple(
+        zip(
+            result.columns[len(source.key_columns) :],
+            result.column_types[len(source.key_columns) :],
+            strict=True,
+        )
+    ) == _EXPECTED_FEATURE_SCHEMAS["long_leadership"] + (
+        _long_leadership_rank_schema(windows)
+    )
+    assert conn.execute(
+        f"SELECT leadership.sector_index_20d_rank, sector.sector_20d_strength_rank, "
+        f"leadership.sector_constituent_20d_rank, "
+        f"sector.sector_constituent_20d_strength_rank, "
+        f"leadership.sector_breadth_20d_rank, sector.sector_breadth_strength_rank, "
+        f"leadership.sector_index_60d_rank, sector.sector_60d_strength_rank, "
+        f"leadership.sector_constituent_60d_rank, "
+        f"sector.sector_constituent_60d_strength_rank "
+        f"FROM {result.name} leadership JOIN {sector.name} sector "
+        "USING (code, date, market_scope) "
+        "WHERE leadership.date = DATE '2024-03-05' ORDER BY leadership.code"
+    ).fetchall() == [
+        (1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0),
+        (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+    ]
+    assert conn.execute(
+        f"SELECT {', '.join(column for column, _ in _long_leadership_rank_schema(windows))} "
+        f"FROM {result.name} WHERE date = DATE '2024-01-01' ORDER BY code"
+    ).fetchall() == [(None,) * 6] * 3
+
+
+def test_long_leadership_request_preserves_all_supported_windows_deterministically(
+    feature_connection: Any,
+) -> None:
+    source = _relation_ref(feature_connection)
+    request_type = getattr(feature_builders, "LongLeadershipFeaturesRequest")
+
+    request = request_type(
+        source=source,
+        sector_features=source,
+        namespace="leadership_supported_windows",
+        leadership_windows=(504, 20, 150, 60, 252, 120, 20),
+    )
+
+    assert request.leadership_windows == (504, 20, 150, 60, 252, 120)
+    assert feature_builders._long_leadership_schema(  # noqa: SLF001
+        request.leadership_windows
+    )[-18:] == _long_leadership_rank_schema(request.leadership_windows)
 
 
 def test_rolling_trend_builder_uses_warmup_and_preserves_all_source_keys(
@@ -1783,7 +1874,10 @@ def test_long_leadership_and_scaffold_match_literal_golden_rows_for_every_source
         f"SELECT {', '.join(leadership.columns[len(source.key_columns) :])} "
         f"FROM {leadership.name} WHERE code = '1111' "
         "AND date = DATE '2024-01-01'"
-    ).fetchone() == (None,) * len(_EXPECTED_FEATURE_SCHEMAS["long_leadership"])
+    ).fetchone() == (None,) * (
+        len(_EXPECTED_FEATURE_SCHEMAS["long_leadership"])
+        + len(_long_leadership_rank_schema((20, 60)))
+    )
     result = build_long_scaffold_features(
         conn,
         LongScaffoldFeaturesRequest(
