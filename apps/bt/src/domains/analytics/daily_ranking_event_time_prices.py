@@ -67,7 +67,7 @@ _RESEARCH_PRICE_REQUIRED_COLUMNS = {
         "source_date_to_exclusive",
         "cumulative_factor",
     },
-    "topix_data": {"date", "close"},
+    "topix_data": {"date", "open", "close"},
     "indices_data": {"code", "date", "close"},
 }
 DAILY_RANKING_SIGNAL_FEATURE_COLUMNS = (
@@ -313,18 +313,27 @@ def _require_market_v4_price_columns(conn: Any) -> None:
 def daily_ranking_forward_outcome_columns(
     horizons: Sequence[int],
 ) -> tuple[str, ...]:
+    normalized_horizons = tuple(sorted({int(value) for value in horizons}))
     return (
         "code",
         "date",
         *(
             column
-            for horizon in tuple(sorted({int(value) for value in horizons}))
+            for horizon in normalized_horizons
             for column in (
                 f"forward_outcome_completion_date_{horizon}d",
                 f"forward_close_return_{horizon}d_pct",
                 f"forward_close_excess_return_{horizon}d_pct",
                 f"forward_close_n225_excess_return_{horizon}d_pct",
                 f"completion_basis_id_{horizon}d",
+            )
+        ),
+        *(
+            column
+            for horizon in normalized_horizons
+            for column in (
+                f"forward_next_open_return_{horizon}d_pct",
+                f"forward_next_open_excess_return_{horizon}d_pct",
             )
         ),
     )
@@ -1025,7 +1034,9 @@ def _materialize_daily_ranking_raw_sessions(
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE {names.raw_sessions} AS
-        SELECT code, date, {lead_exprs}
+        SELECT code, date,
+               lead(date, 1) OVER (PARTITION BY code ORDER BY date) AS next_session_date,
+               {lead_exprs}
         FROM {names.normalized_raw}
         WHERE {valid_bar}
         """
@@ -1101,7 +1112,7 @@ def _build_price_relation_result(
         diagnostics.signal_request_rows * len(request.horizons)
     ):
         raise RuntimeError("price projection outcome request cardinality mismatch")
-    if diagnostics.endpoint_rows != 2 * diagnostics.completed_request_rows:
+    if diagnostics.endpoint_rows != 3 * diagnostics.completed_request_rows:
         raise RuntimeError("price projection endpoint cardinality mismatch")
     if diagnostics.forward_outcome_rows > diagnostics.signal_request_rows:
         raise RuntimeError("price projection forward outcome cardinality mismatch")
@@ -1345,6 +1356,7 @@ def _materialize_daily_ranking_forward_outcomes(
     outcome_unions = " UNION ALL ".join(
         f"""
         SELECT signal.code, signal.date AS signal_date, {horizon} AS horizon,
+               sessions.next_session_date,
                sessions.completion_date_{horizon}d AS completion_date
         FROM {names.eligible_signal_requests} signal
         JOIN {names.raw_sessions} sessions
@@ -1381,7 +1393,7 @@ def _materialize_daily_ranking_forward_outcomes(
         CREATE OR REPLACE TEMP TABLE {names.completion_bases} AS
         SELECT
             request.code, request.signal_date, request.horizon,
-            request.completion_date,
+            request.next_session_date, request.completion_date,
             CAST(basis.basis_id AS VARCHAR) AS completion_basis_id
         FROM {names.outcome_requests} request
         JOIN stock_adjustment_bases basis
@@ -1411,11 +1423,18 @@ def _materialize_daily_ranking_forward_outcomes(
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE {names.endpoint_requests} AS
-        SELECT code, signal_date, horizon, completion_date, completion_basis_id,
+        SELECT code, signal_date, horizon, next_session_date, completion_date,
+               completion_basis_id,
                'signal' AS endpoint, signal_date AS endpoint_date
         FROM {names.completion_bases}
         UNION ALL
-        SELECT code, signal_date, horizon, completion_date, completion_basis_id,
+        SELECT code, signal_date, horizon, next_session_date, completion_date,
+               completion_basis_id,
+               'entry' AS endpoint, next_session_date AS endpoint_date
+        FROM {names.completion_bases}
+        UNION ALL
+        SELECT code, signal_date, horizon, next_session_date, completion_date,
+               completion_basis_id,
                'completion' AS endpoint, completion_date AS endpoint_date
         FROM {names.completion_bases}
         """
@@ -1426,7 +1445,7 @@ def _materialize_daily_ranking_forward_outcomes(
         basis_column="completion_basis_id",
         date_column="endpoint_date",
         label="completion",
-        endpoint_suffix=" for both endpoints",
+        endpoint_suffix=" for all endpoints",
     )
 
     duplicate_topix_dates = int(
@@ -1467,9 +1486,10 @@ def _materialize_daily_ranking_forward_outcomes(
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE {names.topix_benchmark} AS
-        SELECT CAST(date AS DATE) AS date, CAST(close AS DOUBLE) AS close
+        SELECT CAST(date AS DATE) AS date,
+               CAST(open AS DOUBLE) AS open,
+               CAST(close AS DOUBLE) AS close
         FROM topix_data
-        WHERE close > 0
         """
     )
     conn.execute(
@@ -1487,7 +1507,10 @@ def _materialize_daily_ranking_forward_outcomes(
         WITH endpoints AS (
             SELECT
                 request.*,
-                raw.close * segment.cumulative_factor AS projected_close
+                CASE request.endpoint
+                    WHEN 'entry' THEN raw.open * segment.cumulative_factor
+                    ELSE raw.close * segment.cumulative_factor
+                END AS projected_price
             FROM {names.endpoint_requests} request
             JOIN {names.normalized_raw} raw
               ON raw.code = request.code AND raw.date = request.endpoint_date
@@ -1500,11 +1523,14 @@ def _materialize_daily_ranking_forward_outcomes(
         ),
         pivoted AS (
             SELECT
-                code, signal_date, horizon, completion_date, completion_basis_id,
-                max(projected_close) FILTER (endpoint = 'signal') AS signal_close,
-                max(projected_close) FILTER (endpoint = 'completion') AS completion_close
+                code, signal_date, horizon, next_session_date, completion_date,
+                completion_basis_id,
+                max(projected_price) FILTER (endpoint = 'signal') AS signal_close,
+                max(projected_price) FILTER (endpoint = 'entry') AS next_open,
+                max(projected_price) FILTER (endpoint = 'completion') AS completion_close
             FROM endpoints
-            GROUP BY code, signal_date, horizon, completion_date, completion_basis_id
+            GROUP BY code, signal_date, horizon, next_session_date, completion_date,
+                     completion_basis_id
         )
         SELECT
             p.*,
@@ -1520,12 +1546,22 @@ def _materialize_daily_ranking_forward_outcomes(
                        AND n225_signal.close > 0 AND n225_completion.close > 0
                 THEN (p.completion_close / p.signal_close - 1.0) * 100.0
                    - (n225_completion.close / n225_signal.close - 1.0) * 100.0
-            END AS forward_close_n225_excess_return_pct
+            END AS forward_close_n225_excess_return_pct,
+            CASE WHEN p.next_open > 0 AND p.completion_close > 0
+                THEN (p.completion_close / p.next_open - 1.0) * 100.0
+            END AS forward_next_open_return_pct,
+            CASE WHEN p.next_open > 0 AND p.completion_close > 0
+                       AND topix_entry.open > 0 AND topix_completion.close > 0
+                THEN (p.completion_close / p.next_open - 1.0) * 100.0
+                   - (topix_completion.close / topix_entry.open - 1.0) * 100.0
+            END AS forward_next_open_excess_return_pct
         FROM pivoted p
         LEFT JOIN {names.topix_benchmark} topix_signal
           ON topix_signal.date = p.signal_date
         LEFT JOIN {names.topix_benchmark} topix_completion
           ON topix_completion.date = p.completion_date
+        LEFT JOIN {names.topix_benchmark} topix_entry
+          ON topix_entry.date = p.next_session_date
         LEFT JOIN {names.n225_benchmark} n225_signal
           ON n225_signal.date = p.signal_date
         LEFT JOIN {names.n225_benchmark} n225_completion
@@ -1543,10 +1579,19 @@ def _materialize_daily_ranking_forward_outcomes(
             f"max(completion_basis_id) FILTER (horizon = {horizon}) AS completion_basis_id_{horizon}d",
         )
     )
+    next_open_outcome_columns = ",\n".join(
+        expression
+        for horizon in request.horizons
+        for expression in (
+            f"max(forward_next_open_return_pct) FILTER (horizon = {horizon}) AS forward_next_open_return_{horizon}d_pct",
+            f"max(forward_next_open_excess_return_pct) FILTER (horizon = {horizon}) AS forward_next_open_excess_return_{horizon}d_pct",
+        )
+    )
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE {names.forward_outcomes} AS
-        SELECT code, signal_date AS date, {outcome_columns}
+        SELECT code, signal_date AS date, {outcome_columns},
+               {next_open_outcome_columns}
         FROM {names.projected_outcomes_long}
         GROUP BY code, signal_date
         """

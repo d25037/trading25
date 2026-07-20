@@ -385,7 +385,9 @@ def test_forward_outcomes_align_all_endpoints_to_stock_completion_date(
                    completion_basis_id_1d,
                    forward_close_return_1d_pct,
                    forward_close_excess_return_1d_pct,
-                   forward_close_n225_excess_return_1d_pct
+                   forward_close_n225_excess_return_1d_pct,
+                   forward_next_open_return_1d_pct,
+                   forward_next_open_excess_return_1d_pct
             FROM {relations.forward_outcomes}
             """
         ).fetchone()
@@ -401,7 +403,7 @@ def test_forward_outcomes_align_all_endpoints_to_stock_completion_date(
     assert history_bounds[3:] == pytest.approx((100.0, 100.0))
     assert str(outcome[0]) == "2024-01-08"
     assert outcome[1] == "event-pit-v1:1111:2024-01-08"
-    assert outcome[2:] == pytest.approx((20.0, 0.0, 10.0))
+    assert outcome[2:] == pytest.approx((20.0, 0.0, 10.0, 0.0, 0.0))
     assert relations.signal_features.startswith("sparse_projection_g_")
     assert relations.signal_features.endswith("_signal_price_features")
     assert relations.forward_outcomes.startswith("sparse_projection_g_")
@@ -431,7 +433,7 @@ def test_forward_projection_exposes_cardinality_diagnostics(tmp_path: Path) -> N
     assert diagnostics.outcome_request_rows == diagnostics.signal_request_rows * len(
         request.horizons
     )
-    assert diagnostics.endpoint_rows == 2 * diagnostics.completed_request_rows
+    assert diagnostics.endpoint_rows == 3 * diagnostics.completed_request_rows
     assert diagnostics.forward_outcome_rows <= diagnostics.signal_request_rows
     assert diagnostics.signal_feature_schema[0:3] == ("code", "date", "price_basis_id")
     assert diagnostics.forward_outcome_schema[0:2] == ("code", "date")
@@ -681,6 +683,115 @@ def test_forward_projection_allows_missing_n225_rows_with_null_outcome(
     assert relations.diagnostics.topix_benchmark_rows == 3
 
 
+def test_next_open_outcome_uses_stock_entry_date_and_nulls_missing_topix_endpoint(
+    tmp_path: Path,
+) -> None:
+    conn = _build_sparse_forward_outcome_fixture(tmp_path / "market.duckdb")
+    try:
+        conn.execute("DELETE FROM topix_data WHERE date = '2024-01-08'")
+        relations = build_daily_ranking_event_time_prices(
+            conn,
+            _generic_price_request("missing_topix_next_open"),
+        )
+        outcome = conn.execute(
+            f"SELECT forward_next_open_return_1d_pct, "
+            f"forward_next_open_excess_return_1d_pct "
+            f"FROM {relations.forward_outcomes}"
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert outcome == (pytest.approx(0.0), None)
+
+
+@pytest.mark.parametrize(
+    ("pre_completion_factor", "expected_stock", "expected_excess"),
+    ((0.5, 200.0, 175.0), (2.0, -25.0, -50.0)),
+)
+def test_next_open_outcome_projects_split_or_reverse_split_with_completion_basis(
+    tmp_path: Path,
+    pre_completion_factor: float,
+    expected_stock: float,
+    expected_excess: float,
+) -> None:
+    conn = _build_sparse_forward_outcome_fixture(tmp_path / "market.duckdb")
+    completion_date = "2024-01-10"
+    completion_basis = "event-pit-v1:1111:2024-01-10"
+    try:
+        conn.execute(
+            "UPDATE stock_adjustment_bases SET valid_to_exclusive = ? "
+            "WHERE basis_id = 'event-pit-v1:1111:2024-01-08'",
+            [completion_date],
+        )
+        conn.execute(
+            "INSERT INTO stock_data_raw VALUES ('1111', ?, 90, 91, 89, 90, 3000, 1.0)",
+            [completion_date],
+        )
+        conn.execute(
+            "INSERT INTO stock_data VALUES ('1111', ?, 999, 999, 999, 999, 9)",
+            [completion_date],
+        )
+        conn.execute(
+            "INSERT INTO stock_master_daily VALUES (?, '1111', 'Alpha', '0111')",
+            [completion_date],
+        )
+        conn.execute(
+            "INSERT INTO daily_valuation VALUES ('1111', ?, ?)",
+            [completion_date, completion_basis],
+        )
+        conn.execute(
+            "INSERT INTO stock_adjustment_bases VALUES "
+            "('1111', ?, ?, NULL, ?, 'completion-2', ?, 'ready')",
+            [completion_basis, completion_date, completion_date, completion_date],
+        )
+        conn.executemany(
+            "INSERT INTO stock_adjustment_basis_segments VALUES (?, ?, ?, ?, ?)",
+            [
+                ("1111", completion_basis, "2024-01-04", "2024-01-08", 0.5),
+                (
+                    "1111",
+                    completion_basis,
+                    "2024-01-08",
+                    completion_date,
+                    pre_completion_factor,
+                ),
+                ("1111", completion_basis, completion_date, None, 1.0),
+            ],
+        )
+        conn.execute(
+            "INSERT INTO topix_data VALUES (?, 145, 151, 144, 150)",
+            [completion_date],
+        )
+        conn.execute(
+            "INSERT INTO indices_data VALUES "
+            "('N225_UNDERPX', ?, 1200, 1200, 1200, 1200, 0)",
+            [completion_date],
+        )
+
+        relations = build_daily_ranking_event_time_prices(
+            conn,
+            DailyRankingPriceRequest(
+                namespace=f"next_open_factor_{str(pre_completion_factor).replace('.', '_')}",
+                query_start="2024-01-04",
+                query_end=completion_date,
+                analysis_start_date="2024-01-04",
+                analysis_end_date="2024-01-04",
+                horizons=(2,),
+            ),
+        )
+        outcome = conn.execute(
+            f"SELECT forward_outcome_completion_date_2d, "
+            f"forward_next_open_return_2d_pct, "
+            f"forward_next_open_excess_return_2d_pct "
+            f"FROM {relations.forward_outcomes}"
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert str(outcome[0]) == completion_date
+    assert outcome[1:] == pytest.approx((expected_stock, expected_excess))
+
+
 @pytest.mark.parametrize("conflicting", [False, True])
 def test_forward_projection_validates_normalized_raw_aliases(
     tmp_path: Path,
@@ -745,4 +856,4 @@ def test_forward_projection_keeps_incomplete_horizons_null(tmp_path: Path) -> No
     assert outcome[2:] == (None, None)
     assert relations.diagnostics.outcome_request_rows == 2
     assert relations.diagnostics.completed_request_rows == 1
-    assert relations.diagnostics.endpoint_rows == 2
+    assert relations.diagnostics.endpoint_rows == 3
