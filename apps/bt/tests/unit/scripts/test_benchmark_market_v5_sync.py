@@ -44,7 +44,9 @@ def _fixture(*, one_day_rows: int = 4, affected_codes: int = 4) -> dict[str, obj
     }
 
 
-def test_fixture_benchmark_emits_measured_resource_and_work_json(tmp_path: Path) -> None:
+def test_fixture_benchmark_emits_measured_resource_and_work_json(
+    tmp_path: Path,
+) -> None:
     report = run_benchmark_fixture(
         _fixture(),
         evidence_source="fixture",
@@ -71,19 +73,58 @@ def test_fixture_benchmark_emits_measured_resource_and_work_json(tmp_path: Path)
         assert metrics["requests"] <= metrics["pages"]
         assert metrics["processId"] > 0
         assert metrics["observations"]["fixtureDeclaredCounters"] is False
+        assert metrics["seedBaseline"] == {
+            "excludedFromMeasurements": True,
+            "pendingCurrentBasisCodeCount": 0,
+            "readyProviderWindowCount": 12,
+            "currentBasisStateCount": 12,
+        }
+        assert metrics["seedProcessId"] != metrics["processId"]
+        assert metrics["pendingCurrentBasisCodeCountAfterMeasurement"] == 0
 
     assert len({metrics["processId"] for metrics in scenarios.values()}) == len(
         scenarios
     )
-    assert scenarios["provider_one_day"]["coordinator"] == (
-        "StockDataIngestionSession"
+    assert scenarios["provider_one_day"]["coordinator"] == ("StockDataIngestionSession")
+    assert (
+        scenarios["provider_split_drift"]["materializerSpy"]["implementation"]
+        == "AdjustedMetricsMaterializer.rebuild_current_basis"
     )
-    assert scenarios["provider_split_drift"]["materializerSpy"][
-        "implementation"
-    ] == "AdjustedMetricsMaterializer.rebuild_current_basis"
-    assert scenarios["provider_one_day"]["inputFingerprint"] == scenarios[
-        "legacy_all_code_local_projection"
-    ]["inputFingerprint"]
+    assert (
+        scenarios["provider_one_day"]["inputFingerprint"]
+        == scenarios["legacy_all_code_local_projection"]["inputFingerprint"]
+    )
+
+
+def test_materializer_observations_reject_hidden_pending_union(tmp_path: Path) -> None:
+    report = run_benchmark_fixture(_fixture(), workspace=tmp_path)
+    scenarios = report["scenarios"]
+
+    for name, expected_codes in (
+        ("provider_fundamentals_only", 1),
+        ("provider_split_drift", 1),
+        ("legacy_all_code_local_projection", 12),
+    ):
+        metrics = scenarios[name]
+        assert metrics["currentBasisRecomputedCodes"] == expected_codes
+        assert metrics["currentBasisCompletedCodes"] == expected_codes
+        call = metrics["materializerSpy"]["calls"][-1]
+        assert call["result"] == {
+            "totalCodes": expected_codes,
+            "completedCodes": expected_codes,
+            "failedCodes": 0,
+        }
+        assert len(call["processedCodes"]) == expected_codes
+        assert set(call["processedCodes"]) == set(call["requestedCodes"])
+
+    assert scenarios["provider_split_drift"]["allCodeMaterializerInvocations"] == 0
+    assert (
+        scenarios["provider_fundamentals_only"]["allCodeMaterializerInvocations"] == 0
+    )
+    assert (
+        scenarios["legacy_all_code_local_projection"]["allCodeMaterializerInvocations"]
+        == 1
+    )
 
 
 def test_provider_incremental_work_scales_with_delta_not_all_codes(
@@ -119,6 +160,8 @@ def test_provider_incremental_work_scales_with_delta_not_all_codes(
         "splitDriftRefreshLimitedToAffectedCodes": True,
         "currentAndLegacyUseIdenticalInput": True,
         "scenariosUseIsolatedProcesses": True,
+        "seedDrainExcludedInSeparateProcesses": True,
+        "boundedMaterializerUsesActualProcessedCodes": True,
     }
 
 

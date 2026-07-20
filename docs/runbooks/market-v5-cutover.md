@@ -207,16 +207,19 @@ availability requires another successful v5 full rebuild.
 
 The repository benchmark is fixture-backed and invokes the production stock
 ingestion coordinator, DuckDB/Parquet store, and adjusted-metrics materializer.
-Each scenario runs in a separate child process. Provider requests are served
-by an instrumented fixture client; the fixture contains input rows only and
-does not declare request/page/mutation counters:
+Each scenario first seeds and drains the production materializer in an
+unmeasured child process, verifies a healthy zero-pending baseline, and then
+runs in a fresh measured child process. Provider requests are served by an
+instrumented fixture client; the fixture contains input rows only and does not
+declare request/page/mutation counters:
 
 ```bash
+: "${TRADING25_DATA_ROOT:?Set TRADING25_DATA_ROOT to the trading25 data root}"
 BENCH_WORKSPACE=$(mktemp -d /tmp/market-v5-sync.XXXXXX)
 uv run python scripts/benchmark_market_v5_sync.py \
   --fixture benchmarks/fixtures/market-v5-sync.json \
   --workspace "$BENCH_WORKSPACE/work" \
-  --representative-market-root /Users/mirage/.local/share/trading25/market-timeseries \
+  --representative-market-root "$TRADING25_DATA_ROOT/market-timeseries" \
   --output "$BENCH_WORKSPACE/result.json"
 python -m json.tool "$BENCH_WORKSPACE/result.json"
 ```

@@ -1,9 +1,10 @@
 """Fixture-backed benchmark of the production Market v5 sync coordinator.
 
-Each scenario executes in a fresh child process. Provider requests/pages, store
-mutations, affected codes, published rows, and adjusted materializer calls are
-recorded at the production boundaries that actually performed them. The
-fixture supplies rows and universe shape only; it never supplies counters.
+Each scenario is seeded and materialized to a healthy baseline in one child
+process, then measured in a fresh child process. Provider requests/pages,
+store mutations, affected codes, published rows, and adjusted materializer
+calls are recorded at the production boundaries that actually performed them.
+The fixture supplies rows and universe shape only; it never supplies counters.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ import resource
 import subprocess
 import sys
 import time
-from typing import Any
+from typing import Any, TypedDict
 
 from src.application.services.adjusted_metrics_materializer import (
     AdjustedMetricsMaterializer,
@@ -35,6 +36,7 @@ from src.infrastructure.db.market.market_writer_resources import (
     MarketWriterResourceFactory,
     MarketWriterSession,
 )
+from src.infrastructure.db.market.query_helpers import normalize_stock_code
 
 
 _SCENARIO_NAMES = (
@@ -192,7 +194,9 @@ class _ObservedFixtureClient:
         elif path == "/fins/summary":
             rows = []
         else:
-            raise AssertionError(f"unexpected fixture request: {path} {normalized_params}")
+            raise AssertionError(
+                f"unexpected fixture request: {path} {normalized_params}"
+            )
         pages = max(1, math.ceil(len(rows) / _PAGE_SIZE))
         if pages > max_pages:
             raise AssertionError("fixture response exceeded coordinator max_pages")
@@ -203,29 +207,76 @@ class _ObservedFixtureClient:
         return [dict(row) for row in rows], pages
 
 
+class _MaterializerResultObservation(TypedDict):
+    totalCodes: int
+    completedCodes: int
+    failedCodes: int
+
+
+class _MaterializerCallObservation(TypedDict):
+    requestedCodes: list[str]
+    processedCodes: list[str]
+    result: _MaterializerResultObservation
+
+
 @dataclass
 class _MaterializerSpy:
     materializer: AdjustedMetricsMaterializer
     universe: frozenset[str]
-    calls: list[tuple[str, ...]] = field(default_factory=list)
-    completed_codes: int = 0
+    calls: list[_MaterializerCallObservation] = field(default_factory=list)
 
     async def rebuild(self, codes: frozenset[str]) -> None:
-        observed = tuple(sorted(codes))
-        self.calls.append(observed)
+        requested = tuple(
+            sorted(
+                normalized
+                for code in codes
+                if (normalized := normalize_stock_code(code))
+            )
+        )
+        processed: list[str] = []
+        previous_completed = 0
+
+        def observe_progress(
+            completed: int, _total: int, code: str | None, _rows: int
+        ) -> None:
+            nonlocal previous_completed
+            if code is not None and completed > previous_completed:
+                processed.append(normalize_stock_code(code))
+            previous_completed = completed
+
         result = await asyncio.to_thread(
             self.materializer.rebuild_current_basis,
             codes,
+            on_progress=observe_progress,
         )
-        self.completed_codes += result.completed_codes
+        self.calls.append(
+            {
+                "requestedCodes": list(requested),
+                "processedCodes": processed,
+                "result": {
+                    "totalCodes": result.total_codes,
+                    "completedCodes": result.completed_codes,
+                    "failedCodes": result.total_codes - result.completed_codes,
+                },
+            }
+        )
 
     @property
     def all_code_invocations(self) -> int:
-        return sum(frozenset(call) == self.universe for call in self.calls)
+        return sum(
+            frozenset(call["processedCodes"]) == self.universe
+            and call["result"]["completedCodes"] == len(self.universe)
+            and call["result"]["failedCodes"] == 0
+            for call in self.calls
+        )
 
     @property
-    def invoked_codes(self) -> int:
-        return sum(len(call) for call in self.calls)
+    def completed_codes(self) -> int:
+        return sum(int(call["result"]["completedCodes"]) for call in self.calls)
+
+    @property
+    def processed_codes(self) -> int:
+        return sum(len(call["processedCodes"]) for call in self.calls)
 
 
 def _open_scenario(root: Path) -> MarketWriterSession:
@@ -233,9 +284,17 @@ def _open_scenario(root: Path) -> MarketWriterSession:
     return MarketWriterResourceFactory(
         data_root=data_root,
         market_root=data_root / "market-timeseries",
-    # Historical factory method name is retained, but HEAD initializes the
-    # current Market schema (v5/provider_adjusted_v1).
+        # Historical factory method name is retained, but HEAD initializes the
+        # current Market schema (v5/provider_adjusted_v1).
     ).reset_and_open_v4()
+
+
+def _open_seeded_scenario(root: Path) -> MarketWriterSession:
+    data_root = root / "data"
+    return MarketWriterResourceFactory(
+        data_root=data_root,
+        market_root=data_root / "market-timeseries",
+    ).open_existing()
 
 
 def _close_scenario(session: MarketWriterSession) -> None:
@@ -298,6 +357,75 @@ async def _run_price_coordinator(
     )
 
 
+def _seed_scenario_child(
+    name: str,
+    fixture: dict[str, object],
+    workspace: Path,
+) -> dict[str, Any]:
+    universe, _incoming, rows_per_code = _shared_input(fixture, name)
+    scenario_root = workspace / name
+    scenario_root.mkdir(parents=True, exist_ok=False)
+    session = _open_scenario(scenario_root)
+    store = session.handles.time_series_store
+    market_db = session.handles.market_db
+    history_raw = _raw_stock_rows(len(universe) * rows_per_code, universe)
+    history = _normalized_rows(history_raw)
+    try:
+        if history:
+            store.publish_topix_data(
+                [
+                    {
+                        "date": row["date"],
+                        "open": 1,
+                        "high": 1,
+                        "low": 1,
+                        "close": 1,
+                    }
+                    for row in history[:: max(1, len(universe))]
+                ]
+            )
+            store.publish_stock_data(history, provider_plan="standard")
+        store.index_stock_data()
+        seed_result = AdjustedMetricsMaterializer(market_db).rebuild_current_basis(
+            frozenset()
+        )
+        snapshot = market_db.get_adjusted_metrics_snapshot()
+        pending_codes = market_db.list_current_basis_recompute_pending_codes()
+        expected_codes = len(universe)
+        baseline = {
+            "excludedFromMeasurements": True,
+            "pendingCurrentBasisCodeCount": int(
+                snapshot["pendingCurrentBasisCodeCount"]
+            ),
+            "readyProviderWindowCount": int(snapshot["readyProviderWindowCount"]),
+            "currentBasisStateCount": int(snapshot["currentBasisStateCount"]),
+        }
+        expected_baseline = {
+            "excludedFromMeasurements": True,
+            "pendingCurrentBasisCodeCount": 0,
+            "readyProviderWindowCount": expected_codes,
+            "currentBasisStateCount": expected_codes,
+        }
+        if (
+            seed_result.total_codes != expected_codes
+            or seed_result.completed_codes != expected_codes
+            or pending_codes
+            or baseline != expected_baseline
+            or int(snapshot["invalidCurrentBasisStateCount"]) != 0
+        ):
+            raise RuntimeError(
+                "benchmark seed did not reach a healthy current-basis baseline: "
+                f"result={seed_result!r}, pending={pending_codes!r}, "
+                f"snapshot={snapshot!r}"
+            )
+        _close_scenario(session)
+    except BaseException:
+        if not session._handles_closed:
+            _close_scenario(session)
+        raise
+    return {"seedProcessId": os.getpid(), "seedBaseline": baseline}
+
+
 def _run_scenario_child(
     name: str,
     fixture: dict[str, object],
@@ -309,20 +437,10 @@ def _run_scenario_child(
     assert isinstance(payload, dict)
     universe, incoming, rows_per_code = _shared_input(fixture, name)
     scenario_root = workspace / name
-    scenario_root.mkdir(parents=True, exist_ok=False)
-    session = _open_scenario(scenario_root)
+    session = _open_seeded_scenario(scenario_root)
     store = session.handles.time_series_store
     market_db = session.handles.market_db
     history_raw = _raw_stock_rows(len(universe) * rows_per_code, universe)
-    history = _normalized_rows(history_raw)
-    if history:
-        store.publish_topix_data(
-            [
-                {"date": row["date"], "open": 1, "high": 1, "low": 1, "close": 1}
-                for row in history[:: max(1, len(universe))]
-            ]
-        )
-        store.publish_stock_data(history, provider_plan="standard")
     if name == "provider_noop":
         incoming = history_raw[:1]
     provider_windows = {
@@ -347,7 +465,9 @@ def _run_scenario_child(
     started_cpu = time.process_time()
     try:
         if name == "provider_fundamentals_only":
-            target_codes = universe[: _required_non_negative_int(payload, "affectedCodes")]
+            target_codes = universe[
+                : _required_non_negative_int(payload, "affectedCodes")
+            ]
             asyncio.run(
                 client.get_paginated_with_meta(
                     "/fins/summary", params={"code": f"{target_codes[0]}0"}
@@ -375,8 +495,21 @@ def _run_scenario_child(
             if name == "legacy_all_code_local_projection":
                 asyncio.run(spy.rebuild(frozenset(universe)))
                 coordinator += "+LegacyAllCodeAdapter"
+            else:
+                pending_codes = frozenset(
+                    market_db.list_current_basis_recompute_pending_codes()
+                )
+                if pending_codes:
+                    asyncio.run(spy.rebuild(pending_codes))
         store.index_stock_data()
         store.index_statements()
+        snapshot_after = market_db.get_adjusted_metrics_snapshot()
+        pending_after = int(snapshot_after["pendingCurrentBasisCodeCount"])
+        if pending_after != 0:
+            raise RuntimeError(
+                "benchmark measurement left current-basis recompute pending: "
+                f"{pending_after}"
+            )
         _close_scenario(session)
     except BaseException:
         if not session._handles_closed:
@@ -388,7 +521,7 @@ def _run_scenario_child(
         {"universe": universe, "incoming": incoming}
     )
     row_mutations = published_rows + replaced_rows
-    work_units = len(client.calls) + row_mutations + spy.invoked_codes
+    work_units = len(client.calls) + row_mutations + spy.completed_codes
     return {
         "engine": payload.get("engine"),
         "coordinator": coordinator,
@@ -397,21 +530,28 @@ def _run_scenario_child(
         "wallSeconds": round(wall_seconds, 9),
         "cpuSeconds": round(cpu_seconds, 9),
         "peakRssBytes": _peak_rss_bytes(),
-        "requests": len({(call["path"], json.dumps(call["params"], sort_keys=True)) for call in client.calls}),
+        "requests": len(
+            {
+                (call["path"], json.dumps(call["params"], sort_keys=True))
+                for call in client.calls
+            }
+        ),
         "pages": len(client.calls),
         "affectedCodes": len(affected),
         "publishedCodes": len({str(row["Code"]) for row in incoming}),
         "newRows": published_rows,
         "rowMutations": row_mutations,
         "providerWindowRowsReplaced": replaced_rows,
-        "currentBasisRecomputedCodes": spy.invoked_codes,
+        "currentBasisRecomputedCodes": spy.processed_codes,
         "currentBasisCompletedCodes": spy.completed_codes,
+        "currentBasisProcessedCodes": spy.processed_codes,
+        "pendingCurrentBasisCodeCountAfterMeasurement": pending_after,
         "workUnits": work_units,
         "storageGrowthBytes": max(0, _tree_size(scenario_root) - before_storage),
         "allCodeMaterializerInvocations": spy.all_code_invocations,
         "materializerSpy": {
             "implementation": "AdjustedMetricsMaterializer.rebuild_current_basis",
-            "calls": [list(call) for call in spy.calls],
+            "calls": spy.calls,
         },
         "observations": {
             "fixtureDeclaredCounters": False,
@@ -428,7 +568,10 @@ def _run_isolated_child(
     name: str,
     fixture_path: Path,
     workspace: Path,
+    *,
+    seed: bool,
 ) -> dict[str, Any]:
+    mode = "seed" if seed else "measurement"
     completed = subprocess.run(
         [
             sys.executable,
@@ -437,7 +580,7 @@ def _run_isolated_child(
             str(fixture_path),
             "--workspace",
             str(workspace),
-            "--child-scenario",
+            "--seed-scenario" if seed else "--child-scenario",
             name,
         ],
         check=False,
@@ -446,7 +589,7 @@ def _run_isolated_child(
     )
     if completed.returncode != 0:
         raise RuntimeError(
-            f"benchmark child {name} failed ({completed.returncode}): "
+            f"benchmark {mode} child {name} failed ({completed.returncode}): "
             f"{completed.stderr.strip()}"
         )
     result = json.loads(completed.stdout)
@@ -471,13 +614,24 @@ def run_benchmark_fixture(
     workspace.mkdir(parents=True, exist_ok=True)
     fixture_path = workspace / "child-fixture.json"
     fixture_path.write_text(json.dumps(fixture, sort_keys=True), encoding="utf-8")
-    measured = {
-        name: _run_isolated_child(name, fixture_path, workspace)
-        for name in _SCENARIO_NAMES
-    }
+    measured: dict[str, dict[str, Any]] = {}
+    for name in _SCENARIO_NAMES:
+        seed = _run_isolated_child(name, fixture_path, workspace, seed=True)
+        metrics = _run_isolated_child(name, fixture_path, workspace, seed=False)
+        metrics.update(seed)
+        measured[name] = metrics
     normal = measured["provider_one_day"]
+    fundamentals = measured["provider_fundamentals_only"]
     drift = measured["provider_split_drift"]
     legacy = measured["legacy_all_code_local_projection"]
+    fundamentals_payload = scenarios["provider_fundamentals_only"]
+    drift_payload = scenarios["provider_split_drift"]
+    assert isinstance(fundamentals_payload, dict)
+    assert isinstance(drift_payload, dict)
+    expected_fundamentals = _required_non_negative_int(
+        fundamentals_payload, "affectedCodes"
+    )
+    expected_drift = _required_non_negative_int(drift_payload, "affectedCodes")
     assertions = {
         "legacyBaselineInvokesAllCodeMaterializer": legacy[
             "allCodeMaterializerInvocations"
@@ -490,7 +644,13 @@ def run_benchmark_fixture(
         "normalIncrementalWorkBelowLegacyBaseline": normal["workUnits"]
         < legacy["workUnits"],
         "splitDriftRefreshLimitedToAffectedCodes": drift["affectedCodes"]
-        < len(_codes(_required_non_negative_int(scenarios["legacy_all_code_local_projection"], "allCodes")))
+        < len(
+            _codes(
+                _required_non_negative_int(
+                    scenarios["legacy_all_code_local_projection"], "allCodes"
+                )
+            )
+        )
         and drift["allCodeMaterializerInvocations"] == 0,
         "currentAndLegacyUseIdenticalInput": normal["inputFingerprint"]
         == legacy["inputFingerprint"],
@@ -498,6 +658,21 @@ def run_benchmark_fixture(
             {metrics["processId"] for metrics in measured.values()}
         )
         == len(measured),
+        "seedDrainExcludedInSeparateProcesses": all(
+            metrics["seedProcessId"] != metrics["processId"]
+            and metrics["seedBaseline"]["pendingCurrentBasisCodeCount"] == 0
+            for metrics in measured.values()
+        ),
+        "boundedMaterializerUsesActualProcessedCodes": (
+            fundamentals["currentBasisCompletedCodes"] == expected_fundamentals
+            and fundamentals["currentBasisProcessedCodes"] == expected_fundamentals
+            and drift["currentBasisCompletedCodes"] == expected_drift
+            and drift["currentBasisProcessedCodes"] == expected_drift
+            and all(
+                metrics["pendingCurrentBasisCodeCountAfterMeasurement"] == 0
+                for metrics in measured.values()
+            )
+        ),
     }
     return {
         "schemaVersion": 2,
@@ -509,9 +684,11 @@ def run_benchmark_fixture(
         "providerPlan": fixture.get("providerPlan"),
         "measurementNotes": {
             "resources": "per-scenario child-process wall/cpu/peak RSS",
+            "seed": "production materializer drain in a separate process before resource measurement",
             "requests": "observed fixture-backed J-Quants client calls/pages",
             "storage": "isolated Market v5 DuckDB + Parquet byte growth",
             "scaling": "observed production coordinator/store/materializer calls",
+            "materializerResults": "actual total/completed/failed result and successful normalized processed-code callbacks",
             "legacyBaseline": "explicit all-code legacy adapter over identical input",
         },
         "scenarios": measured,
@@ -538,12 +715,17 @@ def main() -> int:
     parser.add_argument("--representative-evidence-reason")
     parser.add_argument("--representative-market-root", type=Path)
     parser.add_argument("--child-scenario", choices=_SCENARIO_NAMES)
+    parser.add_argument("--seed-scenario", choices=_SCENARIO_NAMES)
     args = parser.parse_args()
     fixture = json.loads(args.fixture.read_text(encoding="utf-8"))
     if not isinstance(fixture, dict):
         raise ValueError("benchmark fixture must be an object")
     if args.child_scenario:
         result = _run_scenario_child(args.child_scenario, fixture, args.workspace)
+        print(json.dumps(result, sort_keys=True))
+        return 0
+    if args.seed_scenario:
+        result = _seed_scenario_child(args.seed_scenario, fixture, args.workspace)
         print(json.dumps(result, sort_keys=True))
         return 0
     representative_inspection: dict[str, object] | None = None
