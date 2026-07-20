@@ -427,6 +427,10 @@ def test_snapshot_accepts_suspended_prime_peer_without_exact_price(
             "current_adjusted_metrics_required",
         ),
         (
+            "INSERT INTO current_basis_recompute_pending VALUES ('72030', 'provider_refresh', 'pending-fp', '2024-07-01')",
+            "current_adjusted_metrics_required",
+        ),
+        (
             "DELETE FROM statement_metrics_adjusted WHERE statement_id = 'toyota-revision-2024'",
             "current_adjusted_metrics_required",
         ),

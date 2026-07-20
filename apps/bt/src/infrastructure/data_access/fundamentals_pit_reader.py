@@ -116,8 +116,9 @@ def _resolve_provider_windows(
     pending = _records(
         reader.query(
             f"""
-            SELECT code, reason FROM current_basis_recompute_pending
-            WHERE code IN ({placeholders})
+            SELECT DISTINCT {_NORMALIZED_CODE_SQL} AS code
+            FROM current_basis_recompute_pending
+            WHERE {_NORMALIZED_CODE_SQL} IN ({placeholders})
             ORDER BY code
             """,
             tuple(normalized_codes),
