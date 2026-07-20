@@ -32,6 +32,7 @@ from src.application.services.screening_statement_loader import (
 )
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.data_access.loaders.statements_loaders import transform_statements_df
+from tests.unit.server.db.market_writer_test_support import open_market_db
 
 
 class DummyReader:
@@ -1216,6 +1217,42 @@ def test_query_statements_rows_queries_alternate_code_forms() -> None:
 
     _sql, params = reader.calls[0]
     assert params == ("7203", "72030")
+
+
+def test_query_statements_rows_prefers_four_digit_alias_identity(tmp_path: Any) -> None:
+    db_path = tmp_path / "screening-raw-alias.duckdb"
+    market_db = open_market_db(str(db_path))
+    market_db._execute(
+        """
+        INSERT INTO statements (
+            code, statement_id, disclosed_date, disclosed_at,
+            period_start, period_end, type_of_current_period,
+            type_of_document, earnings_per_share
+        ) VALUES
+            ('7203', 'same-doc', '2026-01-10', '2026-01-10T15:00:00+09:00',
+             '2025-04-01', '2026-03-31', 'FY', 'FinancialStatements', 10),
+            ('72030', 'same-doc', '2026-01-10', '2026-01-10T15:00:00+09:00',
+             '2025-04-01', '2026-03-31', 'FY', 'FinancialStatements', 999)
+        """
+    )
+    market_db.close()
+
+    reader = MarketDbReader(str(db_path))
+    try:
+        rows = query_statements_rows(
+            reader,
+            ["72030"],
+            start_date=None,
+            end_date="2026-01-31",
+            period_type="FY",
+            actual_only=True,
+        )
+    finally:
+        reader.close()
+
+    assert len(rows) == 1
+    assert rows[0]["code"] == "7203"
+    assert rows[0]["earnings_per_share"] == pytest.approx(10.0)
 
 
 def test_query_statements_rows_without_optional_filters() -> None:

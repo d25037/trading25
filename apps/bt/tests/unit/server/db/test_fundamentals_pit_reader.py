@@ -216,7 +216,7 @@ def v5_market(tmp_path: Path) -> Path:
                     100_000_000.0,
                     10_000_000.0,
                     10_000_000.0,
-                    "metric-toyota-fy",
+                    "current-toyota",
                 ),
                 (
                     "7203",
@@ -234,7 +234,7 @@ def v5_market(tmp_path: Path) -> Path:
                     100_000_000.0,
                     10_000_000.0,
                     10_000_000.0,
-                    "metric-toyota-revision",
+                    "current-toyota",
                 ),
                 (
                     "7203",
@@ -252,7 +252,7 @@ def v5_market(tmp_path: Path) -> Path:
                     100_000_000.0,
                     10_000_000.0,
                     10_000_000.0,
-                    "metric-toyota-future",
+                    "current-toyota",
                 ),
                 (
                     "6758",
@@ -270,8 +270,20 @@ def v5_market(tmp_path: Path) -> Path:
                     80_000_000.0,
                     5_000_000.0,
                     5_000_000.0,
-                    "metric-sony-fy",
+                    "current-sony",
                 ),
+            ],
+        )
+        conn.executemany(
+            """
+            INSERT INTO current_basis_fundamentals_state (
+                code, fundamentals_adjustment_basis_date, source_fingerprint,
+                statement_count, materialized_at
+            ) VALUES (?, '2024-07-01', ?, ?, '2024-07-01T17:00:00+09:00')
+            """,
+            [
+                ("7203", "current-toyota", 3),
+                ("6758", "current-sony", 1),
             ],
         )
     finally:
@@ -423,6 +435,30 @@ def test_snapshot_accepts_suspended_prime_peer_without_exact_price(
             "current_adjusted_metrics_required",
         ),
         (
+            "DELETE FROM current_basis_fundamentals_state WHERE code = '7203'",
+            "current_adjusted_metrics_required",
+        ),
+        (
+            "UPDATE current_basis_fundamentals_state SET fundamentals_adjustment_basis_date = '2024-06-30' WHERE code = '7203'",
+            "current_adjusted_metrics_required",
+        ),
+        (
+            "UPDATE current_basis_fundamentals_state SET source_fingerprint = 'stale' WHERE code = '7203'",
+            "current_adjusted_metrics_required",
+        ),
+        (
+            "UPDATE current_basis_fundamentals_state SET statement_count = 2 WHERE code = '7203'",
+            "current_adjusted_metrics_required",
+        ),
+        (
+            "UPDATE current_basis_fundamentals_state SET materialized_at = '' WHERE code = '7203'",
+            "current_adjusted_metrics_required",
+        ),
+        (
+            "DELETE FROM statement_metrics_adjusted WHERE statement_id = 'toyota-future'",
+            "current_adjusted_metrics_required",
+        ),
+        (
             "DELETE FROM stock_master_daily WHERE date = '2024-06-28'",
             "stock_master_snapshot_required",
         ),
@@ -449,6 +485,23 @@ def test_snapshot_fails_closed_with_v5_recovery_reason(
         "stock_master_snapshot_required",
         "stock_not_listed_as_of",
     }
+
+
+def test_snapshot_requires_state_when_raw_and_metric_relations_are_both_empty(
+    monkeypatch: pytest.MonkeyPatch,
+    v5_market: Path,
+) -> None:
+    _update(v5_market, "DELETE FROM statements WHERE code IN ('7203', '72030')")
+    _update(v5_market, "DELETE FROM statement_metrics_adjusted WHERE code = '7203'")
+    _update(v5_market, "DELETE FROM current_basis_fundamentals_state WHERE code = '7203'")
+
+    with pytest.raises(FundamentalsPitSnapshotError) as exc_info:
+        _reader_client(monkeypatch, v5_market).get_fundamentals_pit_snapshot(
+            "7203", date(2024, 6, 30)
+        )
+
+    assert exc_info.value.reason == "current_adjusted_metrics_required"
+    assert "adjusted_metrics_pit" in str(exc_info.value)
 
 
 def test_snapshot_fails_closed_when_prime_peer_provider_window_is_missing(

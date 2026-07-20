@@ -238,6 +238,7 @@ def build_statements_rows_sql(
         missing_optional_columns,
     )
     sql = f"""
+        WITH ranked_statements AS (
         SELECT
             code,
             statement_id,
@@ -269,7 +270,15 @@ def build_statements_rows_sql(
             cash_and_equivalents,
             total_assets,
             shares_outstanding,
-            treasury_shares
+            treasury_shares,
+            ROW_NUMBER() OVER (
+                PARTITION BY
+                    CASE WHEN length(code) = 5 AND right(code, 1) = '0'
+                         THEN left(code, 4) ELSE code END,
+                    statement_id
+                ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END,
+                         length(code), code
+            ) AS alias_rank
         FROM statements
         WHERE code IN ({placeholders})
     """
@@ -293,7 +302,13 @@ def build_statements_rows_sql(
             )
         """
 
-    sql += " ORDER BY code, disclosed_at, statement_id"
+    sql += """
+        )
+        SELECT * EXCLUDE (alias_rank)
+        FROM ranked_statements
+        WHERE alias_rank = 1
+        ORDER BY code, disclosed_at, statement_id
+    """
     return sql
 
 

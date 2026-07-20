@@ -534,16 +534,34 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     """,
     """
     CREATE OR REPLACE VIEW daily_valuation AS
-    WITH metric_source AS (
-        SELECT metrics.*, statements.type_of_document
+    WITH statement_source AS (
+        SELECT * EXCLUDE (alias_rank) FROM (
+            SELECT statements.*,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY
+                           CASE
+                               WHEN length(statements.code) = 5
+                                AND right(statements.code, 1) = '0'
+                               THEN left(statements.code, 4)
+                               ELSE statements.code
+                           END,
+                           statements.statement_id
+                       ORDER BY CASE WHEN length(statements.code) = 4 THEN 0 ELSE 1 END,
+                                length(statements.code), statements.code
+                   ) AS alias_rank
+            FROM statements
+        ) WHERE alias_rank = 1
+    ), metric_source AS (
+        SELECT metrics.*, statement_source.type_of_document
         FROM statement_metrics_adjusted AS metrics
-        LEFT JOIN statements
+        LEFT JOIN statement_source
           ON CASE
-                 WHEN length(statements.code) = 5 AND right(statements.code, 1) = '0'
-                 THEN left(statements.code, 4)
-                 ELSE statements.code
+                 WHEN length(statement_source.code) = 5
+                  AND right(statement_source.code, 1) = '0'
+                 THEN left(statement_source.code, 4)
+                 ELSE statement_source.code
              END = metrics.code
-         AND statements.statement_id = metrics.statement_id
+         AND statement_source.statement_id = metrics.statement_id
     ), eps_metrics AS (
         SELECT * EXCLUDE (rn) FROM (
             SELECT *, ROW_NUMBER() OVER (

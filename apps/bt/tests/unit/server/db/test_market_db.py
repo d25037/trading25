@@ -317,7 +317,9 @@ class TestMarketDbBasics:
                 ('67580', 'actual', '2026-02-09', '2026-02-09T09:00:00+09:00',
                  '2025-04-01', '2026-03-31', 'FY', 'FinancialStatements'),
                 ('67580', 'revision', '2026-02-10', '2026-02-10T15:00:00+09:00',
-                 '2025-04-01', '2026-03-31', 'FY', 'EarnForecastRevision')
+                 '2025-04-01', '2026-03-31', 'FY', 'EarnForecastRevision'),
+                ('6758', 'revision', '2026-02-10', '2026-02-10T15:00:00+09:00',
+                 '2025-04-01', '2026-03-31', 'FY', 'FinancialStatements')
             """
         )
         market_db._execute(
@@ -353,7 +355,7 @@ class TestMarketDbBasics:
             (10.0, 100.0, 20.0, 10.5, 5.25, 1.05, 105000.0, 94500.0),
             rel=1e-9,
         )
-        assert row[8:] == ("actual", "2026-02-10", "revised")
+        assert row[8:] == ("actual", "2026-02-10", "fy")
 
     def test_reopen_refreshes_the_schema_v5_daily_valuation_view(
         self, tmp_path: Path

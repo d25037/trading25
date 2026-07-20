@@ -198,12 +198,18 @@ def _resolve_master(
 
 
 def _load_statement_rows(
-    reader: MarketDbReader, codes: Sequence[str], knowledge_cutoff_date: date
+    reader: MarketDbReader,
+    codes: Sequence[str],
+    knowledge_cutoff_date: date | None,
 ) -> list[dict[str, Any]]:
     normalized_codes = sorted({normalize_stock_code(code) for code in codes if code})
     if not normalized_codes:
         return []
     placeholders = ",".join("?" for _ in normalized_codes)
+    cutoff_clause = " AND disclosed_at <= ?" if knowledge_cutoff_date else ""
+    params: tuple[object, ...] = tuple(normalized_codes)
+    if knowledge_cutoff_date is not None:
+        params = (*params, _cutoff_timestamp(knowledge_cutoff_date))
     return _records(
         reader.query(
             f"""
@@ -216,24 +222,30 @@ def _load_statement_rows(
                        ) AS rn
                 FROM statements
                 WHERE {_NORMALIZED_CODE_SQL} IN ({placeholders})
-                  AND disclosed_at <= ?
+                  {cutoff_clause}
             )
             SELECT * EXCLUDE (rn, code), normalized_code AS code
             FROM ranked WHERE rn = 1
             ORDER BY normalized_code, disclosed_at, statement_id
             """,
-            (*normalized_codes, _cutoff_timestamp(knowledge_cutoff_date)),
+            params,
         )
     )
 
 
 def _load_metric_rows(
-    reader: MarketDbReader, codes: Sequence[str], knowledge_cutoff_date: date
+    reader: MarketDbReader,
+    codes: Sequence[str],
+    knowledge_cutoff_date: date | None,
 ) -> list[dict[str, Any]]:
     normalized_codes = sorted({normalize_stock_code(code) for code in codes if code})
     if not normalized_codes:
         return []
     placeholders = ",".join("?" for _ in normalized_codes)
+    cutoff_clause = " AND disclosed_at <= ?" if knowledge_cutoff_date else ""
+    params: tuple[object, ...] = tuple(normalized_codes)
+    if knowledge_cutoff_date is not None:
+        params = (*params, _cutoff_timestamp(knowledge_cutoff_date))
     return _records(
         reader.query(
             f"""
@@ -246,15 +258,88 @@ def _load_metric_rows(
                        ) AS rn
                 FROM statement_metrics_adjusted
                 WHERE {_NORMALIZED_CODE_SQL} IN ({placeholders})
-                  AND disclosed_at <= ?
+                  {cutoff_clause}
             )
             SELECT * EXCLUDE (rn, code), normalized_code AS code
             FROM ranked WHERE rn = 1
             ORDER BY normalized_code, disclosed_at, statement_id
             """,
-            (*normalized_codes, _cutoff_timestamp(knowledge_cutoff_date)),
+            params,
         )
     )
+
+
+def _validate_current_fundamentals_state(
+    reader: MarketDbReader,
+    codes: Sequence[str],
+    windows: dict[str, dict[str, Any]],
+) -> None:
+    normalized_codes = sorted({normalize_stock_code(code) for code in codes if code})
+    if not normalized_codes:
+        return
+    placeholders = ",".join("?" for _ in normalized_codes)
+    state_rows = _records(
+        reader.query(
+            f"""
+            SELECT code, fundamentals_adjustment_basis_date, source_fingerprint,
+                   statement_count, materialized_at
+            FROM current_basis_fundamentals_state
+            WHERE code IN ({placeholders})
+            ORDER BY code
+            """,
+            tuple(normalized_codes),
+        )
+    )
+    state_by_code = {
+        normalize_stock_code(str(row["code"])): row for row in state_rows
+    }
+    raw_rows = _load_statement_rows(reader, normalized_codes, None)
+    metric_rows = _load_metric_rows(reader, normalized_codes, None)
+    raw_by_key = {
+        (normalize_stock_code(str(row["code"])), str(row["statement_id"])): row
+        for row in raw_rows
+    }
+    metric_by_key = {
+        (normalize_stock_code(str(row["code"])), str(row["statement_id"])): row
+        for row in metric_rows
+    }
+
+    inconsistent = False
+    for code in normalized_codes:
+        state = state_by_code.get(code)
+        raw_keys = {key for key in raw_by_key if key[0] == code}
+        metric_keys = {key for key in metric_by_key if key[0] == code}
+        if state is None:
+            inconsistent = True
+            continue
+        basis_date = str(windows[code]["coverage_end"])
+        state_fingerprint = str(state["source_fingerprint"] or "")
+        inconsistent = inconsistent or (
+            str(state["fundamentals_adjustment_basis_date"]) != basis_date
+            or not state_fingerprint.strip()
+            or not str(state["materialized_at"] or "").strip()
+            or int(state["statement_count"]) != len(raw_keys)
+            or int(state["statement_count"]) != len(metric_keys)
+            or raw_keys != metric_keys
+        )
+        for key in raw_keys & metric_keys:
+            source = raw_by_key[key]
+            metric = metric_by_key[key]
+            inconsistent = inconsistent or (
+                str(metric["fundamentals_adjustment_basis_date"]) != basis_date
+                or str(metric["source_fingerprint"] or "") != state_fingerprint
+                or str(metric["disclosed_date"]) != str(source["disclosed_date"])
+                or str(metric["disclosed_at"]) != str(source["disclosed_at"])
+                or str(metric["period_end"]) != str(source["period_end"])
+                or str(metric["period_type"] or "").upper()
+                != str(source["type_of_current_period"] or "").upper()
+            )
+    if inconsistent:
+        raise FundamentalsPitSnapshotError(
+            "current_adjusted_metrics_required",
+            "adjusted_metrics_pit recovery required: current-basis fundamentals "
+            "state does not match provider coverage and full statement identities",
+        )
 
 
 def _validate_current_metrics(
@@ -419,6 +504,7 @@ def _load_prime_panel(reader: MarketDbReader, effective_market_date: date) -> pd
     if not codes:
         return pd.DataFrame()
     windows = _resolve_provider_windows(reader, codes, effective_market_date)
+    _validate_current_fundamentals_state(reader, codes, windows)
     statements = _load_statement_rows(reader, codes, effective_market_date)
     metrics = _load_metric_rows(reader, codes, effective_market_date)
     _validate_current_metrics(codes, statements, metrics, windows)
@@ -527,6 +613,7 @@ def _resolve_inside_snapshot(
     code = normalize_stock_code(symbol)
     stock_info, _master = _resolve_master(reader, code, effective_market_date)
     window = _resolve_provider_windows(reader, [code], effective_market_date)[code]
+    _validate_current_fundamentals_state(reader, [code], {code: window})
     statements, statement_rows = _load_statements(reader, code, knowledge_cutoff_date)
     metrics = _load_metric_rows(reader, [code], knowledge_cutoff_date)
     _validate_current_metrics([code], statement_rows, metrics, {code: window})
