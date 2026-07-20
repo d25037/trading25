@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -12,25 +13,16 @@ import pandas as pd
 from src.domains.analytics.daily_ranking_feature_builders import (
     build_atr_features,
 )
-from src.domains.analytics.earnings_holdthrough_expectancy import (
-    _sort_summary_df,
-    _str_or_none,
-    _table_exists,
-)
-from src.domains.analytics.earnings_holdthrough_expectancy_report import (
-    _top_rows_for_markdown,
+from src.domains.analytics.daily_ranking_research_base import (
+    DailyRankingPanelRequest,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
+    normalize_daily_ranking_market_scopes,
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
-    normalize_code_sql,
     open_readonly_analysis_connection,
-)
-from src.domains.analytics.ranking_color_evidence import (
-    _create_observation_panel as _create_ranking_color_observation_panel,
-)
-from src.domains.analytics.recent_return_threshold_forward_response import (
-    _market_master_cte,
-    _sql_string_list,
 )
 from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
 
@@ -116,7 +108,7 @@ def run_atr_expansion_forward_response_research(
     resolved_atr_windows = tuple(sorted({int(window) for window in atr_windows}))
     resolved_return_windows = tuple(sorted({int(window) for window in return_windows}))
     resolved_horizons = tuple(sorted({int(horizon) for horizon in horizons}))
-    resolved_market_scopes = _normalize_market_scopes(market_scopes)
+    resolved_market_scopes = normalize_daily_ranking_market_scopes(market_scopes)
     _validate_params(
         atr_windows=resolved_atr_windows,
         return_windows=resolved_return_windows,
@@ -130,39 +122,42 @@ def run_atr_expansion_forward_response_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = _offset_calendar_date(
-        start_date,
-        days=-(max(max(resolved_atr_windows), max(resolved_return_windows)) * 4 + 30),
-    )
-    query_end = _offset_calendar_date(end_date, days=max(resolved_horizons) * 4 + 30)
-
     with open_readonly_analysis_connection(
         str(db_path_obj),
         snapshot_prefix="atr-expansion-forward-response-",
     ) as ctx:
-        _assert_required_tables(ctx.connection)
         market_source = "stock_master_daily_exact_date"
+        request = DailyRankingPanelRequest(
+            namespace="atr_expansion",
+            analysis_start_date=_parse_optional_date(start_date),
+            analysis_end_date=_parse_optional_date(end_date),
+            horizons=resolved_horizons,
+            market_scopes=resolved_market_scopes,
+            include_liquidity=True,
+            percentile_features=(),
+            required_valid_sessions=max(
+                505,
+                max(resolved_atr_windows) + 20,
+                max(resolved_return_windows) + 1,
+            ),
+        )
+        relations = build_daily_ranking_research_base(ctx.connection, request)
+        signal_cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=relations.ranked_signals,
+            name="atr_expansion_signals",
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            signal_cohort,
+            relations,
+            name="atr_expansion_outcomes",
+        )
         _create_observation_panel(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=resolved_atr_windows,
-            return_windows=resolved_return_windows,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
-        )
-        _create_ranking_color_observation_panel(
-            ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            evaluated_name=evaluated.name,
+            include_all="all" in resolved_market_scopes,
         )
         _create_liquidity_color_atr_work(ctx.connection)
         observation_count = int(
@@ -385,351 +380,32 @@ def _validate_params(
         raise ValueError("observation_sample_limit must be positive")
 
 
-def _normalize_market_scopes(values: Sequence[str]) -> tuple[str, ...]:
-    allowed = set(_MARKET_SCOPE_ORDER)
-    normalized = tuple(
-        dict.fromkeys(
-            str(value).strip().lower() for value in values if str(value).strip()
-        )
-    )
-    if not normalized:
-        raise ValueError("market_scopes must not be empty")
-    invalid = [value for value in normalized if value not in allowed]
-    if invalid:
-        raise ValueError(f"unsupported market_scopes: {', '.join(invalid)}")
-    return normalized
-
-
-def _assert_required_tables(conn: Any) -> None:
-    required = ("stock_data", "topix_data", "daily_valuation")
-    missing = [table for table in required if not _table_exists(conn, table)]
-    if missing:
-        raise RuntimeError(
-            f"market.duckdb missing required tables: {', '.join(missing)}"
-        )
-    if not _table_exists(conn, "stock_master_daily"):
-        raise RuntimeError("market.duckdb requires stock_master_daily for PIT universe scope")
-
-
 def _create_observation_panel(
     conn: Any,
     *,
-    query_start: str | None,
-    query_end: str | None,
-    analysis_start_date: str | None,
-    analysis_end_date: str | None,
-    atr_windows: Sequence[int],
-    return_windows: Sequence[int],
-    horizons: Sequence[int],
-    market_source: str,
-    market_scopes: Sequence[str],
-    price_feature_relation: str | None = None,
-    price_outcome_relation: str | None = None,
+    evaluated_name: str,
+    include_all: bool,
 ) -> None:
-    price_code = normalize_code_sql("sd.code")
-    master_code = (
-        normalize_code_sql("smd.code")
-        if market_source == "stock_master_daily_exact_date"
-        else normalize_code_sql("s.code")
-    )
-    if price_feature_relation is not None:
-        if price_outcome_relation is None:
-            raise ValueError("price_outcome_relation is required with price_feature_relation")
-        market_filter = (
-            "TRUE"
-            if "all" in market_scopes
-            else f"m.market IN ({_sql_string_list(market_scopes)})"
-        )
-        outcome_columns = ",\n                ".join(
-            expression
-            for horizon in horizons
-            for expression in (
-                f"outcome.forward_outcome_completion_date_{int(horizon)}d",
-                f"outcome.forward_close_return_{int(horizon)}d_pct",
-                f"outcome.forward_close_excess_return_{int(horizon)}d_pct",
-            )
-        )
-        conn.execute(
-            f"""
-            CREATE OR REPLACE TEMP TABLE atr_expansion_panel AS
-            WITH {_market_master_cte(market_source=market_source, master_code=master_code)}
-            SELECT
-                feature.*,
-                m.company_name,
-                m.market,
-                m.market_code,
-                m.scale_category,
-                topix.close AS topix_close,
-                {outcome_columns}
-            FROM {price_feature_relation} feature
-            JOIN market_master m ON m.code = feature.code AND m.date = feature.date
-            LEFT JOIN {price_outcome_relation} outcome
-              ON outcome.code = feature.code AND outcome.date = feature.date
-            LEFT JOIN topix_data topix ON topix.date = feature.date
-            WHERE {market_filter}
-            """
-        )
-        _create_scoped_view(conn, include_all="all" in market_scopes)
-        return
-    atr_exprs = ",\n                ".join(
-        f"avg(true_range) over (partition by code order by date "
-        f"rows between {window - 1} preceding and current row) as atr{window}"
-        for window in atr_windows
-    )
-    atr_count_exprs = ",\n                ".join(
-        f"count(true_range) over (partition by code order by date "
-        f"rows between {window - 1} preceding and current row) as atr{window}_sessions"
-        for window in atr_windows
-    )
-    lag_exprs = ",\n                ".join(
-        f"lag(close, {window}) over (partition by code order by date) as close_lag_{window}d"
-        for window in return_windows
-    )
-    forward_exprs = ",\n                ".join(
-        [
-            "lead(open, 1) over (partition by code order by date) as next_open",
-            *[
-                f"lead(close, {horizon}) over (partition by code order by date) "
-                f"as future_close_{horizon}d"
-                for horizon in horizons
-            ],
-        ]
-    )
-    completion_date_exprs = ",\n                ".join(
-        f"lead(date, {horizon}) over (partition by code order by date) "
-        f"as forward_outcome_completion_date_{horizon}d"
-        for horizon in horizons
-    )
-    forward_value_selects = ",\n                ".join(
-        [
-            "pfv.next_open",
-            *[
-                f"pfv.future_close_{horizon}d"
-                for horizon in horizons
-            ],
-            *[
-                f"pfv.forward_outcome_completion_date_{horizon}d"
-                for horizon in horizons
-            ],
-        ]
-    )
-    recent_exprs = ",\n            ".join(
-        f"case when close_lag_{window}d > 0 then (close / close_lag_{window}d - 1.0) * 100.0 end "
-        f"as recent_return_{window}d_pct"
-        for window in return_windows
-    )
-    return_exprs = ",\n            ".join(
-        [
-            *[
-                f"case when close > 0 and future_close_{horizon}d > 0 then "
-                f"(future_close_{horizon}d / close - 1.0) * 100.0 end "
-                f"as forward_close_return_{horizon}d_pct"
-                for horizon in horizons
-            ],
-            *[
-                f"case when next_open > 0 and future_close_{horizon}d > 0 then "
-                f"(future_close_{horizon}d / next_open - 1.0) * 100.0 end "
-                f"as forward_next_open_return_{horizon}d_pct"
-                for horizon in horizons
-            ],
-        ]
-    )
-    topix_forward_exprs = ",\n                ".join(
-        [
-            "lead(open, 1) over (order by date) as topix_next_open",
-            *[
-                f"lead(close, {horizon}) over (order by date) as topix_future_close_{horizon}d"
-                for horizon in horizons
-            ],
-        ]
-    )
-    topix_return_exprs = ",\n            ".join(
-        [
-            *[
-                f"case when topix_close > 0 and topix_future_close_{horizon}d > 0 then "
-                f"(topix_future_close_{horizon}d / topix_close - 1.0) * 100.0 end "
-                f"as topix_close_return_{horizon}d_pct"
-                for horizon in horizons
-            ],
-            *[
-                f"case when topix_next_open > 0 and topix_future_close_{horizon}d > 0 then "
-                f"(topix_future_close_{horizon}d / topix_next_open - 1.0) * 100.0 end "
-                f"as topix_next_open_return_{horizon}d_pct"
-                for horizon in horizons
-            ],
-        ]
-    )
-    excess_exprs = ",\n            ".join(
-        [
-            *[
-                f"forward_close_return_{horizon}d_pct - topix_close_return_{horizon}d_pct "
-                f"as forward_close_excess_return_{horizon}d_pct"
-                for horizon in horizons
-            ],
-            *[
-                f"forward_next_open_return_{horizon}d_pct - topix_next_open_return_{horizon}d_pct "
-                f"as forward_next_open_excess_return_{horizon}d_pct"
-                for horizon in horizons
-            ],
-        ]
-    )
-    raw_conditions: list[str] = []
-    raw_params: list[str] = []
-    if query_start is not None:
-        raw_conditions.append("sd.date >= ?")
-        raw_params.append(query_start)
-    if query_end is not None:
-        raw_conditions.append("sd.date <= ?")
-        raw_params.append(query_end)
-    raw_where = "" if not raw_conditions else "WHERE " + " AND ".join(raw_conditions)
-    final_conditions: list[str] = []
-    final_params: list[str] = []
-    if analysis_start_date is not None:
-        final_conditions.append("date >= ?")
-        final_params.append(analysis_start_date)
-    if analysis_end_date is not None:
-        final_conditions.append("date <= ?")
-        final_params.append(analysis_end_date)
-    final_where = (
-        "" if not final_conditions else "WHERE " + " AND ".join(final_conditions)
-    )
-    market_filter = (
-        "TRUE"
-        if "all" in market_scopes
-        else f"m.market IN ({_sql_string_list(market_scopes)})"
-    )
-    master_cte = _market_master_cte(
-        market_source=market_source,
-        master_code=master_code,
-    )
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE atr_expansion_panel AS
-        WITH raw_prices AS (
-            SELECT
-                {price_code} AS code,
-                sd.date,
-                sd.open,
-                sd.high,
-                sd.low,
-                sd.close,
-                sd.volume,
-                row_number() OVER (
-                    PARTITION BY {price_code}, sd.date
-                    ORDER BY CASE WHEN length(sd.code) = 4 THEN 0 ELSE 1 END, sd.code
-                ) AS row_rank
-            FROM stock_data sd
-            {raw_where}
-        ),
-        prices AS (
-            SELECT code, date, open, high, low, close, volume
-            FROM raw_prices
-            WHERE row_rank = 1
-              AND open > 0
-              AND high > 0
-              AND low > 0
-              AND close > 0
-        ),
-        price_forward_values AS (
-            SELECT
-                code,
-                date,
-                {forward_exprs},
-                {completion_date_exprs}
-            FROM prices
-        ),
-        {master_cte},
-        scoped AS (
-            SELECT
-                p.*,
-                m.company_name,
-                m.market,
-                m.market_code,
-                m.scale_category
-            FROM prices p
-            JOIN market_master m ON m.code = p.code AND m.date = p.date
-            WHERE {market_filter}
-        ),
-        true_range_base AS (
-            SELECT
-                *,
-                lag(close) OVER (PARTITION BY code ORDER BY date) AS prev_close
-            FROM scoped
-        ),
-        true_range AS (
-            SELECT
-                *,
-                greatest(
-                    high - low,
-                    coalesce(abs(high - prev_close), 0.0),
-                    coalesce(abs(low - prev_close), 0.0)
-                ) AS true_range
-            FROM true_range_base
-        ),
-        featured AS (
-            SELECT
-                *,
-                median(close * volume) OVER (
-                    PARTITION BY code ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
-                ) AS med_adv60_jpy,
-                {atr_exprs},
-                {atr_count_exprs},
-                {lag_exprs}
-            FROM true_range
-        ),
-        featured_with_forward AS (
-            SELECT
-                f.*,
-                {forward_value_selects}
-            FROM featured f
-            JOIN price_forward_values pfv USING (code, date)
-        ),
-        featured_with_lag AS (
-            SELECT
-                *,
-                lag(atr20, 20) over (partition by code order by date) as atr20_lag_20d
-            FROM featured_with_forward
-        ),
-        topix_featured AS (
-            SELECT
-                date,
-                close AS topix_close,
-                {topix_forward_exprs}
-            FROM topix_data
-            WHERE close > 0
-        ),
-        computed AS (
-            SELECT
-                f.*,
-                tf.topix_close,
-                case when close > 0 then atr20 / close * 100.0 end as atr20_pct,
-                case when close > 0 then atr60 / close * 100.0 end as atr60_pct,
-                case when atr60 > 0 then atr20 / atr60 end as atr20_to_atr60,
-                case
-                    when atr20_lag_20d > 0 then (atr20 / atr20_lag_20d - 1.0) * 100.0
-                end as atr20_change_20d_pct,
-                {recent_exprs},
-                {return_exprs},
-                {topix_return_exprs}
-            FROM featured_with_lag f
-            LEFT JOIN topix_featured tf USING (date)
-        )
         SELECT
-            *,
-            {excess_exprs}
-        FROM computed
-        {final_where}
-        """,
-        [*raw_params, *final_params],
+            evaluated.*,
+            evaluated.forecast_per AS forward_per,
+            evaluated.forecast_per_percentile AS forward_per_percentile,
+            evaluated.forecast_per_to_per_ratio AS forward_per_to_per_ratio
+        FROM {evaluated_name}
+        AS evaluated
+        """
     )
-    _create_scoped_view(conn, include_all="all" in market_scopes)
+    _create_scoped_view(conn, include_all=include_all)
 
 
 def _create_scoped_view(conn: Any, *, include_all: bool) -> None:
     all_union = (
         """
         UNION ALL
-        SELECT *, 'all' AS market_scope
+        SELECT * REPLACE ('all' AS market_scope)
         FROM base
         """
         if include_all
@@ -745,7 +421,7 @@ def _create_scoped_view(conn: Any, *, include_all: bool) -> None:
                 strftime(CAST(p.date AS DATE), '%Y-%m') AS anchor_month
             FROM atr_expansion_panel p
         )
-        SELECT *, market AS market_scope
+        SELECT *
         FROM base
         {all_union}
         """
@@ -756,6 +432,7 @@ def _create_liquidity_color_atr_work(conn: Any) -> None:
     color_selects: list[str] = []
     for regime_order, (regime, ui_colors) in enumerate(_liquidity_color_sql().items()):
         for color_order, (ui_color, color_sql) in enumerate(ui_colors.items()):
+            local_color_sql = color_sql.replace("r.", "a.")
             color_selects.append(
                 f"""
                 SELECT
@@ -765,12 +442,8 @@ def _create_liquidity_color_atr_work(conn: Any) -> None:
                     '{ui_color}' AS ui_color,
                     {color_order} AS ui_color_order
                 FROM atr_expansion_scoped a
-                JOIN ranking_color_liquidity_ranked r
-                  ON r.code = a.code
-                 AND r.date = a.date
-                 AND r.market_scope = a.market_scope
-                 AND r.liquidity_scope = '{regime}'
-                WHERE {color_sql}
+                WHERE a.liquidity_regime = '{regime}'
+                  AND {local_color_sql}
                 """
             )
     conn.execute(
@@ -1208,6 +881,39 @@ def _offset_calendar_date(date: str | None, *, days: int) -> str | None:
     if date is None:
         return None
     return (pd.Timestamp(date) + pd.Timedelta(days=days)).strftime("%Y-%m-%d")
+
+
+def _parse_optional_date(value: str | None) -> date | None:
+    return None if value is None else date.fromisoformat(value)
+
+
+def _str_or_none(value: Any) -> str | None:
+    return None if value is None or pd.isna(value) else str(value)
+
+
+def _sort_summary_df(frame: pd.DataFrame, *, columns: Sequence[str]) -> pd.DataFrame:
+    if frame.empty:
+        return pd.DataFrame(columns=list(columns))
+    sort_columns = [
+        column
+        for column in ("market_scope", "min_date", "atr_feature", "horizon")
+        if column in frame.columns
+    ]
+    result = frame.reindex(columns=list(columns))
+    return result.sort_values(sort_columns, kind="stable") if sort_columns else result
+
+
+def _top_rows_for_markdown(
+    frame: pd.DataFrame,
+    *,
+    limit: int,
+    sort_columns: Sequence[str] = (),
+) -> str:
+    if frame.empty:
+        return "_No rows._"
+    available = [column for column in sort_columns if column in frame.columns]
+    ordered = frame.sort_values(available, kind="stable") if available else frame
+    return "```text\n" + ordered.head(int(limit)).to_string(index=False) + "\n```"
 
 
 def _concat_sorted(

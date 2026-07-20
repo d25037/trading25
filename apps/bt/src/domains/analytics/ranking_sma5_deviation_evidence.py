@@ -3,61 +3,55 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 import pandas as pd
 
 from src.domains.analytics.daily_ranking_feature_builders import (
+    AtrFeaturesRequest,
+    LongLeadershipFeaturesRequest,
+    LongScaffoldFeaturesRequest,
+    PsrFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    ShortScaffoldFeaturesRequest,
+    SmaFeaturesRequest,
+    build_atr_features,
+    build_long_leadership_features,
+    build_long_scaffold_features,
+    build_psr_features,
+    build_sector_strength_features,
+    build_short_scaffold_features,
     build_sma_features,
 )
-from src.domains.analytics.atr_expansion_forward_response import (
-    _create_observation_panel as _create_atr_observation_panel,
+from src.domains.analytics.daily_ranking_consumer_support import (
+    PRICE_ACTION_BUCKETS,
+    SHORT_OVERLAYS,
+    aggregate_lateral_conditions,
+    aggregate_metric_columns,
+    compose_daily_ranking_signal_features,
+    condition_values_sql,
+    deep_dive_metric_columns,
+    deep_dive_metric_sql,
+    liquidity_band_labels,
+    normalize_liquidity_bands,
+    psr_metric_columns,
+    recomposition_metric_columns,
+    recomposition_metric_sql,
+    sql_string_list,
+    table_exists,
 )
 from src.domains.analytics.daily_ranking_research_base import (
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    SignalExpression,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
     normalize_daily_ranking_market_scopes,
 )
-from src.domains.analytics.earnings_holdthrough_expectancy import _table_exists
-from src.domains.analytics.earnings_holdthrough_expectancy_report import (
-    _top_rows_for_markdown,
-)
-from src.domains.analytics.ranking_forecast_operating_profit_growth_evidence import (
-    _aggregate_lateral_conditions,
-    _aggregate_metric_columns,
-    _condition_values_sql,
-    _deep_dive_metric_columns,
-    _deep_dive_metric_sql,
-)
-from src.domains.analytics.ranking_liquidity_price_action_recomposition import (
-    _PRICE_ACTION_BUCKETS,
-    _SHORT_OVERLAYS,
-    _liquidity_band_labels,
-    _normalize_liquidity_bands,
-    _recomposition_metric_columns,
-    _recomposition_metric_sql,
-    _sql_string_list,
-)
-from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition import (
-    _create_long_sector_leadership_tables,
-    _create_long_signal_tables,
-)
-from src.domains.analytics.ranking_psr_valuation_evidence import (
-    _create_psr_valuation_panel,
-    _psr_metric_columns,
-)
-from src.domains.analytics.ranking_sector_strength_evidence import (
-    _create_sector_strength_tables,
-)
-from src.domains.analytics.ranking_short_red_evidence import (
-    _create_feature_panel as _create_short_red_feature_panel,
-)
-from src.domains.analytics.ranking_sma5_count_long_evidence import _LONG_SCAFFOLDS
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
-    normalize_code_sql,
     open_readonly_analysis_connection,
 )
 from src.domains.analytics.research_bundle import (
@@ -80,13 +74,30 @@ _REQUIRED_ATR_WINDOWS: tuple[int, ...] = (20, 60)
 _REQUIRED_RETURN_WINDOWS: tuple[int, ...] = (20, 60)
 _WARMUP_CALENDAR_DAYS = 820
 _REQUIRED_TABLES: tuple[str, ...] = (
-    "stock_data",
+    "stock_data_raw",
+    "stock_adjustment_bases",
+    "stock_adjustment_basis_segments",
     "topix_data",
     "daily_valuation",
     "stock_master_daily",
     "statements",
     "indices_data",
     "index_master",
+)
+_LONG_SCAFFOLDS: tuple[tuple[str, str], ...] = (
+    ("all_market", "TRUE"),
+    ("deep_value", "valuation_signal = 'strong_value_confirmation'"),
+    (
+        "neutral_long_hybrid_atr20_accel",
+        "liquidity_regime = 'neutral_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND atr20_acceleration_ex_overheat_flag",
+    ),
+    (
+        "crowded_long_hybrid",
+        "liquidity_regime = 'crowded_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999",
+    ),
 )
 _SMA5_DEVIATION_BUCKETS: tuple[tuple[str, str], ...] = (
     ("below_sma5_le_neg2", "sma5_deviation_pct <= -2.0"),
@@ -142,7 +153,7 @@ def run_ranking_sma5_deviation_evidence_research(
 ) -> RankingSma5DeviationEvidenceResult:
     resolved_horizons = tuple(sorted({int(horizon) for horizon in horizons}))
     resolved_market_scopes = normalize_daily_ranking_market_scopes(market_scopes)
-    resolved_liquidity_bands = _normalize_liquidity_bands(liquidity_bands)
+    resolved_liquidity_bands = normalize_liquidity_bands(liquidity_bands)
     _validate_params(
         horizons=resolved_horizons,
         liquidity_bands=resolved_liquidity_bands,
@@ -154,14 +165,6 @@ def run_ranking_sma5_deviation_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = daily_ranking_query_start_date(
-        start_date,
-        warmup_calendar_days=max(_WARMUP_CALENDAR_DAYS, max(_LEADERSHIP_WINDOWS) * 3),
-    )
-    query_end = daily_ranking_query_end_date(
-        end_date,
-        max_horizon=max(resolved_horizons),
-    )
     market_source = "stock_master_daily_exact_date"
 
     with open_readonly_analysis_connection(
@@ -169,44 +172,116 @@ def run_ranking_sma5_deviation_evidence_research(
         snapshot_prefix="ranking-sma5-deviation-evidence-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
-        create_daily_ranking_research_panel(
-            ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
+        request = DailyRankingPanelRequest(
+            namespace="sma5_deviation",
+            analysis_start_date=_parse_optional_date(start_date),
+            analysis_end_date=_parse_optional_date(end_date),
             horizons=resolved_horizons,
             market_scopes=resolved_market_scopes,
-            market_source=market_source,
-            include_liquidity_ranked=True,
-            include_relation_percentiles=False,
+            include_liquidity=True,
+            percentile_features=(),
+            required_valid_sessions=505,
         )
-        _create_atr_observation_panel(
+        relations = build_daily_ranking_research_base(ctx.connection, request)
+        source = relations.ranked_signals
+        atr = build_atr_features(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=_REQUIRED_ATR_WINDOWS,
-            return_windows=_REQUIRED_RETURN_WINDOWS,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            AtrFeaturesRequest(source=source, namespace="sma5_deviation"),
         )
-        _create_psr_valuation_panel(ctx.connection)
-        _create_short_red_feature_panel(ctx.connection)
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
-        _create_long_sector_leadership_tables(
+        short = build_short_scaffold_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            ShortScaffoldFeaturesRequest(
+                source=source,
+                atr_features=atr,
+                namespace="sma5_deviation",
+            ),
         )
-        _create_long_signal_tables(
+        sector = build_sector_strength_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            SectorStrengthFeaturesRequest(
+                source=source,
+                population_source=source,
+                namespace="sma5_deviation",
+            ),
+        )
+        leadership = build_long_leadership_features(
+            ctx.connection,
+            LongLeadershipFeaturesRequest(
+                source=source,
+                sector_features=sector,
+                namespace="sma5_deviation",
+                leadership_windows=_LEADERSHIP_WINDOWS,
+            ),
+        )
+        long_features = build_long_scaffold_features(
+            ctx.connection,
+            LongScaffoldFeaturesRequest(
+                source=source,
+                leadership_features=leadership,
+                short_scaffold_features=short,
+                namespace="sma5_deviation",
+            ),
+        )
+        psr = build_psr_features(
+            ctx.connection,
+            PsrFeaturesRequest(source=source, namespace="sma5_deviation"),
+        )
+        sma = build_sma_features(
+            ctx.connection,
+            SmaFeaturesRequest(
+                source=source,
+                price_history=relations.price_history,
+                namespace="sma5_deviation",
+            ),
+        )
+        featured = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=source,
+            features=(long_features, psr, sma),
+            namespace="sma5_deviation",
+        )
+        liquidity_labels = sql_string_list(
+            liquidity_band_labels(resolved_liquidity_bands)
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=featured,
+            name="sma5_deviation_signals",
+            predicate=SignalExpression(
+                sql=(
+                    "liquidity_residual_z IS NOT NULL "
+                    "AND recent_return_20d_pct IS NOT NULL "
+                    "AND recent_return_60d_pct IS NOT NULL "
+                    "AND sma5_deviation_pct IS NOT NULL "
+                    "AND CASE "
+                    "WHEN liquidity_residual_z >= 1 THEN 'high_liquidity_z_ge_1' "
+                    "WHEN liquidity_residual_z > -1 AND liquidity_residual_z < 1 "
+                    "THEN 'mid_liquidity_z_minus1_to_1' "
+                    "WHEN liquidity_residual_z < -1 THEN 'low_liquidity_z_lt_minus1' "
+                    f"END IN ({liquidity_labels}) "
+                    "AND ((recent_return_20d_pct > 0 AND recent_return_60d_pct > 0) "
+                    "OR (recent_return_20d_pct > 0 AND recent_return_60d_pct < 0) "
+                    "OR (recent_return_20d_pct < 0 AND recent_return_60d_pct > 0) "
+                    "OR (recent_return_20d_pct < 0 AND recent_return_60d_pct < 0))"
+                ),
+                referenced_columns=(
+                    "liquidity_residual_z",
+                    "recent_return_20d_pct",
+                    "recent_return_60d_pct",
+                    "sma5_deviation_pct",
+                ),
+            ),
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="sma5_deviation_outcomes",
         )
         _create_sma5_deviation_panel(
             ctx.connection,
-            liquidity_bands=resolved_liquidity_bands,
+            evaluated_name=evaluated.name,
         )
         observation_count = int(
             ctx.connection.execute(
@@ -354,7 +429,7 @@ def build_summary_markdown(result: RankingSma5DeviationEvidenceResult) -> str:
 
 
 def _assert_required_tables(conn: Any) -> None:
-    missing = [table for table in _REQUIRED_TABLES if not _table_exists(conn, table)]
+    missing = [table for table in _REQUIRED_TABLES if not table_exists(conn, table)]
     if missing:
         raise ValueError(f"market.duckdb is missing required tables: {', '.join(missing)}")
 
@@ -362,136 +437,30 @@ def _assert_required_tables(conn: Any) -> None:
 def _create_sma5_deviation_panel(
     conn: Any,
     *,
-    liquidity_bands: Sequence[str],
+    evaluated_name: str,
 ) -> None:
-    liquidity_band_list = _sql_string_list(_liquidity_band_labels(liquidity_bands))
-    stock_code = normalize_code_sql("sd.code")
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE ranking_sma5_deviation_panel AS
-        WITH normalized_prices AS (
-            SELECT
-                {stock_code} AS code,
-                sd.date,
-                arg_min(
-                    sd.close,
-                    CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code
-                ) AS close
-            FROM stock_data sd
-            WHERE EXISTS (
-                SELECT 1
-                FROM ranking_psr_valuation_panel p
-                WHERE p.code = {stock_code}
-            )
-            GROUP BY {stock_code}, sd.date
-        ),
-        sma5_base AS (
-            SELECT
-                code,
-                date,
-                close,
-                avg(close) OVER (
-                    PARTITION BY code ORDER BY date ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
-                ) AS sma5,
-                count(close) OVER (
-                    PARTITION BY code ORDER BY date ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
-                ) AS sma5_sessions
-            FROM normalized_prices
-            WHERE close > 0
-        ),
-        sma5_deviation AS (
-            SELECT
-                code,
-                date,
-                close AS sma5_source_close,
-                sma5,
-                ((close / NULLIF(sma5, 0.0)) - 1.0) * 100.0 AS sma5_deviation_pct
-            FROM sma5_base
-            WHERE sma5_sessions = 5
-              AND sma5 > 0
-        ),
-        classified AS (
-            SELECT
-                p.*,
-                l.sector_33_code,
-                l.sector_33_name,
-                l.sector_strength_bucket,
-                l.sector_strength_score,
-                l.sector_index_strength_score,
-                l.sector_constituent_strength_score,
-                l.long_index_leadership_score,
-                l.long_constituent_breadth_leadership_score,
-                l.long_hybrid_leadership_score,
-                l.balanced_sector_strength_bucket_label,
-                l.long_hybrid_bucket_label,
-                coalesce(l.momentum_20_60_top20_flag, FALSE)
-                    AS momentum_20_60_top20_flag,
-                s.atr20_pct,
-                s.atr60_pct,
-                s.atr20_to_atr60,
-                s.atr20_change_20d_pct,
-                coalesce(s.atr20_acceleration, FALSE) AS atr20_acceleration_flag,
-                coalesce(
-                    s.atr20_acceleration
-                    AND coalesce(p.recent_return_20d_pct, 0.0) < 30.0,
-                    FALSE
-                ) AS atr20_acceleration_ex_overheat_flag,
-                coalesce(s.atr20_to_atr60_overheat, FALSE)
-                    AS atr20_to_atr60_overheat,
-                coalesce(s.weak_trend, FALSE) AS weak_trend,
-                d.sma5,
-                d.sma5_deviation_pct,
-                CASE
-                    WHEN d.sma5_deviation_pct <= -2.0 THEN 'below_sma5_le_neg2'
-                    WHEN d.sma5_deviation_pct <= 0.0 THEN 'below_sma5_neg2_to_0'
-                    WHEN d.sma5_deviation_pct <= 2.0 THEN 'above_sma5_0_to_2'
-                    WHEN d.sma5_deviation_pct <= 5.0 THEN 'above_sma5_2_to_5'
-                    ELSE 'above_sma5_gt_5'
-                END AS sma5_deviation_bucket,
-                CASE
-                    WHEN p.liquidity_residual_z >= 1 THEN 'high_liquidity_z_ge_1'
-                    WHEN p.liquidity_residual_z > -1
-                     AND p.liquidity_residual_z < 1
-                        THEN 'mid_liquidity_z_minus1_to_1'
-                    WHEN p.liquidity_residual_z < -1 THEN 'low_liquidity_z_lt_minus1'
-                    ELSE 'liquidity_boundary_unclassified'
-                END AS liquidity_band,
-                CASE
-                    WHEN p.recent_return_20d_pct > 0
-                     AND p.recent_return_60d_pct > 0
-                        THEN 'dual_positive_crowded'
-                    WHEN p.recent_return_20d_pct > 0
-                     AND p.recent_return_60d_pct < 0
-                        THEN 'recent20_positive_60d_negative'
-                    WHEN p.recent_return_20d_pct < 0
-                     AND p.recent_return_60d_pct > 0
-                        THEN 'recent20_negative_60d_positive'
-                    WHEN p.recent_return_20d_pct < 0
-                     AND p.recent_return_60d_pct < 0
-                        THEN 'dual_negative_stress'
-                    ELSE 'price_action_unclassified'
-                END AS price_action_bucket
-            FROM ranking_psr_valuation_panel p
-            LEFT JOIN long_sector_leadership_base_panel l
-              ON l.code = p.code
-             AND l.date = p.date
-             AND l.market_scope = p.market_scope
-            LEFT JOIN ranking_short_red_feature_panel s
-              ON s.code = p.code
-             AND s.date = p.date
-             AND s.market_scope = p.market_scope
-            LEFT JOIN sma5_deviation d
-              ON d.code = p.code
-             AND d.date = p.date
-            WHERE p.liquidity_residual_z IS NOT NULL
-              AND p.recent_return_20d_pct IS NOT NULL
-              AND p.recent_return_60d_pct IS NOT NULL
-              AND d.sma5_deviation_pct IS NOT NULL
-        )
-        SELECT *
-        FROM classified
-        WHERE liquidity_band IN ({liquidity_band_list})
-          AND price_action_bucket <> 'price_action_unclassified'
+        SELECT
+            evaluated.*,
+            CASE
+                WHEN liquidity_residual_z >= 1 THEN 'high_liquidity_z_ge_1'
+                WHEN liquidity_residual_z > -1 AND liquidity_residual_z < 1
+                    THEN 'mid_liquidity_z_minus1_to_1'
+                WHEN liquidity_residual_z < -1 THEN 'low_liquidity_z_lt_minus1'
+            END AS liquidity_band,
+            CASE
+                WHEN recent_return_20d_pct > 0 AND recent_return_60d_pct > 0
+                    THEN 'dual_positive_crowded'
+                WHEN recent_return_20d_pct > 0 AND recent_return_60d_pct < 0
+                    THEN 'recent20_positive_60d_negative'
+                WHEN recent_return_20d_pct < 0 AND recent_return_60d_pct > 0
+                    THEN 'recent20_negative_60d_positive'
+                WHEN recent_return_20d_pct < 0 AND recent_return_60d_pct < 0
+                    THEN 'dual_negative_stress'
+            END AS price_action_bucket
+        FROM {evaluated_name} evaluated
         """
     )
 
@@ -540,7 +509,7 @@ def _build_sma5_deviation_bucket_evidence_df(
     frames: list[pd.DataFrame] = []
     lateral_sql = f"""
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_SMA5_DEVIATION_BUCKETS)}
+            VALUES {condition_values_sql(_SMA5_DEVIATION_BUCKETS)}
         ) AS sma5_deviation_bucket(
             sma5_deviation_bucket,
             sma5_deviation_bucket_order,
@@ -549,7 +518,7 @@ def _build_sma5_deviation_bucket_evidence_df(
     """
     for horizon in horizons:
         frames.append(
-            _aggregate_lateral_conditions(
+            aggregate_lateral_conditions(
                 conn,
                 source_name="ranking_sma5_deviation_panel",
                 lateral_sql=lateral_sql,
@@ -584,14 +553,14 @@ def _build_long_scaffold_sma5_deviation_evidence_df(
     frames: list[pd.DataFrame] = []
     lateral_sql = f"""
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_LONG_SCAFFOLDS)}
+            VALUES {condition_values_sql(_LONG_SCAFFOLDS)}
         ) AS long_scaffold(
             long_scaffold,
             long_scaffold_order,
             long_scaffold_matches
         )
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_SMA5_DEVIATION_BUCKETS)}
+            VALUES {condition_values_sql(_SMA5_DEVIATION_BUCKETS)}
         ) AS sma5_deviation_bucket(
             sma5_deviation_bucket,
             sma5_deviation_bucket_order,
@@ -600,7 +569,7 @@ def _build_long_scaffold_sma5_deviation_evidence_df(
     """
     for horizon in horizons:
         frames.append(
-            _aggregate_lateral_conditions(
+            aggregate_lateral_conditions(
                 conn,
                 source_name="ranking_sma5_deviation_panel",
                 lateral_sql=lateral_sql,
@@ -626,7 +595,7 @@ def _build_long_scaffold_sma5_deviation_evidence_df(
                 return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
                 min_observations=min_observations,
                 severe_loss_threshold_pct=severe_loss_threshold_pct,
-                extra_metric_sql=_deep_dive_metric_sql() + _sma5_deviation_metric_sql(),
+                extra_metric_sql=deep_dive_metric_sql() + _sma5_deviation_metric_sql(),
             )
         )
     return _concat_sorted(
@@ -645,17 +614,17 @@ def _build_short_overlay_sma5_deviation_evidence_df(
     frames: list[pd.DataFrame] = []
     lateral_sql = f"""
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_PRICE_ACTION_BUCKETS)}
+            VALUES {condition_values_sql(PRICE_ACTION_BUCKETS)}
         ) AS price_action_bucket(
             price_action_bucket,
             price_action_bucket_order,
             price_action_bucket_matches
         )
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_SHORT_OVERLAYS)}
+            VALUES {condition_values_sql(SHORT_OVERLAYS)}
         ) AS short_overlay(short_overlay, short_overlay_order, short_overlay_matches)
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_SMA5_DEVIATION_BUCKETS)}
+            VALUES {condition_values_sql(_SMA5_DEVIATION_BUCKETS)}
         ) AS sma5_deviation_bucket(
             sma5_deviation_bucket,
             sma5_deviation_bucket_order,
@@ -664,7 +633,7 @@ def _build_short_overlay_sma5_deviation_evidence_df(
     """
     for horizon in horizons:
         frames.append(
-            _aggregate_lateral_conditions(
+            aggregate_lateral_conditions(
                 conn,
                 source_name="ranking_sma5_deviation_panel",
                 lateral_sql=lateral_sql,
@@ -697,7 +666,7 @@ def _build_short_overlay_sma5_deviation_evidence_df(
                 return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
                 min_observations=min_observations,
                 severe_loss_threshold_pct=severe_loss_threshold_pct,
-                extra_metric_sql=_recomposition_metric_sql()
+                extra_metric_sql=recomposition_metric_sql()
                 + _sma5_deviation_metric_sql(),
             )
         )
@@ -781,6 +750,16 @@ def _validate_params(
         raise ValueError("observation_sample_limit must be positive")
 
 
+def _parse_optional_date(value: str | None) -> date | None:
+    return None if value is None else date.fromisoformat(value)
+
+
+def _top_rows_for_markdown(frame: pd.DataFrame, *, limit: int) -> str:
+    if frame.empty:
+        return "_No rows._"
+    return "```text\n" + frame.head(int(limit)).to_string(index=False) + "\n```"
+
+
 def _sma5_deviation_metric_columns() -> list[str]:
     return [
         "median_sma5_deviation_pct",
@@ -797,7 +776,7 @@ def _sma5_deviation_bucket_columns() -> list[str]:
         "sma5_deviation_bucket_order",
         "horizon",
         "market_scope",
-        *_aggregate_metric_columns(),
+        *aggregate_metric_columns(),
         *_sma5_deviation_metric_columns(),
     ]
 
@@ -811,8 +790,8 @@ def _long_scaffold_sma5_deviation_columns() -> list[str]:
         "sma5_deviation_bucket_order",
         "horizon",
         "market_scope",
-        *_aggregate_metric_columns(),
-        *_deep_dive_metric_columns(),
+        *aggregate_metric_columns(),
+        *deep_dive_metric_columns(),
         *_sma5_deviation_metric_columns(),
     ]
 
@@ -829,9 +808,9 @@ def _short_overlay_sma5_deviation_columns() -> list[str]:
         "sma5_deviation_bucket_order",
         "horizon",
         "market_scope",
-        *_aggregate_metric_columns(),
-        *_psr_metric_columns(),
-        *_recomposition_metric_columns(),
+        *aggregate_metric_columns(),
+        *psr_metric_columns(),
+        *recomposition_metric_columns(),
         *_sma5_deviation_metric_columns(),
     ]
 
