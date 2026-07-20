@@ -22,7 +22,11 @@ from src.application.services.market_maintenance_finalizer import (
 from src.application.contracts.jobs import JobStatus
 from src.application.services.sync_service import SyncMode
 from src.application.contracts.market_data_plane import SyncResult
-from src.infrastructure.db.market.market_db import MARKET_SCHEMA_VERSION, METADATA_KEYS
+from src.infrastructure.db.market.market_db import (
+    MARKET_SCHEMA_VERSION,
+    METADATA_KEYS,
+    PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
+)
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 
 
@@ -366,7 +370,7 @@ def test_prepare_market_db_rejects_v3_with_reset_only_recovery() -> None:
 
     with pytest.raises(
         RuntimeError,
-        match=r"version: 3, required: 4.*initial sync with reset enabled",
+        match=r"version: 3, required: 5.*initial sync with reset enabled",
     ):
         sync_service._prepare_market_db_for_sync(market_db)
 
@@ -460,7 +464,7 @@ async def test_start_sync_completes_job_and_passes_bulk_enforcement(
     assert "timestamp" in stored.data.fetch_details[0]
     assert market_db.ensure_schema_calls == 1
     assert market_db.metadata[METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"]] == (
-        "local_projection_v2_event_time"
+        PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
     )
     assert store.close_calls == 0
     published_events = [call.args[1] for call in stream_manager.publish.call_args_list]
@@ -1271,7 +1275,7 @@ async def test_start_sync_resets_market_snapshot_before_initial_sync(
     assert METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"] not in old_market_db.metadata
     assert reset_market_db.ensure_schema_calls == 1
     assert reset_market_db.metadata[METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"]] == (
-        "local_projection_v2_event_time"
+        PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
     )
     assert strategy.captured_ctx is not None
     assert strategy.captured_ctx.market_db is reset_market_db

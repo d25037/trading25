@@ -34,7 +34,7 @@ from src.application.services.db_stats_service import _build_adjusted_metrics_st
 from src.domains.strategy.signals.feature_registry import resolve_feature_requirement_spec
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
 from src.infrastructure.db.market.market_db import (
-    LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+    PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
     MARKET_SCHEMA_VERSION,
     METADATA_KEYS,
 )
@@ -238,11 +238,11 @@ def _build_recommendations(
         recommendations.append(
             "Run initial sync with reset enabled, or manually reset "
             "market-timeseries/market.duckdb and market-timeseries/parquet first, "
-            "to rebuild stock_data_raw and local adjusted stock_data"
+            "to rebuild stock_data_raw and provider-adjusted stock_data"
         )
-    elif stock_price_adjustment_mode != LOCAL_STOCK_PRICE_ADJUSTMENT_MODE:
+    elif stock_price_adjustment_mode != PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE:
         recommendations.append(
-            "Run initial sync with reset enabled to enable local stock price projection"
+            "Run initial sync with reset enabled to enable provider-adjusted prices"
         )
     if not initialized:
         recommendations.append("Run initial sync to populate the database")

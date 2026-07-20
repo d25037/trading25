@@ -371,7 +371,7 @@ def test_open_existing_rejects_wrong_schema_before_writable_open(
     )
     connection.close()
 
-    with pytest.raises(MarketSourceIdentityError, match="schema v4"):
+    with pytest.raises(MarketSourceIdentityError, match="schema v5"):
         factory.open_existing()
 
 

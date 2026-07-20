@@ -23,7 +23,10 @@ from src.infrastructure.db.market.market_mutations import (
     SemanticDeltaResult,
     deterministic_last_wins,
 )
-from src.infrastructure.db.market.market_schema import MARKET_SCHEMA_VERSION
+from src.infrastructure.db.market.market_schema import (
+    IncompatibleMarketSchemaError,
+    MARKET_SCHEMA_VERSION,
+)
 
 
 class MarketTimeSeriesStore(Protocol):  # pragma: no cover
@@ -444,7 +447,7 @@ class DuckDbParquetTimeSeriesStore:
                     else None
                 )
                 if existing_version != MARKET_SCHEMA_VERSION:
-                    raise RuntimeError(
+                    raise IncompatibleMarketSchemaError(
                         "Incompatible market schema version "
                         f"{existing_version}; required version {MARKET_SCHEMA_VERSION}"
                     )
@@ -499,13 +502,13 @@ class DuckDbParquetTimeSeriesStore:
             self._conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS stock_data (
-                    code TEXT,
-                    date TEXT,
-                    open DOUBLE,
-                    high DOUBLE,
-                    low DOUBLE,
-                    close DOUBLE,
-                    volume BIGINT,
+                    code TEXT NOT NULL,
+                    date TEXT NOT NULL,
+                    open DOUBLE NOT NULL,
+                    high DOUBLE NOT NULL,
+                    low DOUBLE NOT NULL,
+                    close DOUBLE NOT NULL,
+                    volume BIGINT NOT NULL,
                     adjustment_factor DOUBLE,
                     created_at TEXT,
                     PRIMARY KEY (code, date)

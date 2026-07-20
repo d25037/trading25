@@ -1,4 +1,4 @@
-"""Validated identity of one active Market v4 DuckDB source."""
+"""Validated identity of one active Market v5 DuckDB source."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 import stat
 from typing import Any, cast
 
-from .market_schema import LOCAL_STOCK_PRICE_ADJUSTMENT_MODE, MARKET_SCHEMA_VERSION
+from .market_schema import MARKET_SCHEMA_VERSION, PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
 
 
 class MarketSourceIdentityError(RuntimeError):
@@ -43,7 +43,9 @@ def inspect_market_source_identity(path: Path) -> MarketSourceIdentity:
             "SELECT value FROM sync_metadata WHERE key = 'stock_price_adjustment_mode'"
         ).fetchone()
     except Exception as exc:
-        raise MarketSourceIdentityError("Market source must be schema v4") from exc
+        raise MarketSourceIdentityError(
+            f"Market source must be schema v{MARKET_SCHEMA_VERSION}"
+        ) from exc
     finally:
         connection.close()
     current = path.lstat()
@@ -56,10 +58,13 @@ def inspect_market_source_identity(path: Path) -> MarketSourceIdentity:
     schema = int(schema_row[0]) if schema_row and schema_row[0] is not None else None
     mode = str(mode_row[0]) if mode_row and mode_row[0] is not None else None
     if schema != MARKET_SCHEMA_VERSION:
-        raise MarketSourceIdentityError("Market source must be schema v4")
-    if mode != LOCAL_STOCK_PRICE_ADJUSTMENT_MODE:
         raise MarketSourceIdentityError(
-            f"Market source adjustment mode must be {LOCAL_STOCK_PRICE_ADJUSTMENT_MODE}"
+            f"Market source must be schema v{MARKET_SCHEMA_VERSION}"
+        )
+    if mode != PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE:
+        raise MarketSourceIdentityError(
+            "Market source adjustment mode must be "
+            f"{PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE}"
         )
     return MarketSourceIdentity(path, current.st_dev, current.st_ino, current.st_size, schema, mode)
 
@@ -88,10 +93,13 @@ def capture_market_source_identity(
     if stat.S_ISLNK(current.st_mode) or not stat.S_ISREG(current.st_mode):
         raise MarketSourceIdentityError("Market source must be a regular file")
     if schema_version != MARKET_SCHEMA_VERSION:
-        raise MarketSourceIdentityError("Market source must be schema v4")
-    if adjustment_mode != LOCAL_STOCK_PRICE_ADJUSTMENT_MODE:
         raise MarketSourceIdentityError(
-            f"Market source adjustment mode must be {LOCAL_STOCK_PRICE_ADJUSTMENT_MODE}"
+            f"Market source must be schema v{MARKET_SCHEMA_VERSION}"
+        )
+    if adjustment_mode != PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE:
+        raise MarketSourceIdentityError(
+            "Market source adjustment mode must be "
+            f"{PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE}"
         )
     return MarketSourceIdentity(
         path,

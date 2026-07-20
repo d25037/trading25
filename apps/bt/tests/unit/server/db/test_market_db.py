@@ -11,6 +11,7 @@ import duckdb
 import pytest
 
 from src.infrastructure.db.market.market_db import MarketDb
+from src.infrastructure.db.market import market_schema
 from src.infrastructure.db.market.market_schema import METADATA_KEYS
 from tests.unit.server.db.market_writer_test_support import open_market_db
 from tests.unit.server.db.market_writer_test_support import open_time_series_store
@@ -53,6 +54,7 @@ def _open_versioned_market_db(
     *,
     version: int,
     mode: str,
+    read_only: bool = False,
 ) -> MarketDb:
     db_path = str(tmp_path / f"market-v{version}.duckdb")
     conn = duckdb.connect(db_path)
@@ -85,7 +87,7 @@ def _open_versioned_market_db(
         )
     finally:
         conn.close()
-    return open_market_db(db_path)
+    return open_market_db(db_path, read_only=read_only)
 
 
 class TestMarketDbBasics:
@@ -274,6 +276,7 @@ class TestMarketDbBasics:
             "PROVIDER_SOURCE_FINGERPRINT": "provider_source_fingerprint",
             "FUNDAMENTALS_ADJUSTMENT_BASIS_DATE": "fundamentals_adjustment_basis_date",
         }
+        assert not hasattr(market_schema, "LOCAL_STOCK_PRICE_ADJUSTMENT_MODE")
 
     def test_pre_v3_existing_market_db_is_marked_incompatible(self, tmp_path: Path) -> None:
         db_path = str(tmp_path / "legacy-market.duckdb")
@@ -295,6 +298,7 @@ class TestMarketDbBasics:
             tmp_path,
             version=3,
             mode="local_projection_v1",
+            read_only=True,
         )
         try:
             assert db.get_market_schema_version() == 3
@@ -313,6 +317,7 @@ class TestMarketDbBasics:
             tmp_path,
             version=4,
             mode="local_projection_v2_event_time",
+            read_only=True,
         )
         try:
             assert db.get_market_schema_version() == 4
@@ -325,6 +330,65 @@ class TestMarketDbBasics:
             }
         finally:
             db.close()
+
+    def test_writable_market_db_rejects_v4_before_exposing_handle(
+        self, tmp_path: Path
+    ) -> None:
+        with pytest.raises(RuntimeError, match="schema version 4.*required version 5"):
+            _open_versioned_market_db(
+                tmp_path,
+                version=4,
+                mode="local_projection_v2_event_time",
+            )
+
+        db = MarketDb(str(tmp_path / "market-v4.duckdb"), read_only=True)
+        try:
+            assert db._existing_table_names() == {
+                "market_schema_version",
+                "sync_metadata",
+            }
+        finally:
+            db.close()
+
+    def test_daily_valuation_share_count_semantics(self, market_db: MarketDb) -> None:
+        market_db._execute(
+            """
+            INSERT INTO stock_data
+                (code, date, open, high, low, close, volume)
+            VALUES
+                ('1001', '2026-02-10', 100, 110, 90, 105, 1000),
+                ('1002', '2026-02-10', 100, 110, 90, 105, 1000),
+                ('1003', '2026-02-10', 100, 110, 90, 105, 1000)
+            """
+        )
+        market_db._execute(
+            """
+            INSERT INTO statement_metrics_adjusted (
+                code, statement_id, disclosed_date, disclosed_at, period_end,
+                period_type, fundamentals_adjustment_basis_date,
+                adjusted_shares_outstanding, adjusted_treasury_shares,
+                adjustment_factor_cumulative, source_fingerprint
+            ) VALUES
+                ('1001', 'normal', '2026-02-09', '2026-02-09T15:30:00+09:00',
+                 '2026-03-31', 'FY', '2026-02-10', 100, 20, 1, 'normal'),
+                ('1002', 'over-treasury', '2026-02-09', '2026-02-09T15:30:00+09:00',
+                 '2026-03-31', 'FY', '2026-02-10', 100, 120, 1, 'over'),
+                ('1003', 'missing', '2026-02-09', '2026-02-09T15:30:00+09:00',
+                 '2026-03-31', 'FY', '2026-02-10', NULL, 20, 1, 'missing')
+            """
+        )
+
+        assert market_db._fetchall(
+            """
+            SELECT code, market_cap, free_float_market_cap
+            FROM daily_valuation
+            ORDER BY code
+            """
+        ) == [
+            ("1001", 10_500.0, 8_400.0),
+            ("1002", 10_500.0, 0.0),
+            ("1003", None, None),
+        ]
 
     def test_time_series_store_uses_v5_raw_and_statement_identity_columns(
         self, tmp_path: Path

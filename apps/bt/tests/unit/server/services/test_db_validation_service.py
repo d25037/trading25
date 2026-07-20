@@ -20,7 +20,7 @@ from src.application.services.db_validation_service import (
     validate_market_db,
 )
 from src.infrastructure.db.market.market_db import (
-    LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+    PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
     MARKET_SCHEMA_VERSION,
     METADATA_KEYS,
 )
@@ -53,7 +53,7 @@ class DummyMarketDb:
         options_225_missing_underlying_dates: list[str] | None = None,
         options_225_conflicting_underlying_dates: list[str] | None = None,
         legacy_stock_snapshot: bool = False,
-        stock_price_adjustment_mode: str | None = LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+        stock_price_adjustment_mode: str | None = PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
         schema_version: int = MARKET_SCHEMA_VERSION,
         adjusted_metrics_snapshot: dict[str, Any] | None = None,
         adjusted_metrics_source_diagnostics: dict[str, int] | None = None,
@@ -589,11 +589,11 @@ def test_validate_market_db_v3_recommends_only_destructive_initial_reset() -> No
 
     assert result.status == "error"
     assert len(result.recommendations) == 1
-    assert "schema v4" in result.recommendations[0]
+    assert "schema v5" in result.recommendations[0]
     assert "initial sync with reset enabled" in result.recommendations[0]
 
 
-def test_validate_market_db_recommends_reset_before_enabling_local_projection() -> None:
+def test_validate_market_db_recommends_reset_before_enabling_provider_adjustment() -> None:
     market_db = DummyMarketDb(
         initialized=True,
         legacy_stock_snapshot=False,
@@ -625,10 +625,11 @@ def test_validate_market_db_recommends_reset_before_enabling_local_projection() 
     result = validate_market_db(market_db=market_db, time_series_store=store)
 
     assert result.status == "healthy"
-    assert market_db.get_stock_price_adjustment_mode() != LOCAL_STOCK_PRICE_ADJUSTMENT_MODE
-    assert any(
-        "enable local stock price projection" in rec for rec in result.recommendations
+    assert (
+        market_db.get_stock_price_adjustment_mode()
+        != PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
     )
+    assert any("enable provider-adjusted prices" in rec for rec in result.recommendations)
     assert not any(
         "Reset market-timeseries/market.duckdb" in rec for rec in result.recommendations
     )

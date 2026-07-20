@@ -29,10 +29,12 @@ METADATA_KEYS = {
     "FUNDAMENTALS_ADJUSTMENT_BASIS_DATE": "fundamentals_adjustment_basis_date",
 }
 PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE = "provider_adjusted_v1"
-# Kept as an import-level transition name until the v5 consumer migration is complete.
-LOCAL_STOCK_PRICE_ADJUSTMENT_MODE = PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
 MARKET_SCHEMA_VERSION = 5
 INCOMPATIBLE_MARKET_SCHEMA_VERSION = 0
+
+
+class IncompatibleMarketSchemaError(RuntimeError):
+    """Raised before a writable handle can mutate an older Market schema."""
 
 STATS_TABLES: tuple[str, ...] = (
     "market_schema_version",
@@ -518,11 +520,15 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         CAST(NULL AS DOUBLE) AS p_op,
         CAST(NULL AS DOUBLE) AS forward_p_op,
         prices.close / NULLIF(metrics.adjusted_bps, 0) AS pbr,
-        prices.close * (
-            COALESCE(metrics.adjusted_shares_outstanding, 0)
-            - COALESCE(metrics.adjusted_treasury_shares, 0)
-        ) AS market_cap,
-        CAST(NULL AS DOUBLE) AS free_float_market_cap,
+        prices.close * metrics.adjusted_shares_outstanding AS market_cap,
+        CASE
+            WHEN metrics.adjusted_shares_outstanding IS NULL THEN NULL
+            ELSE prices.close * GREATEST(
+                metrics.adjusted_shares_outstanding
+                - COALESCE(metrics.adjusted_treasury_shares, 0),
+                0
+            )
+        END AS free_float_market_cap,
         metrics.disclosed_date AS statement_disclosed_date,
         metrics.disclosed_date AS forward_eps_disclosed_date,
         CASE WHEN metrics.adjusted_forecast_eps IS NULL THEN NULL
@@ -620,7 +626,10 @@ def ensure_market_schema(store: Any) -> None:
         row = store._fetchone("SELECT MAX(version) FROM market_schema_version")
         existing_version = int(row[0]) if row and row[0] is not None else None
         if existing_version != MARKET_SCHEMA_VERSION:
-            return
+            raise IncompatibleMarketSchemaError(
+                "Incompatible market schema version "
+                f"{existing_version}; required version {MARKET_SCHEMA_VERSION}"
+            )
 
     if not had_schema_version and had_legacy_market_tables:
         store._execute(
@@ -716,7 +725,7 @@ def _ensure_stock_price_adjustment_mode_for_empty_db(store: Any) -> None:
         return
     store.set_sync_metadata(
         METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"],
-        LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+        PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
     )
 
 

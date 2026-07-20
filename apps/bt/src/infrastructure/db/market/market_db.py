@@ -23,8 +23,8 @@ from src.infrastructure.db.market.duckdb_connection import (
     connect_market_duckdb,
 )
 from src.infrastructure.db.market.market_schema import (
+    IncompatibleMarketSchemaError,
     INCOMPATIBLE_MARKET_SCHEMA_VERSION,
-    LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
     MARKET_SCHEMA_VERSION,
     METADATA_KEYS,
     PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
@@ -70,8 +70,8 @@ _FUNDAMENTALS_TARGET_MARKET_CODES: tuple[str, ...] = (
 )
 
 __all__ = [
+    "IncompatibleMarketSchemaError",
     "INCOMPATIBLE_MARKET_SCHEMA_VERSION",
-    "LOCAL_STOCK_PRICE_ADJUSTMENT_MODE",
     "MARKET_SCHEMA_VERSION",
     "METADATA_KEYS",
     "PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE",
@@ -1124,12 +1124,12 @@ class MarketDb:
         return int(row[0] or 0) if row else 0
 
     def get_stocks_needing_refresh(self, limit: int | None = 20) -> list[str]:
-        """local projection 移行後は常に空を返す。"""
+        """Provider-adjusted price migration後は常に空を返す。"""
         del limit
         return []
 
     def get_stocks_needing_refresh_count(self) -> int:
-        """local projection 移行後は常に 0 を返す。"""
+        """Provider-adjusted price migration後は常に 0 を返す。"""
         return 0
 
     def get_stock_data_unique_date_count(self) -> int:

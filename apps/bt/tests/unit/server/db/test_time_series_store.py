@@ -209,6 +209,26 @@ def test_writable_store_rejects_v4_without_partial_schema_mutation(
         connection.close()
 
 
+def test_direct_store_stock_data_ohlcv_is_not_nullable(tmp_path: Path) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    try:
+        columns = {
+            str(row[1]): bool(row[3])
+            for row in store._conn.execute(  # noqa: SLF001
+                "PRAGMA table_info('stock_data')"
+            ).fetchall()
+        }
+        assert all(
+            columns[column]
+            for column in ("code", "date", "open", "high", "low", "close", "volume")
+        )
+    finally:
+        store.close()
+
+
 def test_create_time_series_store_returns_none_when_duckdb_unavailable(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -32,7 +32,7 @@ from src.application.services.adjusted_metrics_materialization_run import (
     run_shielded_materialization,
 )
 from src.infrastructure.db.market.market_db import (
-    LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+    PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
     MARKET_SCHEMA_VERSION,
     METADATA_KEYS,
     MarketDb,
@@ -196,7 +196,7 @@ def _prepare_market_db_for_sync(market_db: SyncServiceMarketDbLike) -> None:
         raise RuntimeError(_legacy_stock_snapshot_message())
     market_db.set_sync_metadata(
         METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"],
-        LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+        PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
     )
 
 

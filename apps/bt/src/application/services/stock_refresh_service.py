@@ -18,7 +18,7 @@ from src.application.services.adjusted_metrics_materializer import (
     AdjustedMetricsMaterializer,
 )
 from src.infrastructure.db.market.market_db import (
-    LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+    PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
     METADATA_KEYS,
     MarketDb,
 )
@@ -189,7 +189,7 @@ async def refresh_stocks(
     market_db.set_sync_metadata(METADATA_KEYS["LAST_STOCKS_REFRESH"], now_iso)
     market_db.set_sync_metadata(
         METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"],
-        LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+        PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
     )
 
     return RefreshResponse(

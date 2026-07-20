@@ -7,7 +7,7 @@ import pytest
 from src.application.services import stock_refresh_service
 from src.application.services.stock_refresh_service import refresh_stocks
 from src.infrastructure.db.market.market_db import (
-    LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+    PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
     METADATA_KEYS,
 )
 from src.infrastructure.db.market.market_mutations import MarketMutationStats, SemanticDeltaResult
@@ -339,7 +339,7 @@ async def test_refresh_stocks_handles_empty_code_list_without_indexing() -> None
     assert result.errors == []
     assert store.index_calls == 0
     assert market_db.metadata[METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"]] == (
-        LOCAL_STOCK_PRICE_ADJUSTMENT_MODE
+        PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
     )
     assert METADATA_KEYS["LAST_STOCKS_REFRESH"] in market_db.metadata
 

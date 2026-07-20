@@ -8,6 +8,7 @@ Codex 指摘 #6 対応: 列名・型・nullable・PK/FK/UNIQUE/INDEX まで検�
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -60,6 +61,47 @@ def _sa_type_name(col_type: object) -> str:
     if type_name in ("INTEGER", "INT"):
         return "integer"
     return type_name.lower()
+
+
+def _resolve_schema(schema: dict, root: dict) -> dict:
+    if "$ref" not in schema:
+        return schema
+    target: object = root
+    for component in schema["$ref"].removeprefix("#/").split("/"):
+        assert isinstance(target, dict)
+        target = target[component]
+    assert isinstance(target, dict)
+    return target
+
+
+def _validate_contract_definition(value: object, schema: dict, root: dict) -> None:
+    schema = _resolve_schema(schema, root)
+    if "const" in schema:
+        assert value == schema["const"]
+        return
+    if schema.get("type") != "object":
+        return
+    assert isinstance(value, dict)
+    required = set(schema.get("required", []))
+    assert required.issubset(value)
+    properties = schema.get("properties", {})
+    if schema.get("additionalProperties") is False:
+        assert set(value).issubset(properties)
+    for key, child_value in value.items():
+        if key in properties:
+            _validate_contract_definition(child_value, properties[key], root)
+
+
+def _materialize_contract_definition(schema: dict, root: dict) -> object:
+    schema = _resolve_schema(schema, root)
+    if "const" in schema:
+        return deepcopy(schema["const"])
+    assert schema.get("type") == "object"
+    properties = schema["properties"]
+    return {
+        key: _materialize_contract_definition(properties[key], root)
+        for key in schema.get("required", [])
+    }
 
 
 # ===========================================================================
@@ -359,6 +401,50 @@ class TestMarketDbContractV4:
             "provider_source_fingerprint",
             "fundamentals_adjustment_basis_date",
         ]
+
+    @pytest.mark.parametrize(
+        ("table_name", "mutate"),
+        [
+            (
+                "stock_data",
+                lambda definition: definition["columns"].pop("close"),
+            ),
+            (
+                "market_schema_version",
+                lambda definition: definition["columns"]["version"].update(
+                    {"nullable": True}
+                ),
+            ),
+            (
+                "stock_master_daily",
+                lambda definition: definition.update({"primary_key": ["code"]}),
+            ),
+        ],
+    )
+    def test_v4_contract_rejects_invalid_unchanged_table_definitions(
+        self, table_name: str, mutate: object
+    ) -> None:
+        table_schema = self.tables[table_name]
+        valid = _materialize_contract_definition(table_schema, self.contract)
+        _validate_contract_definition(valid, table_schema, self.contract)
+        invalid = deepcopy(valid)
+        assert callable(mutate)
+        mutate(invalid)
+        with pytest.raises(AssertionError):
+            _validate_contract_definition(invalid, table_schema, self.contract)
+
+    def test_v4_contract_has_no_unconstrained_required_table_placeholders(self) -> None:
+        assert "documented_table" not in json.dumps(self.contract, sort_keys=True)
+        for table_name in self.contract["properties"]["tables"]["required"]:
+            table_schema = _resolve_schema(self.tables[table_name], self.contract)
+            assert table_schema["type"] == "object"
+            assert table_schema["additionalProperties"] is False
+            assert "columns" in table_schema["required"]
+            columns_schema = _resolve_schema(
+                table_schema["properties"]["columns"], self.contract
+            )
+            assert columns_schema["type"] == "object"
+            assert set(columns_schema["required"]).issubset(columns_schema["properties"])
 
 
 class TestDatasetDbContractV3:
