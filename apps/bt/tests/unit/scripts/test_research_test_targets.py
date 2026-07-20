@@ -116,9 +116,14 @@ def test_shared_daily_ranking_helpers_map_to_consumer_tests() -> None:
     expected_consumers = {
         "tests/unit/domains/analytics/test_daily_ranking_research_base.py",
         "tests/unit/domains/analytics/test_daily_ranking_consumer_support.py",
+        "tests/unit/domains/analytics/test_market_bubble_footprint.py",
         "tests/unit/domains/analytics/test_ranking_color_evidence.py",
         "tests/unit/domains/analytics/"
         "test_ranking_fixed_return_priority_evidence.py",
+        "tests/unit/domains/analytics/"
+        "test_ranking_n225_crowded_rerating_benchmark.py",
+        "tests/unit/domains/analytics/"
+        "test_ranking_n225_neutral_rerating_benchmark.py",
         "tests/unit/domains/analytics/"
         "test_ranking_technical_fit_score_shape_evidence.py",
         "tests/unit/domains/analytics/"
@@ -135,6 +140,29 @@ def test_shared_daily_ranking_helpers_map_to_consumer_tests() -> None:
 
         assert expected_consumers <= set(targets)
         assert all(module._exists(target) for target in targets)
+
+
+def test_shared_daily_ranking_market_fixture_maps_to_exact_consumers() -> None:
+    module = _load_module()
+
+    targets = module.pytest_targets_for_research_changes(
+        [
+            "apps/bt/tests/unit/domains/analytics/"
+            "daily_ranking_market_v4_fixture.py"
+        ]
+    )
+
+    assert targets == (
+        "tests/unit/domains/analytics/test_atr_expansion_forward_response.py",
+        "tests/unit/domains/analytics/test_market_bubble_footprint.py",
+        "tests/unit/domains/analytics/test_ranking_sector_strength_evidence.py",
+        "tests/unit/domains/analytics/test_ranking_short_red_evidence.py",
+        (
+            "tests/unit/domains/analytics/"
+            "test_ranking_short_sector_strength_evidence.py"
+        ),
+    )
+    assert all(module._exists(target) for target in targets)
 
 
 def test_deleted_daily_ranking_adapter_falls_back_without_missing_target() -> None:

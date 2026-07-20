@@ -37,11 +37,27 @@ RESEARCH_FIXTURE_CONSUMER_TESTS = {
         "test_ranking_technical_fit_score_shape_evidence.py",
     ),
 }
+RESEARCH_TEST_SUPPORT_CONSUMER_TESTS = {
+    (
+        "apps/bt/tests/unit/domains/analytics/"
+        "daily_ranking_market_v4_fixture.py"
+    ): (
+        "tests/unit/domains/analytics/test_atr_expansion_forward_response.py",
+        "tests/unit/domains/analytics/test_market_bubble_footprint.py",
+        "tests/unit/domains/analytics/test_ranking_sector_strength_evidence.py",
+        "tests/unit/domains/analytics/test_ranking_short_red_evidence.py",
+        (
+            "tests/unit/domains/analytics/"
+            "test_ranking_short_sector_strength_evidence.py"
+        ),
+    ),
+}
 DAILY_RANKING_SHARED_CONSUMER_TESTS = (
     "tests/unit/domains/analytics/test_atr_expansion_forward_response.py",
     "tests/unit/domains/analytics/test_daily_ranking_consumer_support.py",
     "tests/unit/domains/analytics/test_daily_ranking_feature_builders.py",
     "tests/unit/domains/analytics/test_daily_ranking_research_base.py",
+    "tests/unit/domains/analytics/test_market_bubble_footprint.py",
     "tests/unit/domains/analytics/test_market_bubble_footprint_monitor.py",
     "tests/unit/domains/analytics/test_ranking_color_evidence.py",
     "tests/unit/domains/analytics/test_ranking_core_factor_regime_breakdown.py",
@@ -80,6 +96,14 @@ DAILY_RANKING_SHARED_CONSUMER_TESTS = (
     (
         "tests/unit/domains/analytics/"
         "test_ranking_moving_average_replacement_evidence.py"
+    ),
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_n225_crowded_rerating_benchmark.py"
+    ),
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_n225_neutral_rerating_benchmark.py"
     ),
     "tests/unit/domains/analytics/test_ranking_psr_valuation_evidence.py",
     "tests/unit/domains/analytics/test_ranking_roe_quality_evidence.py",
@@ -166,6 +190,10 @@ def pytest_targets_for_research_changes(paths: list[str]) -> tuple[str, ...]:
         )
 
     for path in normalized_paths:
+        support_target = RESEARCH_TEST_SUPPORT_CONSUMER_TESTS.get(path)
+        if support_target is not None:
+            targets.extend(support_target)
+            continue
         if path.startswith(RESEARCH_ANALYTICS_TEST_PREFIX) and is_research_path(path):
             target = path.removeprefix("apps/bt/")
             if _exists(target):
