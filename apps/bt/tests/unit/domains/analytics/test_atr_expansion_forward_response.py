@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import duckdb
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -100,6 +101,55 @@ def test_atr_expansion_forward_response_writes_bundle(tmp_path: Path) -> None:
     )
     assert bundle.manifest_path.exists()
     assert bundle.results_db_path.exists()
+
+
+def test_atr_expansion_fails_closed_for_incomplete_entry_mode_outcomes(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_atr_expansion_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(
+            "UPDATE topix_data SET open = NULL WHERE date = '2024-04-01'"
+        )
+    finally:
+        conn.close()
+
+    result = _run_test_research(db_path)
+    frame = result.atr_expansion_response_df
+    next_open = frame.loc[
+        (frame["entry_mode"] == "next_open_to_close")
+        & (frame["outcome_coverage_status"] == "incomplete")
+    ]
+    close = frame.loc[frame["entry_mode"] == "close_to_close"]
+
+    assert result.outcome_coverage_policy == (
+        "complete_selected_membership_required_per_entry_mode"
+    )
+    assert not next_open.empty
+    assert (
+        next_open["selected_observation_count"]
+        == next_open["complete_outcome_count"]
+        + next_open["incomplete_outcome_count"]
+    ).all()
+    assert (next_open["incomplete_outcome_count"] > 0).all()
+    assert next_open[
+        [
+            "mean_forward_excess_return_pct",
+            "median_forward_excess_return_pct",
+            "win_rate_pct",
+            "severe_loss_rate_pct",
+        ]
+    ].isna().all().all()
+    assert not close.empty
+    assert (close["outcome_coverage_status"] == "complete").all()
+    assert (
+        close["selected_observation_count"] == close["complete_outcome_count"]
+    ).all()
+    assert np.isfinite(close["median_forward_excess_return_pct"]).all()
+    assert set(result.coverage_diagnostics_df["outcome_coverage_policy"]) == {
+        result.outcome_coverage_policy
+    }
 
 
 def test_atr_expansion_overheat_exclusion_uses_ranking_20d_threshold() -> None:

@@ -14,6 +14,7 @@ from src.domains.analytics.daily_ranking_feature_builders import (
     build_atr_features,
 )
 from src.domains.analytics.daily_ranking_research_base import (
+    DAILY_RANKING_BASE_REQUIRED_VALID_SESSIONS,
     DailyRankingPanelRequest,
     MarketScope,
     attach_daily_ranking_outcomes,
@@ -42,6 +43,7 @@ DEFAULT_MIN_OBSERVATIONS = 500
 DEFAULT_SEVERE_LOSS_THRESHOLD_PCT = -10.0
 DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
 OVERHEAT_RETURN_20D_THRESHOLD_PCT = 30.0
+OUTCOME_COVERAGE_POLICY = "complete_selected_membership_required_per_entry_mode"
 _MARKET_SCOPE_ORDER: tuple[str, ...] = ("all", "prime", "standard", "growth", "unknown")
 _ENTRY_MODES: tuple[str, ...] = ("close_to_close", "next_open_to_close")
 _EXPANSION_BUCKET_ORDER: tuple[str, ...] = (
@@ -87,6 +89,7 @@ class AtrExpansionForwardResponseResult:
     market_scopes: tuple[str, ...]
     min_observations: int
     severe_loss_threshold_pct: float
+    outcome_coverage_policy: str
     observation_count: int
     observation_sample_df: pd.DataFrame
     coverage_diagnostics_df: pd.DataFrame
@@ -140,7 +143,7 @@ def run_atr_expansion_forward_response_research(
             include_liquidity=True,
             percentile_features=(),
             required_valid_sessions=max(
-                505,
+                DAILY_RANKING_BASE_REQUIRED_VALID_SESSIONS,
                 max(resolved_atr_windows) + 20,
                 max(resolved_return_windows) + 1,
             ),
@@ -151,6 +154,11 @@ def run_atr_expansion_forward_response_research(
             relations,
             source=relations.ranked_signals,
             name="atr_expansion_signals",
+        )
+        _create_signal_observation_panel(
+            ctx.connection,
+            signal_name=signal_cohort.name,
+            include_all="all" in resolved_market_scopes,
         )
         evaluated = attach_daily_ranking_outcomes(
             ctx.connection,
@@ -169,7 +177,10 @@ def run_atr_expansion_forward_response_research(
                 "SELECT count(*) FROM atr_expansion_panel"
             ).fetchone()[0]
         )
-        coverage_diagnostics_df = _build_coverage_diagnostics_df(ctx.connection)
+        coverage_diagnostics_df = _build_coverage_diagnostics_df(
+            ctx.connection,
+            horizons=resolved_horizons,
+        )
         atr_expansion_response_df = _build_atr_expansion_response_df(
             ctx.connection,
             horizons=resolved_horizons,
@@ -217,6 +228,7 @@ def run_atr_expansion_forward_response_research(
         market_scopes=resolved_market_scopes,
         min_observations=min_observations,
         severe_loss_threshold_pct=severe_loss_threshold_pct,
+        outcome_coverage_policy=OUTCOME_COVERAGE_POLICY,
         observation_count=observation_count,
         observation_sample_df=observation_sample_df,
         coverage_diagnostics_df=coverage_diagnostics_df,
@@ -245,6 +257,7 @@ def write_atr_expansion_forward_response_bundle(
             "market_scopes": list(result.market_scopes),
             "min_observations": result.min_observations,
             "severe_loss_threshold_pct": result.severe_loss_threshold_pct,
+            "outcome_coverage_policy": result.outcome_coverage_policy,
         },
         db_path=result.db_path,
         analysis_start_date=result.analysis_start_date,
@@ -255,6 +268,7 @@ def write_atr_expansion_forward_response_bundle(
             "market_source": result.market_source,
             "observation_count": result.observation_count,
             "observation_sample_count": int(len(result.observation_sample_df)),
+            "outcome_coverage_policy": result.outcome_coverage_policy,
         },
         result_tables={
             "coverage_diagnostics_df": result.coverage_diagnostics_df,
@@ -386,6 +400,31 @@ def _validate_params(
         raise ValueError("observation_sample_limit must be positive")
 
 
+def _create_signal_observation_panel(
+    conn: Any,
+    *,
+    signal_name: str,
+    include_all: bool,
+) -> None:
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE atr_expansion_signal_panel AS
+        SELECT
+            signal.*,
+            signal.forecast_per AS forward_per,
+            signal.forecast_per_percentile AS forward_per_percentile,
+            signal.forecast_per_to_per_ratio AS forward_per_to_per_ratio
+        FROM {signal_name} AS signal
+        """
+    )
+    _create_scoped_view(
+        conn,
+        panel_name="atr_expansion_signal_panel",
+        view_name="atr_expansion_signal_scoped",
+        include_all=include_all,
+    )
+
+
 def _create_observation_panel(
     conn: Any,
     *,
@@ -404,10 +443,21 @@ def _create_observation_panel(
         AS evaluated
         """
     )
-    _create_scoped_view(conn, include_all=include_all)
+    _create_scoped_view(
+        conn,
+        panel_name="atr_expansion_panel",
+        view_name="atr_expansion_scoped",
+        include_all=include_all,
+    )
 
 
-def _create_scoped_view(conn: Any, *, include_all: bool) -> None:
+def _create_scoped_view(
+    conn: Any,
+    *,
+    panel_name: str,
+    view_name: str,
+    include_all: bool,
+) -> None:
     all_union = (
         """
         UNION ALL
@@ -419,13 +469,13 @@ def _create_scoped_view(conn: Any, *, include_all: bool) -> None:
     )
     conn.execute(
         f"""
-        CREATE OR REPLACE TEMP VIEW atr_expansion_scoped AS
+        CREATE OR REPLACE TEMP VIEW {view_name} AS
         WITH base AS (
             SELECT
                 p.*,
                 strftime(CAST(p.date AS DATE), '%Y') AS anchor_year,
                 strftime(CAST(p.date AS DATE), '%Y-%m') AS anchor_month
-            FROM atr_expansion_panel p
+            FROM {panel_name} p
         )
         SELECT *
         FROM base
@@ -447,7 +497,7 @@ def _create_liquidity_color_atr_work(conn: Any) -> None:
                     {regime_order} AS liquidity_regime_order,
                     '{ui_color}' AS ui_color,
                     {color_order} AS ui_color_order
-                FROM atr_expansion_scoped a
+                FROM atr_expansion_signal_scoped a
                 WHERE a.liquidity_regime = '{regime}'
                   AND {local_color_sql}
                 """
@@ -458,11 +508,23 @@ def _create_liquidity_color_atr_work(conn: Any) -> None:
     )
 
 
-def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
-    frame = conn.execute(
-        """
+def _build_coverage_diagnostics_df(
+    conn: Any,
+    *,
+    horizons: Sequence[int],
+) -> pd.DataFrame:
+    queries = [
+        f"""
         SELECT
             market AS market_scope,
+            '{entry_mode}' AS entry_mode,
+            {int(horizon)} AS horizon,
+            count(*) AS selected_observation_count,
+            count({return_column}) AS complete_outcome_count,
+            count(*) - count({return_column}) AS incomplete_outcome_count,
+            CASE WHEN count(*) = count({return_column})
+                 THEN 'complete' ELSE 'incomplete' END AS outcome_coverage_status,
+            '{OUTCOME_COVERAGE_POLICY}' AS outcome_coverage_policy,
             count(*) AS observation_count,
             count(DISTINCT code) AS code_count,
             count(DISTINCT date) AS date_count,
@@ -479,11 +541,27 @@ def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
         FROM atr_expansion_panel
         GROUP BY market
         """
-    ).fetchdf()
+        for horizon in horizons
+        for entry_mode, return_column in (
+            ("close_to_close", f"forward_close_excess_return_{int(horizon)}d_pct"),
+            (
+                "next_open_to_close",
+                f"forward_next_open_excess_return_{int(horizon)}d_pct",
+            ),
+        )
+    ]
+    frame = conn.execute("\nUNION ALL\n".join(queries)).fetchdf()
     return _sort_summary_df(
         frame,
         columns=[
             "market_scope",
+            "entry_mode",
+            "horizon",
+            "selected_observation_count",
+            "complete_outcome_count",
+            "incomplete_outcome_count",
+            "outcome_coverage_status",
+            "outcome_coverage_policy",
             "observation_count",
             "code_count",
             "date_count",
@@ -515,7 +593,7 @@ def _build_atr_expansion_response_df(
                     PARTITION BY market_scope, anchor_year
                     ORDER BY {feature}
                 ) AS atr_feature_rank_pct
-            FROM atr_expansion_scoped
+            FROM atr_expansion_signal_scoped
             WHERE {feature} IS NOT NULL
             """
         )
@@ -605,7 +683,7 @@ def _build_atr_pair_interaction_df(
                 PARTITION BY market_scope, anchor_year
                 ORDER BY atr60_pct
             ) AS atr60_rank_pct
-        FROM atr_expansion_scoped
+        FROM atr_expansion_signal_scoped
         WHERE atr20_pct IS NOT NULL
           AND atr60_pct IS NOT NULL
         """
@@ -693,42 +771,117 @@ def _aggregate_condition(
     return_column: str,
     min_observations: int,
     severe_loss_threshold_pct: float,
-    source_name: str = "atr_expansion_scoped",
+    source_name: str = "atr_expansion_signal_scoped",
     group_columns: Sequence[str] = ("market_scope",),
 ) -> pd.DataFrame:
-    group_select = ",\n            ".join(group_columns)
-    group_by = ", ".join(group_columns)
+    group_select = ",\n                ".join(
+        f"selected.{column} AS {column}" for column in group_columns
+    )
+    group_by = ", ".join(f"selected.{column}" for column in group_columns)
+    coverage_gate = (
+        "selected_observation_count = complete_outcome_count "
+        "AND selected_observation_count >= ?"
+    )
     frame = conn.execute(
         f"""
+        WITH selected_membership AS (
+            SELECT *
+            FROM {source_name}
+            WHERE {condition}
+        ),
+        aggregated AS (
+            SELECT
+                {group_select},
+                count(*) AS selected_observation_count,
+                count(evaluated.{return_column}) AS complete_outcome_count,
+                count(*) - count(evaluated.{return_column})
+                    AS incomplete_outcome_count,
+                count(evaluated.{return_column}) AS observation_count,
+                count(DISTINCT CASE WHEN evaluated.{return_column} IS NOT NULL
+                                    THEN selected.code END) AS code_count,
+                count(DISTINCT CASE WHEN evaluated.{return_column} IS NOT NULL
+                                    THEN selected.date END) AS date_count,
+                avg(evaluated.{return_column}) AS raw_mean_forward_excess_return_pct,
+                median(evaluated.{return_column})
+                    AS raw_median_forward_excess_return_pct,
+                quantile_cont(evaluated.{return_column}, 0.10)
+                    AS raw_p10_forward_excess_return_pct,
+                quantile_cont(evaluated.{return_column}, 0.25)
+                    AS raw_p25_forward_excess_return_pct,
+                quantile_cont(evaluated.{return_column}, 0.75)
+                    AS raw_p75_forward_excess_return_pct,
+                quantile_cont(evaluated.{return_column}, 0.90)
+                    AS raw_p90_forward_excess_return_pct,
+                avg(CASE WHEN evaluated.{return_column} > 0 THEN 1.0
+                         WHEN evaluated.{return_column} IS NOT NULL THEN 0.0 END) * 100.0
+                    AS raw_win_rate_pct,
+                avg(CASE WHEN evaluated.{return_column} <= ? THEN 1.0
+                         WHEN evaluated.{return_column} IS NOT NULL THEN 0.0 END) * 100.0
+                    AS raw_severe_loss_rate_pct,
+                median(selected.recent_return_20d_pct)
+                    AS median_recent_return_20d_pct,
+                median(selected.recent_return_60d_pct)
+                    AS median_recent_return_60d_pct,
+                median(selected.atr20_pct) AS median_atr20_pct,
+                median(selected.atr60_pct) AS median_atr60_pct,
+                median(selected.atr20_to_atr60) AS median_atr20_to_atr60,
+                median(selected.atr20_change_20d_pct)
+                    AS median_atr20_change_20d_pct,
+                median(selected.med_adv60_jpy) / 1000000.0
+                    AS median_med_adv60_mil_jpy
+            FROM selected_membership selected
+            LEFT JOIN atr_expansion_scoped evaluated
+              ON evaluated.code = selected.code
+             AND evaluated.date = selected.date
+             AND evaluated.market_scope = selected.market_scope
+            GROUP BY {group_by}
+        )
         SELECT
-            {group_select},
-            count(*) AS observation_count,
-            count(DISTINCT code) AS code_count,
-            count(DISTINCT date) AS date_count,
-            avg({return_column}) AS mean_forward_excess_return_pct,
-            median({return_column}) AS median_forward_excess_return_pct,
-            quantile_cont({return_column}, 0.10) AS p10_forward_excess_return_pct,
-            quantile_cont({return_column}, 0.25) AS p25_forward_excess_return_pct,
-            quantile_cont({return_column}, 0.75) AS p75_forward_excess_return_pct,
-            quantile_cont({return_column}, 0.90) AS p90_forward_excess_return_pct,
-            avg(CASE WHEN {return_column} > 0 THEN 1.0 ELSE 0.0 END) * 100.0
-                AS win_rate_pct,
-            avg(CASE WHEN {return_column} <= ? THEN 1.0 ELSE 0.0 END) * 100.0
-                AS severe_loss_rate_pct,
-            median(recent_return_20d_pct) AS median_recent_return_20d_pct,
-            median(recent_return_60d_pct) AS median_recent_return_60d_pct,
-            median(atr20_pct) AS median_atr20_pct,
-            median(atr60_pct) AS median_atr60_pct,
-            median(atr20_to_atr60) AS median_atr20_to_atr60,
-            median(atr20_change_20d_pct) AS median_atr20_change_20d_pct,
-            median(med_adv60_jpy) / 1000000.0 AS median_med_adv60_mil_jpy
-        FROM {source_name}
-        WHERE {condition}
-          AND {return_column} IS NOT NULL
-        GROUP BY {group_by}
-        HAVING count(*) >= ?
+            * EXCLUDE (
+                raw_mean_forward_excess_return_pct,
+                raw_median_forward_excess_return_pct,
+                raw_p10_forward_excess_return_pct,
+                raw_p25_forward_excess_return_pct,
+                raw_p75_forward_excess_return_pct,
+                raw_p90_forward_excess_return_pct,
+                raw_win_rate_pct,
+                raw_severe_loss_rate_pct
+            ),
+            CASE
+                WHEN selected_observation_count <> complete_outcome_count
+                    THEN 'incomplete'
+                WHEN selected_observation_count < ? THEN 'insufficient_observations'
+                ELSE 'complete'
+            END AS outcome_coverage_status,
+            '{OUTCOME_COVERAGE_POLICY}' AS outcome_coverage_policy,
+            CASE WHEN {coverage_gate}
+                 THEN raw_mean_forward_excess_return_pct END
+                AS mean_forward_excess_return_pct,
+            CASE WHEN {coverage_gate}
+                 THEN raw_median_forward_excess_return_pct END
+                AS median_forward_excess_return_pct,
+            CASE WHEN {coverage_gate}
+                 THEN raw_p10_forward_excess_return_pct END
+                AS p10_forward_excess_return_pct,
+            CASE WHEN {coverage_gate}
+                 THEN raw_p25_forward_excess_return_pct END
+                AS p25_forward_excess_return_pct,
+            CASE WHEN {coverage_gate}
+                 THEN raw_p75_forward_excess_return_pct END
+                AS p75_forward_excess_return_pct,
+            CASE WHEN {coverage_gate}
+                 THEN raw_p90_forward_excess_return_pct END
+                AS p90_forward_excess_return_pct,
+            CASE WHEN {coverage_gate} THEN raw_win_rate_pct END AS win_rate_pct,
+            CASE WHEN {coverage_gate}
+                 THEN raw_severe_loss_rate_pct END AS severe_loss_rate_pct
+        FROM aggregated
         """,
-        [float(severe_loss_threshold_pct), int(min_observations)],
+        [
+            float(severe_loss_threshold_pct),
+            int(min_observations),
+            *[int(min_observations)] * 8,
+        ],
     ).fetchdf()
     if frame.empty:
         return frame
@@ -929,6 +1082,11 @@ def _concat_sorted(
 def _base_response_columns() -> list[str]:
     return [
         "market_scope",
+        "selected_observation_count",
+        "complete_outcome_count",
+        "incomplete_outcome_count",
+        "outcome_coverage_status",
+        "outcome_coverage_policy",
         "observation_count",
         "code_count",
         "date_count",
