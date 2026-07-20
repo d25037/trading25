@@ -245,7 +245,6 @@ def test_http_adapter_tracks_exact_job_id_field_for_each_create_endpoint(
 ) -> None:
     payloads = {
         "/api/db/sync": {"jobId": "sync-1"},
-        "/api/db/adjusted-metrics/materialize": {"jobId": "materialize-1"},
         "/api/analytics/screening/jobs": _screening_job_response("pending"),
         "/api/dataset": {"jobId": "dataset-1"},
     }
@@ -276,7 +275,6 @@ def test_http_adapter_tracks_exact_job_id_field_for_each_create_endpoint(
 
     assert api.owned_jobs == {
         "sync": "sync-1",
-        "materialize": "materialize-1",
         "screening": "screen-1",
         "dataset": "dataset-1",
     }
@@ -396,7 +394,7 @@ def test_rehearsal_unjoined_server_transfers_lease_to_inherited_fd(
     runtime = LeaseHoldingRuntime(apis=[FailingApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
 
@@ -448,7 +446,7 @@ def test_rehearsal_unjoined_worker_transfers_lease_to_worker_guard_fd(
             )
 
     duckdb = GuardHoldingDuckDb(
-        MarketSourceMetadata(4, "local_projection_v2_event_time")
+        MarketSourceMetadata(5, "provider_adjusted_v1")
     )
     service = _service(
         data_root,

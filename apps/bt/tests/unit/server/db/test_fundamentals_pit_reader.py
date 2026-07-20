@@ -485,7 +485,7 @@ def test_snapshot_fails_closed_with_v5_recovery_reason(
             "7203", date(2024, 6, 30)
         )
     assert exc_info.value.reason == reason
-    assert "adjusted_metrics_pit" in str(exc_info.value) or reason in {
+    assert "market_db_sync" in str(exc_info.value) or reason in {
         "stock_master_snapshot_required",
         "stock_not_listed_as_of",
     }
@@ -505,7 +505,7 @@ def test_snapshot_requires_state_when_raw_and_metric_relations_are_both_empty(
         )
 
     assert exc_info.value.reason == "current_adjusted_metrics_required"
-    assert "adjusted_metrics_pit" in str(exc_info.value)
+    assert "market_db_sync" in str(exc_info.value)
 
 
 def test_snapshot_fails_closed_when_prime_peer_provider_window_is_missing(

@@ -125,14 +125,14 @@ class PromotionEligibilityService:
         if not isinstance(coverage, dict) or set(coverage) != {
             "schemaVersion",
             "stockPriceAdjustmentMode",
-            "adjustedMetrics",
+            "providerVintage",
         }:
             return False
-        lineage = coverage.get("adjustedMetrics")
+        lineage = coverage.get("providerVintage")
         if (
-            coverage.get("schemaVersion") != 4
+            coverage.get("schemaVersion") != 5
             or coverage.get("stockPriceAdjustmentMode")
-            != "local_projection_v2_event_time"
+            != "provider_adjusted_v1"
             or not isinstance(lineage, dict)
             or set(lineage) != lineage_keys
             or any(not isinstance(value, int) for value in lineage.values())
@@ -229,7 +229,7 @@ class PromotionEligibilityService:
             return False
         phases = report.get("phases")
         required_phases = {
-            "initial_sync_and_adjusted_metrics_pit",
+            "initial_sync_and_provider_vintage",
             "semantic_smoke",
         }
         return isinstance(phases, list) and required_phases == {

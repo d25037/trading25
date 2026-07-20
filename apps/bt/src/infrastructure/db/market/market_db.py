@@ -38,6 +38,7 @@ from src.infrastructure.db.market import stock_master_queries as _stock_master_q
 from src.infrastructure.db.market.valuation_queries import (
     get_adjusted_metrics_source_diagnostics as _get_adjusted_metrics_source_diagnostics,
     get_adjusted_metrics_snapshot as _get_adjusted_metrics_snapshot,
+    get_provider_vintage_snapshot as _get_provider_vintage_snapshot,
     get_adjusted_statement_metrics as _get_adjusted_statement_metrics,
     get_daily_valuation as _get_daily_valuation,
     get_daily_valuation_for_codes as _get_daily_valuation_for_codes,
@@ -359,6 +360,10 @@ class MarketDb:
                 list(params) if params is not None else None,
             ),
         )
+
+    def get_provider_vintage_snapshot(self) -> dict[str, Any]:
+        """Recompute provider vintage from per-code publication ownership."""
+        return _get_provider_vintage_snapshot(self._table_exists, self._fetchall_dicts)
 
     def get_topix_dates(
         self,

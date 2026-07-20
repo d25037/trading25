@@ -21,7 +21,7 @@ from tests.unit.server.services.market_v4_cutover_test_support import (
 
 
 def test_market_schema_stats_requires_v4_by_default() -> None:
-    assert MarketSchemaStats().requiredVersion == 4
+    assert MarketSchemaStats().requiredVersion == 5
 
 
 def test_cutover_test_service_uses_explicit_atomic_exchange_capability(

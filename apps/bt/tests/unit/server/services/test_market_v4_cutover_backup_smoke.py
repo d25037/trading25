@@ -259,7 +259,7 @@ def test_smoke_requires_market_v4_exact_lineage_and_semantic_api_parity(
     data_root = _market_root(tmp_path)
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
     )
     config = SmokeConfig(
         symbol="7203", strategy="production/smoke", dataset_preset="primeMarket"
@@ -268,8 +268,8 @@ def test_smoke_requires_market_v4_exact_lineage_and_semantic_api_parity(
     api = FakeApi()
     result = service.smoke(api, config, operation_id="smoke-001")
 
-    assert result.schema_version == 4
-    assert result.adjustment_mode == "local_projection_v2_event_time"
+    assert result.schema_version == 5
+    assert result.adjustment_mode == "provider_adjusted_v1"
     assert result.checks == (
         "market_metadata",
         "adjusted_metrics_lineage",
@@ -280,7 +280,7 @@ def test_smoke_requires_market_v4_exact_lineage_and_semantic_api_parity(
     )
     assert ("GET", "/api/analytics/screening/jobs/screen-1", None) in api.calls
 
-    with pytest.raises(CutoverSafetyError, match="adjusted-metric lineage"):
+    with pytest.raises(CutoverSafetyError, match="provider-vintage lineage"):
         service.smoke(FakeApi(invalid_lineage=True), config, operation_id="smoke-002")
     with pytest.raises(CutoverSafetyError, match="Fundamentals GET/POST parity"):
         service.smoke(FakeApi(parity=False), config, operation_id="smoke-003")
@@ -290,7 +290,7 @@ def test_smoke_reads_adjustment_mode_directly_from_duckdb(tmp_path: Path) -> Non
     data_root = _market_root(tmp_path)
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v1")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "local_projection_v1")),
     )
     with pytest.raises(CutoverSafetyError, match="adjustment mode"):
         service.smoke(
@@ -305,7 +305,7 @@ def test_smoke_uses_operation_scoped_create_only_dataset(tmp_path: Path) -> None
     api = FakeApi()
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
     )
 
     service.smoke(
@@ -346,7 +346,7 @@ def test_standalone_smoke_worker_unjoined_transfers_shared_guard_lease(
             )
 
     duckdb = GuardHoldingDuckDb(
-        MarketSourceMetadata(4, "local_projection_v2_event_time")
+        MarketSourceMetadata(5, "provider_adjusted_v1")
     )
     service = _service(data_root, duckdb=duckdb)
 

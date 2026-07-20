@@ -57,6 +57,7 @@ class DummyMarketDb:
         schema_version: int = MARKET_SCHEMA_VERSION,
         adjusted_metrics_snapshot: dict[str, Any] | None = None,
         adjusted_metrics_source_diagnostics: dict[str, int] | None = None,
+        provider_vintage_snapshot: dict[str, Any] | None = None,
     ) -> None:
         self._initialized = initialized
         self._adjustment_events = adjustment_events or []
@@ -78,15 +79,25 @@ class DummyMarketDb:
         self._adjusted_metrics_source_diagnostics = (
             adjusted_metrics_source_diagnostics or {}
         )
+        provider_window_count = int(
+            self._adjusted_metrics_snapshot.get("providerWindowCount", 0) or 0
+        )
+        self._provider_vintage_snapshot = provider_vintage_snapshot or {
+            "providerAsOf": "2026-02-27",
+            "providerAsOfMin": "2026-02-27",
+            "providerAsOfMax": "2026-02-27",
+            "effectiveCoverageStart": "2016-02-29",
+            "effectiveCoverageEnd": "2026-02-27",
+            "providerSourceFingerprint": "a" * 64,
+            "providerWindowCoherent": provider_window_count > 0,
+            "providerWindowFingerprintCount": provider_window_count,
+            "adjustmentEventCount": len(self._adjustment_events),
+        }
         self._metadata = {
             "init_completed": "true",
             "last_sync_date": "2026-02-28T00:00:00+00:00",
             "last_stocks_refresh": "2026-02-28T00:00:00+00:00",
             METADATA_KEYS["PROVIDER_PLAN"]: "standard",
-            METADATA_KEYS["PROVIDER_AS_OF"]: "2026-02-27",
-            METADATA_KEYS["PROVIDER_COVERAGE_START"]: "2016-02-29",
-            METADATA_KEYS["PROVIDER_COVERAGE_END"]: "2026-02-27",
-            METADATA_KEYS["PROVIDER_SOURCE_FINGERPRINT"]: "provider-sha256",
         }
 
     def is_initialized(self) -> bool:
@@ -172,6 +183,9 @@ class DummyMarketDb:
 
     def get_adjusted_metrics_source_diagnostics(self) -> dict[str, int]:
         return dict(self._adjusted_metrics_source_diagnostics)
+
+    def get_provider_vintage_snapshot(self) -> dict[str, Any]:
+        return dict(self._provider_vintage_snapshot)
 
     def _resolve_options_225_issue_dates(self, issue_type: str) -> list[str]:
         if issue_type == "missing":

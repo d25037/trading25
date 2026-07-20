@@ -41,7 +41,7 @@ def test_rehearsal_uses_isolated_paths_and_credential_safe_report(
     runtime = FakeRuntime(apis=[rehearsal_api])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
 
@@ -190,11 +190,11 @@ def test_rehearse_retained_rejects_ineligible_source(
         (retained_root / "config/default.yaml").write_text("drift: true\n")
     elif mutation == "schema_v3":
         service._workspace.duckdb = FakeDuckDb(
-            MarketSourceMetadata(3, "local_projection_v2_event_time")
+            MarketSourceMetadata(3, "provider_adjusted_v1")
         )
     elif mutation == "wrong_adjustment_mode":
         service._workspace.duckdb = FakeDuckDb(
-            MarketSourceMetadata(4, "local_projection_v1")
+            MarketSourceMetadata(5, "local_projection_v1")
         )
 
     runtime = FakeRuntime(apis=[FakeApi()])
@@ -232,8 +232,8 @@ def test_rehearse_retained_smokes_current_code_without_market_writes(
     runtime = FakeRuntime(apis=[api])
     service._workspace.runtime = runtime
     smoke_result = SmokeResult(
-        schema_version=4,
-        adjustment_mode="local_projection_v2_event_time",
+        schema_version=5,
+        adjustment_mode="provider_adjusted_v1",
         checks=("market_metadata", "semantic_smoke"),
         api_paths=("/api/db/stats", "/api/analytics/fundamentals/7203"),
         lineage={"readyProviderWindowCount": 2},
@@ -271,9 +271,9 @@ def test_rehearse_retained_smokes_current_code_without_market_writes(
     assert report["sourceMarketIdentityBefore"] == report["sourceMarketIdentityAfter"]
     assert report["apiChecks"] == list(smoke_result.api_paths)
     assert report["schemaCoverage"] == {
-        "schemaVersion": 4,
-        "stockPriceAdjustmentMode": "local_projection_v2_event_time",
-        "adjustedMetrics": smoke_result.lineage,
+        "schemaVersion": 5,
+        "stockPriceAdjustmentMode": "provider_adjusted_v1",
+        "providerVintage": smoke_result.lineage,
     }
     assert report["phases"][0]["name"] == "retained_market_smoke"
     assert report["serverProcessJoined"] is True
@@ -358,9 +358,9 @@ def test_rehearse_retained_requires_ready_lineage_before_resource_creation(
     data_root = _market_root(tmp_path)
     service, retained_root, config = _retained_source(data_root)
     service._workspace.duckdb.inspect = lambda *_args, **_kwargs: SimpleNamespace(
-        schema_version=4,
-        adjustment_mode="local_projection_v2_event_time",
-        adjusted_metrics_ready=False,
+        schema_version=5,
+        adjustment_mode="provider_adjusted_v1",
+        provider_vintage_ready=False,
     )
     runtime = FakeRuntime(apis=[FakeApi()])
     service._workspace.runtime = runtime
@@ -441,7 +441,7 @@ def test_rehearse_retained_rejects_descriptor_configuration_mutation_during_smok
     service._workspace.runtime = FakeRuntime(apis=[FakeApi()])
     smoke_result = SmokeResult(
         4,
-        "local_projection_v2_event_time",
+        "provider_adjusted_v1",
         ("market_metadata",),
         ("/api/db/stats",),
         {"readyProviderWindowCount": 2},
@@ -542,7 +542,7 @@ def test_rehearse_retained_rejects_market_tree_mutation_after_smoke(
     service._workspace.runtime = runtime
     smoke_result = SmokeResult(
         4,
-        "local_projection_v2_event_time",
+        "provider_adjusted_v1",
         ("market_metadata",),
         ("/api/db/stats",),
         {"readyProviderWindowCount": 2},
@@ -597,7 +597,7 @@ def test_rehearse_retained_failure_cleanup_and_join_verdicts(
     service, _retained_root, config = _retained_source(data_root)
     smoke_result = SmokeResult(
         4,
-        "local_projection_v2_event_time",
+        "provider_adjusted_v1",
         ("market_metadata",),
         ("/api/db/stats",),
         {"readyProviderWindowCount": 2},

@@ -29,10 +29,6 @@ class DummyMarketDb:
         self._metadata = metadata or {
             "last_sync_date": "2026-03-01T00:00:00+00:00",
             METADATA_KEYS["PROVIDER_PLAN"]: "standard",
-            METADATA_KEYS["PROVIDER_AS_OF"]: "2026-02-27",
-            METADATA_KEYS["PROVIDER_COVERAGE_START"]: "2016-02-29",
-            METADATA_KEYS["PROVIDER_COVERAGE_END"]: "2026-02-27",
-            METADATA_KEYS["PROVIDER_SOURCE_FINGERPRINT"]: "provider-sha256",
         }
 
     def is_initialized(self) -> bool:
@@ -92,10 +88,43 @@ class DummyMarketDb:
             "fundamentalsAdjustmentBasisDate": "2026-02-27",
             "providerWindowCount": 2,
             "readyProviderWindowCount": 2,
+            "providerAsOf": "2026-02-27",
+            "effectiveCoverageStart": "2016-02-29",
+            "effectiveCoverageEnd": "2026-02-27",
+            "providerSourceFingerprint": "a" * 64,
+            "providerWindowCoherent": True,
+            "providerWindowFingerprintCount": 2,
+            "adjustmentEventCount": 3,
         }
 
     def get_adjusted_metrics_source_diagnostics(self) -> dict[str, int]:
         return {}
+
+    def get_provider_vintage_snapshot(self) -> dict[str, Any]:
+        snapshot = {
+            "providerAsOf": "2026-02-27",
+            "providerAsOfMin": "2026-02-27",
+            "providerAsOfMax": "2026-02-27",
+            "effectiveCoverageStart": "2016-02-29",
+            "effectiveCoverageEnd": "2026-02-27",
+            "providerSourceFingerprint": "a" * 64,
+            "providerWindowCoherent": True,
+            "providerWindowFingerprintCount": 2,
+        }
+        snapshot.update({
+            key: value
+            for key, value in self.get_adjusted_metrics_snapshot().items()
+            if key
+            in {
+                "providerAsOf",
+                "effectiveCoverageStart",
+                "effectiveCoverageEnd",
+                "providerSourceFingerprint",
+                "providerWindowCoherent",
+                "providerWindowFingerprintCount",
+            }
+        })
+        return snapshot
 
     def get_adjustment_events_count(self) -> int:
         return 3
@@ -448,6 +477,18 @@ def test_get_market_stats_exposes_provider_vintage_metadata_and_pending_recovery
                 "pendingCurrentBasisCodeCount": 1,
             }
 
+        def get_provider_vintage_snapshot(self) -> dict[str, Any]:
+            return {
+                "providerAsOf": "2026-07-20",
+                "providerAsOfMin": "2026-07-20",
+                "providerAsOfMax": "2026-07-20",
+                "effectiveCoverageStart": "2016-07-20",
+                "effectiveCoverageEnd": "2026-07-18",
+                "providerSourceFingerprint": "b" * 64,
+                "providerWindowCoherent": True,
+                "providerWindowFingerprintCount": 2,
+            }
+
     result = db_stats_service.get_market_stats(
         market_db=PendingProviderMarketDb(),
         time_series_store=DummyStore(
@@ -468,7 +509,7 @@ def test_get_market_stats_exposes_provider_vintage_metadata_and_pending_recovery
         "min": "2016-07-20",
         "max": "2026-07-18",
     }
-    assert vintage.sourceFingerprint == "provider-sha256"
+    assert vintage.sourceFingerprint == "b" * 64
     assert vintage.pendingCurrentBasisCodeCount == 1
     assert vintage.status == "pending"
     assert vintage.recoveryStage == "market_db_sync"
@@ -495,6 +536,24 @@ def test_get_market_stats_marks_incomplete_provider_vintage_metadata_invalid() -
                 stock_max="2026-07-18",
                 statements_count=4,
                 statement_codes={"1301", "7203"},
+            )
+        ),
+    )
+
+    assert result.providerVintage.status == "ready"
+    assert result.providerVintage.sourceFingerprint == "a" * 64
+
+
+def test_get_market_stats_rejects_padded_provider_plan_metadata() -> None:
+    result = db_stats_service.get_market_stats(
+        market_db=DummyMarketDb(
+            metadata={METADATA_KEYS["PROVIDER_PLAN"]: " standard "}
+        ),
+        time_series_store=DummyStore(
+            TimeSeriesInspection(
+                source="duckdb-parquet",
+                stock_count=10,
+                statements_count=4,
             )
         ),
     )

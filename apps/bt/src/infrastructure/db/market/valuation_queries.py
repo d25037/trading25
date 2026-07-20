@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from datetime import date
+import re
 from typing import Any
 
 from src.infrastructure.db.market.market_schema import (
@@ -10,6 +12,10 @@ from src.infrastructure.db.market.market_schema import (
     STATEMENT_METRICS_ADJUSTED_COLUMNS as _STATEMENT_METRICS_ADJUSTED_COLUMNS,
 )
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
+from src.shared.provider_stock_window import (
+    combine_provider_stock_source_fingerprints,
+    provider_stock_source_fingerprint,
+)
 
 
 _SOURCE_DIAGNOSTIC_DEFAULTS: dict[str, int] = {
@@ -28,6 +34,144 @@ _SOURCE_DIAGNOSTIC_DEFAULTS: dict[str, int] = {
     "extraDailyValuationRows": 0,
     "wrongBasisDailyValuationRows": 0,
 }
+
+
+def get_provider_vintage_snapshot(
+    table_exists: Callable[[str], bool],
+    fetchall_dicts: Callable[
+        [str, list[Any] | tuple[Any, ...] | None], list[dict[str, Any]]
+    ],
+) -> dict[str, Any]:
+    """Recompute provider-vintage ownership from bounded per-code source windows."""
+    defaults: dict[str, Any] = {
+        "providerAsOf": None,
+        "providerAsOfMin": None,
+        "providerAsOfMax": None,
+        "effectiveCoverageStart": None,
+        "effectiveCoverageEnd": None,
+        "providerSourceFingerprint": None,
+        "providerWindowCoherent": False,
+        "providerWindowFingerprintCount": 0,
+        "invalidProviderWindowCount": 0,
+        "adjustmentEventCount": 0,
+        "adjustmentEventFingerprintCount": 0,
+        "invalidAdjustmentEventCount": 0,
+    }
+    required = {
+        "stock_provider_windows",
+        "stock_data_raw",
+        "stock_adjustment_events",
+    }
+    if not all(table_exists(table) for table in required):
+        return defaults
+
+    windows = fetchall_dicts(
+        """
+        SELECT code, coverage_start, coverage_end, provider_as_of, source_fingerprint
+        FROM stock_provider_windows ORDER BY code
+        """,
+        None,
+    )
+    if not windows:
+        return defaults
+
+    valid_fingerprints: list[str] = []
+    starts: list[str] = []
+    ends: list[str] = []
+    as_ofs: list[str] = []
+    valid_window_count = 0
+    event_count = 0
+    valid_event_count = 0
+    invalid_event_count = 0
+    for window in windows:
+        code = str(window.get("code", ""))
+        coverage_start = str(window.get("coverage_start", ""))
+        coverage_end = str(window.get("coverage_end", ""))
+        provider_as_of = str(window.get("provider_as_of", ""))
+        owned_fingerprint = str(window.get("source_fingerprint", ""))
+        metadata_valid = bool(re.fullmatch(r"[0-9a-f]{64}", owned_fingerprint))
+        try:
+            parsed_start = date.fromisoformat(coverage_start)
+            parsed_end = date.fromisoformat(coverage_end)
+            parsed_as_of = date.fromisoformat(provider_as_of)
+            metadata_valid = metadata_valid and all(
+                parsed.isoformat() == raw
+                for parsed, raw in (
+                    (parsed_start, coverage_start),
+                    (parsed_end, coverage_end),
+                    (parsed_as_of, provider_as_of),
+                )
+            )
+            metadata_valid = metadata_valid and parsed_start <= parsed_end <= parsed_as_of
+        except ValueError:
+            metadata_valid = False
+
+        raw_rows = fetchall_dicts(
+            "SELECT * FROM stock_data_raw WHERE code = ? ORDER BY date",
+            [code],
+        )
+        calculated_fingerprint = provider_stock_source_fingerprint(raw_rows)
+        raw_dates = [str(row.get("date", "")) for row in raw_rows]
+        bounds_valid = bool(raw_dates) and raw_dates[0] == coverage_start and raw_dates[-1] == coverage_end
+        fingerprint_valid = owned_fingerprint == calculated_fingerprint
+        window_valid = metadata_valid and bounds_valid and fingerprint_valid
+        if window_valid:
+            valid_window_count += 1
+            valid_fingerprints.append(calculated_fingerprint)
+            starts.append(coverage_start)
+            ends.append(coverage_end)
+            as_ofs.append(provider_as_of)
+
+        actual_events = fetchall_dicts(
+            """
+            SELECT date, adjustment_factor, source_fingerprint
+            FROM stock_adjustment_events WHERE code = ? ORDER BY date
+            """,
+            [code],
+        )
+        expected_events = {
+            str(row["date"]): float(row["adjustment_factor"])
+            for row in raw_rows
+            if row.get("adjustment_factor") is not None
+            and float(row["adjustment_factor"]) != 1.0
+        }
+        actual_dates: set[str] = set()
+        for event in actual_events:
+            event_count += 1
+            event_date = str(event.get("date", ""))
+            actual_dates.add(event_date)
+            valid = (
+                event_date in expected_events
+                and float(event.get("adjustment_factor", 0)) == expected_events[event_date]
+                and str(event.get("source_fingerprint", "")) == calculated_fingerprint
+                and window_valid
+            )
+            if valid:
+                valid_event_count += 1
+            else:
+                invalid_event_count += 1
+        invalid_event_count += len(set(expected_events) - actual_dates)
+
+    coherent = valid_window_count == len(windows) and max(starts) <= min(ends)
+    return {
+        **defaults,
+        "providerAsOf": as_ofs[0] if coherent and len(set(as_ofs)) == 1 else None,
+        "providerAsOfMin": min(as_ofs) if as_ofs else None,
+        "providerAsOfMax": max(as_ofs) if as_ofs else None,
+        "effectiveCoverageStart": max(starts) if coherent else None,
+        "effectiveCoverageEnd": min(ends) if coherent else None,
+        "providerSourceFingerprint": (
+            combine_provider_stock_source_fingerprints(*valid_fingerprints)
+            if valid_fingerprints and valid_window_count == len(windows)
+            else None
+        ),
+        "providerWindowCoherent": coherent,
+        "providerWindowFingerprintCount": valid_window_count,
+        "invalidProviderWindowCount": len(windows) - valid_window_count,
+        "adjustmentEventCount": event_count,
+        "adjustmentEventFingerprintCount": valid_event_count,
+        "invalidAdjustmentEventCount": invalid_event_count,
+    }
 
 
 def get_adjusted_metrics_source_diagnostics(

@@ -287,7 +287,6 @@ class PromotionTransactionService:
             )
         forbidden_paths = (
             "/api/db/sync",
-            "/api/db/adjusted-metrics/materialize",
             "/api/db/stocks/refresh",
             "/api/db/intraday/sync",
         )

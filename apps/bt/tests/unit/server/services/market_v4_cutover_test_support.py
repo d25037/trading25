@@ -182,8 +182,8 @@ class FakeApi:
         self.calls.append((method, path, payload))
         if path == "/api/db/stats":
             return {
-                "schema": {"version": 4, "requiredVersion": 4, "current": True},
-                "adjustedMetrics": {
+                "schema": {"version": 5, "requiredVersion": 5, "current": True},
+                "providerVintage": {
                     "status": "ready",
                     "currentBasisStatementCount": 4,
                     "dailyValuationRows": 10,
@@ -193,7 +193,7 @@ class FakeApi:
         if path == "/api/db/validate":
             return {
                 "status": "healthy",
-                "adjustedMetrics": {
+                "providerVintage": {
                     "status": "invalid_lineage" if self.invalid_lineage else "ready",
                     "sourceStatementKeyCount": 2,
                     "expectedAdjustedStatementRows": 4,
@@ -238,8 +238,8 @@ class FakeApi:
             return {
                 "snapshot": {
                     "schemaVersion": 3,
-                    "sourceMarketSchemaVersion": 4,
-                    "stockPriceAdjustmentMode": "local_projection_v2_event_time",
+                    "sourceMarketSchemaVersion": 5,
+                    "stockPriceAdjustmentMode": "provider_adjusted_v1",
                 },
                 "validation": {"isValid": True},
             }
@@ -462,7 +462,7 @@ def _retained_source(
     shutil.copytree(data_root / "strategies", retained_root / "strategies")
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
     )
     _write_report(
         data_root,

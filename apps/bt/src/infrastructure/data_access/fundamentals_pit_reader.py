@@ -109,7 +109,7 @@ def _resolve_provider_windows(
     if missing:
         raise FundamentalsPitSnapshotError(
             "provider_window_required",
-            "adjusted_metrics_pit recovery required: provider window is unavailable for "
+            "market_db_sync recovery required: provider window is unavailable for "
             + ", ".join(missing),
         )
 
@@ -128,7 +128,7 @@ def _resolve_provider_windows(
         pending_codes = ", ".join(str(row["code"]) for row in pending)
         raise FundamentalsPitSnapshotError(
             "current_adjusted_metrics_required",
-            "adjusted_metrics_pit recovery required: current-basis recompute is pending for "
+            "market_db_sync recovery required: current-basis recompute is pending for "
             + pending_codes,
         )
 
@@ -144,7 +144,7 @@ def _resolve_provider_windows(
         ):
             raise FundamentalsPitSnapshotError(
                 "provider_window_required",
-                f"adjusted_metrics_pit recovery required: provider window for {code} "
+                f"market_db_sync recovery required: provider window for {code} "
                 f"does not cover {effective_market_date}",
             )
     return by_code
@@ -338,7 +338,7 @@ def _validate_current_fundamentals_state(
     if inconsistent:
         raise FundamentalsPitSnapshotError(
             "current_adjusted_metrics_required",
-            "adjusted_metrics_pit recovery required: current-basis fundamentals "
+            "market_db_sync recovery required: current-basis fundamentals "
             "state does not match provider coverage and full statement identities",
         )
 
@@ -379,7 +379,7 @@ def _validate_current_metrics(
     if inconsistent:
         raise FundamentalsPitSnapshotError(
             "current_adjusted_metrics_required",
-            "adjusted_metrics_pit recovery required: current-basis statement metrics "
+            "market_db_sync recovery required: current-basis statement metrics "
             "do not match the bounded statement identities/provider windows",
         )
 

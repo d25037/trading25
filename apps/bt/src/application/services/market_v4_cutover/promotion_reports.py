@@ -126,7 +126,7 @@ class PromotionReportService:
         payloads = mappings["payloads"]
         filesystem = mappings["filesystem"]
         semantic = mappings["semantic"]
-        lineage = semantic["adjustedMetrics"]
+        lineage = semantic["providerVintage"]
         exact_lineage = bool(
             isinstance(lineage, dict)
             and set(lineage)
@@ -238,7 +238,7 @@ class PromotionReportService:
                     "schemaVersion",
                     "stockPriceAdjustmentMode",
                     "checks",
-                    "adjustedMetrics",
+                    "providerVintage",
                 },
             ),
             "consumed": (
@@ -390,8 +390,8 @@ class PromotionReportService:
             and exact_api_checks
             and report["serverProcessJoined"] is True
             and report["workerProcessJoined"] is True
-            and semantic["schemaVersion"] == 4
-            and semantic["stockPriceAdjustmentMode"] == "local_projection_v2_event_time"
+            and semantic["schemaVersion"] == 5
+            and semantic["stockPriceAdjustmentMode"] == "provider_adjusted_v1"
             and semantic["checks"] == list(self._PROMOTION_SMOKE_CHECKS)
             and exact_lineage
             and consumed["retainedReportId"] == retained["reportId"]
@@ -606,7 +606,7 @@ class PromotionReportService:
                 "schemaVersion": smoke_result.schema_version,
                 "stockPriceAdjustmentMode": smoke_result.adjustment_mode,
                 "checks": list(smoke_result.checks),
-                "adjustedMetrics": smoke_result.lineage,
+                "providerVintage": smoke_result.lineage,
             },
             source_consumed={
                 "retainedReportId": eligibility.retained_report_id,

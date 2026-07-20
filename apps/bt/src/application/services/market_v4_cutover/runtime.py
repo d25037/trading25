@@ -23,7 +23,6 @@ from .project_paths import bt_project_root
 
 _CREATE_JOB_RESPONSE_FIELDS: dict[str, tuple[str, str]] = {
     "/api/db/sync": ("sync", "jobId"),
-    "/api/db/adjusted-metrics/materialize": ("materialize", "jobId"),
     "/api/analytics/screening/jobs": ("screening", "job_id"),
     "/api/dataset": ("dataset", "jobId"),
 }
@@ -239,11 +238,6 @@ class SubprocessRuntimeAdapter:
                 "DELETE",
                 "/api/db/sync/jobs/{job_id}",
                 "/api/db/sync/jobs/{job_id}",
-            ),
-            "materialize": (
-                "DELETE",
-                "/api/db/adjusted-metrics/materialize/jobs/{job_id}",
-                "/api/db/adjusted-metrics/materialize/jobs/{job_id}",
             ),
             "screening": (
                 "POST",

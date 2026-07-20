@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+import re
 from typing import Any, Protocol
 
 from src.application.services.listed_market_targets import (
@@ -58,6 +59,7 @@ class MarketDbStatsLike(Protocol):
     def get_index_master_category_counts(self) -> dict[str, int]: ...
     def get_adjusted_metrics_snapshot(self) -> dict[str, Any]: ...
     def get_adjusted_metrics_source_diagnostics(self) -> dict[str, int]: ...
+    def get_provider_vintage_snapshot(self) -> dict[str, Any]: ...
     def get_adjustment_events_count(self) -> int: ...
 
 
@@ -243,21 +245,11 @@ def get_market_stats(
         {
             **market_db.get_adjusted_metrics_snapshot(),
             **market_db.get_adjusted_metrics_source_diagnostics(),
+            **market_db.get_provider_vintage_snapshot(),
         },
         source_stock_count=inspection.stock_count,
         source_statement_count=inspection.statements_count,
         provider_plan=market_db.get_sync_metadata(METADATA_KEYS["PROVIDER_PLAN"]),
-        provider_as_of=market_db.get_sync_metadata(METADATA_KEYS["PROVIDER_AS_OF"]),
-        coverage_start=market_db.get_sync_metadata(
-            METADATA_KEYS["PROVIDER_COVERAGE_START"]
-        ),
-        coverage_end=market_db.get_sync_metadata(
-            METADATA_KEYS["PROVIDER_COVERAGE_END"]
-        ),
-        source_fingerprint=market_db.get_sync_metadata(
-            METADATA_KEYS["PROVIDER_SOURCE_FINGERPRINT"]
-        ),
-        adjustment_event_count=market_db.get_adjustment_events_count(),
     )
 
     # Topix
@@ -421,11 +413,6 @@ def _build_provider_vintage_stats(
     source_stock_count: int,
     source_statement_count: int,
     provider_plan: str | None = None,
-    provider_as_of: str | None = None,
-    coverage_start: str | None = None,
-    coverage_end: str | None = None,
-    source_fingerprint: str | None = None,
-    adjustment_event_count: int = 0,
 ) -> ProviderVintageStats:
     current_basis_statement_count = int(
         snapshot.get("currentBasisStatementCount", 0) or 0
@@ -462,6 +449,14 @@ def _build_provider_vintage_stats(
     provider_adjusted_mismatch_count = int(
         snapshot.get("providerAdjustedMismatchCount", 0) or 0
     )
+    provider_as_of = snapshot.get("providerAsOf")
+    provider_as_of_min = snapshot.get("providerAsOfMin")
+    provider_as_of_max = snapshot.get("providerAsOfMax")
+    coverage_start = snapshot.get("effectiveCoverageStart")
+    coverage_end = snapshot.get("effectiveCoverageEnd")
+    source_fingerprint = snapshot.get("providerSourceFingerprint")
+    provider_window_coherent = bool(snapshot.get("providerWindowCoherent", False))
+    adjustment_event_count = int(snapshot.get("adjustmentEventCount", 0) or 0)
     source_statement_key_count = int(snapshot.get("sourceStatementKeyCount", 0) or 0)
     expected_adjusted_statement_rows = int(
         snapshot.get("expectedAdjustedStatementRows", 0) or 0
@@ -479,14 +474,18 @@ def _build_provider_vintage_stats(
         snapshot.get("wrongBasisAdjustedStatementRows", 0) or 0
     )
     has_raw_source = source_stock_count > 0 or source_statement_count > 0
+    provider_plan_valid = provider_plan is None or bool(
+        re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", provider_plan)
+    )
     provider_metadata_valid = bool(
-        provider_plan
-        and provider_as_of
+        provider_window_coherent
+        and provider_as_of_min
+        and provider_as_of_max
         and coverage_start
         and coverage_end
         and source_fingerprint
         and coverage_start <= coverage_end
-        and provider_as_of >= coverage_end
+        and provider_as_of_min >= coverage_end
     )
     if (
         invalid_current_basis_state_count > 0
@@ -494,6 +493,7 @@ def _build_provider_vintage_stats(
         or invalid_provider_window_count > 0
         or invalid_adjustment_event_count > 0
         or provider_adjusted_mismatch_count > 0
+        or not provider_plan_valid
         or (provider_window_count > 0 and not provider_metadata_valid)
     ):
         status = "invalid"
@@ -516,10 +516,14 @@ def _build_provider_vintage_stats(
     return ProviderVintageStats(
         providerPlan=provider_plan,
         providerAsOf=provider_as_of,
+        providerAsOfRange=DateRange(min=provider_as_of_min, max=provider_as_of_max)
+        if provider_as_of_min and provider_as_of_max
+        else None,
         effectiveCoverage=DateRange(min=coverage_start, max=coverage_end)
         if coverage_start and coverage_end
         else None,
         sourceFingerprint=source_fingerprint,
+        providerWindowCoherent=provider_window_coherent,
         providerWindowCount=provider_window_count,
         readyProviderWindowCount=ready_provider_window_count,
         providerWindowFingerprintCount=provider_window_fingerprint_count,

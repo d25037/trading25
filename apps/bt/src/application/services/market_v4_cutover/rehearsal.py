@@ -321,7 +321,7 @@ class RetainedRehearsalService:
         state.completed_evidence = {
             "schemaVersion": smoke_result.schema_version,
             "stockPriceAdjustmentMode": smoke_result.adjustment_mode,
-            "adjustedMetrics": smoke_result.lineage,
+            "providerVintage": smoke_result.lineage,
         }
         self._workspace.runtime.stop(state.api)
         state.api = None
@@ -460,17 +460,17 @@ class RetainedRehearsalService:
                 "market.duckdb",
                 guard_lease_fd=lease.fd,
             )
-            if metadata.schema_version != 4:
+            if metadata.schema_version != 5:
                 raise _managed_root.CutoverSafetyError(
-                    "Retained Market schema v4 is required"
+                    "Retained Market schema v5 is required"
                 )
-            if metadata.adjustment_mode != "local_projection_v2_event_time":
+            if metadata.adjustment_mode != "provider_adjusted_v1":
                 raise _managed_root.CutoverSafetyError(
                     "Retained Market adjustment mode is incompatible"
                 )
-            if metadata.adjusted_metrics_ready is not True:
+            if metadata.provider_vintage_ready is not True:
                 raise _managed_root.CutoverSafetyError(
-                    "Retained adjusted-metric event-time lineage is not ready"
+                    "Retained provider-vintage current-basis lineage is not ready"
                 )
             return market_fd, self._market_identity.market_tree_identity(
                 lease.root_fd

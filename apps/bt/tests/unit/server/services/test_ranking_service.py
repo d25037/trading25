@@ -998,7 +998,7 @@ def test_provider_window_resolution_fails_closed(
 
     reader = MarketDbReader(ranking_db)
     try:
-        with pytest.raises(ValueError, match="adjusted_metrics_pit"):
+        with pytest.raises(ValueError, match="market_db_sync"):
             resolve_provider_windows(reader, ["72030"], "2024-01-19")
     finally:
         reader.close()
@@ -1016,7 +1016,7 @@ def test_provider_window_resolution_fails_closed_for_under_coverage(
 
     reader = MarketDbReader(ranking_db)
     try:
-        with pytest.raises(ValueError, match="adjusted_metrics_pit"):
+        with pytest.raises(ValueError, match="market_db_sync"):
             resolve_provider_windows(reader, ["7203"], "2024-01-19")
     finally:
         reader.close()
@@ -1047,7 +1047,7 @@ def test_provider_window_resolution_fails_closed_for_stale_current_state(
 
     reader = MarketDbReader(ranking_db)
     try:
-        with pytest.raises(ValueError, match="adjusted_metrics_pit"):
+        with pytest.raises(ValueError, match="market_db_sync"):
             resolve_provider_windows(reader, ["7203"], "2024-01-19")
     finally:
         reader.close()

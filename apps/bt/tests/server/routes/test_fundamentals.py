@@ -212,7 +212,7 @@ class TestFundamentalsComputeEndpoint:
             if status == 409:
                 assert {
                     "field": "recovery",
-                    "message": "adjusted_metrics_pit",
+                    "message": "market_db_sync",
                 } in data["details"]
             else:
                 assert not any(item["field"] == "recovery" for item in data["details"])

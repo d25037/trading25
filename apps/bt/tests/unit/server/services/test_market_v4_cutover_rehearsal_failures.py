@@ -72,7 +72,7 @@ def test_rehearsal_failure_report_keeps_start_identity_and_original_error(
     runtime = FakeRuntime(apis=[FailingApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     code_version, _calls = _changing_code_version("deadbeef", "deadbeef-dirty")
@@ -135,7 +135,7 @@ def test_rehearsal_cleanup_join_verdict_preserves_primary_error(
     runtime = UnjoinedRuntime(apis=[FailingApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
 
@@ -174,7 +174,7 @@ def test_rehearsal_cancel_failure_is_diagnostic_when_stop_proves_join(
     runtime = CancelFailingRuntime(apis=[FakeApi(invalid_lineage=True)])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
 
@@ -289,7 +289,7 @@ def test_rehearsal_startup_error_uses_embedded_join_verdict(
     runtime = StartupFailingRuntime()
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
 
@@ -339,7 +339,7 @@ def test_rehearsal_identity_drift_cannot_publish_passed_report(tmp_path: Path) -
     runtime = FakeRuntime(apis=[FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     code_version, _calls = _changing_code_version("deadbeef", "deadbeef-dirty")
@@ -381,7 +381,7 @@ def test_rehearsal_rejects_concurrent_strategy_edit_and_stale_report(
     runtime = EditingRuntime(apis=[FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     original_fingerprint = service.root_fingerprint(data_root)
@@ -420,7 +420,7 @@ def test_rehearsal_report_publish_failure_never_leaves_passed_evidence(
     runtime = FakeRuntime(apis=[FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     failed_once = False
@@ -457,7 +457,7 @@ def test_active_report_publish_failure_restores_without_passed_evidence(
     runtime = FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     service.backup("before-report-failure")

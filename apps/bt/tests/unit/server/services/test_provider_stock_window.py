@@ -34,7 +34,7 @@ def _metadata() -> dict[str, str]:
     return {
         "provider_plan": "premium",
         "provider_as_of": "2026-02-12",
-        "provider_source_fingerprint": "fingerprint",
+        "provider_source_fingerprint": "a" * 64,
     }
 
 
@@ -118,6 +118,30 @@ def test_validate_provider_stock_window_rejects_provider_as_of_before_coverage()
     metadata["provider_as_of"] = "2026-02-09"
 
     with pytest.raises(ValueError, match="provider as-of must be on or after coverage end"):
+        validate_provider_stock_window(
+            "7203",
+            [_row("2026-02-10")],
+            {"start": "2026-02-10", "end": "2026-02-10"},
+            metadata,
+        )
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "message"),
+    [
+        ("provider_plan", " premium", "whitespace padding"),
+        ("provider_plan", "premium plan", "provider plan is invalid"),
+        ("provider_as_of", "2026-2-10", "must be an ISO date"),
+        ("provider_source_fingerprint", "ABC", "source fingerprint is invalid"),
+    ],
+)
+def test_validate_provider_stock_window_rejects_malformed_metadata(
+    key: str, value: str, message: str
+) -> None:
+    metadata = _metadata()
+    metadata[key] = value
+
+    with pytest.raises(ValueError, match=message):
         validate_provider_stock_window(
             "7203",
             [_row("2026-02-10")],

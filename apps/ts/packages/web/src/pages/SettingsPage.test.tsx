@@ -162,8 +162,10 @@ beforeEach(() => {
       providerVintage: {
         providerPlan: 'standard',
         providerAsOf: '2026-02-28',
+        providerAsOfRange: { min: '2026-02-28', max: '2026-02-28' },
         effectiveCoverage: { min: '2016-02-29', max: '2026-02-27' },
         sourceFingerprint: 'provider-sha256',
+        providerWindowCoherent: true,
         providerWindowCount: 2500,
         readyProviderWindowCount: 2499,
         adjustmentEventCount: 81,

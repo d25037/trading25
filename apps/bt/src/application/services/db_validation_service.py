@@ -187,6 +187,7 @@ class ValidationMarketDbLike(Protocol):
     def get_options_225_underlying_price_issue_count(self, *, issue_type: str) -> int: ...
     def get_adjusted_metrics_snapshot(self) -> dict[str, Any]: ...
     def get_adjusted_metrics_source_diagnostics(self) -> dict[str, int]: ...
+    def get_provider_vintage_snapshot(self) -> dict[str, Any]: ...
 
 
 class ValidationTimeSeriesStoreLike(Protocol):
@@ -401,21 +402,11 @@ def validate_market_db(
         {
             **market_db.get_adjusted_metrics_snapshot(),
             **market_db.get_adjusted_metrics_source_diagnostics(),
+            **market_db.get_provider_vintage_snapshot(),
         },
         source_stock_count=base.inspection.stock_count,
         source_statement_count=base.inspection.statements_count,
         provider_plan=market_db.get_sync_metadata(METADATA_KEYS["PROVIDER_PLAN"]),
-        provider_as_of=market_db.get_sync_metadata(METADATA_KEYS["PROVIDER_AS_OF"]),
-        coverage_start=market_db.get_sync_metadata(
-            METADATA_KEYS["PROVIDER_COVERAGE_START"]
-        ),
-        coverage_end=market_db.get_sync_metadata(
-            METADATA_KEYS["PROVIDER_COVERAGE_END"]
-        ),
-        source_fingerprint=market_db.get_sync_metadata(
-            METADATA_KEYS["PROVIDER_SOURCE_FINGERPRINT"]
-        ),
-        adjustment_event_count=source_quality.adjustment_events_count,
     )
     integrity_issues, readiness_recommendations = _build_readiness_issues(base.inspection)
 

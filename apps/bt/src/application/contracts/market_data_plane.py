@@ -150,8 +150,10 @@ class FundamentalsStats(BaseModel):
 class ProviderVintageStats(BaseModel):
     providerPlan: str | None = None
     providerAsOf: str | None = None
+    providerAsOfRange: DateRange | None = None
     effectiveCoverage: DateRange | None = None
     sourceFingerprint: str | None = None
+    providerWindowCoherent: bool = False
     providerWindowCount: int = 0
     readyProviderWindowCount: int = 0
     providerWindowFingerprintCount: int = 0

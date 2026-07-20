@@ -47,7 +47,7 @@ def test_cutover_defers_restore_when_active_server_stop_is_unproven(
     runtime = UnjoinedRuntime(apis=[FakeApi(), FakeApi(), FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     service.backup("stop-deferred-backup")
@@ -107,7 +107,7 @@ def test_cutover_unjoined_stop_keeps_primary_and_secondary_errors(
     runtime = UnjoinedCleanupRuntime(apis=[FakeApi(), FakeApi(), FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     service.backup("secondary-stop-backup")
@@ -177,7 +177,7 @@ def test_cutover_unjoined_active_server_transfers_active_lease(
     runtime = LeaseHoldingRuntime(apis=[FakeApi(), FakeApi(), FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     service.backup("active-lease-transfer-backup")
@@ -238,7 +238,7 @@ def test_cutover_unjoined_staging_server_transfers_staging_lease(
     runtime = LeaseHoldingRuntime(apis=[FakeApi(), FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     service.backup("staging-lease-transfer-backup")
@@ -308,7 +308,7 @@ def test_cutover_unjoined_staging_worker_transfers_staging_lease(
             )
 
     duckdb = GuardHoldingDuckDb(
-        MarketSourceMetadata(4, "local_projection_v2_event_time")
+        MarketSourceMetadata(5, "provider_adjusted_v1")
     )
     runtime = FakeRuntime(apis=[FakeApi(), FakeApi()])
     service = _service(data_root, duckdb=duckdb, runtime=runtime)
@@ -357,7 +357,7 @@ def test_cutover_restore_failure_keeps_primary_and_restore_errors(
     runtime = FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi(invalid_lineage=True)])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     service.backup("secondary-restore-backup")
@@ -416,7 +416,7 @@ def test_cutover_defers_restore_when_active_start_fails_before_api_unjoined(
     runtime = ActiveStartFailureRuntime(apis=[FakeApi(), FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     service.backup("start-unjoined-backup")
@@ -473,7 +473,7 @@ def test_cutover_restores_when_active_start_failure_proves_child_joined(
     runtime = JoinedActiveStartFailureRuntime(apis=[FakeApi(), FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     original = (data_root / "market-timeseries/market.duckdb").read_bytes()
@@ -504,7 +504,7 @@ def test_cutover_defers_restore_when_duckdb_worker_join_is_unproven(
     runtime = FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     service.backup("worker-stop-deferred-backup")

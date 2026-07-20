@@ -103,7 +103,7 @@ class _PromotionJournalAuthorization:  # pyright: ignore[reportUnusedClass]
 class MarketSourceMetadata:
     schema_version: int | None
     adjustment_mode: str | None
-    adjusted_metrics_ready: bool = True
+    provider_vintage_ready: bool = True
 
 
 @dataclass(frozen=True)

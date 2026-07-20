@@ -146,7 +146,7 @@ def test_promote_retained_report_contract_is_exact_and_strict(
     missing_semantic_check = json.loads(json.dumps(report))
     missing_semantic_check["semanticSmoke"]["checks"].pop()
     empty_lineage = json.loads(json.dumps(report))
-    empty_lineage["semanticSmoke"]["adjustedMetrics"] = {}
+    empty_lineage["semanticSmoke"]["providerVintage"] = {}
     retained_sha_mismatch = json.loads(json.dumps(report))
     retained_sha_mismatch["retainedReport"]["reportSha256"] = "0" * 64
     source_code_mismatch = json.loads(json.dumps(report))

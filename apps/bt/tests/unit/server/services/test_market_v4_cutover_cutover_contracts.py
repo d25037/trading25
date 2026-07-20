@@ -73,7 +73,7 @@ def test_cutover_rechecks_fingerprint_after_runtime_start_and_restores(
     runtime = StartEditingRuntime(apis=[FakeApi(), FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     service.backup("before-start-race")
@@ -111,7 +111,7 @@ def test_operation_parent_swap_never_writes_external_tree(
     runtime = FakeRuntime(apis=[FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     swapped = False
@@ -148,7 +148,7 @@ def test_cutover_requires_exact_passing_rehearsal_and_verified_backup(
     runtime = FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     service.backup("backup-001")
@@ -199,7 +199,7 @@ def test_cutover_rejects_rehearsal_without_explicit_passing_evidence(
     data_root = _market_root(tmp_path)
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=FakeRuntime(apis=[FakeApi()]),
     )
     smoke_config = SmokeConfig("7203", "production/smoke", "primeMarket")
@@ -271,7 +271,7 @@ def test_cutover_rejects_retained_rehearsal_without_exact_source_evidence(
     data_root = _market_root(tmp_path)
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=FakeRuntime(apis=[FakeApi()]),
     )
     smoke_config = SmokeConfig("7203", "production/smoke", "primeMarket")
@@ -358,7 +358,7 @@ def test_cutover_reresolves_retained_rehearsal_provenance_before_backup(
     service._workspace.runtime = FakeRuntime(apis=[FakeApi()])
     smoke_result = SmokeResult(
         4,
-        "local_projection_v2_event_time",
+        "provider_adjusted_v1",
         ("market_metadata",),
         ("/api/db/stats",),
         {"readyProviderWindowCount": 2},
@@ -468,9 +468,9 @@ def test_cutover_rejects_inexact_retained_evidence_before_backup(
         report.pop("apiChecks")
     elif evidence_mutation == "malformed_schema_coverage":
         report["schemaCoverage"] = {
-            "schemaVersion": 4,
-            "stockPriceAdjustmentMode": "local_projection_v2_event_time",
-            "adjustedMetrics": {"readyProviderWindowCount": 0},
+            "schemaVersion": 5,
+            "stockPriceAdjustmentMode": "provider_adjusted_v1",
+            "providerVintage": {"readyProviderWindowCount": 0},
         }
     elif evidence_mutation == "missing_retained_phase":
         report["phases"] = []
@@ -571,7 +571,7 @@ def test_cutover_rejects_inexact_full_rebuild_evidence_before_backup(
     data_root = _market_root(tmp_path)
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=FakeRuntime(apis=[FakeApi()]),
     )
     config = SmokeConfig("7203", "production/smoke", "primeMarket")
@@ -588,14 +588,14 @@ def test_cutover_rejects_inexact_full_rebuild_evidence_before_backup(
         report["phases"] = [
             phase
             for phase in report["phases"]
-            if phase["name"] != "initial_sync_and_adjusted_metrics_pit"
+            if phase["name"] != "initial_sync_and_provider_vintage"
         ]
     elif mutation == "missing_semantic_phase":
         report["phases"] = [
             phase for phase in report["phases"] if phase["name"] != "semantic_smoke"
         ]
     else:
-        report["schemaCoverage"] = {"schemaVersion": 4}
+        report["schemaCoverage"] = {"schemaVersion": 5}
     report_path.write_text(json.dumps(report))
     backup_verified = False
 

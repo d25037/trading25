@@ -206,17 +206,17 @@ class PromotionEvidenceService:
             )
         finally:
             os.close(retained_market_fd)
-        if metadata.schema_version != 4:
+        if metadata.schema_version != 5:
             raise _managed_root.CutoverSafetyError(
-                "Retained Market schema v4 is required"
+                "Retained Market schema v5 is required"
             )
-        if metadata.adjustment_mode != "local_projection_v2_event_time":
+        if metadata.adjustment_mode != "provider_adjusted_v1":
             raise _managed_root.CutoverSafetyError(
                 "Retained Market adjustment mode is incompatible"
             )
-        if not metadata.adjusted_metrics_ready:
+        if not metadata.provider_vintage_ready:
             raise _managed_root.CutoverSafetyError(
-                "Retained adjusted-metric event-time lineage is not ready"
+                "Retained provider-vintage current-basis lineage is not ready"
             )
 
         self._workspace.runtime.assert_quiescent(self._workspace.data_root)

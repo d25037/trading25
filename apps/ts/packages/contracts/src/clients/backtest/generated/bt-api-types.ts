@@ -8358,8 +8358,14 @@ export interface components {
             providerAdjustedMismatchCount: number;
             /** Providerasof */
             providerAsOf?: string | null;
+            providerAsOfRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
             /** Providerplan */
             providerPlan?: string | null;
+            /**
+             * Providerwindowcoherent
+             * @default false
+             */
+            providerWindowCoherent: boolean;
             /**
              * Providerwindowcount
              * @default 0

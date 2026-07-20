@@ -11830,6 +11830,16 @@
             ],
             "title": "Providerasof"
           },
+          "providerAsOfRange": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "providerPlan": {
             "anyOf": [
               {
@@ -11840,6 +11850,11 @@
               }
             ],
             "title": "Providerplan"
+          },
+          "providerWindowCoherent": {
+            "default": false,
+            "title": "Providerwindowcoherent",
+            "type": "boolean"
           },
           "providerWindowCount": {
             "default": 0,

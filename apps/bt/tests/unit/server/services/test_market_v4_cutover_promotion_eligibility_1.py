@@ -131,16 +131,16 @@ def test_promote_retained_rejects_ineligible_source_before_any_mutation(
         service._workspace.code_version, _calls = _changing_code_version("deadbeef", "cafebabe")
     elif mutation == "schema_v3":
         service._workspace.duckdb = FakeDuckDb(
-            MarketSourceMetadata(3, "local_projection_v2_event_time")
+            MarketSourceMetadata(3, "provider_adjusted_v1")
         )
     elif mutation == "wrong_adjustment_mode":
-        service._workspace.duckdb = FakeDuckDb(MarketSourceMetadata(4, "local_projection_v1"))
+        service._workspace.duckdb = FakeDuckDb(MarketSourceMetadata(5, "local_projection_v1"))
     elif mutation == "inexact_lineage":
         service._workspace.duckdb = FakeDuckDb(
             MarketSourceMetadata(
                 4,
-                "local_projection_v2_event_time",
-                adjusted_metrics_ready=False,
+                "provider_adjusted_v1",
+                provider_vintage_ready=False,
             )
         )
     elif mutation == "database_identity_drift":

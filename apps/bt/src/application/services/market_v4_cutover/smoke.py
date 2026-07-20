@@ -29,7 +29,6 @@ from .workspace import CutoverWorkspace
 
 _CREATE_JOB_RESPONSE_FIELDS: dict[str, tuple[str, str]] = {
     "/api/db/sync": ("sync", "jobId"),
-    "/api/db/adjusted-metrics/materialize": ("materialize", "jobId"),
     "/api/analytics/screening/jobs": ("screening", "job_id"),
     "/api/dataset": ("dataset", "jobId"),
 }
@@ -196,11 +195,11 @@ class RuntimeSmokeService:
             {
                 "schemaVersion": result.schema_version,
                 "stockPriceAdjustmentMode": result.adjustment_mode,
-                "adjustedMetrics": result.lineage,
+                "providerVintage": result.lineage,
             },
             (
                 {
-                    "name": "initial_sync_and_adjusted_metrics_pit",
+                    "name": "initial_sync_and_provider_vintage",
                     "status": "passed",
                     "durationSeconds": round(sync_duration, 6),
                 },
@@ -333,13 +332,13 @@ class RuntimeSmokeService:
                     )
                 finally:
                     os.close(inspected_fd)
-        if metadata.schema_version != 4:
+        if metadata.schema_version != 5:
             raise _managed_root.CutoverSafetyError(
-                f"Market schema must be exactly 4, got {metadata.schema_version!r}"
+                f"Market schema must be exactly 5, got {metadata.schema_version!r}"
             )
-        if metadata.adjustment_mode != "local_projection_v2_event_time":
+        if metadata.adjustment_mode != "provider_adjusted_v1":
             raise _managed_root.CutoverSafetyError(
-                "Market adjustment mode must be local_projection_v2_event_time"
+                "Market adjustment mode must be provider_adjusted_v1"
             )
         return metadata
 
@@ -350,12 +349,12 @@ class RuntimeSmokeService:
         stats = api.request("GET", "/api/db/stats")
         schema = stats.get("schema")
         if not isinstance(schema, dict) or schema != {
-            "version": 4,
-            "requiredVersion": 4,
+            "version": 5,
+            "requiredVersion": 5,
             "current": True,
         }:
-            raise _managed_root.CutoverSafetyError("Market stats schema v4 gate failed")
-        stats_adjusted = stats.get("adjustedMetrics")
+            raise _managed_root.CutoverSafetyError("Market stats schema v5 gate failed")
+        stats_adjusted = stats.get("providerVintage")
         if (
             not isinstance(stats_adjusted, dict)
             or stats_adjusted.get("status") != "ready"
@@ -367,7 +366,7 @@ class RuntimeSmokeService:
             or int(stats_adjusted["readyProviderWindowCount"]) <= 0
         ):
             raise _managed_root.CutoverSafetyError(
-                "Market adjusted-metric coverage is not ready"
+                "Market provider-vintage coverage is not ready"
             )
 
         validation = api.request("GET", "/api/db/validate")
@@ -375,10 +374,10 @@ class RuntimeSmokeService:
             raise _managed_root.CutoverSafetyError(
                 "Market validation did not report healthy"
             )
-        adjusted = validation.get("adjustedMetrics")
+        adjusted = validation.get("providerVintage")
         if not isinstance(adjusted, dict):
             raise _managed_root.CutoverSafetyError(
-                "Validation omitted adjusted-metric lineage"
+                "Validation omitted provider-vintage lineage"
             )
         zero_counters = (
             "missingAdjustedStatementRows",
@@ -398,7 +397,7 @@ class RuntimeSmokeService:
             or any(adjusted.get(counter) != 0 for counter in zero_counters)
         ):
             raise _managed_root.CutoverSafetyError(
-                "Exact adjusted-metric lineage validation failed"
+                "Exact provider-vintage lineage validation failed"
             )
         return stats_adjusted, adjusted, zero_counters
 
@@ -489,8 +488,8 @@ class RuntimeSmokeService:
         if not isinstance(snapshot, dict) or snapshot != {
             **snapshot,
             "schemaVersion": 3,
-            "sourceMarketSchemaVersion": 4,
-            "stockPriceAdjustmentMode": "local_projection_v2_event_time",
+            "sourceMarketSchemaVersion": 5,
+            "stockPriceAdjustmentMode": "provider_adjusted_v1",
         }:
             raise _managed_root.CutoverSafetyError(
                 "Dataset event-time lineage gate failed"

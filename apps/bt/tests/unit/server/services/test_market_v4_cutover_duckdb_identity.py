@@ -37,11 +37,11 @@ def test_default_duckdb_adapter_checkpoints_and_reads_raw_metadata(
     db_path = tmp_path / "market.duckdb"
     connection = duckdb.connect(str(db_path))
     connection.execute("CREATE TABLE market_schema_version(version INTEGER)")
-    connection.execute("INSERT INTO market_schema_version VALUES (4)")
+    connection.execute("INSERT INTO market_schema_version VALUES (5)")
     connection.execute("CREATE TABLE sync_metadata(key VARCHAR, value VARCHAR)")
     connection.execute(
         "INSERT INTO sync_metadata VALUES "
-        "('stock_price_adjustment_mode', 'local_projection_v2_event_time')"
+        "('stock_price_adjustment_mode', 'provider_adjusted_v1')"
     )
     connection.close()
 
@@ -52,12 +52,12 @@ def test_default_duckdb_adapter_checkpoints_and_reads_raw_metadata(
             directory_fd,
             "market.duckdb",
             guard_lease_fd=guard_lease_fd,
-        ) == MarketSourceMetadata(4, "local_projection_v2_event_time", False)
+        ) == MarketSourceMetadata(5, "provider_adjusted_v1", False)
         assert adapter.inspect(
             directory_fd,
             "market.duckdb",
             guard_lease_fd=guard_lease_fd,
-        ) == MarketSourceMetadata(4, "local_projection_v2_event_time", False)
+        ) == MarketSourceMetadata(5, "provider_adjusted_v1", False)
     finally:
         os.close(directory_fd)
 
@@ -91,7 +91,7 @@ def test_directory_bound_worker_disables_progress_output_before_metadata(
         staticmethod(
             lambda _connection: (
                 events.append("metadata")
-                or MarketSourceMetadata(4, "local_projection_v2_event_time", True)
+                or MarketSourceMetadata(5, "provider_adjusted_v1", True)
             )
         ),
     )
@@ -124,53 +124,14 @@ def test_rehearse_retained_rejects_real_duckdb_inexact_lineage_before_runtime(
         market_db._execute(
             """
             INSERT INTO statements (
-                code, disclosed_date, earnings_per_share, type_of_current_period
-            ) VALUES ('7203', '2024-05-10', 100, 'FY')
-            """
-        )
-        market_db._execute(
-            """
-            INSERT INTO stock_adjustment_bases (
-                code, basis_id, valid_from, valid_to_exclusive,
-                adjustment_through_date, source_fingerprint,
-                materialized_through_date, status
+                code, statement_id, disclosed_date, disclosed_at,
+                period_start, period_end, earnings_per_share,
+                type_of_current_period
             ) VALUES (
-                '7203', 'ready-7203', '2024-01-01', NULL,
-                '2024-12-30', 'fp', '2024-12-30', 'ready'
+                '7203', 'disclosure-1', '2024-05-10',
+                '2024-05-10T15:30:00+09:00', '2023-04-01', '2024-03-31',
+                100, 'FY'
             )
-            """
-        )
-        market_db._execute(
-            """
-            INSERT INTO statement_metrics_adjusted (
-                code, disclosed_date, period_end, period_type, price_basis_date,
-                raw_eps, basis_version
-            ) VALUES (
-                '7203', '2024-05-10', '2024-05-10', 'FY', '2024-12-30',
-                999, 'ready-7203'
-            )
-            """
-        )
-        market_db._execute(
-            """
-            INSERT INTO stock_data_raw (
-                code, date, open, high, low, close, volume, adjustment_factor
-            ) VALUES ('7203', '2024-06-03', 100, 110, 90, 105, 1000, 1)
-            """
-        )
-        market_db._execute(
-            """
-            INSERT INTO stock_adjustment_basis_segments (
-                code, basis_id, source_date_from, source_date_to_exclusive,
-                cumulative_factor
-            ) VALUES ('7203', 'ready-7203', '2024-01-01', NULL, 1)
-            """
-        )
-        market_db._execute(
-            """
-            INSERT INTO daily_valuation (
-                code, date, close, price_basis_date, basis_version
-            ) VALUES ('7203', '2024-06-03', 105, '2024-12-30', 'ready-7203')
             """
         )
     finally:
@@ -208,11 +169,11 @@ def test_directory_bound_adapter_keeps_real_duckdb_bound_after_parent_swap(
     db_path = market_root / "market.duckdb"
     connection = duckdb.connect(str(db_path))
     connection.execute("CREATE TABLE market_schema_version(version INTEGER)")
-    connection.execute("INSERT INTO market_schema_version VALUES (4)")
+    connection.execute("INSERT INTO market_schema_version VALUES (5)")
     connection.execute("CREATE TABLE sync_metadata(key VARCHAR, value VARCHAR)")
     connection.execute(
         "INSERT INTO sync_metadata VALUES "
-        "('stock_price_adjustment_mode', 'local_projection_v2_event_time')"
+        "('stock_price_adjustment_mode', 'provider_adjusted_v1')"
     )
     connection.close()
 
@@ -232,12 +193,12 @@ def test_directory_bound_adapter_keeps_real_duckdb_bound_after_parent_swap(
             retained_fd,
             "market.duckdb",
             guard_lease_fd=guard_lease_fd,
-        ) == MarketSourceMetadata(4, "local_projection_v2_event_time", False)
+        ) == MarketSourceMetadata(5, "provider_adjusted_v1", False)
         assert adapter.inspect(
             retained_fd,
             "market.duckdb",
             guard_lease_fd=guard_lease_fd,
-        ) == MarketSourceMetadata(4, "local_projection_v2_event_time", False)
+        ) == MarketSourceMetadata(5, "provider_adjusted_v1", False)
     finally:
         os.close(retained_fd)
 
@@ -253,7 +214,7 @@ def test_directory_bound_checkpoint_snapshot_holds_worker_until_release(
     db_path = tmp_path / "market.duckdb"
     connection = duckdb.connect(str(db_path))
     connection.execute("CREATE TABLE market_schema_version(version INTEGER)")
-    connection.execute("INSERT INTO market_schema_version VALUES (4)")
+    connection.execute("INSERT INTO market_schema_version VALUES (5)")
     connection.close()
     directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     adapter = DefaultDuckDbAdapter()
@@ -336,7 +297,7 @@ def test_checkpoint_worker_timeout_is_killed_without_masking_body_error(
     monkeypatch.setattr(
         adapter,
         "_read_metadata",
-        lambda _process: MarketSourceMetadata(4, "local_projection_v2_event_time"),
+        lambda _process: MarketSourceMetadata(5, "provider_adjusted_v1"),
     )
     directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     try:
@@ -391,7 +352,7 @@ def test_checkpoint_worker_broken_release_is_reaped_and_fails_closed(
     monkeypatch.setattr(
         adapter,
         "_read_metadata",
-        lambda _process: MarketSourceMetadata(4, "local_projection_v2_event_time"),
+        lambda _process: MarketSourceMetadata(5, "provider_adjusted_v1"),
     )
     directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     try:
@@ -449,7 +410,7 @@ def test_inspect_worker_timeout_is_killed_reaped_and_fails_closed(
     monkeypatch.setattr(
         adapter,
         "_read_metadata",
-        lambda _process: MarketSourceMetadata(4, "local_projection_v2_event_time"),
+        lambda _process: MarketSourceMetadata(5, "provider_adjusted_v1"),
     )
     directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     try:
@@ -582,7 +543,7 @@ def test_inspect_unkillable_worker_cleanup_remains_bounded_and_fails_closed(
     monkeypatch.setattr(
         adapter,
         "_read_metadata",
-        lambda _process: MarketSourceMetadata(4, "local_projection_v2_event_time"),
+        lambda _process: MarketSourceMetadata(5, "provider_adjusted_v1"),
     )
     directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     try:
@@ -634,7 +595,7 @@ def test_inspect_worker_signal_errors_return_explicit_unjoined_verdict(
     monkeypatch.setattr(
         adapter,
         "_read_metadata",
-        lambda _process: MarketSourceMetadata(4, "local_projection_v2_event_time"),
+        lambda _process: MarketSourceMetadata(5, "provider_adjusted_v1"),
     )
     directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     try:

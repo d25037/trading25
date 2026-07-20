@@ -92,7 +92,7 @@ def resolve_provider_windows(
     )
     if pending_rows:
         raise ValueError(
-            "adjusted_metrics_pit current-basis recompute is pending for "
+            "market_db_sync current-basis recompute is pending for "
             + ", ".join(str(row["code"]) for row in pending_rows)
         )
 
@@ -155,7 +155,7 @@ def resolve_provider_windows(
         row = by_code.get(code)
         if row is None:
             raise ValueError(
-                f"adjusted_metrics_pit unavailable for {code} on {effective_market_date}: "
+                f"market_db_sync unavailable for {code} on {effective_market_date}: "
                 "provider window is missing"
             )
         coverage_start = str(row["coverage_start"])
@@ -171,7 +171,7 @@ def resolve_provider_windows(
             or not str(row["provider_source_fingerprint"] or "").strip()
         ):
             raise ValueError(
-                f"adjusted_metrics_pit unavailable for {code} on {effective_market_date}: "
+                f"market_db_sync unavailable for {code} on {effective_market_date}: "
                 "provider window does not fully cover the target date"
             )
         metric_count, invalid_count = metric_integrity.get(code, (0, 0))
@@ -187,7 +187,7 @@ def resolve_provider_windows(
             or not str(materialized_at or "").strip()
         ):
             raise ValueError(
-                f"adjusted_metrics_pit unavailable for {code} on "
+                f"market_db_sync unavailable for {code} on "
                 f"{effective_market_date}: current-basis provenance is stale or incomplete"
             )
         resolved[code] = ProviderWindow(
@@ -313,7 +313,7 @@ def load_adjusted_daily_valuation_frame(
     market_codes: list[str],
 ) -> pd.DataFrame:
     if not table_exists(reader, "daily_valuation"):
-        raise ValueError("adjusted_metrics_pit daily_valuation is unavailable")
+        raise ValueError("market_db_sync daily_valuation is unavailable")
     market_clause, market_params = build_market_filter(market_codes)
     resolve_provider_windows(
         reader,
@@ -460,7 +460,7 @@ def load_adjusted_statement_metric_rows(
     market_codes: list[str],
 ) -> list[Mapping[str, Any]]:
     if not table_exists(reader, "statement_metrics_adjusted"):
-        raise ValueError("adjusted_metrics_pit statement metrics are unavailable")
+        raise ValueError("market_db_sync statement metrics are unavailable")
     market_clause, market_params = build_market_filter(market_codes)
     resolve_provider_windows(
         reader,

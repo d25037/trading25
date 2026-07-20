@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -57,9 +58,12 @@ class ProviderStockMetadata:
 
 def _required_text(mapping: Mapping[str, Any], key: str) -> str:
     value = mapping.get(key)
-    text = str(value).strip() if value is not None else ""
+    raw = str(value) if value is not None else ""
+    text = raw.strip()
     if not text:
         raise ValueError(f"Provider stock window requires {key}")
+    if text != raw:
+        raise ValueError(f"Provider stock window {key} must not contain whitespace padding")
     return text
 
 
@@ -107,7 +111,11 @@ def coerce_provider_stock_metadata(
                 metadata, _PROVIDER_SOURCE_FINGERPRINT_KEY
             ),
         )
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", normalized.provider_plan):
+        raise ValueError("Provider stock window provider plan is invalid")
     _iso_date(normalized.provider_as_of, field="provider as-of")
+    if not re.fullmatch(r"[0-9a-f]{64}", normalized.provider_source_fingerprint):
+        raise ValueError("Provider stock window source fingerprint is invalid")
     return normalized
 
 

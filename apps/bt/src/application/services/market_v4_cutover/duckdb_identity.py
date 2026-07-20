@@ -16,6 +16,7 @@ from typing import Iterator
 from src.infrastructure.db.market.valuation_queries import (
     get_adjusted_metrics_snapshot,
     get_adjusted_metrics_source_diagnostics,
+    get_provider_vintage_snapshot,
 )
 from src.infrastructure.db.market import managed_root as _managed_root
 from .contracts import MarketSourceMetadata
@@ -51,6 +52,11 @@ class DefaultDuckDbAdapter:
         def fetchone(sql: str, params: object = None) -> object:
             return execute(sql, params or []).fetchone()
 
+        def fetchall_dicts(sql: str, params: object = None) -> list[dict[str, object]]:
+            cursor = execute(sql, params or [])
+            columns = [str(item[0]) for item in cursor.description]
+            return [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
+
         try:
             schema_row = execute(
                 "SELECT MAX(version) FROM market_schema_version"
@@ -76,6 +82,10 @@ class DefaultDuckDbAdapter:
                 table_exists,
                 fetchone,
             )
+            provider_vintage = get_provider_vintage_snapshot(
+                table_exists,
+                fetchall_dicts,
+            )
             positive_keys = (
                 "currentBasisStatementCount",
                 "dailyValuationRows",
@@ -99,7 +109,7 @@ class DefaultDuckDbAdapter:
                 "extraDailyValuationRows",
                 "wrongBasisDailyValuationRows",
             )
-            adjusted_metrics_ready = (
+            provider_vintage_ready = (
                 all(int(snapshot.get(key, 0) or 0) > 0 for key in positive_keys)
                 and all(
                     int(diagnostics.get(key, 0) or 0) > 0
@@ -112,9 +122,22 @@ class DefaultDuckDbAdapter:
                     int(diagnostics.get(key, 0) or 0) == 0
                     for key in zero_diagnostic_keys
                 )
+                and provider_vintage.get("providerWindowCoherent") is True
+                and int(
+                    provider_vintage.get("providerWindowFingerprintCount", 0) or 0
+                )
+                == int(snapshot.get("providerWindowCount", 0) or 0)
+                and int(
+                    provider_vintage.get("invalidProviderWindowCount", 0) or 0
+                )
+                == 0
+                and int(
+                    provider_vintage.get("invalidAdjustmentEventCount", 0) or 0
+                )
+                == 0
             )
         except Exception:
-            adjusted_metrics_ready = False
+            provider_vintage_ready = False
         return MarketSourceMetadata(
             schema_version=(
                 int(schema_version) if schema_version is not None else None
@@ -122,7 +145,7 @@ class DefaultDuckDbAdapter:
             adjustment_mode=(
                 str(adjustment_mode) if adjustment_mode is not None else None
             ),
-            adjusted_metrics_ready=adjusted_metrics_ready,
+            provider_vintage_ready=provider_vintage_ready,
         )
 
     @staticmethod
@@ -220,7 +243,7 @@ class DefaultDuckDbAdapter:
         return MarketSourceMetadata(
             schema_version=payload.get("schemaVersion"),
             adjustment_mode=payload.get("adjustmentMode"),
-            adjusted_metrics_ready=payload.get("adjustedMetricsReady") is True,
+            provider_vintage_ready=payload.get("providerVintageReady") is True,
         )
 
     @classmethod
@@ -421,7 +444,7 @@ def directory_bound_duckdb_worker() -> None:
                 {
                     "schemaVersion": metadata.schema_version,
                     "adjustmentMode": metadata.adjustment_mode,
-                    "adjustedMetricsReady": metadata.adjusted_metrics_ready,
+                    "providerVintageReady": metadata.provider_vintage_ready,
                 }
             ),
             flush=True,

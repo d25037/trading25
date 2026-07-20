@@ -199,7 +199,7 @@ def test_screening_adjusted_metrics_fail_closed_on_stale_provenance(
 
     reader = MarketDbReader(str(db_path))
     try:
-        with pytest.raises(ValueError, match="adjusted_metrics_pit"):
+        with pytest.raises(ValueError, match="market_db_sync"):
             query_adjusted_statement_metric_rows(
                 reader,
                 ["7203"],
@@ -956,7 +956,7 @@ def test_attach_statements_fails_closed_when_exact_adjusted_row_is_missing(
         lambda *_args, **_kwargs: [],
     )
 
-    with pytest.raises(ValueError, match="adjusted_metrics_pit"):
+    with pytest.raises(ValueError, match="market_db_sync"):
         attach_statements(
             DummyReader(),
             {"7203": {}},
@@ -1016,7 +1016,7 @@ def test_attach_statements_fails_closed_when_same_day_period_sibling_is_missing(
         }],
     )
 
-    with pytest.raises(ValueError, match="adjusted_metrics_pit"):
+    with pytest.raises(ValueError, match="market_db_sync"):
         attach_statements(
             DummyReader(),
             {"7203": {}},

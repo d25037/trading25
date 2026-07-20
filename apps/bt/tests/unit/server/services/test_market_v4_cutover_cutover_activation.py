@@ -28,7 +28,7 @@ def test_cutover_failure_stops_owned_server_and_restores_backup(tmp_path: Path) 
     runtime = FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi(invalid_lineage=True)])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     service.backup("backup-001")
@@ -61,7 +61,7 @@ def test_cutover_stage_failure_leaves_active_market_identity_untouched(
     runtime = FakeRuntime(apis=[FakeApi(), FakeApi(invalid_lineage=True)])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     service.backup("stage-failure-backup")
@@ -104,7 +104,7 @@ def test_cutover_preactivation_failure_report_survives_code_drift(
     runtime = FakeRuntime(apis=[FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     service.backup("preactivation-drift-backup")
@@ -148,7 +148,7 @@ def test_cutover_postactivation_identity_drift_restores_backup(
     runtime = FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     original = (data_root / "market-timeseries/market.duckdb").read_bytes()
@@ -187,7 +187,7 @@ def test_cutover_steady_code_identity_passes(tmp_path: Path) -> None:
     runtime = FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     service.backup("steady-identity-backup")
@@ -253,7 +253,7 @@ def test_cutover_parent_swap_after_stage_start_never_touches_external_market(
     runtime = SwappingRuntime(apis=[FakeApi(), FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     service.backup("swap-after-start-backup")
@@ -327,7 +327,7 @@ def test_cutover_stage_root_swap_finishes_pinned_smoke_then_rejects_activation(
     runtime = StageRootSwappingRuntime(apis=[FakeApi(), stage_api])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     service.backup("stage-root-swap-backup")
@@ -422,7 +422,7 @@ def test_cutover_market_leaf_swap_keeps_sync_on_inherited_directory_fd(
     runtime = MarketLeafSwappingRuntime(apis=[FakeApi(), stage_api])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     service.backup("market-leaf-swap-backup")
@@ -535,7 +535,7 @@ def test_cutover_cross_parent_market_move_confines_non_market_writes(
     runtime = CrossParentMovingRuntime(apis=[FakeApi(), stage_api])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     service.backup("cross-parent-backup")
@@ -569,7 +569,7 @@ def test_cutover_report_write_failure_is_inside_restore_boundary(
     runtime = FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     service.backup("backup-001")

@@ -441,6 +441,7 @@ function ProviderVintageSection({
 }: ProviderVintageSectionProps) {
   const vintage = dbStats?.providerVintage;
   const coverage = vintage?.effectiveCoverage;
+  const asOfRange = vintage?.providerAsOfRange;
 
   return (
     <Card id="provider-vintage" className="border-border/70 bg-[var(--app-surface)] shadow-none">
@@ -481,7 +482,12 @@ function ProviderVintageSection({
           </div>
           <div>
             <dt className="text-muted-foreground">Provider as-of</dt>
-            <dd className="mt-1 font-medium">{vintage?.providerAsOf ?? 'n/a'}</dd>
+            <dd className="mt-1 font-medium">
+              {vintage?.providerAsOf ?? (asOfRange ? `${asOfRange.min} → ${asOfRange.max}` : 'n/a')}
+            </dd>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {vintage?.providerWindowCoherent ? 'Coherent windows' : 'Incoherent windows'}
+            </p>
           </div>
           <div>
             <dt className="text-muted-foreground">Adjustment events</dt>

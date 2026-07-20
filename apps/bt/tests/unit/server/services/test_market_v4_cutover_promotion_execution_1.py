@@ -57,7 +57,7 @@ def test_public_promote_retained_runs_gated_promotion_and_recovers_same_id(
     assert runtime.start_calls == 1
     fresh_service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
     )
     assert (
         fresh_service.promote_retained(
@@ -134,7 +134,6 @@ def test_promote_retained_atomically_activates_exact_payload_without_sync(
     )
     forbidden_paths = (
         "/api/db/sync",
-        "/api/db/adjusted-metrics/materialize",
         "/api/db/stocks/refresh",
         "/api/db/intraday/sync",
     )

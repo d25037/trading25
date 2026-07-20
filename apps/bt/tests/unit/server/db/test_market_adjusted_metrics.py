@@ -9,6 +9,7 @@ import pytest
 from src.application.services.adjusted_metrics_materializer import (
     AdjustedMetricsMaterializer,
 )
+from src.application.services.db_stats_service import _build_provider_vintage_stats
 from src.infrastructure.db.market.market_db import MarketDb
 from tests.unit.server.db.market_writer_test_support import (
     open_market_db,
@@ -101,6 +102,15 @@ def test_current_basis_snapshot_reports_provider_window_and_pending(
     pending = market_db.get_adjusted_metrics_snapshot()
     AdjustedMetricsMaterializer(market_db).rebuild_current_basis([])
     ready = market_db.get_adjusted_metrics_snapshot()
+    vintage = _build_provider_vintage_stats(
+        {
+            **ready,
+            **market_db.get_adjusted_metrics_source_diagnostics(),
+            **market_db.get_provider_vintage_snapshot(),
+        },
+        source_stock_count=1,
+        source_statement_count=1,
+    )
 
     assert pending["currentBasisStatementCount"] == 0
     assert pending["currentBasisStateCount"] == 0
@@ -115,6 +125,16 @@ def test_current_basis_snapshot_reports_provider_window_and_pending(
     assert ready["providerWindowCount"] == 1
     assert ready["readyProviderWindowCount"] == 1
     assert ready["pendingCurrentBasisCodeCount"] == 0
+    assert vintage.status == "ready"
+    assert vintage.providerPlan is None
+    assert vintage.providerWindowCoherent is True
+    assert vintage.providerAsOf == "2024-12-30"
+    assert vintage.effectiveCoverage is not None
+    assert vintage.effectiveCoverage.model_dump() == {
+        "min": "2024-12-30",
+        "max": "2024-12-30",
+    }
+    assert vintage.sourceFingerprint is not None
     assert "basisVersion" not in ready
     assert "retainedBasisCount" not in ready
 
@@ -157,6 +177,92 @@ def test_current_basis_source_diagnostics_detect_missing_stale_and_wrong_basis(
     assert stale["missingAdjustedStatementRows"] == 0
     assert stale["staleAdjustedStatementRows"] == 1
     assert stale["wrongBasisAdjustedStatementRows"] == 1
+
+
+def test_provider_vintage_recomputes_window_and_event_fingerprints(
+    market_db: MarketDb,
+) -> None:
+    _seed_current_sources(market_db)
+
+    healthy = market_db.get_provider_vintage_snapshot()
+    market_db._execute(
+        "UPDATE stock_data_raw SET adjusted_close = adjusted_close + 1 "
+        "WHERE code = '7203'"
+    )
+    raw_tamper = market_db.get_provider_vintage_snapshot()
+    market_db._execute(
+        "UPDATE stock_data_raw SET adjusted_close = adjusted_close - 1 "
+        "WHERE code = '7203'"
+    )
+    market_db._execute(
+        "UPDATE stock_provider_windows SET source_fingerprint = repeat('0', 64) "
+        "WHERE code = '7203'"
+    )
+    window_tamper = market_db.get_provider_vintage_snapshot()
+
+    assert healthy["providerWindowFingerprintCount"] == 1
+    assert healthy["invalidProviderWindowCount"] == 0
+    assert healthy["invalidAdjustmentEventCount"] == 0
+    assert raw_tamper["invalidProviderWindowCount"] == 1
+    assert window_tamper["invalidProviderWindowCount"] == 1
+
+
+def test_provider_vintage_detects_event_ledger_fingerprint_tamper(
+    market_db: MarketDb,
+) -> None:
+    publish_stock_data(
+        market_db,
+        [
+            {
+                "code": "7203",
+                "date": "2024-12-27",
+                "open": 1000.0,
+                "high": 1000.0,
+                "low": 1000.0,
+                "close": 1000.0,
+                "volume": 100,
+                "adjustment_factor": 2.0,
+                "adjusted_open": 1000.0,
+                "adjusted_high": 1000.0,
+                "adjusted_low": 1000.0,
+                "adjusted_close": 1000.0,
+                "adjusted_volume": 100,
+            }
+        ],
+    )
+    market_db._execute(
+        "UPDATE stock_adjustment_events SET source_fingerprint = repeat('f', 64) "
+        "WHERE code = '7203'"
+    )
+
+    snapshot = market_db.get_provider_vintage_snapshot()
+
+    assert snapshot["adjustmentEventCount"] == 1
+    assert snapshot["adjustmentEventFingerprintCount"] == 0
+    assert snapshot["invalidAdjustmentEventCount"] == 1
+
+
+@pytest.mark.parametrize(
+    ("column", "value"),
+    [
+        ("coverage_start", "2024-12-30 "),
+        ("provider_as_of", "2024-12-30 "),
+        ("source_fingerprint", "A" * 64),
+    ],
+)
+def test_provider_vintage_rejects_malformed_persisted_window_metadata(
+    market_db: MarketDb, column: str, value: str
+) -> None:
+    _seed_current_sources(market_db)
+    market_db._execute(
+        f"UPDATE stock_provider_windows SET {column} = ? WHERE code = '7203'",
+        [value],
+    )
+
+    snapshot = market_db.get_provider_vintage_snapshot()
+
+    assert snapshot["invalidProviderWindowCount"] == 1
+    assert snapshot["providerWindowCoherent"] is False
 
 
 def test_current_basis_readers_return_identity_rows_and_view_valuations(

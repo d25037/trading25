@@ -43,7 +43,6 @@ class TestCreateApp:
         ("method", "path", "payload"),
         [
             ("POST", "/api/db/sync", {"mode": "initial", "resetBeforeSync": True}),
-            ("POST", "/api/db/adjusted-metrics/materialize", {}),
             ("POST", "/api/db/intraday/sync", {}),
             ("POST", "/api/db/stocks/refresh", {"codes": ["7203"]}),
             ("DELETE", "/api/db/sync/jobs/job-1", None),
@@ -326,9 +325,6 @@ class TestLifespan:
                 "src.application.services.sync_service.sync_job_manager"
             ) as sync_jobs,
             patch(
-                "src.application.services.sync_service.adjusted_metrics_materialize_job_manager"
-            ) as materialize_jobs,
-            patch(
                 "src.application.services.dataset_builder_service.dataset_job_manager"
             ) as dataset_jobs,
             patch(
@@ -345,7 +341,6 @@ class TestLifespan:
                 primary_jobs,
                 screening_jobs,
                 sync_jobs,
-                materialize_jobs,
                 dataset_jobs,
                 screening_service,
             ):

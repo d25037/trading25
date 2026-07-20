@@ -149,7 +149,7 @@ def attach_statements(
             missing_keys = sorted(required_keys - available_keys)
             if missing_keys:
                 raise ValueError(
-                    f"adjusted_metrics_pit incomplete for {code}: "
+                    f"market_db_sync incomplete for {code}: "
                     f"missing statement keys {missing_keys[:3]}"
                 )
             base_daily = transform_statements_df(
@@ -166,7 +166,7 @@ def attach_statements(
                 base_daily = merge_forward_forecast_revision(base_daily, revision_daily)
             result.setdefault(code, {})["statements_daily"] = base_daily
         except ValueError as e:
-            if "adjusted_metrics_pit" in str(e):
+            if "market_db_sync" in str(e):
                 raise
             warnings.append(f"{code} statements transform failed ({e})")
         except Exception as e:  # noqa: BLE001 - screening should continue
@@ -357,7 +357,7 @@ def query_adjusted_statement_metric_rows(
         return []
     strict_reference_date = reference_date or end_date
     if strict_reference_date is None:
-        raise ValueError("adjusted_metrics_pit requires a screening reference date")
+        raise ValueError("market_db_sync requires a screening reference date")
     resolve_provider_windows(
         reader,
         normalized_codes,
@@ -489,7 +489,7 @@ def group_adjusted_statement_metric_rows(rows: list[Any]) -> dict[str, pd.DataFr
 
 def statement_materialization_keys(df: pd.DataFrame) -> set[str]:
     if "statementId" not in df.columns or df["statementId"].isna().any():
-        raise ValueError("adjusted_metrics_pit raw statement identity is missing")
+        raise ValueError("market_db_sync raw statement identity is missing")
     return {str(value) for value in df["statementId"]}
 
 
@@ -497,5 +497,5 @@ def adjusted_statement_materialization_keys(
     df: pd.DataFrame,
 ) -> set[str]:
     if "statementId" not in df.columns or df["statementId"].isna().any():
-        raise ValueError("adjusted_metrics_pit adjusted statement identity is missing")
+        raise ValueError("market_db_sync adjusted statement identity is missing")
     return {str(value) for value in df["statementId"]}
