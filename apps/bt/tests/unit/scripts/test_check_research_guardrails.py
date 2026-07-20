@@ -55,6 +55,30 @@ conn.execute("SELECT * FROM stock_data")
     }
 
 
+def test_daily_ranking_guardrail_requires_issued_footprint_price_history() -> None:
+    module = _load_module()
+    path = Path(
+        "apps/bt/src/domains/analytics/market_bubble_footprint_support.py"
+    )
+    findings = module.find_research_code_guardrail_findings_in_text(
+        path,
+        """
+from src.domains.analytics.daily_ranking_research_base import DailyRankingPanelRequest
+
+def run_rerating_bubble_regime_forward_response_research(conn):
+    ranking_relations = build_daily_ranking_research_base(
+        conn,
+        DailyRankingPanelRequest(),
+    )
+    return _build_footprint_table(conn)
+""".strip(),
+    )
+
+    assert {finding.rule_name for finding in findings} == {
+        "daily-ranking-stock-data-read",
+    }
+
+
 def test_scan_research_files_detects_legacy_playground_file(tmp_path: Path) -> None:
     module = _load_module()
     notebook = (

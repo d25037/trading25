@@ -16,6 +16,7 @@ def test_removed_daily_ranking_compatibility_surface_has_no_active_code() -> Non
         "price_feature_relation=",
         "price_outcome_relation=",
         "ranking_technical_fit_price_projection",
+        "_create_rerating_bubble_observation_table",
     )
 
     matches: list[str] = []

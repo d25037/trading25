@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import duckdb
+import pandas as pd
 
 from src.domains.analytics.market_bubble_footprint import (
     BubbleFootprintResult,
@@ -130,6 +131,37 @@ def test_rerating_bubble_regime_forward_response_joins_footprint_regime(
     )
     assert bundle.manifest_path.exists()
     assert bundle.results_db_path.exists()
+
+
+def test_rerating_bubble_regime_ignores_poisoned_stock_data(tmp_path: Path) -> None:
+    db_path = _build_bubble_footprint_db(tmp_path / "market.duckdb")
+    kwargs = {
+        "start_date": "2024-01-31",
+        "end_date": "2024-10-31",
+        "signal_horizons": (20,),
+        "footprint_horizons": (60,),
+        "market_scopes": ("prime",),
+        "frequency": "monthly",
+        "min_observations": 1,
+        "severe_loss_threshold_pct": -10.0,
+        "observation_sample_limit": 100,
+    }
+    baseline = run_rerating_bubble_regime_forward_response_research(db_path, **kwargs)
+    conn = duckdb.connect(str(db_path))
+    conn.execute(
+        "UPDATE stock_data SET "
+        "close = close * (1.0 + (dayofyear(CAST(date AS DATE)) % 17) / 10.0), "
+        "volume = volume * (1 + CAST(code AS INTEGER) % 11)"
+    )
+    conn.close()
+
+    poisoned = run_rerating_bubble_regime_forward_response_research(db_path, **kwargs)
+
+    pd.testing.assert_frame_equal(baseline.footprint_df, poisoned.footprint_df)
+    pd.testing.assert_frame_equal(
+        baseline.rerating_bubble_regime_df,
+        poisoned.rerating_bubble_regime_df,
+    )
 
 
 def _build_bubble_footprint_db(db_path: Path) -> Path:

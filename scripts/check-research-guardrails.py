@@ -66,6 +66,7 @@ REMOVED_DAILY_RANKING_CODE_TOKENS = (
     "price_feature_relation=",
     "price_outcome_relation=",
     "ranking_technical_fit_price_projection",
+    "_create_rerating_bubble_observation_table",
 )
 
 
@@ -277,11 +278,24 @@ def find_research_code_guardrail_findings_in_text(
     is_daily_ranking_consumer = (
         relative_path.stem.startswith("ranking_")
         or relative_path.stem == "atr_expansion_forward_response"
+        or relative_path.stem == "market_bubble_footprint_support"
     )
+    stock_scan_root: ast.AST = tree
+    if relative_path.stem == "market_bubble_footprint_support":
+        stock_scan_root = next(
+            (
+                node
+                for node in tree.body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name
+                == "run_rerating_bubble_regime_forward_response_research"
+            ),
+            tree,
+        )
     stock_data_literal = next(
         (
             node
-            for node in ast.walk(tree)
+            for node in ast.walk(stock_scan_root)
             if isinstance(node, ast.Constant)
             and isinstance(node.value, str)
             and re.search(
@@ -301,6 +315,21 @@ def find_research_code_guardrail_findings_in_text(
                 message=(
                     "Cutoff-aware Daily Ranking consumers must read the Market v4 "
                     "event-time projection, not stock_data."
+                ),
+            )
+        )
+    if (
+        relative_path.stem == "market_bubble_footprint_support"
+        and "price_history_name=ranking_relations.price_history.name" not in text
+    ):
+        findings.append(
+            ResearchGuardrailFinding(
+                relative_path=relative_path,
+                line_number=1,
+                rule_name="daily-ranking-stock-data-read",
+                message=(
+                    "Rerating footprint grouping must consume the issued event-time "
+                    "price history relation."
                 ),
             )
         )

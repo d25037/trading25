@@ -1964,6 +1964,11 @@ def _daily_ranking_private_edge_inventory() -> tuple[tuple[object, ...], ...]:
         analytics_root / "atr_expansion_forward_response.py",
         analytics_root / "market_bubble_footprint.py",
         analytics_root / "market_bubble_footprint_monitor.py",
+        *(
+            path
+            for path in analytics_root.glob("*.py")
+            if "DailyRankingPanelRequest" in path.read_text(encoding="utf-8")
+        ),
     }
     inventory: list[tuple[object, ...]] = []
     for path in sorted(importer_paths):
@@ -2304,21 +2309,37 @@ def test_daily_ranking_clean_cut_has_no_compatibility_or_stock_data_path() -> No
     )
     assert not [token for token in forbidden_base_tokens if token in base_source]
     assert not (analytics_root / "ranking_technical_fit_price_projection.py").exists()
+    support_path = analytics_root / "market_bubble_footprint_support.py"
+    support_source = support_path.read_text()
+    assert "_create_rerating_bubble_observation_table" not in support_source
+    assert "price_history_name=ranking_relations.price_history.name" in support_source
 
     consumers = (
         _DAILY_RANKING_TASK8_CONSUMERS
         | _DAILY_RANKING_TASK9_CONSUMERS
         | _DAILY_RANKING_TASK10_CONSUMERS
-        | {"ranking_color_evidence", "ranking_n225_crowded_rerating_benchmark"}
+        | {
+            "ranking_color_evidence",
+            "ranking_n225_crowded_rerating_benchmark",
+            "market_bubble_footprint_support",
+        }
     )
     offenders: list[str] = []
     for consumer in sorted(consumers):
         tree = ast.parse((analytics_root / f"{consumer}.py").read_text())
+        nodes: ast.AST = tree
+        if consumer == "market_bubble_footprint_support":
+            nodes = next(
+                node
+                for node in tree.body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == "run_rerating_bubble_regime_forward_response_research"
+            )
         if any(
             isinstance(node, ast.Constant)
             and isinstance(node.value, str)
             and re.search(r"\b(?:from|join)\s+stock_data\b", node.value, re.IGNORECASE)
-            for node in ast.walk(tree)
+            for node in ast.walk(nodes)
         ):
             offenders.append(consumer)
     assert offenders == []

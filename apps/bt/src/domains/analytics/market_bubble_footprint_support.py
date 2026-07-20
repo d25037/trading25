@@ -225,15 +225,6 @@ def run_rerating_bubble_regime_forward_response_research(
         _assert_footprint_required_tables(ctx.connection)
         assert_daily_ranking_research_tables(ctx.connection)
         market_source = _market_source(ctx.connection)
-        footprint_df = _build_footprint_table(
-            ctx.connection,
-            start_date=start_date,
-            end_date=end_date,
-            return_horizons=resolved_footprint_horizons,
-            market_scopes=resolved_market_scopes,
-            frequency=frequency,
-            table_name="bubble_footprint_with_regimes",
-        )
         ranking_relations = build_daily_ranking_research_base(
             ctx.connection,
             DailyRankingPanelRequest(
@@ -254,6 +245,16 @@ def run_rerating_bubble_regime_forward_response_research(
                     "forecast_p_op_to_per_ratio",
                 ),
             ),
+        )
+        footprint_df = _build_footprint_table(
+            ctx.connection,
+            start_date=start_date,
+            end_date=end_date,
+            return_horizons=resolved_footprint_horizons,
+            market_scopes=resolved_market_scopes,
+            frequency=frequency,
+            table_name="bubble_footprint_with_regimes",
+            price_history_name=ranking_relations.price_history.name,
         )
         signal_source = ranking_relations.liquidity_ranked_signals
         if signal_source is None:
@@ -496,6 +497,7 @@ def _build_footprint_table(
     market_scopes: Sequence[str],
     frequency: Frequency,
     table_name: str,
+    price_history_name: str | None = None,
 ) -> pd.DataFrame:
     _create_footprint_base_tables(
         conn,
@@ -503,6 +505,7 @@ def _build_footprint_table(
         frequency=frequency,
         start_date=start_date,
         end_date=end_date,
+        price_history_name=price_history_name,
     )
     horizons_sql = ", ".join(f"({int(horizon)})" for horizon in return_horizons)
     conn.execute(
@@ -680,9 +683,24 @@ def _create_footprint_base_tables(
     frequency: Frequency,
     start_date: str | None,
     end_date: str | None,
+    price_history_name: str | None,
 ) -> None:
     stock_code = normalize_code_sql("sd.code")
     valuation_code = normalize_code_sql("dv.code")
+    stock_source_sql = (
+        "stock_data sd" if price_history_name is None else f"{price_history_name} sd"
+    )
+    valuation_basis_join_sql = (
+        ""
+        if price_history_name is None
+        else f"""
+            JOIN {price_history_name} price_basis
+              ON {normalize_code_sql("price_basis.code")} = {valuation_code}
+             AND CAST(price_basis.date AS DATE) = CAST(dv.date AS DATE)
+             AND CAST(price_basis.price_basis_id AS VARCHAR)
+                 = CAST(dv.basis_version AS VARCHAR)
+        """
+    )
     query_start = (
         (pd.Timestamp(start_date) - pd.Timedelta(days=900)).strftime("%Y-%m-%d")
         if start_date is not None
@@ -784,7 +802,7 @@ def _create_footprint_base_tables(
                     PARTITION BY {stock_code}, sd.date
                     ORDER BY CASE WHEN length(sd.code) = 4 THEN 0 ELSE 1 END, sd.code
                 ) AS row_rank
-            FROM stock_data sd
+            FROM {stock_source_sql}
             JOIN bubble_market_master_source mm
               ON mm.code = {stock_code}
              AND mm.date = sd.date
@@ -870,6 +888,7 @@ def _create_footprint_base_tables(
                              dv.code
                 ) AS row_rank
             FROM daily_valuation dv
+            {valuation_basis_join_sql}
             {valuation_where_sql}
         )
         WHERE row_rank = 1
@@ -1156,319 +1175,6 @@ def _create_typed_rerating_bubble_observation_table(
         JOIN bubble_footprint_with_regimes bf
           ON bf.snapshot_date = r.date
         WHERE r.liquidity_scope IN ('neutral_rerating', 'crowded_rerating')
-        """
-    )
-
-
-def _create_rerating_bubble_observation_table(
-    conn: Any,
-    *,
-    horizons: Sequence[int],
-) -> None:
-    recent_lag_joins = "\n".join(
-        f"""
-        LEFT JOIN bubble_calendar cr{lookback}
-          ON cr{lookback}.rn = cs.rn - {lookback}
-        LEFT JOIN bubble_stock_features sr{lookback}
-          ON sr{lookback}.code = s.code
-         AND sr{lookback}.date = cr{lookback}.date
-        LEFT JOIN topix_data tr{lookback}
-          ON tr{lookback}.date = cr{lookback}.date
-        """
-        for lookback in (20, 60, 120, 150)
-    )
-    recent_return_exprs = ",\n                ".join(
-        f"""
-        CASE WHEN sr{lookback}.close > 0
-            THEN (s.close / sr{lookback}.close - 1.0) * 100.0
-        END AS recent_return_{lookback}d_pct
-        """
-        for lookback in (20, 60, 120, 150)
-    )
-    topix_recent_return_exprs = ",\n                ".join(
-        f"""
-        CASE WHEN tr{lookback}.close > 0
-            THEN (t0.close / tr{lookback}.close - 1.0) * 100.0
-        END AS topix_recent_return_{lookback}d_pct
-        """
-        for lookback in (20, 60)
-    )
-    future_joins = "\n".join(
-        f"""
-        LEFT JOIN bubble_calendar cf{horizon}
-          ON cf{horizon}.rn = cs.rn + {int(horizon)}
-        LEFT JOIN bubble_stock_features sf{horizon}
-          ON sf{horizon}.code = s.code
-         AND sf{horizon}.date = cf{horizon}.date
-        LEFT JOIN topix_data tf{horizon}
-          ON tf{horizon}.date = cf{horizon}.date
-        """
-        for horizon in horizons
-    )
-    forward_return_exprs = ",\n                ".join(
-        f"""
-        CASE WHEN s.close > 0 AND sf{horizon}.close > 0
-            THEN (sf{horizon}.close / s.close - 1.0) * 100.0
-        END AS forward_close_return_{horizon}d_pct,
-        CASE WHEN t0.close > 0 AND tf{horizon}.close > 0
-            THEN (tf{horizon}.close / t0.close - 1.0) * 100.0
-        END AS topix_close_return_{horizon}d_pct,
-        CASE
-            WHEN s.close > 0
-             AND sf{horizon}.close > 0
-             AND t0.close > 0
-             AND tf{horizon}.close > 0
-            THEN ((sf{horizon}.close / s.close - 1.0)
-                - (tf{horizon}.close / t0.close - 1.0)) * 100.0
-        END AS forward_close_excess_return_{horizon}d_pct
-        """
-        for horizon in horizons
-    )
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE rerating_anchor_panel AS
-        WITH base AS (
-            SELECT
-                s.date,
-                s.code,
-                s.company_name,
-                s.market AS market_scope,
-                s.close,
-                s.med_adv60_jpy,
-                s.med_adv60_sessions,
-                dv.market_cap / 1000000000.0 AS market_cap_bil_jpy,
-                coalesce(dv.free_float_market_cap, dv.market_cap)
-                    AS free_float_market_cap_jpy,
-                dv.per,
-                dv.forward_per,
-                dv.pbr,
-                dv.p_op,
-                dv.forward_p_op,
-                {recent_return_exprs},
-                {topix_recent_return_exprs},
-                {forward_return_exprs}
-            FROM bubble_snapshot_dates bsd
-            JOIN bubble_calendar cs
-              ON cs.date = bsd.snapshot_date
-            JOIN bubble_stock_features s
-              ON s.date = bsd.snapshot_date
-            JOIN bubble_daily_valuation dv
-              ON dv.code = s.code
-             AND dv.date = s.date
-            JOIN topix_data t0
-              ON t0.date = s.date
-            {recent_lag_joins}
-            {future_joins}
-        ),
-        relation_base AS (
-            SELECT
-                *,
-                CASE WHEN per > 0 AND forward_per > 0 THEN forward_per / per END
-                    AS forward_per_to_per_ratio,
-                CASE WHEN per > 0 AND forward_p_op > 0 THEN forward_p_op / per END
-                    AS forward_p_op_to_per_ratio,
-                CASE
-                    WHEN med_adv60_sessions >= 60
-                     AND med_adv60_jpy > 0
-                     AND free_float_market_cap_jpy > 0
-                    THEN ln(med_adv60_jpy)
-                END AS log_adv60,
-                CASE
-                    WHEN med_adv60_sessions >= 60
-                     AND med_adv60_jpy > 0
-                     AND free_float_market_cap_jpy > 0
-                    THEN ln(free_float_market_cap_jpy)
-                END AS log_free_float_market_cap
-            FROM base
-        ),
-        residual_group_stats AS (
-            SELECT
-                date,
-                market_scope,
-                count(*) AS residual_observations,
-                avg(log_adv60) AS avg_log_adv60,
-                avg(log_free_float_market_cap) AS avg_log_free_float_market_cap,
-                var_samp(log_free_float_market_cap) AS var_log_free_float_market_cap,
-                covar_samp(log_free_float_market_cap, log_adv60) AS covar_log_cap_adv
-            FROM relation_base
-            WHERE log_adv60 IS NOT NULL
-              AND log_free_float_market_cap IS NOT NULL
-            GROUP BY date, market_scope
-        ),
-        residual_values AS (
-            SELECT
-                rb.*,
-                rgs.residual_observations,
-                CASE
-                    WHEN rgs.var_log_free_float_market_cap > 0
-                    THEN log_adv60
-                        - (
-                            rgs.avg_log_adv60
-                            - (rgs.covar_log_cap_adv / rgs.var_log_free_float_market_cap)
-                            * rgs.avg_log_free_float_market_cap
-                            + (rgs.covar_log_cap_adv / rgs.var_log_free_float_market_cap)
-                            * log_free_float_market_cap
-                        )
-                END AS liquidity_residual
-            FROM relation_base rb
-            LEFT JOIN residual_group_stats rgs USING (date, market_scope)
-        ),
-        residual_z AS (
-            SELECT
-                *,
-                stddev_samp(liquidity_residual) OVER (PARTITION BY date, market_scope)
-                    AS liquidity_residual_std
-            FROM residual_values
-        ),
-        regimes AS (
-            SELECT
-                *,
-                CASE
-                    WHEN liquidity_residual_std > 0
-                    THEN liquidity_residual / liquidity_residual_std
-                END AS liquidity_residual_z
-            FROM residual_z
-        )
-        SELECT
-            *,
-            CASE
-                WHEN liquidity_residual_std IS NULL OR liquidity_residual_std <= 0
-                    THEN 'missing'
-                WHEN liquidity_residual_z >= 1
-                  AND recent_return_20d_pct >= 0
-                  AND recent_return_60d_pct >= 0 THEN 'crowded_rerating'
-                WHEN liquidity_residual_z >= 1 THEN 'distribution_stress'
-                WHEN liquidity_residual_z <= -1 THEN 'stale_liquidity'
-                WHEN liquidity_residual_z > -1
-                  AND liquidity_residual_z < 1
-                  AND recent_return_20d_pct >= 0
-                  AND recent_return_60d_pct >= 0 THEN 'neutral_rerating'
-                ELSE 'neutral'
-            END AS liquidity_scope
-        FROM regimes
-        """
-    )
-    _create_rerating_percentile_table(conn)
-    conn.execute(
-        """
-        CREATE OR REPLACE TEMP TABLE rerating_bubble_observations AS
-        SELECT
-            r.*,
-            bf.horizon AS footprint_horizon,
-            bf.bubble_score,
-            bf.bubble_regime,
-            bf.active_flags,
-            bf.breadth_up_pct,
-            bf.pct_above_sma50,
-            bf.top10_mcap_share_pct,
-            bf.expensive_mcap_share_pct,
-            bf.return_p90_p10_spread_pct
-        FROM rerating_anchor_ranked r
-        JOIN bubble_footprint_with_regimes bf
-          ON bf.snapshot_date = r.date
-        WHERE r.liquidity_scope IN ('neutral_rerating', 'crowded_rerating')
-        """
-    )
-
-
-def _create_rerating_percentile_table(conn: Any) -> None:
-    conn.execute(
-        """
-        CREATE OR REPLACE TEMP TABLE rerating_anchor_ranked AS
-        SELECT
-            * EXCLUDE (
-                per_valid_count,
-                per_rank,
-                forward_per_valid_count,
-                forward_per_rank,
-                forward_p_op_valid_count,
-                forward_p_op_rank,
-                pbr_valid_count,
-                pbr_rank,
-                forward_per_to_per_ratio_valid_count,
-                forward_per_to_per_ratio_rank,
-                forward_p_op_to_per_ratio_valid_count,
-                forward_p_op_to_per_ratio_rank
-            ),
-            CASE
-                WHEN per > 0 AND per_valid_count <= 1 THEN 0.0
-                WHEN per > 0 THEN (per_rank - 1.0) / (per_valid_count - 1.0)
-            END AS per_percentile,
-            CASE
-                WHEN forward_per > 0 AND forward_per_valid_count <= 1 THEN 0.0
-                WHEN forward_per > 0
-                    THEN (forward_per_rank - 1.0) / (forward_per_valid_count - 1.0)
-            END AS forward_per_percentile,
-            CASE
-                WHEN forward_p_op > 0 AND forward_p_op_valid_count <= 1 THEN 0.0
-                WHEN forward_p_op > 0
-                    THEN (forward_p_op_rank - 1.0) / (forward_p_op_valid_count - 1.0)
-            END AS forward_p_op_percentile,
-            CASE
-                WHEN pbr > 0 AND pbr_valid_count <= 1 THEN 0.0
-                WHEN pbr > 0 THEN (pbr_rank - 1.0) / (pbr_valid_count - 1.0)
-            END AS pbr_percentile,
-            CASE
-                WHEN forward_per_to_per_ratio IS NOT NULL
-                 AND forward_per_to_per_ratio_valid_count <= 1 THEN 0.0
-                WHEN forward_per_to_per_ratio IS NOT NULL
-                    THEN (forward_per_to_per_ratio_rank - 1.0)
-                        / (forward_per_to_per_ratio_valid_count - 1.0)
-            END AS forward_per_to_per_ratio_percentile,
-            CASE
-                WHEN forward_p_op_to_per_ratio IS NOT NULL
-                 AND forward_p_op_to_per_ratio_valid_count <= 1 THEN 0.0
-                WHEN forward_p_op_to_per_ratio IS NOT NULL
-                    THEN (forward_p_op_to_per_ratio_rank - 1.0)
-                        / (forward_p_op_to_per_ratio_valid_count - 1.0)
-            END AS forward_p_op_to_per_ratio_percentile
-        FROM (
-            SELECT
-                *,
-                count(*) FILTER (WHERE per > 0) OVER (
-                    PARTITION BY market_scope, date
-                ) AS per_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
-                    ORDER BY CASE WHEN per > 0 THEN per END NULLS LAST
-                ) AS per_rank,
-                count(*) FILTER (WHERE forward_per > 0) OVER (
-                    PARTITION BY market_scope, date
-                ) AS forward_per_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
-                    ORDER BY CASE WHEN forward_per > 0 THEN forward_per END NULLS LAST
-                ) AS forward_per_rank,
-                count(*) FILTER (WHERE forward_p_op > 0) OVER (
-                    PARTITION BY market_scope, date
-                ) AS forward_p_op_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
-                    ORDER BY CASE WHEN forward_p_op > 0 THEN forward_p_op END NULLS LAST
-                ) AS forward_p_op_rank,
-                count(*) FILTER (WHERE pbr > 0) OVER (
-                    PARTITION BY market_scope, date
-                ) AS pbr_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
-                    ORDER BY CASE WHEN pbr > 0 THEN pbr END NULLS LAST
-                ) AS pbr_rank,
-                count(*) FILTER (WHERE forward_per_to_per_ratio IS NOT NULL) OVER (
-                    PARTITION BY market_scope, date
-                ) AS forward_per_to_per_ratio_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
-                    ORDER BY forward_per_to_per_ratio NULLS LAST
-                ) AS forward_per_to_per_ratio_rank,
-                count(*) FILTER (WHERE forward_p_op_to_per_ratio IS NOT NULL) OVER (
-                    PARTITION BY market_scope, date
-                ) AS forward_p_op_to_per_ratio_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
-                    ORDER BY forward_p_op_to_per_ratio NULLS LAST
-                ) AS forward_p_op_to_per_ratio_rank
-            FROM rerating_anchor_panel
-        )
         """
     )
 
