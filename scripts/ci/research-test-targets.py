@@ -37,9 +37,94 @@ RESEARCH_FIXTURE_CONSUMER_TESTS = {
         "test_ranking_technical_fit_score_shape_evidence.py",
     ),
 }
+DAILY_RANKING_SHARED_CONSUMER_TESTS = (
+    "tests/unit/domains/analytics/test_atr_expansion_forward_response.py",
+    "tests/unit/domains/analytics/test_daily_ranking_consumer_support.py",
+    "tests/unit/domains/analytics/test_daily_ranking_feature_builders.py",
+    "tests/unit/domains/analytics/test_daily_ranking_research_base.py",
+    "tests/unit/domains/analytics/test_market_bubble_footprint_monitor.py",
+    "tests/unit/domains/analytics/test_ranking_color_evidence.py",
+    "tests/unit/domains/analytics/test_ranking_core_factor_regime_breakdown.py",
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_core_sector_neutral_value_regime_breakdown.py"
+    ),
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_core_sector_relative_value_evidence.py"
+    ),
+    "tests/unit/domains/analytics/test_ranking_crowded_long_tail_evidence.py",
+    "tests/unit/domains/analytics/test_ranking_daily_triage_lens.py",
+    "tests/unit/domains/analytics/test_ranking_fixed_return_priority_evidence.py",
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_forecast_operating_profit_growth_evidence.py"
+    ),
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_liquidity_price_action_recomposition.py"
+    ),
+    "tests/unit/domains/analytics/test_ranking_liquidity_z_long_evidence.py",
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_long_scaffold_factor_cross_evidence.py"
+    ),
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_long_scaffold_value_composite_evidence.py"
+    ),
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_long_sector_leadership_horizon_decomposition.py"
+    ),
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_moving_average_replacement_evidence.py"
+    ),
+    "tests/unit/domains/analytics/test_ranking_psr_valuation_evidence.py",
+    "tests/unit/domains/analytics/test_ranking_roe_quality_evidence.py",
+    "tests/unit/domains/analytics/test_ranking_sector_strength_evidence.py",
+    "tests/unit/domains/analytics/test_ranking_short_red_evidence.py",
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_short_sector_strength_evidence.py"
+    ),
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_short_value_composite_evidence.py"
+    ),
+    "tests/unit/domains/analytics/test_ranking_sma5_atr_deviation_evidence.py",
+    "tests/unit/domains/analytics/test_ranking_sma5_below_streak_evidence.py",
+    "tests/unit/domains/analytics/test_ranking_sma5_count_long_evidence.py",
+    "tests/unit/domains/analytics/test_ranking_sma5_count_short_evidence.py",
+    "tests/unit/domains/analytics/test_ranking_sma5_deviation_evidence.py",
+    "tests/unit/domains/analytics/test_ranking_sma5_position_state_evidence.py",
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_technical_fit_score_shape_evidence.py"
+    ),
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_trend_acceleration_conditional_lift.py"
+    ),
+    "tests/unit/domains/analytics/test_ranking_trend_slope_evidence.py",
+)
 DOMAIN_CONSUMER_TESTS = {
-    "daily_ranking_research_base": (
-        "tests/unit/domains/analytics/test_ranking_color_evidence.py",
+    "daily_ranking_consumer_support": DAILY_RANKING_SHARED_CONSUMER_TESTS,
+    "daily_ranking_research_base": DAILY_RANKING_SHARED_CONSUMER_TESTS,
+    "market_bubble_footprint_support": (
+        "tests/unit/domains/analytics/test_market_bubble_footprint.py",
+        "tests/unit/domains/analytics/test_market_bubble_footprint_monitor.py",
+    ),
+    "ranking_n225_rerating_benchmark_support": (
+        (
+            "tests/unit/domains/analytics/"
+            "test_ranking_n225_crowded_rerating_benchmark.py"
+        ),
+        (
+            "tests/unit/domains/analytics/"
+            "test_ranking_n225_neutral_rerating_benchmark.py"
+        ),
     ),
 }
 

@@ -113,15 +113,66 @@ def test_domain_without_matching_test_falls_back_to_analytics_tests() -> None:
 def test_shared_daily_ranking_helpers_map_to_consumer_tests() -> None:
     module = _load_module()
 
+    expected_consumers = {
+        "tests/unit/domains/analytics/test_daily_ranking_research_base.py",
+        "tests/unit/domains/analytics/test_daily_ranking_consumer_support.py",
+        "tests/unit/domains/analytics/test_ranking_color_evidence.py",
+        "tests/unit/domains/analytics/"
+        "test_ranking_fixed_return_priority_evidence.py",
+        "tests/unit/domains/analytics/"
+        "test_ranking_technical_fit_score_shape_evidence.py",
+        "tests/unit/domains/analytics/"
+        "test_ranking_trend_acceleration_conditional_lift.py",
+    }
+
+    for module_name in (
+        "daily_ranking_research_base",
+        "daily_ranking_consumer_support",
+    ):
+        targets = module.pytest_targets_for_research_changes(
+            [f"apps/bt/src/domains/analytics/{module_name}.py"]
+        )
+
+        assert expected_consumers <= set(targets)
+        assert all(module._exists(target) for target in targets)
+
+
+def test_deleted_daily_ranking_adapter_falls_back_without_missing_target() -> None:
+    module = _load_module()
+
     targets = module.pytest_targets_for_research_changes(
         [
-            "apps/bt/src/domains/analytics/daily_ranking_research_base.py",
+            "apps/bt/src/domains/analytics/"
+            "ranking_technical_fit_price_projection.py"
         ]
     )
 
-    assert targets == (
-        "tests/unit/domains/analytics/test_ranking_color_evidence.py",
-    )
+    assert targets == ("tests/unit/domains/analytics",)
+    assert not any("technical_fit_price_projection" in target for target in targets)
+
+
+def test_named_shared_experiment_support_maps_to_its_consumers() -> None:
+    module = _load_module()
+    expected_by_module = {
+        "market_bubble_footprint_support": {
+            "tests/unit/domains/analytics/test_market_bubble_footprint.py",
+            "tests/unit/domains/analytics/test_market_bubble_footprint_monitor.py",
+        },
+        "ranking_n225_rerating_benchmark_support": {
+            "tests/unit/domains/analytics/"
+            "test_ranking_n225_crowded_rerating_benchmark.py",
+            "tests/unit/domains/analytics/"
+            "test_ranking_n225_neutral_rerating_benchmark.py",
+        },
+    }
+
+    for module_name, expected in expected_by_module.items():
+        targets = module.pytest_targets_for_research_changes(
+            [f"apps/bt/src/domains/analytics/{module_name}.py"]
+        )
+
+        assert set(targets) == expected
+        assert all(module._exists(target) for target in targets)
 
 
 def test_published_technical_fit_digest_maps_to_its_consumer_test() -> None:

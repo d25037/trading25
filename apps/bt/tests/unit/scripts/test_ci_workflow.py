@@ -106,15 +106,23 @@ def test_change_classification_pipeline_fails_closed() -> None:
     assert "set -o pipefail" in classify_step["run"]
 
 
-def test_actions_research_job_runs_only_fast_curated_targets() -> None:
+def test_actions_research_job_runs_fast_and_changed_mapped_targets_once() -> None:
     research_job = _jobs()["bt-research-tests"]
-    run_fast_tests = next(
-        step["run"]
+    run_research_tests = next(
+        step
         for step in research_job["steps"]
-        if step.get("name") == "Run fast bt research contract tests"
+        if step.get("name") == "Run fast and changed bt research tests"
     )
+    command = run_research_tests["run"]
 
-    assert "research-test-targets.py --mode fast-pytest" in run_fast_tests
+    assert "research-test-targets.py --mode fast-pytest" in command
+    assert (
+        "research-test-targets.py < /tmp/research-changed-files.txt" in command
+    )
+    assert "sort -u" in command
+    assert command.count("./scripts/bt-pytest.sh") == 1
+    assert '"${research_test_targets[@]}"' in command
+    assert research_job["timeout-minutes"] >= 45
 
     job_commands = "\n".join(
         step.get("run", "") for step in research_job["steps"]
@@ -124,7 +132,7 @@ def test_actions_research_job_runs_only_fast_curated_targets() -> None:
         job_commands,
     )
 
-    assert job_commands.count("research-test-targets.py") == 2
+    assert job_commands.count("research-test-targets.py") == 3
     assert target_script_calls == ["py-files", "fast-pytest"]
 
 
