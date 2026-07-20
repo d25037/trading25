@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 import shutil
 
@@ -7,6 +9,9 @@ import duckdb
 import pytest
 
 import src.infrastructure.db.market.market_compaction as compaction_module
+from src.application.services.adjusted_metrics_materializer import (
+    AdjustedMetricsMaterializer,
+)
 from src.infrastructure.db.market.market_compaction import (
     HARD_FREE_BYTES,
     SOFT_FREE_BYTES,
@@ -21,6 +26,7 @@ from src.infrastructure.db.market.market_compaction import (
 from src.infrastructure.db.market.atomic_exchange import PlatformAtomicExchange
 from src.infrastructure.db.market.managed_root import ManagedRootError, ManagedRootFd
 from src.infrastructure.db.market.market_writer_resources import (
+    MarketWriterSession,
     MarketWriterResourceFactory,
 )
 
@@ -137,6 +143,71 @@ def _closed_v4_session(tmp_path: Path):
     )
     token = session.close_writable_handles()
     return session, token, session.authorize_maintenance(token)
+
+
+@contextmanager
+def _managed_v5_writer_session(tmp_path: Path) -> Iterator[MarketWriterSession]:
+    data_root = tmp_path / "data"
+    session = MarketWriterResourceFactory(
+        data_root=data_root,
+        market_root=data_root / "market-timeseries",
+    ).reset_and_open_v4()
+    try:
+        yield session
+    finally:
+        token = session.close_writable_handles()
+        read_only = session.reopen_read_only(token)
+        try:
+            session.release_after_read_only_reopen(token)
+        finally:
+            read_only.close()
+
+
+def _seed_healthy_v5_current_basis(session: MarketWriterSession) -> None:
+    session.handles.time_series_store.publish_stock_data(
+        [
+            {
+                "code": "7203",
+                "date": "2024-12-30",
+                "open": 500.0,
+                "high": 500.0,
+                "low": 500.0,
+                "close": 500.0,
+                "volume": 100,
+                "adjustment_factor": 1.0,
+                "adjusted_open": 500.0,
+                "adjusted_high": 500.0,
+                "adjusted_low": 500.0,
+                "adjusted_close": 500.0,
+                "adjusted_volume": 100,
+            }
+        ],
+        provider_plan="premium",
+    )
+    session.handles.time_series_store.publish_statements(
+        [
+            {
+                "code": "72030",
+                "statement_id": "disclosure-1",
+                "disclosure_number": "disclosure-1",
+                "disclosed_date": "2024-05-10",
+                "disclosed_at": "2024-05-10T15:30:00+09:00",
+                "period_start": "2023-04-01",
+                "period_end": "2024-03-31",
+                "type_of_current_period": "FY",
+                "type_of_document": "FYFinancialStatements",
+                "earnings_per_share": 100.0,
+                "diluted_earnings_per_share": 98.0,
+                "bps": 1_000.0,
+                "forecast_eps": 120.0,
+                "dividend_fy": 30.0,
+                "forecast_dividend_fy": 40.0,
+                "shares_outstanding": 10_000_000.0,
+                "treasury_shares": 1_000_000.0,
+            }
+        ]
+    )
+    AdjustedMetricsMaterializer(session.handles.market_db).rebuild_current_basis([])
 
 
 def _hard_snapshot() -> DuckDbSizeSnapshot:
@@ -555,66 +626,67 @@ def test_post_commit_cleanup_failure_rolls_forward_but_is_not_suppressed(
 def test_source_validation_reuses_exact_adjusted_metric_diagnostics(
     tmp_path: Path,
 ) -> None:
-    data_root = tmp_path / "data"
-    market_root = data_root / "market-timeseries"
-    session = MarketWriterResourceFactory(
-        data_root=data_root, market_root=market_root
-    ).reset_and_open_v4()
-    session.handles.market_db._execute(
-        "INSERT INTO statements(code, disclosed_date, earnings_per_share, type_of_current_period) "
-        "VALUES ('7203', '2026-01-10', 100.0, 'FY')"
-    )
-    session.handles.market_db._execute(
-        """INSERT INTO stock_adjustment_bases(
-        code, basis_id, valid_from, valid_to_exclusive, adjustment_through_date,
-        source_fingerprint, materialized_through_date, status
-        ) VALUES (
-        '7203', 'event-pit-v1:7203:2026-01-01', '2026-01-01', NULL,
-        '2026-01-31', 'fixture', '2026-01-31', 'ready'
-        )"""
-    )
-    token = session.close_writable_handles()
-    authority = session.authorize_maintenance(token)
-    compactor = MarketCompactor(size_reader=lambda _path: _compact_snapshot())
+    with _managed_v5_writer_session(tmp_path) as session:
+        _seed_healthy_v5_current_basis(session)
+        market_db = session.handles.market_db
+        healthy = market_db.get_adjusted_metrics_snapshot()
+        market_db._execute(
+            "UPDATE statement_metrics_adjusted SET raw_eps = 999 "
+            "WHERE code = '7203'"
+        )
+        diagnostics = market_db.get_adjusted_metrics_source_diagnostics()
 
-    with pytest.raises(MarketCompactionError, match="PIT lineage"):
-        compactor.maintain(authority)
+        assert healthy["pendingCurrentBasisCodeCount"] == 0
+        assert diagnostics["staleAdjustedStatementRows"] == 1
 
-    read_only = session.reopen_read_only(token)
+        token = session.close_writable_handles()
+        authority = session.authorize_maintenance(token)
+        compactor = MarketCompactor(size_reader=lambda _path: _compact_snapshot())
 
-    session.release_after_read_only_reopen(token)
-    read_only.close()
+        with pytest.raises(
+            MarketCompactionError,
+            match="Market v5 current-basis validation failed",
+        ):
+            compactor.maintain(authority)
 
 
-def test_source_validation_reuses_catalog_overlap_and_status_snapshot(
+def test_source_validation_reuses_invalid_current_basis_provider_state_snapshot(
     tmp_path: Path,
 ) -> None:
-    data_root = tmp_path / "data"
-    market_root = data_root / "market-timeseries"
-    session = MarketWriterResourceFactory(
-        data_root=data_root, market_root=market_root
-    ).reset_and_open_v4()
-    session.handles.market_db._execute(
-        """INSERT INTO stock_adjustment_bases(
-        code, basis_id, valid_from, valid_to_exclusive, adjustment_through_date,
-        source_fingerprint, materialized_through_date, status
-        ) VALUES (
-        '7203', 'event-pit-v1:7203:2026-01-01', '2026-01-01', NULL,
-        '2026-01-31', 'fixture', '2026-01-31', 'building'
-        )"""
-    )
-    token = session.close_writable_handles()
-    authority = session.authorize_maintenance(token)
-
-    with pytest.raises(MarketCompactionError, match="PIT lineage"):
-        MarketCompactor(size_reader=lambda _path: _compact_snapshot()).maintain(
-            authority
+    with _managed_v5_writer_session(tmp_path) as session:
+        _seed_healthy_v5_current_basis(session)
+        market_db = session.handles.market_db
+        market_db._execute(
+            "UPDATE current_basis_fundamentals_state "
+            "SET fundamentals_adjustment_basis_date = '2024-12-29' "
+            "WHERE code = '7203'"
         )
+        snapshot = market_db.get_adjusted_metrics_snapshot()
 
-    read_only = session.reopen_read_only(token)
+        assert snapshot["invalidCurrentBasisStateCount"] == 1
+        assert snapshot["pendingCurrentBasisCodeCount"] == 1
 
-    session.release_after_read_only_reopen(token)
-    read_only.close()
+        token = session.close_writable_handles()
+        authority = session.authorize_maintenance(token)
+
+        with pytest.raises(
+            MarketCompactionError,
+            match="Market v5 current-basis validation failed",
+        ):
+            MarketCompactor(size_reader=lambda _path: _compact_snapshot()).maintain(
+                authority
+            )
+
+
+def test_managed_v5_writer_session_releases_process_lock_after_body_failure(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(RuntimeError, match="injected test body failure"):
+        with _managed_v5_writer_session(tmp_path / "failed"):
+            raise RuntimeError("injected test body failure")
+
+    with _managed_v5_writer_session(tmp_path / "replacement"):
+        pass
 
 
 @pytest.mark.parametrize(

@@ -6,6 +6,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 
 def _load_module():
     repo_root = Path(__file__).resolve().parents[5]
@@ -295,24 +297,43 @@ def write_demo_bundle():
     assert findings[0].rule_name == "published-summary-generation"
 
 
-def test_pit_register_guard_rejects_schema_v3_as_current_valid_rerun() -> None:
+@pytest.mark.parametrize("schema_version", ("v3", "v4"))
+def test_pit_register_guard_rejects_legacy_schema_as_current_valid_rerun(
+    schema_version: str,
+) -> None:
     module = _load_module()
 
     findings = module.find_pit_register_contract_findings(
         Path("docs/research-pit-invalidation-register.md"),
-        """
+        f"""
 # Research PIT Invalidation Register
 
-A valid rerun must use `market.duckdb` schema v3.
+A valid rerun must use `market.duckdb` schema {schema_version}.
 """.strip(),
     )
 
-    assert "pit-register-current-schema-v3" in {
+    assert f"pit-register-current-schema-{schema_version}" in {
         finding.rule_name for finding in findings
     }
 
 
-def test_tracked_pit_register_satisfies_current_market_v4_contract() -> None:
+@pytest.mark.parametrize("schema_version", ("v3", "v4"))
+def test_pit_register_guard_allows_archived_historical_legacy_schema(
+    schema_version: str,
+) -> None:
+    module = _load_module()
+
+    findings = module.find_pit_register_contract_findings(
+        Path("docs/research-pit-invalidation-register.md"),
+        f"Archived historical `market.duckdb` schema {schema_version} provenance.",
+    )
+
+    assert f"pit-register-current-schema-{schema_version}" not in {
+        finding.rule_name for finding in findings
+    }
+
+
+def test_tracked_pit_register_satisfies_current_market_v5_contract() -> None:
     module = _load_module()
     repo_root = Path(__file__).resolve().parents[5]
     relative_path = Path("docs/research-pit-invalidation-register.md")

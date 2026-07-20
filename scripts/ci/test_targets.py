@@ -24,6 +24,7 @@ BT_PRODUCT_ANALYTICS_TESTS = tuple(
 )
 BT_PRODUCT_SCRIPT_TESTS = (
     "tests/unit/scripts/test_audit_skills.py",
+    "tests/unit/scripts/test_benchmark_market_v5_sync.py",
     "tests/unit/scripts/test_check_contract_sync.py",
     "tests/unit/scripts/test_check_dep_direction.py",
     "tests/unit/scripts/test_check_privacy_leaks.py",

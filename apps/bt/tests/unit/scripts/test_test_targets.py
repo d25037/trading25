@@ -93,6 +93,18 @@ def test_contract_sync_script_test_is_in_product_script_targets() -> None:
     )
 
 
+def test_market_v5_benchmark_script_test_is_in_product_script_targets() -> None:
+    module = _load_module()
+
+    assert (
+        "tests/unit/scripts/test_benchmark_market_v5_sync.py"
+        in module.BT_PRODUCT_SCRIPT_TESTS
+    )
+    assert module.BT_PRODUCT_SCRIPT_TESTS.count(
+        "tests/unit/scripts/test_benchmark_market_v5_sync.py"
+    ) == 1
+
+
 def test_policy_defined_production_test_universe_is_selected_exactly_once() -> None:
     module = _load_module()
     bt_root = Path(__file__).resolve().parents[3]

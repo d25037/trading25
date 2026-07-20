@@ -34,10 +34,10 @@ PUBLISHED_SUMMARY_ASSIGNMENT = "published_summary="
 CATALOG_PATH = EXPERIMENT_DOCS_ROOT / "research-catalog-metadata.toml"
 PIT_INVALIDATION_REGISTER_PATH = Path("docs/research-pit-invalidation-register.md")
 PIT_REGISTER_REQUIRED_MARKERS = (
-    "`market.duckdb` schema v4",
-    "`stock_price_adjustment_mode=local_projection_v2_event_time`",
-    "`stock_adjustment_bases`",
-    "`stock_adjustment_basis_segments`",
+    "`market.duckdb` schema v5",
+    "`stock_price_adjustment_mode=provider_adjusted_v1`",
+    "`providerVintage`",
+    "current-basis",
     "`statement_metrics_adjusted`",
     "`daily_valuation`",
 )
@@ -183,22 +183,24 @@ def find_pit_register_contract_findings(
     findings: list[ResearchGuardrailFinding] = []
     for line_number, line in enumerate(text.splitlines(), start=1):
         normalized = line.lower()
-        if "schema v3" not in normalized:
-            continue
-        if "archived" in normalized and "historical" in normalized:
-            continue
-        findings.append(
-            ResearchGuardrailFinding(
-                relative_path=relative_path,
-                line_number=line_number,
-                rule_name="pit-register-current-schema-v3",
-                message=(
-                    "The living PIT register must not accept Market schema v3 as "
-                    "current evidence. Preserve v3 provenance only on lines marked "
-                    "both archived and historical."
-                ),
+        for schema_version in ("v3", "v4"):
+            if f"schema {schema_version}" not in normalized:
+                continue
+            if "archived" in normalized and "historical" in normalized:
+                continue
+            findings.append(
+                ResearchGuardrailFinding(
+                    relative_path=relative_path,
+                    line_number=line_number,
+                    rule_name=f"pit-register-current-schema-{schema_version}",
+                    message=(
+                        "The living PIT register must not accept Market schema "
+                        f"{schema_version} as current evidence. Preserve "
+                        f"{schema_version} provenance only on lines marked both "
+                        "archived and historical."
+                    ),
+                )
             )
-        )
 
     for marker in PIT_REGISTER_REQUIRED_MARKERS:
         if marker in text:
@@ -207,10 +209,10 @@ def find_pit_register_contract_findings(
             ResearchGuardrailFinding(
                 relative_path=relative_path,
                 line_number=1,
-                rule_name="pit-register-market-v4-contract-missing",
+                rule_name="pit-register-market-v5-contract-missing",
                 message=(
-                    "The living PIT register must require the complete Market v4 "
-                    f"event-time contract; missing marker: {marker}"
+                    "The living PIT register must require the complete Market v5 "
+                    f"provider-adjusted contract; missing marker: {marker}"
                 ),
             )
         )
