@@ -34,9 +34,6 @@ from src.domains.analytics.ranking_technical_fit_score_shape_evidence import (
     run_ranking_technical_fit_score_shape_evidence_research,
     write_ranking_technical_fit_score_shape_evidence_bundle,
 )
-from src.domains.analytics.atr_expansion_forward_response import (
-    _create_observation_panel as _create_atr_observation_panel,
-)
 from src.domains.analytics.trend_slope_features import rolling_log_slope_features
 from tests.unit.domains.analytics.test_ranking_fixed_return_priority_evidence import (
     _mark_fixture_market_v4 as _mark_base_fixture_market_v4,
@@ -1802,48 +1799,62 @@ def test_outcome_completion_date_is_exact_stock_twenty_session_lead(
     tmp_path: Path,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    _mark_fixture_market_v4(db_path)
+    future_dates = pd.bdate_range("2024-07-01", periods=25).strftime("%Y-%m-%d")
     conn = duckdb.connect(str(db_path))
     try:
+        for future_date in future_dates:
+            for table_name in (
+                "stock_data",
+                "stock_data_raw",
+                "stock_master_daily",
+                "daily_valuation",
+                "topix_data",
+                "indices_data",
+            ):
+                conn.execute(
+                    f"INSERT INTO {table_name} "
+                    f"SELECT * REPLACE (? AS date) FROM {table_name} "
+                    f"WHERE date = (SELECT max(date) FROM {table_name})",
+                    [future_date],
+                )
         conn.execute(
-            """
-            UPDATE stock_master_daily
-            SET market_code = '0112'
-            WHERE code = '1111' AND CAST(date AS DATE) > DATE '2024-05-20'
-            """
+            "UPDATE stock_adjustment_bases SET materialized_through_date = ?",
+            [future_dates[-1]],
         )
-        _create_atr_observation_panel(
-            conn,
-            query_start="2023-07-03",
-            query_end="2024-06-28",
-            analysis_start_date="2024-05-15",
-            analysis_end_date="2024-05-17",
-            atr_windows=(20, 60),
-            return_windows=(20, 60),
-            horizons=(20,),
-            market_source="stock_master_daily_exact_date",
-            market_scopes=("prime",),
-        )
-        complete = (
-            conn.execute(
-                """
-            SELECT
-                date,
-                code,
-                future_close_20d,
-                forward_close_return_20d_pct,
-                forward_outcome_completion_date_20d
-            FROM atr_expansion_panel
-            WHERE code = '1111' AND date = DATE '2024-05-15'
-            """
-            )
-            .fetchdf()
-            .iloc[0]
-        )
+    finally:
+        conn.close()
+    result = run_ranking_technical_fit_score_shape_evidence_research(
+        db_path,
+        start_date="2024-06-19",
+        end_date="2024-06-21",
+        horizons=(20,),
+        min_training_observations=1,
+        min_training_dates=1,
+        bootstrap_resamples=5,
+        observation_sample_limit=20_000,
+    )
+    completed = result.observation_sample_df.dropna(
+        subset=["forward_outcome_completion_date_20d"]
+    )
+    assert not completed.empty, result.observation_sample_df[
+        ["date", "code", "forward_outcome_completion_date_20d"]
+    ].to_string(index=False)
+    complete = completed.iloc[0]
+
+    conn = duckdb.connect(str(db_path), read_only=True)
+    try:
         session_dates = conn.execute(
             """
             SELECT DISTINCT date
-            FROM stock_data
+            FROM stock_data_raw
             WHERE left(code, 4) = ?
+              AND open IS NOT NULL
+              AND high IS NOT NULL
+              AND low IS NOT NULL
+              AND close IS NOT NULL
+              AND volume IS NOT NULL
+              AND adjustment_factor IS NOT NULL
             ORDER BY date
             """,
             [str(complete["code"])],
@@ -1851,28 +1862,65 @@ def test_outcome_completion_date_is_exact_stock_twenty_session_lead(
         signal_index = [str(value)[:10] for value in session_dates].index(
             str(complete["date"])[:10]
         )
-        expected_future_close = conn.execute(
+        completion_date = str(session_dates.iloc[signal_index + 20])[:10]
+        completion_basis_id = conn.execute(
             """
-            SELECT close
-            FROM stock_data
-            WHERE code = ? AND date = ?
+            SELECT basis_id
+            FROM stock_adjustment_bases
+            WHERE code = ?
+              AND CAST(valid_from AS DATE) <= CAST(? AS DATE)
+              AND (valid_to_exclusive IS NULL
+                   OR CAST(? AS DATE) < CAST(valid_to_exclusive AS DATE))
             """,
-            [str(complete["code"]), str(session_dates.iloc[signal_index + 20])[:10]],
+            [str(complete["code"]), completion_date, completion_date],
         ).fetchone()[0]
-        signal_close = conn.execute(
-            "SELECT close FROM stock_data WHERE code = ? AND date = ?",
-            [str(complete["code"]), str(complete["date"])[:10]],
-        ).fetchone()[0]
+        projected_signal_close, projected_completion_close = conn.execute(
+            """
+            SELECT
+                signal.close * signal_segment.cumulative_factor,
+                completion.close * completion_segment.cumulative_factor
+            FROM stock_data_raw signal
+            JOIN stock_adjustment_basis_segments signal_segment
+              ON signal_segment.code = signal.code
+             AND signal_segment.basis_id = ?
+             AND CAST(signal_segment.source_date_from AS DATE)
+                   <= CAST(signal.date AS DATE)
+             AND (signal_segment.source_date_to_exclusive IS NULL
+                  OR CAST(signal.date AS DATE)
+                       < CAST(signal_segment.source_date_to_exclusive AS DATE))
+            JOIN stock_data_raw completion
+              ON completion.code = signal.code
+             AND CAST(completion.date AS DATE) = CAST(? AS DATE)
+            JOIN stock_adjustment_basis_segments completion_segment
+              ON completion_segment.code = completion.code
+             AND completion_segment.basis_id = ?
+             AND CAST(completion_segment.source_date_from AS DATE)
+                   <= CAST(completion.date AS DATE)
+             AND (completion_segment.source_date_to_exclusive IS NULL
+                  OR CAST(completion.date AS DATE)
+                       < CAST(completion_segment.source_date_to_exclusive AS DATE))
+            WHERE signal.code = ?
+              AND CAST(signal.date AS DATE) = CAST(? AS DATE)
+            """,
+            [
+                completion_basis_id,
+                completion_date,
+                completion_basis_id,
+                str(complete["code"]),
+                str(complete["date"])[:10],
+            ],
+        ).fetchone()
     finally:
         conn.close()
-    assert (
-        str(complete["forward_outcome_completion_date_20d"])[:10]
-        == str(session_dates.iloc[signal_index + 20])[:10]
+    assert str(complete["forward_outcome_completion_date_20d"])[:10] == completion_date
+    expected_return = (
+        projected_completion_close / projected_signal_close - 1.0
+    ) * 100.0
+    assert complete["forward_close_return_20d_pct"] == pytest.approx(expected_return)
+    actual_future_close = projected_signal_close * (
+        1.0 + complete["forward_close_return_20d_pct"] / 100.0
     )
-    assert complete["future_close_20d"] == expected_future_close
-    assert complete["forward_close_return_20d_pct"] == pytest.approx(
-        (expected_future_close / signal_close - 1.0) * 100.0
-    )
+    assert actual_future_close == pytest.approx(projected_completion_close)
 
 
 def test_candidate_outcomes_share_full_stock_session_leg_and_independent_n225() -> None:
