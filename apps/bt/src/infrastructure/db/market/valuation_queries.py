@@ -67,25 +67,80 @@ def get_provider_vintage_snapshot(
 
     windows = fetchall_dicts(
         """
-        SELECT code, coverage_start, coverage_end, provider_as_of, source_fingerprint
-        FROM stock_provider_windows ORDER BY code
+        SELECT
+            code AS physical_code,
+            CASE
+                WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                    THEN left(code, length(code) - 1)
+                ELSE code
+            END AS code,
+            coverage_start,
+            coverage_end,
+            provider_as_of,
+            source_fingerprint
+        FROM stock_provider_windows
+        ORDER BY code
         """,
         None,
     )
-    if not windows:
-        return defaults
 
     evidence_by_code = {
         str(row.get("code", "")): row
         for row in fetchall_dicts(
             """
         WITH window_codes AS MATERIALIZED (
-            SELECT code FROM stock_provider_windows
+            SELECT
+                CASE
+                    WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                        THEN left(code, length(code) - 1)
+                    ELSE code
+                END AS code
+            FROM stock_provider_windows
+            WHERE code IS NOT NULL AND code != ''
         ),
         provider_rows AS MATERIALIZED (
-            SELECT raw.*
+            SELECT
+                CASE
+                    WHEN length(raw.code) IN (5, 6) AND right(raw.code, 1) = '0'
+                        THEN left(raw.code, length(raw.code) - 1)
+                    ELSE raw.code
+                END AS code,
+                raw.code AS physical_code,
+                raw.date,
+                raw.open,
+                raw.high,
+                raw.low,
+                raw.close,
+                raw.volume,
+                raw.turnover_value,
+                raw.adjustment_factor,
+                raw.adjusted_open,
+                raw.adjusted_high,
+                raw.adjusted_low,
+                raw.adjusted_close,
+                raw.adjusted_volume
             FROM stock_data_raw AS raw
-            INNER JOIN window_codes USING (code)
+            WHERE raw.code IS NOT NULL AND raw.code != ''
+        ),
+        event_rows AS MATERIALIZED (
+            SELECT
+                CASE
+                    WHEN length(event.code) IN (5, 6) AND right(event.code, 1) = '0'
+                        THEN left(event.code, length(event.code) - 1)
+                    ELSE event.code
+                END AS code,
+                event.date,
+                event.adjustment_factor,
+                event.source_fingerprint
+            FROM stock_adjustment_events AS event
+            WHERE event.code IS NOT NULL AND event.code != ''
+        ),
+        ownership_codes AS MATERIALIZED (
+            SELECT code FROM window_codes
+            UNION
+            SELECT code FROM provider_rows
+            UNION
+            SELECT code FROM event_rows
         ),
         row_hashes AS (
             SELECT
@@ -103,7 +158,7 @@ def get_provider_vintage_snapshot(
                                 adjusted_volume := adjusted_volume,
                                 adjustment_factor := adjustment_factor,
                                 close := close,
-                                code := code,
+                                code := physical_code,
                                 date := date,
                                 high := high,
                                 low := low,
@@ -131,14 +186,14 @@ def get_provider_vintage_snapshot(
         ),
         fingerprints AS MATERIALIZED (
             SELECT
-                window_codes.code,
+                ownership_codes.code,
                 coalesce(raw_summary.calculated_fingerprint, repeat('0', 64))
                     AS calculated_fingerprint,
                 raw_summary.raw_min,
                 raw_summary.raw_max,
                 coalesce(raw_summary.expected_event_count, 0)
                     AS expected_event_count
-            FROM window_codes
+            FROM ownership_codes
             LEFT JOIN raw_summary USING (code)
         ),
         event_summary AS (
@@ -157,8 +212,7 @@ def get_provider_vintage_snapshot(
                       AND event.adjustment_factor = raw.adjustment_factor
                       AND event.source_fingerprint = fingerprints.calculated_fingerprint
                 ) AS valid_event_count
-            FROM stock_adjustment_events AS event
-            INNER JOIN window_codes USING (code)
+            FROM event_rows AS event
             INNER JOIN fingerprints USING (code)
             LEFT JOIN provider_rows AS raw USING (code, date)
             GROUP BY event.code
@@ -190,13 +244,23 @@ def get_provider_vintage_snapshot(
     event_count = 0
     valid_event_count = 0
     invalid_event_count = 0
+    windows_by_code: dict[str, list[dict[str, Any]]] = {}
     for window in windows:
-        code = str(window.get("code", ""))
+        windows_by_code.setdefault(str(window.get("code", "")), []).append(window)
+    ownership_codes = sorted(set(windows_by_code) | set(evidence_by_code))
+    if not ownership_codes:
+        return defaults
+
+    for code in ownership_codes:
+        code_windows = windows_by_code.get(code, [])
+        window = code_windows[0] if len(code_windows) == 1 else {}
         coverage_start = str(window.get("coverage_start", ""))
         coverage_end = str(window.get("coverage_end", ""))
         provider_as_of = str(window.get("provider_as_of", ""))
         owned_fingerprint = str(window.get("source_fingerprint", ""))
-        metadata_valid = bool(re.fullmatch(r"[0-9a-f]{64}", owned_fingerprint))
+        metadata_valid = len(code_windows) == 1 and bool(
+            re.fullmatch(r"[0-9a-f]{64}", owned_fingerprint)
+        )
         try:
             parsed_start = date.fromisoformat(coverage_start)
             parsed_end = date.fromisoformat(coverage_end)
@@ -246,7 +310,11 @@ def get_provider_vintage_snapshot(
             - matched_expected_event_count
         )
 
-    coherent = valid_window_count == len(windows) and max(starts) <= min(ends)
+    coherent = (
+        valid_window_count == len(ownership_codes)
+        and bool(starts)
+        and max(starts) <= min(ends)
+    )
     return {
         **defaults,
         "providerAsOf": as_ofs[0] if coherent and len(set(as_ofs)) == 1 else None,
@@ -256,12 +324,12 @@ def get_provider_vintage_snapshot(
         "effectiveCoverageEnd": min(ends) if coherent else None,
         "providerSourceFingerprint": (
             combine_provider_stock_source_fingerprints(*valid_fingerprints)
-            if valid_fingerprints and valid_window_count == len(windows)
+            if valid_fingerprints and valid_window_count == len(ownership_codes)
             else None
         ),
         "providerWindowCoherent": coherent,
         "providerWindowFingerprintCount": valid_window_count,
-        "invalidProviderWindowCount": len(windows) - valid_window_count,
+        "invalidProviderWindowCount": len(ownership_codes) - valid_window_count,
         "adjustmentEventCount": event_count,
         "adjustmentEventFingerprintCount": valid_event_count,
         "invalidAdjustmentEventCount": invalid_event_count,

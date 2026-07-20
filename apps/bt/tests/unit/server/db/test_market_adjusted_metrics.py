@@ -201,7 +201,7 @@ def test_provider_vintage_uses_constant_query_count_for_multiple_windows(
     def counted_fetchall(sql: str, params: list[Any] | None) -> list[dict[str, Any]]:
         del params
         queries.append(sql)
-        if "SELECT code, coverage_start" in sql:
+        if "FROM stock_provider_windows" in sql and "WITH window_codes" not in sql:
             return windows
         if "FROM stock_data_raw AS raw" in sql:
             return [

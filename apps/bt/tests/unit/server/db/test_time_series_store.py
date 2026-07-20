@@ -1806,7 +1806,7 @@ def test_provider_vintage_sql_fingerprint_matches_python_with_symbol_bounded_evi
     )
     first_day = date(2024, 1, 1)
     rows: list[dict[str, Any]] = []
-    for code in ("7203", "72030"):
+    for code in ("7203", "131A0"):
         for offset in range(200):
             row = _provider_stock_row(
                 (first_day + timedelta(days=offset)).isoformat(),
@@ -1835,6 +1835,67 @@ def test_provider_vintage_sql_fingerprint_matches_python_with_symbol_bounded_evi
     assert snapshot["invalidProviderWindowCount"] == 0
     assert len(materialized_rows) <= 3
     assert sum(materialized_rows) <= 4
+    store.close()
+
+
+def test_provider_vintage_fails_closed_for_raw_and_event_codes_without_window(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    _publish_stock_data(
+        store,
+        [
+            _provider_stock_row("2026-02-10", code="7203"),
+            _provider_stock_row("2026-02-10", code="6758", factor=0.5),
+        ],
+    )
+    store._conn.execute(  # noqa: SLF001
+        "DELETE FROM stock_provider_windows WHERE code = '6758'"
+    )
+
+    def fetchall_dicts(
+        sql: str,
+        params: list[Any] | tuple[Any, ...] | None,
+    ) -> list[dict[str, Any]]:
+        result = store._conn.execute(sql) if params is None else store._conn.execute(sql, params)  # noqa: SLF001
+        columns = [str(desc[0]) for desc in result.description]
+        return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+
+    snapshot = get_provider_vintage_snapshot(lambda _table: True, fetchall_dicts)
+
+    assert store._conn.execute("SELECT COUNT(*) FROM stock_data_raw").fetchone() == (2,)  # noqa: SLF001
+    assert store._conn.execute("SELECT COUNT(*) FROM stock_provider_windows").fetchone() == (1,)  # noqa: SLF001
+    assert store._conn.execute("SELECT COUNT(*) FROM stock_adjustment_events").fetchone() == (1,)  # noqa: SLF001
+    assert snapshot["providerWindowCoherent"] is False
+    assert snapshot["invalidProviderWindowCount"] == 1
+    assert snapshot["adjustmentEventCount"] == 1
+    assert snapshot["invalidAdjustmentEventCount"] == 1
+    store.close()
+
+
+def test_provider_vintage_fails_closed_for_window_without_raw_rows(tmp_path: Path) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    _publish_stock_data(store, [_provider_stock_row("2026-02-10")])
+    store._conn.execute("DELETE FROM stock_data_raw")  # noqa: SLF001
+
+    def fetchall_dicts(
+        sql: str,
+        params: list[Any] | tuple[Any, ...] | None,
+    ) -> list[dict[str, Any]]:
+        result = store._conn.execute(sql) if params is None else store._conn.execute(sql, params)  # noqa: SLF001
+        columns = [str(desc[0]) for desc in result.description]
+        return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+
+    snapshot = get_provider_vintage_snapshot(lambda _table: True, fetchall_dicts)
+
+    assert snapshot["providerWindowCoherent"] is False
+    assert snapshot["invalidProviderWindowCount"] == 1
     store.close()
 
 
