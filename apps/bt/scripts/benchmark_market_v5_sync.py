@@ -1,20 +1,24 @@
-"""Fixture-backed benchmark of the production Market v5 publish path.
+"""Fixture-backed benchmark of the production Market v5 sync coordinator.
 
-Every measured scenario opens an isolated Market writer and invokes the same
-DuckDB/Parquet store methods used by incremental sync. The fixture controls
-only input cardinality and page batches; mutation and affected-code counters
-come from production ``SemanticDeltaResult`` values. No active Market or
-J-Quants endpoint is opened.
+Each scenario executes in a fresh child process. Provider requests/pages, store
+mutations, affected codes, published rows, and adjusted materializer calls are
+recorded at the production boundaries that actually performed them. The
+fixture supplies rows and universe shape only; it never supplies counters.
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 import hashlib
 import json
+import math
+import os
 from pathlib import Path
 import resource
+import subprocess
 import sys
 import time
 from typing import Any
@@ -22,12 +26,15 @@ from typing import Any
 from src.application.services.adjusted_metrics_materializer import (
     AdjustedMetricsMaterializer,
 )
-from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
+from src.application.services.sync_stock_data_fetch import (
+    StockDataIngestionSession,
+    execute_stock_data_rest_date,
+)
+from src.application.services.sync_strategies import SyncContext
 from src.infrastructure.db.market.market_writer_resources import (
     MarketWriterResourceFactory,
     MarketWriterSession,
 )
-from src.shared.provider_stock_window import provider_stock_source_fingerprint
 
 
 _SCENARIO_NAMES = (
@@ -37,18 +44,7 @@ _SCENARIO_NAMES = (
     "provider_split_drift",
     "legacy_all_code_local_projection",
 )
-
-
-class _FixturePageClient:
-    def __init__(self, scenario: str) -> None:
-        self._scenario = scenario
-        self.requests = 0
-        self.digest = hashlib.sha256()
-
-    def fetch_pages(self, pages: int) -> None:
-        for page in range(pages):
-            self.requests += 1
-            self.digest.update(f"{self._scenario}:page:{page}".encode())
+_PAGE_SIZE = 250
 
 
 def _required_non_negative_int(payload: dict[str, object], field: str) -> int:
@@ -77,14 +73,25 @@ def _tree_checksum(root: Path) -> str:
     return digest.hexdigest()
 
 
+def _canonical_fingerprint(value: object) -> str:
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
 def _codes(count: int) -> list[str]:
     return [f"{1000 + index:04d}" for index in range(count)]
 
 
-def _stock_rows(row_count: int, codes: list[str]) -> list[dict[str, object]]:
+def _raw_stock_rows(
+    row_count: int,
+    codes: list[str],
+    *,
+    adjustment_factor: float = 1.0,
+    start: date = date(2026, 1, 1),
+) -> list[dict[str, object]]:
     if row_count and not codes:
-        raise ValueError("stock rows require at least one affected code")
-    start = date(2026, 1, 1)
+        raise ValueError("stock rows require at least one code")
     rows: list[dict[str, object]] = []
     for index in range(row_count):
         code = codes[index % len(codes)]
@@ -92,24 +99,46 @@ def _stock_rows(row_count: int, codes: list[str]) -> list[dict[str, object]]:
         price = float(100 + index % 17)
         rows.append(
             {
-                "code": code,
-                "date": trading_date,
-                "open": price,
-                "high": price + 2,
-                "low": price - 1,
-                "close": price + 1,
-                "volume": 1_000 + index,
-                "turnover_value": (price + 1) * (1_000 + index),
-                "adjustment_factor": 1.0,
-                "adjusted_open": price,
-                "adjusted_high": price + 2,
-                "adjusted_low": price - 1,
-                "adjusted_close": price + 1,
-                "adjusted_volume": 1_000 + index,
-                "created_at": f"{trading_date}T00:00:00+00:00",
+                "Code": f"{code}0",
+                "Date": trading_date,
+                "O": price,
+                "H": price + 2,
+                "L": price - 1,
+                "C": price + 1,
+                "Vo": 1_000 + index,
+                "Va": (price + 1) * (1_000 + index),
+                "AdjFactor": adjustment_factor,
+                "AdjO": price,
+                "AdjH": price + 2,
+                "AdjL": price - 1,
+                "AdjC": price + 1,
+                "AdjVo": 1_000 + index,
             }
         )
     return rows
+
+
+def _normalized_rows(raw_rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [
+        {
+            "code": str(row["Code"])[:-1],
+            "date": row["Date"],
+            "open": row["O"],
+            "high": row["H"],
+            "low": row["L"],
+            "close": row["C"],
+            "volume": row["Vo"],
+            "turnover_value": row["Va"],
+            "adjustment_factor": row["AdjFactor"],
+            "adjusted_open": row["AdjO"],
+            "adjusted_high": row["AdjH"],
+            "adjusted_low": row["AdjL"],
+            "adjusted_close": row["AdjC"],
+            "adjusted_volume": row["AdjVo"],
+            "created_at": f"{row['Date']}T00:00:00+00:00",
+        }
+        for row in raw_rows
+    ]
 
 
 def _statement_rows(codes: list[str]) -> list[dict[str, object]]:
@@ -130,11 +159,82 @@ def _statement_rows(codes: list[str]) -> list[dict[str, object]]:
     ]
 
 
+@dataclass
+class _ObservedFixtureClient:
+    date_rows: list[dict[str, object]]
+    provider_windows: dict[str, list[dict[str, object]]]
+    plan: str = "standard"
+    calls: list[dict[str, object]] = field(default_factory=list)
+
+    async def get(
+        self, path: str, params: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        raise AssertionError(f"unexpected non-paginated request: {path} {params}")
+
+    async def get_paginated(
+        self, path: str, params: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
+        rows, _pages = await self.get_paginated_with_meta(path, params=params)
+        return rows
+
+    async def get_paginated_with_meta(
+        self,
+        path: str,
+        params: dict[str, str] | None = None,
+        max_pages: int = 10_000,
+    ) -> tuple[list[dict[str, Any]], int]:
+        normalized_params = dict(params or {})
+        if path == "/equities/bars/daily" and "code" in normalized_params:
+            code = normalized_params["code"]
+            rows = self.provider_windows.get(code, [])
+        elif path == "/equities/bars/daily" and "date" in normalized_params:
+            rows = self.date_rows
+        elif path == "/fins/summary":
+            rows = []
+        else:
+            raise AssertionError(f"unexpected fixture request: {path} {normalized_params}")
+        pages = max(1, math.ceil(len(rows) / _PAGE_SIZE))
+        if pages > max_pages:
+            raise AssertionError("fixture response exceeded coordinator max_pages")
+        for page in range(pages):
+            self.calls.append(
+                {"path": path, "params": normalized_params, "page": page + 1}
+            )
+        return [dict(row) for row in rows], pages
+
+
+@dataclass
+class _MaterializerSpy:
+    materializer: AdjustedMetricsMaterializer
+    universe: frozenset[str]
+    calls: list[tuple[str, ...]] = field(default_factory=list)
+    completed_codes: int = 0
+
+    async def rebuild(self, codes: frozenset[str]) -> None:
+        observed = tuple(sorted(codes))
+        self.calls.append(observed)
+        result = await asyncio.to_thread(
+            self.materializer.rebuild_current_basis,
+            codes,
+        )
+        self.completed_codes += result.completed_codes
+
+    @property
+    def all_code_invocations(self) -> int:
+        return sum(frozenset(call) == self.universe for call in self.calls)
+
+    @property
+    def invoked_codes(self) -> int:
+        return sum(len(call) for call in self.calls)
+
+
 def _open_scenario(root: Path) -> MarketWriterSession:
     data_root = root / "data"
     return MarketWriterResourceFactory(
         data_root=data_root,
         market_root=data_root / "market-timeseries",
+    # Historical factory method name is retained, but HEAD initializes the
+    # current Market schema (v5/provider_adjusted_v1).
     ).reset_and_open_v4()
 
 
@@ -145,161 +245,214 @@ def _close_scenario(session: MarketWriterSession) -> None:
     session.release_after_read_only_reopen(token)
 
 
-def _mutation_metrics(result: SemanticDeltaResult) -> tuple[int, int, set[str]]:
-    return result.stats.inserted, result.mutated_rows, set(result.affected_codes)
+def _shared_input(
+    fixture: dict[str, object], name: str
+) -> tuple[list[str], list[dict[str, object]], int]:
+    scenarios = fixture["scenarios"]
+    assert isinstance(scenarios, dict)
+    legacy = scenarios["legacy_all_code_local_projection"]
+    assert isinstance(legacy, dict)
+    universe = _codes(_required_non_negative_int(legacy, "allCodes"))
+    if name == "legacy_all_code_local_projection":
+        source = scenarios["provider_one_day"]
+    else:
+        source = scenarios[name]
+    assert isinstance(source, dict)
+    row_count = _required_non_negative_int(source, "newRows")
+    affected_count = _required_non_negative_int(source, "affectedCodes")
+    rows_per_code = _required_non_negative_int(legacy, "rowsPerCode")
+    target_codes = universe[:affected_count]
+    factor = 0.5 if name == "provider_split_drift" else 1.0
+    incoming_start = (
+        date(2026, 1, 1)
+        if name == "provider_split_drift"
+        else date(2026, 1, 1) + timedelta(days=rows_per_code)
+    )
+    incoming = _raw_stock_rows(
+        row_count,
+        target_codes,
+        adjustment_factor=factor,
+        start=incoming_start,
+    )
+    return universe, incoming, rows_per_code
 
 
-def _run_scenario(
-    name: str,
-    payload: dict[str, object],
-    workspace: Path,
+async def _run_price_coordinator(
     *,
-    universe_size: int,
+    ctx: SyncContext,
+    incoming: list[dict[str, object]],
+) -> tuple[int, int, int, frozenset[str]]:
+    session = StockDataIngestionSession()
+    target_date = str(incoming[0]["Date"]) if incoming else "2026-01-01"
+    fetched = await execute_stock_data_rest_date(
+        ctx,
+        session=session,
+        date=target_date,
+    )
+    outcome = await session.commit(ctx)
+    return (
+        fetched.api_calls + outcome.api_calls,
+        outcome.appended_rows,
+        outcome.replaced_rows,
+        outcome.affected_codes,
+    )
+
+
+def _run_scenario_child(
+    name: str,
+    fixture: dict[str, object],
+    workspace: Path,
 ) -> dict[str, Any]:
-    engine = payload.get("engine")
-    if engine not in {"provider_v5_incremental", "local_projection_all_code"}:
-        raise ValueError(f"{name}.engine is unsupported")
-    pages = _required_non_negative_int(payload, "pages")
+    scenarios = fixture["scenarios"]
+    assert isinstance(scenarios, dict)
+    payload = scenarios[name]
+    assert isinstance(payload, dict)
+    universe, incoming, rows_per_code = _shared_input(fixture, name)
     scenario_root = workspace / name
     scenario_root.mkdir(parents=True, exist_ok=False)
     session = _open_scenario(scenario_root)
     store = session.handles.time_series_store
     market_db = session.handles.market_db
-    client = _FixturePageClient(name)
-    inserted = 0
-    row_mutations = 0
-    affected: set[str] = set()
-    recomputed_codes = 0
-    all_code_invocations = 0
+    history_raw = _raw_stock_rows(len(universe) * rows_per_code, universe)
+    history = _normalized_rows(history_raw)
+    if history:
+        store.publish_topix_data(
+            [
+                {"date": row["date"], "open": 1, "high": 1, "low": 1, "close": 1}
+                for row in history[:: max(1, len(universe))]
+            ]
+        )
+        store.publish_stock_data(history, provider_plan="standard")
+    if name == "provider_noop":
+        incoming = history_raw[:1]
+    provider_windows = {
+        f"{code}0": [row for row in history_raw if row["Code"] == f"{code}0"]
+        for code in universe
+    }
+    if name == "provider_split_drift" and incoming:
+        code = str(incoming[0]["Code"])
+        replacement = [dict(row) for row in provider_windows[code]]
+        replacement[0] = dict(incoming[0])
+        provider_windows[code] = replacement
+    client = _ObservedFixtureClient(incoming, provider_windows)
+    spy = _MaterializerSpy(
+        AdjustedMetricsMaterializer(market_db),
+        frozenset(universe),
+    )
+    published_rows = 0
     replaced_rows = 0
-    seed: list[dict[str, object]] = []
-    target_codes: list[str] = []
-    rows_per_code = 0
+    affected: frozenset[str] = frozenset()
+    before_storage = _tree_size(scenario_root)
+    started_wall = time.perf_counter()
+    started_cpu = time.process_time()
     try:
-        if name == "provider_noop":
-            seed = _stock_rows(1, _codes(1))
-            store.publish_stock_data(seed, provider_plan="standard")
-            store.index_stock_data()
-        elif name == "provider_fundamentals_only":
-            target_codes = _codes(_required_non_negative_int(payload, "affectedCodes"))
-            seed = _stock_rows(len(target_codes), target_codes)
-            seed_result = store.publish_stock_data(seed, provider_plan="standard")
-            AdjustedMetricsMaterializer(market_db).rebuild_current_basis(
-                seed_result.affected_codes
-            )
-            store.index_stock_data()
-        elif name == "provider_split_drift":
-            target_codes = _codes(_required_non_negative_int(payload, "affectedCodes"))
-            rows_per_code = _required_non_negative_int(payload, "rowsPerAffectedCode")
-            for code in target_codes:
-                window = _stock_rows(rows_per_code, [code])
-                fingerprint = provider_stock_source_fingerprint(window)
-                store.replace_stock_provider_window(
-                    code,
-                    window,
-                    {"start": window[0]["date"], "end": window[-1]["date"]},
-                    {
-                        "provider_plan": "standard",
-                        "provider_as_of": window[-1]["date"],
-                        "provider_source_fingerprint": fingerprint,
-                    },
+        if name == "provider_fundamentals_only":
+            target_codes = universe[: _required_non_negative_int(payload, "affectedCodes")]
+            asyncio.run(
+                client.get_paginated_with_meta(
+                    "/fins/summary", params={"code": f"{target_codes[0]}0"}
                 )
-            store.index_stock_data()
-
-        before_storage = _tree_size(scenario_root)
-        started_wall = time.perf_counter()
-        started_cpu = time.process_time()
-        client.fetch_pages(pages)
-
-        if name == "provider_noop":
-            result = store.publish_stock_data(seed, provider_plan="standard")
-            inserted, row_mutations, affected = _mutation_metrics(result)
-        elif name == "provider_one_day":
-            target_codes = _codes(_required_non_negative_int(payload, "affectedCodes"))
-            rows = _stock_rows(_required_non_negative_int(payload, "newRows"), target_codes)
-            result = store.publish_stock_data(rows, provider_plan="standard")
-            inserted, row_mutations, affected = _mutation_metrics(result)
-            rebuild = AdjustedMetricsMaterializer(market_db).rebuild_current_basis(
-                result.affected_codes
             )
-            recomputed_codes = rebuild.completed_codes
-        elif name == "provider_fundamentals_only":
             result = store.publish_statements(_statement_rows(target_codes))
-            inserted, row_mutations, affected = _mutation_metrics(result)
-            rebuild = AdjustedMetricsMaterializer(market_db).rebuild_current_basis(
-                result.affected_codes
-            )
-            recomputed_codes = rebuild.completed_codes
-            row_mutations += rebuild.mutation_stats["statements"].mutated_rows
-        elif name == "provider_split_drift":
-            incoming = []
-            for code in target_codes:
-                drift = _stock_rows(1, [code])[0]
-                drift["adjustment_factor"] = 0.5
-                incoming.append(drift)
-            drift_codes = set(store.detect_stock_provider_drift(incoming))
-            for code, drift in zip(target_codes, incoming, strict=True):
-                window = _stock_rows(rows_per_code, [code])
-                window[0] = drift
-                fingerprint = provider_stock_source_fingerprint(window)
-                result = store.replace_stock_provider_window(
-                    code,
-                    window,
-                    {"start": window[0]["date"], "end": window[-1]["date"]},
-                    {
-                        "provider_plan": "standard",
-                        "provider_as_of": window[-1]["date"],
-                        "provider_source_fingerprint": fingerprint,
-                    },
-                )
-                inserted += result.stats.inserted
-                row_mutations += result.mutated_rows
-                affected.update(result.affected_codes)
-                replaced_rows += len(window)
-            if affected != drift_codes:
-                raise RuntimeError("drift detection and provider-window replacement disagree")
-            rebuild = AdjustedMetricsMaterializer(market_db).rebuild_current_basis(affected)
-            recomputed_codes = rebuild.completed_codes
+            affected = result.affected_codes
+            published_rows = result.stats.inserted
+            asyncio.run(spy.rebuild(affected))
+            coordinator = "FundamentalsPublish+AdjustedMetricsMaterializer"
         else:
-            all_codes = _codes(_required_non_negative_int(payload, "allCodes"))
-            rows = _stock_rows(
-                len(all_codes) * _required_non_negative_int(payload, "rowsPerCode"),
-                all_codes,
+            ctx = SyncContext(
+                client=client,
+                market_db=market_db,
+                time_series_store=store,
+                cancelled=asyncio.Event(),
+                on_progress=lambda *_args: None,
+                provider_plan="standard",
+                recompute_affected_stock_codes=spy.rebuild,
             )
-            result = store.publish_stock_data(rows, provider_plan="standard")
-            inserted, row_mutations, affected = _mutation_metrics(result)
-            all_code_invocations = int(len(affected) == universe_size)
-
+            _, published_rows, replaced_rows, affected = asyncio.run(
+                _run_price_coordinator(ctx=ctx, incoming=incoming)
+            )
+            coordinator = "StockDataIngestionSession"
+            if name == "legacy_all_code_local_projection":
+                asyncio.run(spy.rebuild(frozenset(universe)))
+                coordinator += "+LegacyAllCodeAdapter"
         store.index_stock_data()
         store.index_statements()
         _close_scenario(session)
-        wall_seconds = time.perf_counter() - started_wall
-        cpu_seconds = time.process_time() - started_cpu
     except BaseException:
         if not session._handles_closed:
             _close_scenario(session)
         raise
-
-    storage_growth = max(0, _tree_size(scenario_root) - before_storage)
-    work_units = client.requests + row_mutations + replaced_rows + recomputed_codes
+    wall_seconds = time.perf_counter() - started_wall
+    cpu_seconds = time.process_time() - started_cpu
+    input_fingerprint = _canonical_fingerprint(
+        {"universe": universe, "incoming": incoming}
+    )
+    row_mutations = published_rows + replaced_rows
+    work_units = len(client.calls) + row_mutations + spy.invoked_codes
     return {
-        "engine": engine,
-        "measurementPath": "production_duckdb_parquet_store",
+        "engine": payload.get("engine"),
+        "coordinator": coordinator,
+        "measurementPath": "production_sync_coordinator_duckdb_parquet",
+        "processId": os.getpid(),
         "wallSeconds": round(wall_seconds, 9),
         "cpuSeconds": round(cpu_seconds, 9),
         "peakRssBytes": _peak_rss_bytes(),
-        "requests": client.requests,
-        "pages": pages,
+        "requests": len({(call["path"], json.dumps(call["params"], sort_keys=True)) for call in client.calls}),
+        "pages": len(client.calls),
         "affectedCodes": len(affected),
-        "newRows": inserted,
+        "publishedCodes": len({str(row["Code"]) for row in incoming}),
+        "newRows": published_rows,
         "rowMutations": row_mutations,
         "providerWindowRowsReplaced": replaced_rows,
-        "currentBasisRecomputedCodes": recomputed_codes,
+        "currentBasisRecomputedCodes": spy.invoked_codes,
+        "currentBasisCompletedCodes": spy.completed_codes,
         "workUnits": work_units,
-        "storageGrowthBytes": storage_growth,
-        "allCodeMaterializerInvocations": all_code_invocations,
+        "storageGrowthBytes": max(0, _tree_size(scenario_root) - before_storage),
+        "allCodeMaterializerInvocations": spy.all_code_invocations,
+        "materializerSpy": {
+            "implementation": "AdjustedMetricsMaterializer.rebuild_current_basis",
+            "calls": [list(call) for call in spy.calls],
+        },
+        "observations": {
+            "fixtureDeclaredCounters": False,
+            "clientCalls": client.calls,
+            "storePublishedRows": published_rows,
+            "storeReplacedRows": replaced_rows,
+        },
+        "inputFingerprint": input_fingerprint,
         "checksumSha256": _tree_checksum(scenario_root),
     }
+
+
+def _run_isolated_child(
+    name: str,
+    fixture_path: Path,
+    workspace: Path,
+) -> dict[str, Any]:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "--fixture",
+            str(fixture_path),
+            "--workspace",
+            str(workspace),
+            "--child-scenario",
+            name,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"benchmark child {name} failed ({completed.returncode}): "
+            f"{completed.stderr.strip()}"
+        )
+    result = json.loads(completed.stdout)
+    if not isinstance(result, dict):
+        raise RuntimeError("benchmark child returned a non-object")
+    return result
 
 
 def run_benchmark_fixture(
@@ -307,6 +460,7 @@ def run_benchmark_fixture(
     *,
     evidence_source: str = "production_fixture",
     representative_evidence_reason: str | None = None,
+    representative_inspection: dict[str, object] | None = None,
     workspace: Path,
 ) -> dict[str, Any]:
     if fixture.get("fixtureVersion") != 1:
@@ -314,61 +468,62 @@ def run_benchmark_fixture(
     scenarios = fixture.get("scenarios")
     if not isinstance(scenarios, dict) or set(scenarios) != set(_SCENARIO_NAMES):
         raise ValueError("fixture must define the exact benchmark scenario set")
-    legacy_payload = scenarios["legacy_all_code_local_projection"]
-    if not isinstance(legacy_payload, dict):
-        raise ValueError("legacy baseline must be an object")
-    universe_size = _required_non_negative_int(legacy_payload, "allCodes")
     workspace.mkdir(parents=True, exist_ok=True)
-    measured: dict[str, dict[str, Any]] = {}
-    for name in _SCENARIO_NAMES:
-        payload = scenarios[name]
-        if not isinstance(payload, dict):
-            raise ValueError(f"{name} must be an object")
-        measured[name] = _run_scenario(
-            name, payload, workspace, universe_size=universe_size
-        )
-
+    fixture_path = workspace / "child-fixture.json"
+    fixture_path.write_text(json.dumps(fixture, sort_keys=True), encoding="utf-8")
+    measured = {
+        name: _run_isolated_child(name, fixture_path, workspace)
+        for name in _SCENARIO_NAMES
+    }
     normal = measured["provider_one_day"]
     drift = measured["provider_split_drift"]
     legacy = measured["legacy_all_code_local_projection"]
     assertions = {
-        "legacyBaselineInvokesAllCodeMaterializer": (
-            legacy["allCodeMaterializerInvocations"] == 1
-        ),
-        "normalIncrementalUsesNoAllCodeMaterializer": (
-            normal["allCodeMaterializerInvocations"] == 0
-        ),
-        "normalIncrementalWorkBelowLegacyBaseline": (
-            normal["workUnits"] < legacy["workUnits"]
-        ),
-        "splitDriftRefreshLimitedToAffectedCodes": (
-            drift["affectedCodes"] < legacy["affectedCodes"]
-            and drift["allCodeMaterializerInvocations"] == 0
-        ),
+        "legacyBaselineInvokesAllCodeMaterializer": legacy[
+            "allCodeMaterializerInvocations"
+        ]
+        == 1,
+        "normalIncrementalUsesNoAllCodeMaterializer": normal[
+            "allCodeMaterializerInvocations"
+        ]
+        == 0,
+        "normalIncrementalWorkBelowLegacyBaseline": normal["workUnits"]
+        < legacy["workUnits"],
+        "splitDriftRefreshLimitedToAffectedCodes": drift["affectedCodes"]
+        < len(_codes(_required_non_negative_int(scenarios["legacy_all_code_local_projection"], "allCodes")))
+        and drift["allCodeMaterializerInvocations"] == 0,
+        "currentAndLegacyUseIdenticalInput": normal["inputFingerprint"]
+        == legacy["inputFingerprint"],
+        "scenariosUseIsolatedProcesses": len(
+            {metrics["processId"] for metrics in measured.values()}
+        )
+        == len(measured),
     }
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "benchmark": "market_v5_incremental_sync",
         "evidenceSource": evidence_source,
         "representativeEvidence": "unavailable",
         "representativeEvidenceReason": representative_evidence_reason,
+        "representativeInspection": representative_inspection,
         "providerPlan": fixture.get("providerPlan"),
         "measurementNotes": {
-            "resources": "wall/cpu/peak RSS observed around production store operations",
-            "requests": "calls made through the fixture page client; no network access",
-            "storage": "isolated Market DuckDB + Parquet byte growth",
-            "scaling": "production mutation results, affected codes, and bounded recompute calls",
-            "legacyBaseline": "production publish path invoked with the full modeled universe",
+            "resources": "per-scenario child-process wall/cpu/peak RSS",
+            "requests": "observed fixture-backed J-Quants client calls/pages",
+            "storage": "isolated Market v5 DuckDB + Parquet byte growth",
+            "scaling": "observed production coordinator/store/materializer calls",
+            "legacyBaseline": "explicit all-code legacy adapter over identical input",
         },
         "scenarios": measured,
         "comparison": {
             "normalToLegacyWorkRatio": normal["workUnits"] / legacy["workUnits"],
             "normalToLegacyRowMutationRatio": (
                 normal["rowMutations"] / legacy["rowMutations"]
+                if legacy["rowMutations"]
+                else 0.0
             ),
-            "normalAffectedCodeDelta": (
-                legacy["affectedCodes"] - normal["affectedCodes"]
-            ),
+            "normalAffectedCodeDelta": legacy["affectedCodes"]
+            - normal["affectedCodes"],
         },
         "assertions": assertions,
         "allAssertionsPassed": all(assertions.values()),
@@ -381,13 +536,64 @@ def main() -> int:
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--representative-evidence-reason")
+    parser.add_argument("--representative-market-root", type=Path)
+    parser.add_argument("--child-scenario", choices=_SCENARIO_NAMES)
     args = parser.parse_args()
     fixture = json.loads(args.fixture.read_text(encoding="utf-8"))
     if not isinstance(fixture, dict):
         raise ValueError("benchmark fixture must be an object")
+    if args.child_scenario:
+        result = _run_scenario_child(args.child_scenario, fixture, args.workspace)
+        print(json.dumps(result, sort_keys=True))
+        return 0
+    representative_inspection: dict[str, object] | None = None
+    representative_reason = args.representative_evidence_reason
+    if args.representative_market_root is not None:
+        import duckdb
+
+        database = args.representative_market_root / "market.duckdb"
+        representative_inspection = {
+            "marketRoot": str(args.representative_market_root),
+            "databasePresent": database.is_file(),
+        }
+        if database.is_file():
+            connection = duckdb.connect(str(database), read_only=True)
+            try:
+                schema_row = connection.execute(
+                    "SELECT MAX(version) FROM market_schema_version"
+                ).fetchone()
+                mode_row = connection.execute(
+                    "SELECT value FROM sync_metadata "
+                    "WHERE key = 'stock_price_adjustment_mode'"
+                ).fetchone()
+            finally:
+                connection.close()
+            schema_version = schema_row[0] if schema_row else None
+            adjustment_mode = mode_row[0] if mode_row else None
+            representative_inspection.update(
+                {
+                    "schemaVersion": schema_version,
+                    "stockPriceAdjustmentMode": adjustment_mode,
+                    "eligible": schema_version == 5
+                    and adjustment_mode == "provider_adjusted_v1",
+                }
+            )
+            if representative_inspection["eligible"]:
+                raise RuntimeError(
+                    "eligible representative Market requires an explicit measured "
+                    "representative run; fixture evidence cannot label it unavailable"
+                )
+            representative_reason = (
+                "read-only inspection found local Market schema "
+                f"{schema_version!r} / mode {adjustment_mode!r}, not eligible v5"
+            )
+        else:
+            representative_inspection["eligible"] = False
+            representative_reason = "read-only inspection found no local market.duckdb"
     report = run_benchmark_fixture(
         fixture,
-        representative_evidence_reason=args.representative_evidence_reason,
+        representative_evidence_reason=representative_reason,
+        representative_inspection=representative_inspection,
         workspace=args.workspace,
     )
     payload = json.dumps(report, indent=2, sort_keys=True) + "\n"

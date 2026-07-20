@@ -18,6 +18,7 @@ from src.infrastructure.db.market.valuation_queries import (
     get_adjusted_metrics_source_diagnostics,
     get_provider_vintage_snapshot,
 )
+from src.application.services.db_stats_service import _build_provider_vintage_stats
 from src.infrastructure.db.market import managed_root as _managed_root
 from .contracts import MarketSourceMetadata
 from .errors import WorkerShutdownError
@@ -57,6 +58,7 @@ class DefaultDuckDbAdapter:
             columns = [str(item[0]) for item in cursor.description]
             return [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
 
+        provider_vintage_identity: dict[str, object] | None = None
         try:
             schema_row = execute(
                 "SELECT MAX(version) FROM market_schema_version"
@@ -86,6 +88,15 @@ class DefaultDuckDbAdapter:
                 table_exists,
                 fetchall_dicts,
             )
+            plan_row = execute(
+                "SELECT value FROM sync_metadata WHERE key = 'provider_plan'"
+            ).fetchone()
+            provider_vintage_identity = _build_provider_vintage_stats(
+                {**snapshot, **diagnostics, **provider_vintage},
+                source_stock_count=count_rows("stock_data_raw"),
+                source_statement_count=count_rows("statements"),
+                provider_plan=str(plan_row[0]) if plan_row and plan_row[0] else None,
+            ).model_dump(mode="json")
             positive_keys = (
                 "currentBasisStatementCount",
                 "dailyValuationRows",
@@ -136,8 +147,11 @@ class DefaultDuckDbAdapter:
                 )
                 == 0
             )
+            if not provider_vintage_ready:
+                provider_vintage_identity = None
         except Exception:
             provider_vintage_ready = False
+            provider_vintage_identity = None
         return MarketSourceMetadata(
             schema_version=(
                 int(schema_version) if schema_version is not None else None
@@ -146,6 +160,7 @@ class DefaultDuckDbAdapter:
                 str(adjustment_mode) if adjustment_mode is not None else None
             ),
             provider_vintage_ready=provider_vintage_ready,
+            provider_vintage=provider_vintage_identity,
         )
 
     @staticmethod
@@ -244,6 +259,11 @@ class DefaultDuckDbAdapter:
             schema_version=payload.get("schemaVersion"),
             adjustment_mode=payload.get("adjustmentMode"),
             provider_vintage_ready=payload.get("providerVintageReady") is True,
+            provider_vintage=(
+                payload.get("providerVintage")
+                if isinstance(payload.get("providerVintage"), dict)
+                else None
+            ),
         )
 
     @classmethod
@@ -445,6 +465,7 @@ def directory_bound_duckdb_worker() -> None:
                     "schemaVersion": metadata.schema_version,
                     "adjustmentMode": metadata.adjustment_mode,
                     "providerVintageReady": metadata.provider_vintage_ready,
+                    "providerVintage": metadata.provider_vintage,
                 }
             ),
             flush=True,

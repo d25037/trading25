@@ -15,6 +15,7 @@ CUTOVER_PACKAGE = SRC_ROOT / "application/services/market_v4_cutover"
 TEST_ROOT = Path(__file__).parent
 
 EXPECTED_RESPONSIBILITIES = {
+    "activation_contract.py",
     "backup.py",
     "contracts.py",
     "duckdb_identity.py",
@@ -22,9 +23,6 @@ EXPECTED_RESPONSIBILITIES = {
     "evidence.py",
     "filesystem.py",
     "full_rehearsal.py",
-    "journal.py",
-    "promotion.py",
-    "rehearsal.py",
     "reports.py",
     "runtime.py",
     "service.py",

@@ -20,7 +20,6 @@ from .contracts import (
     SmokeResult,
 )
 from .evidence import MarketEvidence
-from .duckdb_service import MarketIdentityService
 from .full_rehearsal import FullRebuildRehearsalService
 from .reports import CutoverReportRepository
 from .smoke import RuntimeSmokeService
@@ -51,10 +50,6 @@ class MarketV4CutoverService:
             atomic_exchange=atomic_exchange,
         )
         self._evidence = MarketEvidence(self._workspace)
-        self._market_identity = MarketIdentityService(
-            self._workspace,
-            self._evidence,
-        )
         self._reports = CutoverReportRepository(self._workspace, self._evidence)
         self._backups = MarketBackupService(self._workspace, self._evidence)
         self._runtime_smoke = RuntimeSmokeService(self._workspace)
@@ -67,7 +62,6 @@ class MarketV4CutoverService:
         self._activation = MarketActivationService(
             self._workspace,
             self._evidence,
-            self._market_identity,
             self._reports,
             self._runtime_smoke,
             self._backups,

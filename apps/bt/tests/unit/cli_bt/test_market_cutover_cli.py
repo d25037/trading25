@@ -44,6 +44,15 @@ def test_market_v5_cutover_help_lists_only_full_rebuild_phases() -> None:
     assert "rehearse-retained" not in output
     assert "promote-retained" not in output
 
+    cutover_help = CliRunner().invoke(
+        app, ["market-cutover", "cutover", "--help"]
+    )
+    assert cutover_help.exit_code == 0
+    cutover_output = _strip_ansi(cutover_help.stdout)
+    assert "isolated rebuild" in cutover_output
+    assert "atomic activation" in cutover_output
+    assert "active reset" not in cutover_output
+
 
 @pytest.mark.parametrize("command", ["rehearse-retained", "promote-retained"])
 def test_market_v5_cutover_rejects_retained_v4_cli_surface(command: str) -> None:

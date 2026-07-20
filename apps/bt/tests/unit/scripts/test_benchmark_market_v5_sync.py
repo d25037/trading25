@@ -16,34 +16,29 @@ def _fixture(*, one_day_rows: int = 4, affected_codes: int = 4) -> dict[str, obj
                 "newRows": 0,
                 "affectedCodes": 0,
                 "rowsPerAffectedCode": 0,
-                "pages": 0,
             },
             "provider_one_day": {
                 "engine": "provider_v5_incremental",
                 "newRows": one_day_rows,
                 "affectedCodes": affected_codes,
                 "rowsPerAffectedCode": 0,
-                "pages": 1,
             },
             "provider_fundamentals_only": {
                 "engine": "provider_v5_incremental",
                 "newRows": 0,
                 "affectedCodes": 1,
                 "rowsPerAffectedCode": 0,
-                "pages": 1,
             },
             "provider_split_drift": {
                 "engine": "provider_v5_incremental",
                 "newRows": 1,
                 "affectedCodes": 1,
                 "rowsPerAffectedCode": 5,
-                "pages": 2,
             },
             "legacy_all_code_local_projection": {
                 "engine": "local_projection_all_code",
                 "allCodes": 12,
                 "rowsPerCode": 5,
-                "pages": 12,
             },
         },
     }
@@ -57,7 +52,7 @@ def test_fixture_benchmark_emits_measured_resource_and_work_json(tmp_path: Path)
         workspace=tmp_path,
     )
 
-    assert report["schemaVersion"] == 1
+    assert report["schemaVersion"] == 2
     assert report["benchmark"] == "market_v5_incremental_sync"
     assert report["evidenceSource"] == "fixture"
     assert report["representativeEvidence"] == "unavailable"
@@ -73,7 +68,22 @@ def test_fixture_benchmark_emits_measured_resource_and_work_json(tmp_path: Path)
         assert metrics["peakRssBytes"] > 0
         assert metrics["storageGrowthBytes"] >= 0
         assert len(metrics["checksumSha256"]) == 64
-        assert metrics["requests"] == metrics["pages"]
+        assert metrics["requests"] <= metrics["pages"]
+        assert metrics["processId"] > 0
+        assert metrics["observations"]["fixtureDeclaredCounters"] is False
+
+    assert len({metrics["processId"] for metrics in scenarios.values()}) == len(
+        scenarios
+    )
+    assert scenarios["provider_one_day"]["coordinator"] == (
+        "StockDataIngestionSession"
+    )
+    assert scenarios["provider_split_drift"]["materializerSpy"][
+        "implementation"
+    ] == "AdjustedMetricsMaterializer.rebuild_current_basis"
+    assert scenarios["provider_one_day"]["inputFingerprint"] == scenarios[
+        "legacy_all_code_local_projection"
+    ]["inputFingerprint"]
 
 
 def test_provider_incremental_work_scales_with_delta_not_all_codes(
@@ -93,18 +103,22 @@ def test_provider_incremental_work_scales_with_delta_not_all_codes(
     larger_one_day = large_scenarios["provider_one_day"]
     baseline = small_scenarios["legacy_all_code_local_projection"]
     assert one_day["rowMutations"] == 4
-    assert one_day["affectedCodes"] == 4
+    assert one_day["affectedCodes"] == 0
+    assert one_day["publishedCodes"] == 4
     assert one_day["allCodeMaterializerInvocations"] == 0
     assert larger_one_day["rowMutations"] == 8
-    assert larger_one_day["affectedCodes"] == 8
+    assert larger_one_day["affectedCodes"] == 0
+    assert larger_one_day["publishedCodes"] == 8
     assert larger_one_day["workUnits"] > one_day["workUnits"]
     assert baseline["allCodeMaterializerInvocations"] == 1
-    assert baseline["rowMutations"] == 60
+    assert baseline["rowMutations"] == 4
     assert small["assertions"] == {
         "legacyBaselineInvokesAllCodeMaterializer": True,
         "normalIncrementalUsesNoAllCodeMaterializer": True,
         "normalIncrementalWorkBelowLegacyBaseline": True,
         "splitDriftRefreshLimitedToAffectedCodes": True,
+        "currentAndLegacyUseIdenticalInput": True,
+        "scenariosUseIsolatedProcesses": True,
     }
 
 

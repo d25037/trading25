@@ -153,6 +153,7 @@ def test_backup_is_recursive_checksummed_and_immutable(tmp_path: Path) -> None:
     backup_dir = data_root / "operations/market-v5-cutover/backups/backup-001"
     manifest = json.loads((backup_dir / "manifest.json").read_text())
     assert result.backup_id == "backup-001"
+    assert len(manifest["activeMarketTreeSha256"]) == 64
     assert [entry["path"] for entry in manifest["files"]] == [
         "market.duckdb",
         "parquet/stock_data/part.parquet",
@@ -164,6 +165,19 @@ def test_backup_is_recursive_checksummed_and_immutable(tmp_path: Path) -> None:
     assert all(len(entry["sha256"]) == 64 for entry in manifest["files"])
     assert not (backup_dir.stat().st_mode & 0o200)
     assert service.verify_backup("backup-001").backup_id == "backup-001"
+
+
+def test_backup_exactness_rejects_active_tree_content_drift(tmp_path: Path) -> None:
+    data_root = _market_root(tmp_path)
+    service = _service(data_root)
+    service.backup("exact-active")
+    (data_root / "market-timeseries/market.duckdb").write_bytes(b"changed-after-backup")
+
+    with service._workspace.exclusive_operation():
+        with pytest.raises(CutoverSafetyError, match="no longer exactly matches"):
+            service._backups._assert_active_matches_backup_under_lease(
+                "exact-active"
+            )
 
 
 def test_backup_manifest_uses_operation_start_code_identity(tmp_path: Path) -> None:
@@ -314,10 +328,31 @@ def test_smoke_requires_market_v5_exact_lineage_and_semantic_api_parity(
     )
     assert ("GET", "/api/analytics/screening/jobs/screen-1", None) in api.calls
 
-    with pytest.raises(CutoverSafetyError, match="provider-vintage lineage"):
+    with pytest.raises(CutoverSafetyError, match="provider vintage"):
         service.smoke(FakeApi(invalid_lineage=True), config, operation_id="smoke-002")
     with pytest.raises(CutoverSafetyError, match="Fundamentals GET/POST parity"):
         service.smoke(FakeApi(parity=False), config, operation_id="smoke-003")
+
+
+def test_smoke_cross_binds_http_lineage_to_direct_duckdb_identity(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    direct = _ready_provider_vintage_payload()
+    direct["sourceFingerprint"] = "b" * 64
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(
+            MarketSourceMetadata(5, "provider_adjusted_v1", True, direct)
+        ),
+    )
+
+    with pytest.raises(CutoverSafetyError, match="direct DuckDB identity"):
+        service.smoke(
+            FakeApi(),
+            SmokeConfig("7203", "production/smoke", "primeMarket"),
+            operation_id="misdirected-api",
+        )
 
 
 def test_smoke_accepts_exact_provider_vintage_model_without_fake_fields(

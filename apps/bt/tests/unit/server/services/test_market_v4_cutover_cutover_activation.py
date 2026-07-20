@@ -37,6 +37,81 @@ class _RecordingAtomicExchange(_TestAtomicExchange):
         super().exchange(managed_root, left, right)
 
 
+def test_cutover_rejects_active_tree_drift_after_backup_before_exchange(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    atomic = _RecordingAtomicExchange()
+
+    class ActiveTreeEditingRuntime(FakeRuntime):
+        def start(self, **kwargs):
+            api = super().start(**kwargs)
+            if self.start_calls == 2:
+                (data_root / "market-timeseries/market.duckdb").write_bytes(
+                    b"changed-after-backup"
+                )
+            return api
+
+    runtime = ActiveTreeEditingRuntime(apis=[FakeApi(), FakeApi(), FakeApi()])
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=runtime,
+        atomic_exchange=atomic,
+    )
+    config = SmokeConfig("7203", "production/smoke", "primeMarket")
+    service.backup("exact-backup")
+    service.rehearse("exact-rehearsal", config, inherited_environment={})
+
+    with pytest.raises(CutoverSafetyError, match="active market is unchanged"):
+        service.cutover(
+            "reject-drift",
+            rehearsal_report_id="exact-rehearsal",
+            backup_id="exact-backup",
+            config=config,
+            inherited_environment={},
+        )
+
+    assert atomic.exchanges == []
+    report = json.loads(
+        (
+            data_root
+            / "operations/market-v5-cutover/reports/reject-drift/report.json"
+        ).read_text()
+    )
+    assert "no longer exactly matches" in report["errorMessage"]
+
+
+def test_cutover_rejects_post_exchange_api_lineage_misdirection_and_restores(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    drifted = FakeApi().provider_vintage
+    drifted = {**drifted, "sourceFingerprint": "b" * 64}
+    runtime = FakeRuntime(
+        apis=[FakeApi(), FakeApi(), FakeApi(provider_vintage=drifted)]
+    )
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=runtime,
+    )
+    config = SmokeConfig("7203", "production/smoke", "primeMarket")
+    service.backup("lineage-backup")
+    service.rehearse("lineage-rehearsal", config, inherited_environment={})
+
+    with pytest.raises(CutoverSafetyError, match="restored backup"):
+        service.cutover(
+            "lineage-misdirection",
+            rehearsal_report_id="lineage-rehearsal",
+            backup_id="lineage-backup",
+            config=config,
+            inherited_environment={},
+        )
+
+    assert (data_root / "market-timeseries/market.duckdb").read_bytes() == b"duckdb-v3"
+
+
 def test_full_rebuild_activation_uses_atomic_exchange_before_quarantine(
     tmp_path: Path,
 ) -> None:

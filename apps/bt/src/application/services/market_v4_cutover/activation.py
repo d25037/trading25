@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import time
-from urllib.parse import quote
 
 from src.infrastructure.db.market import managed_root as _managed_root
 from src.infrastructure.db.market import market_operation_lease as _market_operation_lease
@@ -16,7 +15,7 @@ from .contracts import (
     SmokeConfig,
 )
 from .backup import MarketBackupService
-from .duckdb_service import MarketIdentityService
+from .activation_contract import full_rebuild_report_contract_valid
 from .errors import RuntimeStopError, WorkerShutdownError
 from .evidence import MarketEvidence
 from .filesystem import _DIR_OPEN_FLAGS
@@ -25,132 +24,17 @@ from .smoke import RuntimeSmokeService
 from .workspace import CutoverWorkspace
 
 
-def _full_rebuild_report_contract_valid(
-    report: dict[str, object],
-    *,
-    config: SmokeConfig,
-) -> bool:
-    api_checks = report.get("apiChecks")
-    required_api_checks = {
-        "/api/db/stats",
-        "/api/db/validate",
-        f"/api/analytics/fundamentals/{quote(config.symbol, safe='')}",
-        "/api/fundamentals/compute",
-        "/api/analytics/screening/jobs",
-        "/api/analytics/fundamental-ranking",
-        "/api/dataset",
-        "/api/db/sync",
-    }
-    if (
-        not isinstance(api_checks, list)
-        or not all(isinstance(path, str) for path in api_checks)
-        or not required_api_checks.issubset(set(api_checks))
-        or not any(
-            path.startswith("/api/analytics/screening/jobs/")
-            for path in api_checks
-        )
-        or not any("/api/analytics/screening/result/" in path for path in api_checks)
-        or not any(path.startswith("/api/dataset/jobs/") for path in api_checks)
-        or not any(path.endswith("/info") for path in api_checks)
-        or not any("/sample?count=1" in path for path in api_checks)
-        or not any(path.startswith("/api/db/sync/jobs/") for path in api_checks)
-        or any(
-            forbidden in path
-            for path in api_checks
-            for forbidden in ("materialize", "stocks/refresh", "intraday/sync")
-        )
-    ):
-        return False
-
-    provider_vintage_counter_keys = {
-        "sourceStatementKeyCount",
-        "expectedAdjustedStatementRows",
-        "invalidProviderWindowCount",
-        "invalidAdjustmentEventCount",
-        "providerAdjustedMismatchCount",
-        "invalidCurrentBasisStateCount",
-        "pendingCurrentBasisCodeCount",
-        "missingAdjustedStatementRows",
-        "extraAdjustedStatementRows",
-        "staleAdjustedStatementRows",
-        "wrongBasisAdjustedStatementRows",
-        "orphanAdjustedStatementRows",
-        "currentBasisStatementCount",
-        "currentBasisStateCount",
-        "providerWindowCount",
-        "readyProviderWindowCount",
-    }
-    positive_keys = {
-        "sourceStatementKeyCount",
-        "expectedAdjustedStatementRows",
-        "currentBasisStatementCount",
-        "currentBasisStateCount",
-        "providerWindowCount",
-        "readyProviderWindowCount",
-    }
-    coverage = report.get("schemaCoverage")
-    if not isinstance(coverage, dict) or set(coverage) != {
-        "schemaVersion",
-        "stockPriceAdjustmentMode",
-        "providerVintage",
-    }:
-        return False
-    provider_vintage = coverage.get("providerVintage")
-    if (
-        coverage.get("schemaVersion") != 5
-        or coverage.get("stockPriceAdjustmentMode") != "provider_adjusted_v1"
-        or not isinstance(provider_vintage, dict)
-        or not RuntimeSmokeService._is_ready_provider_vintage(provider_vintage)
-        or any(
-            type(provider_vintage.get(key)) is not int
-            for key in provider_vintage_counter_keys
-        )
-        or any(provider_vintage[key] <= 0 for key in positive_keys)
-        or any(
-            provider_vintage[key] != 0
-            for key in provider_vintage_counter_keys - positive_keys
-        )
-    ):
-        return False
-
-    phases = report.get("phases")
-    required_phases = {
-        "initial_sync_and_provider_vintage",
-        "semantic_smoke",
-    }
-    return (
-        isinstance(phases, list)
-        and len(phases) == len(required_phases)
-        and all(
-            isinstance(phase, dict)
-            and phase.get("status") == "passed"
-            and isinstance(phase.get("durationSeconds"), (int, float))
-            and not isinstance(phase.get("durationSeconds"), bool)
-            and float(phase["durationSeconds"]) >= 0
-            for phase in phases
-        )
-        and required_phases
-        == {
-            str(phase.get("name"))
-            for phase in phases
-            if isinstance(phase, dict)
-        }
-    )
-
-
 class MarketActivationService:
     def __init__(
         self,
         workspace: CutoverWorkspace,
         evidence: MarketEvidence,
-        market_identity: MarketIdentityService,
         reports: CutoverReportRepository,
         runtime_smoke: RuntimeSmokeService,
         backups: MarketBackupService,
     ) -> None:
         self._workspace = workspace
         self._evidence = evidence
-        self._market_identity = market_identity
         self._reports = reports
         self._runtime_smoke = runtime_smoke
         self._backups = backups
@@ -196,6 +80,9 @@ class MarketActivationService:
         )
         self._backups.verify_backup(backup_id)
         self._backups._preflight_under_lease()
+        backup_market_tree_sha256 = (
+            self._backups._assert_active_matches_backup_under_lease(backup_id)
+        )
         assert self._workspace._active_lease is not None
         return self._execute_cutover(
             report_id=report_id,
@@ -205,6 +92,7 @@ class MarketActivationService:
             inherited_environment=inherited_environment,
             code_version=code_version,
             expected_root_fingerprint=expected_root_fingerprint,
+            backup_market_tree_sha256=backup_market_tree_sha256,
         )
 
     def _validate_cutover_rehearsal(
@@ -238,7 +126,7 @@ class MarketActivationService:
             and rehearsal.get("codeVersion") == code_version
             and rehearsal.get("smokeConfig") == expected_smoke_config
         )
-        full_rebuild_valid = _full_rebuild_report_contract_valid(
+        full_rebuild_valid = full_rebuild_report_contract_valid(
             rehearsal,
             config=config,
         )
@@ -259,6 +147,7 @@ class MarketActivationService:
         inherited_environment: dict[str, str],
         code_version: str,
         expected_root_fingerprint: str,
+        backup_market_tree_sha256: str,
     ) -> OperationResult:
         assert self._workspace._active_lease is not None
         started = time.monotonic()
@@ -270,12 +159,10 @@ class MarketActivationService:
         active_market_fd: int | None = None
         report_dir, log_path = self._prepare_cutover_report_directory(report_id)
         try:
-            staging_root, runtime_name, runtime_template = (
-                self._prepare_cutover_staging(
-                    report_id,
-                    expected_root_fingerprint=expected_root_fingerprint,
-                )
+            staging = self._prepare_cutover_staging(
+                report_id, expected_root_fingerprint=expected_root_fingerprint
             )
+            staging_root, runtime_name, runtime_template = staging
             staging_lease = _market_operation_lease.MarketOperationLease.acquire(
                 staging_root, exclusive=True
             )
@@ -342,6 +229,9 @@ class MarketActivationService:
                 staging_root_identity=staging_root_identity,
                 staged_market_identity=staged_market_identity,
             )
+            self._assert_backup_still_matches_active(
+                backup_id, backup_market_tree_sha256
+            )
             activation_attempted = True
             self._activate_rebuilt_market(
                 staging_root=staging_root,
@@ -350,7 +240,6 @@ class MarketActivationService:
                 report_id=report_id,
             )
             activated = True
-
             active_environment = self._active_cutover_environment(
                 inherited_environment, runtime_name=runtime_name
             )
@@ -378,6 +267,7 @@ class MarketActivationService:
                 guard_lease_fd=self._workspace._active_lease.fd,
             )
             active_smoke_duration = time.monotonic() - active_smoke_started
+            self._assert_activated_lineage(evidence, active_smoke.lineage)
             self._workspace.runtime.stop(api)
             api = None
             self._workspace._remove_market_runtime(active_market_fd, runtime_name)
@@ -403,12 +293,10 @@ class MarketActivationService:
                 rehearsal_report_id=rehearsal_report_id,
                 backup_id=backup_id,
                 config=config,
-                code_version=code_version,
-                expected_root_fingerprint=expected_root_fingerprint,
-                started=started,
-                checks=checks,
-                evidence=evidence,
-                phases=phases,
+                code_version=code_version, expected_root_fingerprint=expected_root_fingerprint,
+                started=started, checks=checks, evidence=evidence, phases=phases,
+                backup_market_tree_sha256=backup_market_tree_sha256,
+                active_provider_vintage=active_smoke.lineage,
             )
         except Exception as exc:
             self._handle_cutover_failure(
@@ -429,6 +317,28 @@ class MarketActivationService:
                 activation_attempted=activation_attempted,
             )
             raise AssertionError("cutover failure handler must raise")
+
+    def _assert_backup_still_matches_active(
+        self, backup_id: str, expected_sha256: str
+    ) -> None:
+        # Deliberately the last active-tree read before atomic exchange.
+        if (
+            self._backups._assert_active_matches_backup_under_lease(backup_id)
+            != expected_sha256
+        ):
+            raise _managed_root.CutoverSafetyError(
+                "Selected backup identity changed before activation"
+            )
+
+    @staticmethod
+    def _assert_activated_lineage(
+        staged_evidence: dict[str, object], active_lineage: dict[str, object]
+    ) -> None:
+        staged = staged_evidence.get("providerVintage")
+        if not isinstance(staged, dict) or active_lineage != staged:
+            raise _managed_root.CutoverSafetyError(
+                "Activated Market provider vintage differs from staged lineage"
+            )
 
     def _assert_active_root_fingerprint(
         self,
@@ -578,6 +488,8 @@ class MarketActivationService:
         checks: tuple[str, ...],
         evidence: dict[str, object],
         phases: tuple[dict[str, object], ...],
+        backup_market_tree_sha256: str,
+        active_provider_vintage: dict[str, object],
     ) -> OperationResult:
         report = self._reports._operation_report(
             report_id=report_id,
@@ -594,6 +506,9 @@ class MarketActivationService:
             target_root_fingerprint=expected_root_fingerprint,
             code_version=code_version,
         )
+        report["activeBackupTreeSha256"] = backup_market_tree_sha256
+        report["stagedProviderVintage"] = evidence["providerVintage"]
+        report["activeProviderVintage"] = active_provider_vintage
         report_path = self._reports._write_report(
             report_id,
             report,

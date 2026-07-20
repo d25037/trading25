@@ -149,7 +149,7 @@ def cutover_command(
     dataset_preset: str = typer.Option("primeMarket", "--dataset-preset"),
     data_root: Path | None = DataRootOption,
 ) -> None:
-    """Run the active reset only with exact rehearsal and backup IDs."""
+    """Activate an isolated rebuild by atomic activation with exact evidence."""
     def cutover() -> object:
         inherited_environment = _required_rebuild_environment()
         return _service(data_root).cutover(

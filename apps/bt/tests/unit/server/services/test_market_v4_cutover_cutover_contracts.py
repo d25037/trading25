@@ -173,6 +173,11 @@ def test_cutover_requires_exact_passing_rehearsal_and_verified_backup(
     assert report["backupManifest"] == "backups/backup-001/manifest.json"
     assert report["rehearsalReportId"] == "rehearsal-001"
     assert report["phases"][-1]["name"] == "activated_market_smoke"
+    assert report["activeProviderVintage"] == report["stagedProviderVintage"]
+    assert report["activeProviderVintage"] == report["schemaCoverage"][
+        "providerVintage"
+    ]
+    assert len(report["activeBackupTreeSha256"]) == 64
     assert runtime.stop_calls == 3
 
 

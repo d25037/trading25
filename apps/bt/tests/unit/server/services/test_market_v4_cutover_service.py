@@ -3,17 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+import importlib.util
 
 import pytest
 
 import src.application.services.market_v4_cutover.service as cutover_module
-from src.application.services.market_v4_cutover.contracts import SmokeConfig
 from src.application.services.market_v4_cutover.filesystem import (
     DarwinAtomicExchange,
 )
 from src.application.services.market_v4_cutover.service import MarketV4CutoverService
-from src.application.services.market_v4_cutover.promotion import RetainedPromotionService
-from src.application.services.market_v4_cutover.rehearsal import RetainedRehearsalService
 from src.infrastructure.db.market import managed_root
 from src.application.contracts.market_data_plane import MarketSchemaStats
 from tests.unit.server.services.market_v4_cutover_test_support import (
@@ -35,25 +33,33 @@ def test_market_v5_cutover_has_no_retained_v4_public_path(tmp_path: Path) -> Non
     assert not hasattr(service, "promote_retained")
 
 
-def test_internal_retained_v4_entry_methods_fail_closed() -> None:
-    config = SmokeConfig("7203", "production/smoke", "primeMarket")
-
-    with pytest.raises(managed_root.CutoverSafetyError, match="ineligible"):
-        RetainedRehearsalService.rehearse_retained(
-            None,  # type: ignore[arg-type]
-            "retained-rehearsal",
-            source_rehearsal_report_id="source",
-            config=config,
-            inherited_environment={},
+@pytest.mark.parametrize(
+    "module",
+    (
+        "promotion",
+        "promotion_artifacts",
+        "promotion_cleanup",
+        "promotion_contracts",
+        "promotion_evidence",
+        "promotion_eligibility",
+        "promotion_recovery",
+        "promotion_reports",
+        "promotion_rollback",
+        "promotion_transaction",
+        "rehearsal",
+        "journal",
+        "journal_directories",
+        "journal_storage",
+        "journal_validation",
+    ),
+)
+def test_internal_retained_v4_execution_boundary_is_deleted(module: str) -> None:
+    assert (
+        importlib.util.find_spec(
+            f"src.application.services.market_v4_cutover.{module}"
         )
-    with pytest.raises(managed_root.CutoverSafetyError, match="ineligible"):
-        RetainedPromotionService.promote_retained(
-            None,  # type: ignore[arg-type]
-            "retained-promotion",
-            retained_report_id="retained",
-            backup_id="backup",
-            config=config,
-        )
+        is None
+    )
 
 
 def test_market_v5_cutover_uses_v5_operation_identity(tmp_path: Path) -> None:

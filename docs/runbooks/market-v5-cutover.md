@@ -205,14 +205,18 @@ availability requires another successful v5 full rebuild.
 
 ## Benchmark evidence
 
-The repository benchmark is local and fixture-driven. It does not open the
-active database or call J-Quants:
+The repository benchmark is fixture-backed and invokes the production stock
+ingestion coordinator, DuckDB/Parquet store, and adjusted-metrics materializer.
+Each scenario runs in a separate child process. Provider requests are served
+by an instrumented fixture client; the fixture contains input rows only and
+does not declare request/page/mutation counters:
 
 ```bash
 BENCH_WORKSPACE=$(mktemp -d /tmp/market-v5-sync.XXXXXX)
 uv run python scripts/benchmark_market_v5_sync.py \
   --fixture benchmarks/fixtures/market-v5-sync.json \
   --workspace "$BENCH_WORKSPACE/work" \
+  --representative-market-root /Users/mirage/.local/share/trading25/market-timeseries \
   --output "$BENCH_WORKSPACE/result.json"
 python -m json.tool "$BENCH_WORKSPACE/result.json"
 ```
@@ -220,11 +224,13 @@ python -m json.tool "$BENCH_WORKSPACE/result.json"
 The JSON records wall time, CPU time, peak RSS, request/page counts, affected
 codes, new rows, row mutations, storage growth, checksums, and
 `allCodeMaterializerInvocations` for no-op, one-day, fundamentals-only,
-split/drift, and the old all-code/local-projection baseline fixture. Scaling
-claims use measured work counters, not timing thresholds.
+split/drift, and an explicit old all-code/local-projection semantics adapter.
+The current and legacy comparison uses the exact same universe and incoming
+delta fingerprint. Scaling claims use observed calls, not timing thresholds.
 
 Recorded fixture evidence is
 `apps/bt/benchmarks/market-v5-sync-fixture-evidence.json`. Its
-`representativeEvidence` is `unavailable`: no safe representative local v5
-database and pre-authorized no-cost credential fixture was used for this task,
-so no live or paid requests were made.
+`representativeEvidence` is `unavailable`: the command performed a read-only
+inspection of the configured local Market and recorded its schema/mode; it was
+not an eligible Market v5/provider-adjusted database. No live or paid requests
+were made.

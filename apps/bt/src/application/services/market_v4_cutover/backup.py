@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import secrets
@@ -139,6 +140,7 @@ class MarketBackupService:
                     "schemaVersion": metadata.schema_version,
                     "stockPriceAdjustmentMode": metadata.adjustment_mode,
                 },
+                "activeMarketTreeSha256": self._tree_entries_sha256(entries),
                 "files": entries,
             }
             manifest_path = destination / "manifest.json"
@@ -228,6 +230,17 @@ class MarketBackupService:
         entries = manifest.get("files")
         if not isinstance(entries, list) or not entries:
             raise _managed_root.CutoverSafetyError("Backup manifest has no files")
+        if not all(isinstance(entry, dict) for entry in entries):
+            raise _managed_root.CutoverSafetyError(
+                "Backup manifest file entry is invalid"
+            )
+        typed_entries = cast(list[dict[str, object]], entries)
+        if manifest.get("activeMarketTreeSha256") != self._tree_entries_sha256(
+            typed_entries
+        ):
+            raise _managed_root.CutoverSafetyError(
+                "Backup manifest Market tree identity mismatch"
+            )
         expected_paths: set[str] = set()
         for entry in entries:
             if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
@@ -267,6 +280,60 @@ class MarketBackupService:
         if actual_paths != expected_paths:
             raise _managed_root.CutoverSafetyError("Backup file set mismatch")
         return BackupResult(backup_id)
+
+    @staticmethod
+    def _tree_entries_sha256(entries: list[dict[str, object]]) -> str:
+        canonical = [
+            {
+                "path": entry.get("path"),
+                "bytes": entry.get("bytes"),
+                "sha256": entry.get("sha256"),
+            }
+            for entry in sorted(entries, key=lambda item: str(item.get("path", "")))
+        ]
+        return hashlib.sha256(
+            json.dumps(
+                canonical,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            ).encode()
+        ).hexdigest()
+
+    def _active_market_tree_sha256(self) -> str:
+        entries = []
+        for source in self._workspace._source_files(self._workspace.market_root):
+            relative = source.relative_to(self._workspace.market_root)
+            managed_relative = self._workspace._managed_relative(source)
+            source_stat = self._workspace.managed().stat(managed_relative)
+            entries.append(
+                {
+                    "path": relative.as_posix(),
+                    "bytes": source_stat.st_size,
+                    "sha256": self._workspace.managed().sha256(managed_relative),
+                }
+            )
+        if not entries:
+            raise _managed_root.CutoverSafetyError("Active Market tree is empty")
+        return self._tree_entries_sha256(entries)
+
+    def _assert_active_matches_backup_under_lease(self, backup_id: str) -> str:
+        """Bind activation to the exact active tree captured by its backup."""
+
+        self._verify_backup_managed(backup_id)
+        manifest_path = self._workspace.backups_root / backup_id / "manifest.json"
+        manifest = json.loads(
+            self._workspace.managed()
+            .read_bytes(self._workspace._managed_relative(manifest_path))
+            .decode("utf-8")
+        )
+        expected = manifest.get("activeMarketTreeSha256")
+        actual = self._active_market_tree_sha256()
+        if not isinstance(expected, str) or actual != expected:
+            raise _managed_root.CutoverSafetyError(
+                "Active Market tree no longer exactly matches the selected backup"
+            )
+        return expected
 
     def restore(self, backup_id: str | None) -> RestoreResult:
         with self._workspace.exclusive_operation():

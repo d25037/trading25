@@ -104,6 +104,7 @@ class MarketSourceMetadata:
     schema_version: int | None
     adjustment_mode: str | None
     provider_vintage_ready: bool = True
+    provider_vintage: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)

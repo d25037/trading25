@@ -249,7 +249,10 @@ class RuntimeSmokeService:
             market_directory_fd=market_directory_fd,
             guard_lease_fd=guard_lease_fd,
         )
-        stats_adjusted, adjusted, zero_counters = self._validate_smoke_lineage(api)
+        stats_adjusted, adjusted, zero_counters = self._validate_smoke_lineage(
+            api,
+            direct_provider_vintage=metadata.provider_vintage,
+        )
         symbol, screening_job_id = self._smoke_analytics(api, config)
         dataset_name, dataset_job_id = self._smoke_dataset(
             api,
@@ -455,6 +458,8 @@ class RuntimeSmokeService:
     @staticmethod
     def _validate_smoke_lineage(
         api: ApiAdapter,
+        *,
+        direct_provider_vintage: dict[str, object] | None,
     ) -> tuple[dict[str, object], dict[str, object], tuple[str, ...]]:
         stats = api.request("GET", "/api/db/stats")
         schema = stats.get("schema")
@@ -470,6 +475,13 @@ class RuntimeSmokeService:
         ) or not RuntimeSmokeService._is_ready_provider_vintage(stats_adjusted):
             raise _managed_root.CutoverSafetyError(
                 "Market provider-vintage coverage is not ready"
+            )
+        if (
+            direct_provider_vintage is None
+            or stats_adjusted != direct_provider_vintage
+        ):
+            raise _managed_root.CutoverSafetyError(
+                "HTTP stats provider vintage does not match direct DuckDB identity"
             )
 
         validation = api.request("GET", "/api/db/validate")
@@ -497,9 +509,10 @@ class RuntimeSmokeService:
         if (
             not RuntimeSmokeService._is_ready_provider_vintage(adjusted)
             or any(adjusted.get(counter) != 0 for counter in zero_counters)
+            or adjusted != direct_provider_vintage
         ):
             raise _managed_root.CutoverSafetyError(
-                "Exact provider-vintage lineage validation failed"
+                "HTTP validation provider vintage does not match direct DuckDB identity"
             )
         return stats_adjusted, adjusted, zero_counters
 
