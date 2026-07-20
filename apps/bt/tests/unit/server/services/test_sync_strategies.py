@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from datetime import date, datetime, timedelta
 from typing import Any, Awaitable, Callable
 from zoneinfo import ZoneInfo
@@ -42,7 +43,7 @@ from src.application.services.sync_row_converters import (
     group_stock_master_bulk_rows_by_date,
 )
 from src.application.services.sync_paginated_fetch import get_paginated_rows_with_call_count
-from src.application.services import sync_stock_data_fetch
+from src.application.services import sync_stock_data_fetch, sync_strategies
 from src.application.services.sync_stock_data_fetch import (
     execute_stock_data_bulk_fetch,
     StockDataRestDateIngestionError,
@@ -2551,6 +2552,38 @@ class _StagedStockDataStore(DummyTimeSeriesStore):
         self.pending_stage_batches.clear()
 
 
+class _BlockingStagedStockDataStore(_StagedStockDataStore):
+    def __init__(self, market_db: DummyMarketDb) -> None:
+        super().__init__(market_db)
+        self.stage_started = threading.Event()
+        self.release_stage = threading.Event()
+        self._stage_lock = threading.Lock()
+
+    def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+        with self._stage_lock:
+            self.stage_started.set()
+            assert self.release_stage.wait(timeout=2)
+            return super().stage_stock_data_rows(rows)
+
+    def discard_staged_stock_data(self) -> None:
+        with self._stage_lock:
+            super().discard_staged_stock_data()
+
+
+class _UnserializedBlockingStageStore(_StagedStockDataStore):
+    """Expose late worker completion if the async adapter fails to join it."""
+
+    def __init__(self, market_db: DummyMarketDb) -> None:
+        super().__init__(market_db)
+        self.stage_started = threading.Event()
+        self.release_stage = threading.Event()
+
+    def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+        self.stage_started.set()
+        assert self.release_stage.wait(timeout=2)
+        return super().stage_stock_data_rows(rows)
+
+
 class _CompleteWindowClient:
     plan = "light"
 
@@ -2778,6 +2811,297 @@ async def test_stock_ingestion_session_discards_staging_when_refresh_setup_fails
 
     assert store.discard_calls == 1
     assert store.pending_stage_batches == []
+
+
+async def _publish_one_row_in_owned_stock_session(
+    ctx: SyncContext,
+    row: dict[str, Any],
+) -> sync_stock_data_fetch.StockDataCommitOutcome:
+    runner = getattr(sync_stock_data_fetch, "run_stock_data_ingestion_session", None)
+    assert callable(runner)
+
+    async def _operation(
+        session: sync_stock_data_fetch.StockDataIngestionSession,
+    ) -> sync_stock_data_fetch.StockDataCommitOutcome:
+        await session.stage(ctx, [row])
+        return await session.commit(ctx)
+
+    return await runner(ctx, _operation)
+
+
+@pytest.mark.asyncio
+async def test_stock_session_task_cancel_waits_for_cleanup_and_next_sync_cannot_flush_stale_rows() -> None:
+    runner = getattr(sync_stock_data_fetch, "run_stock_data_ingestion_session", None)
+    assert callable(runner)
+    market_db = DummyMarketDb()
+    store = _BlockingStagedStockDataStore(market_db)
+    ctx = _build_ctx(
+        client=_CompleteWindowClient({}),
+        market_db=market_db,
+        time_series_store=store,
+    )
+    stale_row = _normalized_provider_daily_row("72030", "2026-02-10")
+
+    async def _stage_stale(
+        session: sync_stock_data_fetch.StockDataIngestionSession,
+    ) -> None:
+        await session.stage(ctx, [stale_row])
+
+    task = asyncio.create_task(runner(ctx, _stage_stale))
+    assert await asyncio.to_thread(store.stage_started.wait, 1)
+    task.cancel()
+    await asyncio.sleep(0.05)
+    assert not task.done()
+    store.release_stage.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    next_row = _normalized_provider_daily_row("67580", "2026-02-11")
+    outcome = await _publish_one_row_in_owned_stock_session(ctx, next_row)
+
+    assert outcome.appended_rows == 1
+    assert [(row["code"], row["date"]) for row in market_db.stock_rows] == [
+        ("6758", "2026-02-11")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_stock_session_task_cancel_joins_staging_worker_before_discard() -> None:
+    runner = getattr(sync_stock_data_fetch, "run_stock_data_ingestion_session", None)
+    assert callable(runner)
+    market_db = DummyMarketDb()
+    store = _UnserializedBlockingStageStore(market_db)
+    ctx = _build_ctx(
+        client=_CompleteWindowClient({}),
+        market_db=market_db,
+        time_series_store=store,
+    )
+
+    async def _stage_stale(
+        session: sync_stock_data_fetch.StockDataIngestionSession,
+    ) -> None:
+        await session.stage(
+            ctx,
+            [_normalized_provider_daily_row("72030", "2026-02-10")],
+        )
+
+    task = asyncio.create_task(runner(ctx, _stage_stale))
+    assert await asyncio.to_thread(store.stage_started.wait, 1)
+    task.cancel()
+    await asyncio.sleep(0.05)
+    assert not task.done()
+    store.release_stage.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert store.discard_calls == 1
+    assert store.pending_stage_batches == []
+
+
+@pytest.mark.asyncio
+async def test_stock_session_wait_for_timeout_cleans_before_next_sync() -> None:
+    runner = getattr(sync_stock_data_fetch, "run_stock_data_ingestion_session", None)
+    assert callable(runner)
+    market_db = DummyMarketDb()
+    store = _BlockingStagedStockDataStore(market_db)
+    ctx = _build_ctx(
+        client=_CompleteWindowClient({}),
+        market_db=market_db,
+        time_series_store=store,
+    )
+    stale_row = _normalized_provider_daily_row("72030", "2026-02-10")
+
+    async def _stage_stale(
+        session: sync_stock_data_fetch.StockDataIngestionSession,
+    ) -> None:
+        await session.stage(ctx, [stale_row])
+
+    asyncio.get_running_loop().call_later(0.05, store.release_stage.set)
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(runner(ctx, _stage_stale), timeout=0.01)
+
+    next_row = _normalized_provider_daily_row("67580", "2026-02-11")
+    outcome = await _publish_one_row_in_owned_stock_session(ctx, next_row)
+
+    assert outcome.appended_rows == 1
+    assert [(row["code"], row["date"]) for row in market_db.stock_rows] == [
+        ("6758", "2026-02-11")
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("drift_kind", ["corrected_factor", "adjusted_value"])
+async def test_stock_session_refreshes_existing_provider_drift_and_excludes_it_from_append(
+    tmp_path: Any,
+    drift_kind: str,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    store.publish_topix_data(
+        [{"date": "2026-02-10", "open": 1, "high": 1, "low": 1, "close": 1}]
+    )
+    baseline = _normalized_provider_daily_row(
+        "72030",
+        "2026-02-10",
+        factor=0.5 if drift_kind == "corrected_factor" else 1.0,
+        adjusted_multiplier=0.5 if drift_kind == "corrected_factor" else 1.0,
+    )
+    store.publish_stock_data([baseline])
+    incoming = dict(baseline)
+    if drift_kind == "corrected_factor":
+        incoming["adjustment_factor"] = 0.25
+    else:
+        incoming["adjusted_close"] = float(incoming["adjusted_close"]) + 0.5
+    replacement_quote = _provider_daily_quote(
+        "72030",
+        "2026-02-10",
+        base=30.0,
+    )
+    client = _CompleteWindowClient({"72030": [replacement_quote]})
+    ctx = _build_ctx(
+        client=client,
+        market_db=DummyMarketDb(),
+        time_series_store=store,
+    )
+    session = sync_stock_data_fetch.StockDataIngestionSession()
+    await session.stage(
+        ctx,
+        [
+            incoming,
+            _normalized_provider_daily_row("67580", "2026-02-10", base=20.0),
+        ],
+    )
+
+    outcome = await session.commit(ctx)
+
+    assert outcome.affected_codes == frozenset({"7203"})
+    assert outcome.replaced_codes == 1
+    assert outcome.appended_rows == 1
+    assert client.calls == [
+        ("/equities/bars/daily", {"code": "72030"}, 10_000)
+    ]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT open FROM stock_data_raw WHERE code = '7203'"
+    ).fetchone() == (30.0,)
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT COUNT(*) FROM stock_data_raw WHERE code = '6758'"
+    ).fetchone() == (1,)
+    store.close()
+
+
+@pytest.mark.asyncio
+async def test_stock_session_reports_recompute_failure_after_publishing_price_counters() -> None:
+    market_db = DummyMarketDb()
+    market_db.topix_rows = [
+        {"date": "2026-02-10", "open": 1, "high": 1, "low": 1, "close": 1}
+    ]
+    store = _StagedStockDataStore(market_db)
+    published: list[tuple[int, int, int, int]] = []
+
+    async def _fail_recompute(_codes: frozenset[str]) -> None:
+        raise RuntimeError("targeted recompute failed")
+
+    ctx = _build_ctx(
+        client=_CompleteWindowClient(
+            {"72030": [_provider_daily_quote("72030", "2026-02-10")]}
+        ),
+        market_db=market_db,
+        time_series_store=store,
+        recompute_affected_stock_codes=_fail_recompute,
+    )
+    ctx.on_stock_commit = lambda *counts: published.append(counts)
+    session = sync_stock_data_fetch.StockDataIngestionSession()
+    await session.stage(
+        ctx,
+        [
+            _normalized_provider_daily_row("72030", "2026-02-10", factor=0.5),
+            _normalized_provider_daily_row("67580", "2026-02-10", base=20.0),
+        ],
+    )
+
+    outcome = await session.commit(ctx)
+
+    assert outcome.appended_rows == 1
+    assert outcome.affected_codes == frozenset({"7203"})
+    assert outcome.replaced_codes == 1
+    assert outcome.recomputation_errors == (
+        "Affected stock recomputation failed: targeted recompute failed",
+    )
+    assert published[-1] == (1, 1, 1, outcome.replaced_rows)
+    assert session.committed is True
+    assert session.finalized is True
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_preserves_committed_stock_counters_when_later_stage_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _stock_stage(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {
+            "api_calls": 3,
+            "stocks_updated": 6,
+            "stock_rows_appended": 4,
+            "affected_stock_codes": 1,
+            "stock_codes_replaced": 1,
+            "stock_rows_replaced": 2,
+            "stock_recomputation_errors": [],
+            "stock_target_dates": ["2026-02-10"],
+            "errors": [],
+            "cancelled": False,
+        }
+
+    async def _fail_later_stage(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("indices stage failed")
+
+    monkeypatch.setattr(sync_strategies, "_sync_incremental_stock_data_stage", _stock_stage)
+    monkeypatch.setattr(sync_strategies, "_sync_incremental_indices_stage", _fail_later_stage)
+    market_db = DummyMarketDb()
+    result = await IncrementalSyncStrategy().execute(
+        _build_ctx(client=DummyClient(), market_db=market_db)
+    )
+
+    assert result.success is False
+    assert result.stockRowsAppended == 4
+    assert result.affectedStockCodes == 1
+    assert result.stockCodesReplaced == 1
+    assert result.stockRowsReplaced == 2
+    assert result.errors == ["indices stage failed"]
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_reports_stock_recomputation_failure_separately(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recompute_error = "Affected stock recomputation failed: targeted recompute failed"
+
+    async def _stock_stage(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {
+            "api_calls": 3,
+            "stocks_updated": 6,
+            "stock_rows_appended": 4,
+            "affected_stock_codes": 1,
+            "stock_codes_replaced": 1,
+            "stock_rows_replaced": 2,
+            "stock_recomputation_errors": [recompute_error],
+            "stock_target_dates": ["2026-02-10"],
+            "errors": [],
+            "cancelled": False,
+        }
+
+    monkeypatch.setattr(sync_strategies, "_sync_incremental_stock_data_stage", _stock_stage)
+    result = await IncrementalSyncStrategy().execute(
+        _build_ctx(client=DummyClient(), market_db=DummyMarketDb())
+    )
+
+    assert result.success is False
+    assert result.stockRowsAppended == 4
+    assert result.affectedStockCodes == 1
+    assert result.stockCodesReplaced == 1
+    assert result.stockRowsReplaced == 2
+    assert result.stockRecomputationErrors == [recompute_error]
+    assert result.errors == [recompute_error]
 
 
 @pytest.mark.asyncio

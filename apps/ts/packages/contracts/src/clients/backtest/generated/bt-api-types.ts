@@ -11437,6 +11437,8 @@ export interface components {
              * @default 0
              */
             stockCodesReplaced: number;
+            /** Stockrecomputationerrors */
+            stockRecomputationErrors?: string[];
             /**
              * Stockrowsappended
              * @default 0

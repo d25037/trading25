@@ -372,6 +372,7 @@ class SyncResult(BaseModel):
     affectedStockCodes: int = 0
     stockCodesReplaced: int = 0
     stockRowsReplaced: int = 0
+    stockRecomputationErrors: list[str] = Field(default_factory=list)
     datesProcessed: int = 0
     fundamentalsUpdated: int = 0
     fundamentalsDatesProcessed: int = 0

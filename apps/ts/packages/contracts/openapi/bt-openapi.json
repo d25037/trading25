@@ -18814,6 +18814,13 @@
             "title": "Stockcodesreplaced",
             "type": "integer"
           },
+          "stockRecomputationErrors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stockrecomputationerrors",
+            "type": "array"
+          },
           "stockRowsAppended": {
             "default": 0,
             "title": "Stockrowsappended",

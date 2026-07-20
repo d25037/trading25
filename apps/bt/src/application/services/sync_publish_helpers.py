@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, TypeVar
 
 from src.application.services.options_225 import (
     OPTIONS_225_SYNTHETIC_INDEX_CATEGORY,
@@ -16,6 +17,24 @@ from src.application.services.options_225 import (
 )
 from src.application.services.sync_state_helpers import _require_time_series_store
 from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
+
+
+_T = TypeVar("_T")
+
+
+async def _to_thread_joined(function: Callable[..., _T], /, *args: Any, **kwargs: Any) -> _T:
+    """Delay cancellation until a store worker can no longer mutate shared state."""
+    worker = asyncio.create_task(asyncio.to_thread(function, *args, **kwargs))
+    deferred_cancellation: asyncio.CancelledError | None = None
+    while not worker.done():
+        try:
+            await asyncio.shield(worker)
+        except asyncio.CancelledError as exc:
+            deferred_cancellation = exc
+    result = worker.result()
+    if deferred_cancellation is not None:
+        raise deferred_cancellation
+    return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,7 +88,7 @@ async def _stage_stock_data_rows(
         return StockDataStageResult(staged_rows=0, affected_codes=frozenset())
     store = _require_time_series_store(ctx)
     affected_codes = await asyncio.to_thread(store.detect_stock_provider_drift, rows)
-    await asyncio.to_thread(store.stage_stock_data_rows, rows)
+    await _to_thread_joined(store.stage_stock_data_rows, rows)
     return StockDataStageResult(
         staged_rows=len(rows),
         affected_codes=frozenset(affected_codes),
@@ -80,7 +99,7 @@ async def _flush_staged_stock_data_rows(
     ctx: Any, *, exclude_codes: frozenset[str]
 ) -> SemanticDeltaResult:
     store = _require_time_series_store(ctx)
-    return await asyncio.to_thread(
+    return await _to_thread_joined(
         store.flush_staged_stock_data,
         exclude_codes=exclude_codes,
     )

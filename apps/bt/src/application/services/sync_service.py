@@ -473,6 +473,13 @@ async def start_sync(
                 stockCodesReplaced=replaced_codes,
                 stockRowsReplaced=replaced_rows,
             )
+            stored = sync_job_manager.get_job(job.job_id)
+            if stored is not None and stored.progress is not None:
+                sync_job_manager.update_progress(
+                    job.job_id,
+                    stored.progress.model_copy(update=stock_progress),
+                )
+                _publish_sync_job_event(job.job_id)
 
         operation_outcome = maintenance_contracts.MarketOperationOutcome.SUCCEEDED
         operation_error: str | None = None

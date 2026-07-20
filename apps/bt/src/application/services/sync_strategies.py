@@ -92,6 +92,7 @@ from src.application.services.sync_stock_data_fetch import (
     StockDataRestDateIngestionError,
     execute_stock_data_bulk_fetch,
     execute_stock_data_rest_date,
+    run_stock_data_ingestion_session,
 )
 from src.application.services.sync_options_225_data import (
     resolve_incremental_options_date_targets as _resolve_incremental_options_date_targets,
@@ -224,6 +225,10 @@ class SyncContext:
         Callable[[frozenset[str]], Awaitable[None]] | None
     ) = None
     on_stock_commit: Callable[[int, int, int, int], None] | None = None
+    stock_rows_appended: int = 0
+    affected_stock_codes: int = 0
+    stock_codes_replaced: int = 0
+    stock_rows_replaced: int = 0
 
 
 class SyncStrategy(Protocol):  # pragma: no cover
@@ -570,12 +575,12 @@ async def _sync_initial_stock_data_stage(
     ctx: SyncContext,
     *,
     trading_dates: list[str],
+    session: StockDataIngestionSession,
 ) -> dict[str, Any]:
     api_calls = 0
     stocks_updated = 0
     failed_dates: list[str] = []
     errors: list[str] = []
-    session = StockDataIngestionSession()
     from_date, to_date = _select_bulk_candidates_from_dates(trading_dates)
     decision = await sync_fetch_planner._plan_fetch_method(
         ctx,
@@ -650,6 +655,7 @@ async def _sync_initial_stock_data_stage(
                 "affected_stock_codes": 0,
                 "stock_codes_replaced": 0,
                 "stock_rows_replaced": 0,
+                "stock_recomputation_errors": [],
                 "failed_dates": failed_dates,
                 "errors": errors,
                 "cancelled": True,
@@ -673,6 +679,7 @@ async def _sync_initial_stock_data_stage(
         "affected_stock_codes": len(commit_outcome.affected_codes),
         "stock_codes_replaced": commit_outcome.replaced_codes,
         "stock_rows_replaced": commit_outcome.replaced_rows,
+        "stock_recomputation_errors": list(commit_outcome.recomputation_errors),
         "failed_dates": failed_dates,
         "errors": errors,
         "cancelled": False,
@@ -819,6 +826,7 @@ class InitialSyncStrategy:
         affected_stock_codes = 0
         stock_codes_replaced = 0
         stock_rows_replaced = 0
+        stock_recomputation_errors: list[str] = []
         dates_processed = 0
         fundamentals_updated = 0
         fundamentals_dates_processed = 0
@@ -857,17 +865,44 @@ class InitialSyncStrategy:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
             ctx.on_progress("stock_data", 3, 8, "Fetching daily stock prices...")
-            stock_sync = await _sync_initial_stock_data_stage(ctx, trading_dates=trading_dates)
+            stock_sync = await run_stock_data_ingestion_session(
+                ctx,
+                lambda session: _sync_initial_stock_data_stage(
+                    ctx,
+                    trading_dates=trading_dates,
+                    session=session,
+                ),
+            )
             total_calls += stock_sync["api_calls"]
             stocks_updated += stock_sync["stocks_updated"]
             stock_rows_appended += stock_sync["stock_rows_appended"]
             affected_stock_codes += stock_sync["affected_stock_codes"]
             stock_codes_replaced += stock_sync["stock_codes_replaced"]
             stock_rows_replaced += stock_sync["stock_rows_replaced"]
+            stock_recomputation_errors.extend(
+                stock_sync["stock_recomputation_errors"]
+            )
             failed_dates.extend(stock_sync["failed_dates"])
             errors.extend(stock_sync["errors"])
             if stock_sync["cancelled"]:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+            if stock_recomputation_errors:
+                errors.extend(stock_recomputation_errors)
+                return SyncResult(
+                    success=False,
+                    totalApiCalls=total_calls,
+                    stocksUpdated=stocks_updated,
+                    stockRowsAppended=stock_rows_appended,
+                    affectedStockCodes=affected_stock_codes,
+                    stockCodesReplaced=stock_codes_replaced,
+                    stockRowsReplaced=stock_rows_replaced,
+                    stockRecomputationErrors=stock_recomputation_errors,
+                    datesProcessed=dates_processed,
+                    fundamentalsUpdated=fundamentals_updated,
+                    fundamentalsDatesProcessed=fundamentals_dates_processed,
+                    failedDates=failed_dates,
+                    errors=errors,
+                )
 
             ctx.on_progress("indices", 4, 8, "Fetching index data...")
             indices_strategy = IndicesOnlySyncStrategy(include_options=False)
@@ -908,6 +943,7 @@ class InitialSyncStrategy:
                 affectedStockCodes=affected_stock_codes,
                 stockCodesReplaced=stock_codes_replaced,
                 stockRowsReplaced=stock_rows_replaced,
+                stockRecomputationErrors=stock_recomputation_errors,
                 datesProcessed=dates_processed,
                 fundamentalsUpdated=fundamentals_updated,
                 fundamentalsDatesProcessed=fundamentals_dates_processed,
@@ -917,7 +953,27 @@ class InitialSyncStrategy:
         except sync_fetch_planner.BulkFetchRequiredError:
             raise
         except Exception as e:
-            return SyncResult(success=False, totalApiCalls=total_calls, errors=[str(e)])
+            return SyncResult(
+                success=False,
+                totalApiCalls=total_calls,
+                stocksUpdated=stocks_updated,
+                stockRowsAppended=max(stock_rows_appended, ctx.stock_rows_appended),
+                affectedStockCodes=max(
+                    affected_stock_codes, ctx.affected_stock_codes
+                ),
+                stockCodesReplaced=max(
+                    stock_codes_replaced, ctx.stock_codes_replaced
+                ),
+                stockRowsReplaced=max(
+                    stock_rows_replaced, ctx.stock_rows_replaced
+                ),
+                stockRecomputationErrors=stock_recomputation_errors,
+                datesProcessed=dates_processed,
+                fundamentalsUpdated=fundamentals_updated,
+                fundamentalsDatesProcessed=fundamentals_dates_processed,
+                failedDates=failed_dates,
+                errors=[*errors, str(e)],
+            )
 
 
 async def _sync_incremental_stock_data_stage(
@@ -926,12 +982,12 @@ async def _sync_incremental_stock_data_stage(
     topix_rows: list[dict[str, Any]],
     anchor: str | None,
     inspection: TimeSeriesInspection,
+    session: StockDataIngestionSession,
     refresh_missing_stock_dates: bool = False,
 ) -> dict[str, Any]:
     api_calls = 0
     stocks_updated = 0
     errors: list[str] = []
-    session = StockDataIngestionSession()
     target_inspection = (
         sync_state_helpers._inspect_time_series(ctx)
         if refresh_missing_stock_dates
@@ -1016,6 +1072,7 @@ async def _sync_incremental_stock_data_stage(
                 "affected_stock_codes": 0,
                 "stock_codes_replaced": 0,
                 "stock_rows_replaced": 0,
+                "stock_recomputation_errors": [],
                 "stock_target_dates": stock_target_dates,
                 "errors": errors,
                 "cancelled": True,
@@ -1039,6 +1096,7 @@ async def _sync_incremental_stock_data_stage(
         "affected_stock_codes": len(commit_outcome.affected_codes),
         "stock_codes_replaced": commit_outcome.replaced_codes,
         "stock_rows_replaced": commit_outcome.replaced_rows,
+        "stock_recomputation_errors": list(commit_outcome.recomputation_errors),
         "stock_target_dates": stock_target_dates,
         "errors": errors,
         "cancelled": False,
@@ -1188,6 +1246,7 @@ class IncrementalSyncStrategy:
         affected_stock_codes = 0
         stock_codes_replaced = 0
         stock_rows_replaced = 0
+        stock_recomputation_errors: list[str] = []
         fundamentals_updated = 0
         fundamentals_dates_processed = 0
         errors: list[str] = []
@@ -1285,12 +1344,16 @@ class IncrementalSyncStrategy:
 
             # Step 3: 新しい日付の株価データ
             ctx.on_progress("stock_data", 2, 7, "Fetching new stock data...")
-            stock_sync = await _sync_incremental_stock_data_stage(
+            stock_sync = await run_stock_data_ingestion_session(
                 ctx,
-                topix_rows=topix_rows,
-                anchor=last_date,
-                inspection=inspection,
-                refresh_missing_stock_dates=bool(topix_rows),
+                lambda session: _sync_incremental_stock_data_stage(
+                    ctx,
+                    topix_rows=topix_rows,
+                    anchor=last_date,
+                    inspection=inspection,
+                    session=session,
+                    refresh_missing_stock_dates=bool(topix_rows),
+                ),
             )
             total_calls += stock_sync["api_calls"]
             stocks_updated += stock_sync["stocks_updated"]
@@ -1298,10 +1361,29 @@ class IncrementalSyncStrategy:
             affected_stock_codes += stock_sync["affected_stock_codes"]
             stock_codes_replaced += stock_sync["stock_codes_replaced"]
             stock_rows_replaced += stock_sync["stock_rows_replaced"]
+            stock_recomputation_errors.extend(
+                stock_sync["stock_recomputation_errors"]
+            )
             stock_target_dates = cast(list[str], stock_sync["stock_target_dates"])
             errors.extend(cast(list[str], stock_sync["errors"]))
             if stock_sync["cancelled"]:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+            if stock_recomputation_errors:
+                errors.extend(stock_recomputation_errors)
+                return SyncResult(
+                    success=False,
+                    totalApiCalls=total_calls,
+                    stocksUpdated=stocks_updated,
+                    stockRowsAppended=stock_rows_appended,
+                    affectedStockCodes=affected_stock_codes,
+                    stockCodesReplaced=stock_codes_replaced,
+                    stockRowsReplaced=stock_rows_replaced,
+                    stockRecomputationErrors=stock_recomputation_errors,
+                    datesProcessed=len(stock_target_dates),
+                    fundamentalsUpdated=fundamentals_updated,
+                    fundamentalsDatesProcessed=fundamentals_dates_processed,
+                    errors=errors,
+                )
 
             indices_sync = await _sync_incremental_indices_stage(
                 ctx,
@@ -1383,6 +1465,7 @@ class IncrementalSyncStrategy:
                 affectedStockCodes=affected_stock_codes,
                 stockCodesReplaced=stock_codes_replaced,
                 stockRowsReplaced=stock_rows_replaced,
+                stockRecomputationErrors=stock_recomputation_errors,
                 datesProcessed=len(stock_target_dates),
                 fundamentalsUpdated=fundamentals_updated,
                 fundamentalsDatesProcessed=fundamentals_dates_processed,
@@ -1391,7 +1474,25 @@ class IncrementalSyncStrategy:
         except sync_fetch_planner.BulkFetchRequiredError:
             raise
         except Exception as e:
-            return SyncResult(success=False, totalApiCalls=total_calls, errors=[str(e)])
+            return SyncResult(
+                success=False,
+                totalApiCalls=total_calls,
+                stocksUpdated=stocks_updated,
+                stockRowsAppended=max(stock_rows_appended, ctx.stock_rows_appended),
+                affectedStockCodes=max(
+                    affected_stock_codes, ctx.affected_stock_codes
+                ),
+                stockCodesReplaced=max(
+                    stock_codes_replaced, ctx.stock_codes_replaced
+                ),
+                stockRowsReplaced=max(
+                    stock_rows_replaced, ctx.stock_rows_replaced
+                ),
+                stockRecomputationErrors=stock_recomputation_errors,
+                fundamentalsUpdated=fundamentals_updated,
+                fundamentalsDatesProcessed=fundamentals_dates_processed,
+                errors=[*errors, str(e)],
+            )
 
 
 class RepairSyncStrategy:

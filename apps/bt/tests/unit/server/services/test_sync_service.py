@@ -263,12 +263,16 @@ def test_sync_result_separates_append_and_affected_code_replacement_counters() -
         affectedStockCodes=2,
         stockCodesReplaced=2,
         stockRowsReplaced=5,
+        stockRecomputationErrors=["7203: recompute failed"],
     )
 
     assert result.model_dump()["stockRowsAppended"] == 7
     assert result.model_dump()["affectedStockCodes"] == 2
     assert result.model_dump()["stockCodesReplaced"] == 2
     assert result.model_dump()["stockRowsReplaced"] == 5
+    assert result.model_dump()["stockRecomputationErrors"] == [
+        "7203: recompute failed"
+    ]
 
 
 @pytest.mark.asyncio
@@ -281,14 +285,7 @@ async def test_start_sync_publishes_structured_stock_commit_progress_counters(
             self.captured_ctx = ctx
             ctx.on_progress("stock_data", 1, 2, "staging")
             ctx.on_stock_commit(7, 2, 2, 5)
-            ctx.on_progress("complete", 2, 2, "done")
-            return SyncResult(
-                success=True,
-                stockRowsAppended=7,
-                affectedStockCodes=2,
-                stockCodesReplaced=2,
-                stockRowsReplaced=5,
-            )
+            raise RuntimeError("later stage failed")
 
     strategy = StockCommitProgressStrategy()
     monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
@@ -304,6 +301,7 @@ async def test_start_sync_publishes_structured_stock_commit_progress_counters(
 
     stored = isolated_manager.get_job(job.job_id)
     assert stored is not None and stored.progress is not None
+    assert stored.status.value == "failed"
     assert stored.progress.stockRowsAppended == 7
     assert stored.progress.affectedStockCodes == 2
     assert stored.progress.stockCodesReplaced == 2

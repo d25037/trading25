@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
-from typing import Any, cast
+from dataclasses import dataclass, field, replace
+from typing import Any, TypeVar, cast
 
 from loguru import logger
 
@@ -55,6 +56,10 @@ class StockDataCommitOutcome:
     affected_codes: frozenset[str] = frozenset()
     replaced_codes: int = 0
     replaced_rows: int = 0
+    recomputation_errors: tuple[str, ...] = ()
+
+
+_T = TypeVar("_T")
 
 
 class _ProviderPlanClient:
@@ -99,8 +104,20 @@ class StockDataIngestionSession:
 
     affected_codes: set[str] = field(default_factory=set)
     staged_rows: int = 0
+    _committed: bool = False
+    _finalized: bool = False
+
+    @property
+    def committed(self) -> bool:
+        return self._committed
+
+    @property
+    def finalized(self) -> bool:
+        return self._finalized
 
     async def stage(self, ctx: Any, rows: list[dict[str, Any]]) -> None:
+        if self._finalized:
+            raise RuntimeError("Stock data ingestion session is already finalized")
         result = await sync_publish_helpers._stage_stock_data_rows(ctx, rows)
         self.affected_codes.update(result.affected_codes)
         self.staged_rows += result.staged_rows
@@ -111,6 +128,8 @@ class StockDataIngestionSession:
         self.staged_rows = 0
 
     async def commit(self, ctx: Any) -> StockDataCommitOutcome:
+        if self._finalized:
+            raise RuntimeError("Stock data ingestion session is already finalized")
         affected_codes = frozenset(self.affected_codes)
         api_calls = 0
         replaced_codes = 0
@@ -152,11 +171,6 @@ class StockDataIngestionSession:
             ctx,
             exclude_codes=affected_codes,
         )
-        recompute = getattr(ctx, "recompute_affected_stock_codes", None)
-        if affected_codes and callable(recompute):
-            await cast(
-                Callable[[frozenset[str]], Awaitable[None]], recompute
-            )(affected_codes)
         outcome = StockDataCommitOutcome(
             api_calls=api_calls,
             appended_rows=append_result.stats.inserted,
@@ -164,6 +178,34 @@ class StockDataIngestionSession:
             replaced_codes=replaced_codes,
             replaced_rows=replaced_rows,
         )
+        self._committed = True
+        self._finalized = True
+        self._record_committed_outcome(ctx, outcome)
+
+        recompute = getattr(ctx, "recompute_affected_stock_codes", None)
+        if affected_codes and callable(recompute):
+            try:
+                await cast(
+                    Callable[[frozenset[str]], Awaitable[None]], recompute
+                )(affected_codes)
+            except Exception as exc:  # noqa: BLE001 - report committed-price follow-up failure
+                outcome = replace(
+                    outcome,
+                    recomputation_errors=(
+                        f"Affected stock recomputation failed: {exc}",
+                    ),
+                )
+        self.affected_codes.clear()
+        self.staged_rows = 0
+        return outcome
+
+    def _record_committed_outcome(
+        self, ctx: Any, outcome: StockDataCommitOutcome
+    ) -> None:
+        ctx.stock_rows_appended = outcome.appended_rows
+        ctx.affected_stock_codes = len(outcome.affected_codes)
+        ctx.stock_codes_replaced = outcome.replaced_codes
+        ctx.stock_rows_replaced = outcome.replaced_rows
         on_stock_commit = getattr(ctx, "on_stock_commit", None)
         if callable(on_stock_commit):
             on_stock_commit(
@@ -172,9 +214,43 @@ class StockDataIngestionSession:
                 outcome.replaced_codes,
                 outcome.replaced_rows,
             )
-        self.affected_codes.clear()
-        self.staged_rows = 0
-        return outcome
+
+    async def finalize(self, ctx: Any) -> None:
+        """Discard every uncommitted staged row exactly once."""
+        if self._finalized:
+            return
+        try:
+            await self.discard(ctx)
+        finally:
+            self._finalized = True
+
+
+async def _finish_stock_data_session(
+    session: StockDataIngestionSession, ctx: Any
+) -> None:
+    """Join cleanup even if another cancellation arrives while finalizing."""
+    cleanup = asyncio.create_task(session.finalize(ctx))
+    deferred_cancellation: asyncio.CancelledError | None = None
+    while not cleanup.done():
+        try:
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError as exc:
+            deferred_cancellation = exc
+    cleanup.result()
+    if deferred_cancellation is not None:
+        raise deferred_cancellation
+
+
+async def run_stock_data_ingestion_session(
+    ctx: Any,
+    operation: Callable[[StockDataIngestionSession], Awaitable[_T]],
+) -> _T:
+    """Own a shared staging-table session through success, error, or cancellation."""
+    session = StockDataIngestionSession()
+    try:
+        return await operation(session)
+    finally:
+        await _finish_stock_data_session(session, ctx)
 
 
 async def execute_stock_data_bulk_fetch(
