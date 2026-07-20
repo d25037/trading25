@@ -46,6 +46,7 @@ from src.domains.analytics.daily_ranking_feature_builders import (
     build_sma_features,
 )
 from src.domains.analytics.daily_ranking_research_base import (
+    DAILY_RANKING_BASE_REQUIRED_VALID_SESSIONS,
     DailyRankingPanelRequest,
     MarketScope,
     SignalDerivedColumn,
@@ -237,6 +238,10 @@ def run_ranking_sma5_atr_deviation_evidence_research(
                 market_scopes=cast(tuple[MarketScope, ...], resolved_market_scopes),
                 include_liquidity=True,
                 percentile_features=(),
+                required_valid_sessions=max(
+                    DAILY_RANKING_BASE_REQUIRED_VALID_SESSIONS,
+                    max(resolved_atr_windows),
+                ),
             ),
         )
         signal_source = relations.ranked_signals

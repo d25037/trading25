@@ -45,7 +45,7 @@ _FORWARD_TOKEN_RE = re.compile(r"\bforward_[a-z0-9_]*", re.IGNORECASE)
 _NIKKEI_SYNTHETIC_INDEX_CODE = "N225_UNDERPX"
 _DEPRECATED_FEATURE_WARMUP_CALENDAR_DAYS = 720
 _BASE_FEATURE_LOOKBACK_SESSIONS = 504
-_BASE_REQUIRED_VALID_SESSIONS = _BASE_FEATURE_LOOKBACK_SESSIONS + 1
+DAILY_RANKING_BASE_REQUIRED_VALID_SESSIONS = _BASE_FEATURE_LOOKBACK_SESSIONS + 1
 _SAFE_SQL_TYPE_RE = re.compile(r"^(?:BIGINT|BOOLEAN|DATE|DOUBLE|INTEGER|VARCHAR)$")
 _FORBIDDEN_SIGNAL_EXPRESSION_RE = re.compile(
     r"(?:;|--|/\*|\*/|\b(?:attach|copy|create|delete|drop|from|insert|join|pragma|"
@@ -473,7 +473,7 @@ class DailyRankingPanelRequest:
     market_scopes: tuple[MarketScope, ...]
     include_liquidity: bool = True
     percentile_features: tuple[DailyRankingPercentileFeature, ...] = ()
-    required_valid_sessions: int = _BASE_REQUIRED_VALID_SESSIONS
+    required_valid_sessions: int = DAILY_RANKING_BASE_REQUIRED_VALID_SESSIONS
 
     def __post_init__(self) -> None:
         if not _NAMESPACE_RE.fullmatch(self.namespace) or len(self.namespace) > 48:
@@ -496,10 +496,10 @@ class DailyRankingPanelRequest:
             self.required_valid_sessions, int
         ):
             raise TypeError("required_valid_sessions must be an integer")
-        if self.required_valid_sessions < _BASE_REQUIRED_VALID_SESSIONS:
+        if self.required_valid_sessions < DAILY_RANKING_BASE_REQUIRED_VALID_SESSIONS:
             raise ValueError(
                 f"required_valid_sessions must be at least "
-                f"{_BASE_REQUIRED_VALID_SESSIONS}"
+                f"{DAILY_RANKING_BASE_REQUIRED_VALID_SESSIONS}"
             )
         horizons = tuple(sorted({int(value) for value in self.horizons}))
         if not horizons or any(value <= 0 for value in horizons):
@@ -1676,7 +1676,7 @@ def _resolve_valid_session_query_start(
     *,
     analysis_start_date: date | None,
     market_codes: Sequence[str],
-    required_valid_sessions: int = _BASE_REQUIRED_VALID_SESSIONS,
+    required_valid_sessions: int = DAILY_RANKING_BASE_REQUIRED_VALID_SESSIONS,
 ) -> date | None:
     if analysis_start_date is None:
         return None

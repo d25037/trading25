@@ -14,6 +14,7 @@ import pandas as pd
 import pytest
 
 from src.domains.analytics.daily_ranking_research_base import (
+    DAILY_RANKING_BASE_REQUIRED_VALID_SESSIONS,
     DAILY_RANKING_RESEARCH_BRIDGE_DEPRECATED,
     DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE,
     DAILY_RANKING_RESEARCH_PANEL_TABLE,
@@ -292,7 +293,10 @@ def test_relation_and_request_identifiers_are_validated() -> None:
         _request("Unsafe-Namespace")
 
     with pytest.raises(ValueError, match="required_valid_sessions"):
-        replace(_request("too_short_history"), required_valid_sessions=504)
+        replace(
+            _request("too_short_history"),
+            required_valid_sessions=DAILY_RANKING_BASE_REQUIRED_VALID_SESSIONS - 1,
+        )
     with pytest.raises(TypeError, match="required_valid_sessions"):
         replace(_request("boolean_history"), required_valid_sessions=True)
 
