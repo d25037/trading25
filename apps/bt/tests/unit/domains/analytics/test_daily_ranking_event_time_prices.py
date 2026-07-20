@@ -691,8 +691,7 @@ def test_next_open_outcome_uses_stock_entry_date_and_nulls_missing_topix_endpoin
     completion_basis = "event-pit-v1:1111:2024-01-08"
     try:
         conn.execute(
-            "INSERT INTO stock_data_raw VALUES "
-            "('1111', ?, 60, 61, 59, 60, 2000, 1.0)",
+            "INSERT INTO stock_data_raw VALUES ('1111', ?, 60, 61, 59, 60, 2000, 1.0)",
             [completion_date],
         )
         conn.execute(

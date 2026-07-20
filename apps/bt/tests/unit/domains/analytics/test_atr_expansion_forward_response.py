@@ -109,9 +109,7 @@ def test_atr_expansion_fails_closed_for_incomplete_entry_mode_outcomes(
     db_path = _build_atr_expansion_db(tmp_path / "market.duckdb")
     conn = duckdb.connect(str(db_path))
     try:
-        conn.execute(
-            "UPDATE topix_data SET open = NULL WHERE date = '2024-04-01'"
-        )
+        conn.execute("UPDATE topix_data SET open = NULL WHERE date = '2024-04-01'")
     finally:
         conn.close()
 
@@ -129,18 +127,22 @@ def test_atr_expansion_fails_closed_for_incomplete_entry_mode_outcomes(
     assert not next_open.empty
     assert (
         next_open["selected_observation_count"]
-        == next_open["complete_outcome_count"]
-        + next_open["incomplete_outcome_count"]
+        == next_open["complete_outcome_count"] + next_open["incomplete_outcome_count"]
     ).all()
     assert (next_open["incomplete_outcome_count"] > 0).all()
-    assert next_open[
-        [
-            "mean_forward_excess_return_pct",
-            "median_forward_excess_return_pct",
-            "win_rate_pct",
-            "severe_loss_rate_pct",
+    assert (
+        next_open[
+            [
+                "mean_forward_excess_return_pct",
+                "median_forward_excess_return_pct",
+                "win_rate_pct",
+                "severe_loss_rate_pct",
+            ]
         ]
-    ].isna().all().all()
+        .isna()
+        .all()
+        .all()
+    )
     assert not close.empty
     assert (close["outcome_coverage_status"] == "complete").all()
     assert (

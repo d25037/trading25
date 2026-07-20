@@ -146,9 +146,7 @@ def test_missing_middle_topix_outcome_preserves_position_timeline(
     )
     coverage = missing.coverage_diagnostics_df.iloc[0]
     assert int(coverage["incomplete_outcome_count"]) > 0
-    assert int(coverage["complete_outcome_count"]) < int(
-        coverage["observation_count"]
-    )
+    assert int(coverage["complete_outcome_count"]) < int(coverage["observation_count"])
     assert coverage["outcome_coverage_status"] == "incomplete"
 
 
