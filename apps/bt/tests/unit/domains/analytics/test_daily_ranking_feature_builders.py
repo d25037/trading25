@@ -924,6 +924,157 @@ def test_rolling_trend_builder_counts_sparse_trading_sessions_not_calendar_days(
     )
 
 
+@pytest.mark.parametrize(
+    ("invalid_offset", "expected_next_valid"),
+    (
+        (
+            20,
+            (
+                19.062598947901897,
+                None,
+                0.9991441215381079,
+                None,
+                110.55,
+                None,
+                111.87877904741926,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
+        ),
+        (
+            60,
+            (
+                13.660759098624343,
+                58.02714722773108,
+                0.9991782507879357,
+                0.9965400572491171,
+                150.55,
+                130.51666666666668,
+                150.6186686180059,
+                134.5244383543148,
+                3.4707903780068827,
+                15.363984674329512,
+                None,
+                None,
+                3.49049700164481,
+                15.26343318303287,
+                None,
+                None,
+            ),
+        ),
+    ),
+)
+def test_rolling_trend_builder_excludes_invalid_bars_before_every_window(
+    feature_connection: Any,
+    invalid_offset: int,
+    expected_next_valid: tuple[float | None, ...],
+) -> None:
+    conn = feature_connection
+    source, history = _rolling_source_and_history(
+        conn,
+        first_signal_offset=invalid_offset,
+    )
+    invalid_date = date(2024, 1, 1) + timedelta(days=invalid_offset)
+    next_valid_date = invalid_date + timedelta(days=1)
+    conn.execute(
+        f"UPDATE {history.name} SET close = 0.0 WHERE code = '1111' AND date = ?",
+        [invalid_date],
+    )
+    history = _issue_relation_ref(
+        conn,
+        history.name,
+        key_columns=history.key_columns,
+        expected_schema=tuple(zip(history.columns, history.column_types, strict=True)),
+        generation=history.generation,
+        kind="price_history",
+        capability=source._capability,
+        forbid_outcomes=True,
+    )
+
+    result = build_rolling_trend_features(
+        conn,
+        RollingTrendFeaturesRequest(
+            source=source,
+            price_history=history,
+            namespace=f"rolling_invalid_{invalid_offset}",
+        ),
+    )
+    feature_columns = result.columns[len(source.key_columns) :]
+    invalid = conn.execute(
+        f"SELECT {', '.join(feature_columns)} FROM {result.name} "
+        "WHERE code = '1111' AND date = ?",
+        [invalid_date],
+    ).fetchone()
+    next_valid = conn.execute(
+        f"SELECT {', '.join(feature_columns)} FROM {result.name} "
+        "WHERE code = '1111' AND date = ?",
+        [next_valid_date],
+    ).fetchone()
+
+    assert result.row_count == source.row_count
+    assert invalid == tuple(None for _ in feature_columns)
+    assert next_valid is not None
+    _assert_golden_rows([next_valid], [expected_next_valid])
+
+
+@pytest.mark.parametrize(
+    ("column", "invalid_value"),
+    (
+        ("open", 0.0),
+        ("high", 0.0),
+        ("low", 0.0),
+        ("close", 0.0),
+        ("volume", -1.0),
+    ),
+)
+def test_rolling_trend_builder_uses_exact_canonical_valid_bar_predicate(
+    feature_connection: Any,
+    column: str,
+    invalid_value: float,
+) -> None:
+    conn = feature_connection
+    source, history = _rolling_source_and_history(conn, first_signal_offset=20)
+    invalid_date = date(2024, 1, 21)
+    conn.execute(
+        f"UPDATE {history.name} SET {column} = ? WHERE code = '1111' AND date = ?",
+        [invalid_value, invalid_date],
+    )
+    history = _issue_relation_ref(
+        conn,
+        history.name,
+        key_columns=history.key_columns,
+        expected_schema=tuple(zip(history.columns, history.column_types, strict=True)),
+        generation=history.generation,
+        kind="price_history",
+        capability=source._capability,
+        forbid_outcomes=True,
+    )
+
+    result = build_rolling_trend_features(
+        conn,
+        RollingTrendFeaturesRequest(
+            source=source,
+            price_history=history,
+            namespace=f"rolling_invalid_{column}",
+        ),
+    )
+    feature_columns = result.columns[len(source.key_columns) :]
+    invalid = conn.execute(
+        f"SELECT {', '.join(feature_columns)} FROM {result.name} "
+        "WHERE code = '1111' AND date = ?",
+        [invalid_date],
+    ).fetchone()
+
+    assert invalid == tuple(None for _ in feature_columns)
+
+
 def test_rolling_trend_builder_rejects_missing_exact_signal_history_key(
     feature_connection: Any,
 ) -> None:

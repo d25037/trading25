@@ -10,7 +10,20 @@ from src.domains.analytics.daily_ranking_event_time_prices import (
     EventTimeSignalRequest,
     build_daily_ranking_event_time_prices,
     build_event_time_signal_sql,
+    daily_ranking_valid_raw_bar_sql,
 )
+
+
+def test_valid_raw_bar_predicate_is_exact_and_qualifiable() -> None:
+    assert daily_ranking_valid_raw_bar_sql() == (
+        "open > 0 AND high > 0 AND low > 0 AND close > 0 AND volume >= 0"
+    )
+    assert daily_ranking_valid_raw_bar_sql("raw") == (
+        "raw.open > 0 AND raw.high > 0 AND raw.low > 0 AND raw.close > 0 "
+        "AND raw.volume >= 0"
+    )
+    with pytest.raises(ValueError, match="invalid raw-bar qualifier"):
+        daily_ranking_valid_raw_bar_sql("raw;drop")
 
 
 def _install_market_v4_metadata(conn: duckdb.DuckDBPyConnection) -> None:

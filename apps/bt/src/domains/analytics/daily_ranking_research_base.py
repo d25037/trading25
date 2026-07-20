@@ -30,6 +30,7 @@ from src.domains.analytics.daily_ranking_event_time_prices import (
     DailyRankingPriceLineage,
     DailyRankingPriceRequest,
     build_daily_ranking_event_time_prices,
+    daily_ranking_valid_raw_bar_sql,
     daily_ranking_forward_outcome_columns,
 )
 from src.domains.analytics.readonly_duckdb_support import normalize_code_sql
@@ -1692,6 +1693,7 @@ def _resolve_valid_session_query_start(
         params.extend(market_codes)
     raw_code = normalize_code_sql("raw.code")
     master_code = normalize_code_sql("smd.code")
+    valid_raw_bar = daily_ranking_valid_raw_bar_sql("raw")
     row = conn.execute(
         f"""
         WITH valid_market_sessions AS (
@@ -1701,8 +1703,7 @@ def _resolve_valid_session_query_start(
               ON {master_code} = {raw_code}
              AND CAST(smd.date AS DATE) = CAST(raw.date AS DATE)
             WHERE CAST(raw.date AS DATE) <= ?
-              AND raw.open > 0 AND raw.high > 0 AND raw.low > 0
-              AND raw.close > 0 AND raw.volume >= 0
+              AND {valid_raw_bar}
               {market_filter}
         ), required_history AS (
             SELECT date

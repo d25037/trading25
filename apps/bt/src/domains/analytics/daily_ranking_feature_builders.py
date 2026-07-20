@@ -20,6 +20,9 @@ from src.domains.analytics.daily_ranking_research_base import (
     validate_daily_ranking_price_history_relation,
     validate_daily_ranking_signal_relation,
 )
+from src.domains.analytics.daily_ranking_event_time_prices import (
+    DAILY_RANKING_VALID_RAW_BAR_PRICE_COLUMNS,
+)
 from src.domains.analytics.readonly_duckdb_support import normalize_code_sql
 from src.domains.analytics.trend_slope_features import rolling_log_slope_features
 
@@ -818,26 +821,31 @@ def build_rolling_trend_features(
 
     prices = conn.execute(
         f"""
-        SELECT code, date, price_basis_id, close
+        SELECT code, date, price_basis_id, open, high, low, close, volume
         FROM {history.name}
         ORDER BY code, price_basis_id, date
         """
     ).fetchdf()
     frames: list[pd.DataFrame] = []
     for _, group in prices.groupby(["code", "price_basis_id"], sort=False):
-        frame = group.copy()
+        numeric_bars = group[
+            [*DAILY_RANKING_VALID_RAW_BAR_PRICE_COLUMNS, "volume"]
+        ].astype(float)
+        valid_bar = (
+            numeric_bars[list(DAILY_RANKING_VALID_RAW_BAR_PRICE_COLUMNS)] > 0.0
+        ).all(axis=1) & (numeric_bars["volume"] >= 0.0)
+        frame = group.loc[valid_bar].copy()
         close = frame["close"].astype(float)
-        valid_close = close.where((close > 0.0) & np.isfinite(close), np.nan)
-        log_close = np.log(valid_close.to_numpy(dtype=float))
+        log_close = np.log(close.to_numpy(dtype=float))
         for window in request.slope_windows:
             slope, r2 = rolling_log_slope_features(log_close, window=window)
             frame[f"price_lr_slope_{window}_pct"] = slope
             frame[f"price_lr_r2_{window}"] = r2
-            frame[f"sma{window}"] = valid_close.rolling(
+            frame[f"sma{window}"] = close.rolling(
                 window,
                 min_periods=window,
             ).mean()
-            frame[f"ema{window}"] = valid_close.ewm(
+            frame[f"ema{window}"] = close.ewm(
                 span=window,
                 adjust=False,
                 min_periods=window,

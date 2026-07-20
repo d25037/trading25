@@ -116,6 +116,19 @@ DAILY_RANKING_PRICE_HISTORY_COLUMNS = (
     "close",
     "volume",
 )
+DAILY_RANKING_VALID_RAW_BAR_PRICE_COLUMNS = ("open", "high", "low", "close")
+
+
+def daily_ranking_valid_raw_bar_sql(qualifier: str | None = None) -> str:
+    """Return the canonical valid raw-session predicate, optionally qualified."""
+
+    if qualifier is not None and not _RELATION_NAMESPACE_RE.fullmatch(qualifier):
+        raise ValueError(f"invalid raw-bar qualifier: {qualifier!r}")
+    prefix = "" if qualifier is None else f"{qualifier}."
+    prices = " AND ".join(
+        f"{prefix}{column} > 0" for column in DAILY_RANKING_VALID_RAW_BAR_PRICE_COLUMNS
+    )
+    return f"{prices} AND {prefix}volume >= 0"
 
 
 @dataclass(frozen=True)
@@ -684,7 +697,7 @@ def _build_daily_ranking_event_time_prices(
     request: DailyRankingPriceRequest,
     names: _DailyRankingPriceRelationNames,
 ) -> DailyRankingPriceRelations:
-    valid_bar = "open > 0 AND high > 0 AND low > 0 AND close > 0 AND volume >= 0"
+    valid_bar = daily_ranking_valid_raw_bar_sql()
     raw_code = normalize_code_sql("raw.code")
     master_code = normalize_code_sql("smd.code")
     valuation_code = normalize_code_sql("dv.code")
