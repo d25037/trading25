@@ -450,7 +450,6 @@ def _create_position_feature_panel(conn: Any, *, source_name: str) -> None:
             source.forward_close_excess_return_1d_pct
                 AS next_session_excess_return_pct
         FROM {source_name} source
-        WHERE source.forward_close_excess_return_1d_pct IS NOT NULL
         """
     )
 
@@ -544,6 +543,7 @@ def _simulate_position_states(
                     held = False
                     trade_id = 0
                     trade_returns: list[float] = []
+                    trade_holding_days = 0
                     trade_start_date: str | None = None
                     trade_entry_date: str | None = None
                     last_held_date: str | None = None
@@ -570,6 +570,7 @@ def _simulate_position_states(
                                     last_held_date=last_held_date,
                                     exit_reason=exit_reason or "exit_signal",
                                     trade_returns=trade_returns,
+                                    holding_days=trade_holding_days,
                                 )
                             )
                             exit_rows.append(
@@ -584,6 +585,7 @@ def _simulate_position_states(
                             )
                             held = False
                             trade_returns = []
+                            trade_holding_days = 0
                             trade_start_date = None
                             trade_entry_date = None
                             last_held_date = None
@@ -592,6 +594,7 @@ def _simulate_position_states(
                             held = True
                             trade_id += 1
                             trade_returns = []
+                            trade_holding_days = 0
                             trade_start_date = str(row_dict["date"])
                             trade_entry_date = str(row_dict["date"])
                         held_state = bool(held)
@@ -611,13 +614,8 @@ def _simulate_position_states(
                                     trade_id=trade_id if held_state else None,
                                 )
                             )
-                        if held_state and pd.notna(
-                            row_dict["next_session_excess_return_pct"]
-                        ):
-                            daily_return = float(
-                                row_dict["next_session_excess_return_pct"]
-                            )
-                            trade_returns.append(daily_return)
+                        if held_state:
+                            trade_holding_days += 1
                             last_held_date = str(row_dict["date"])
                             position_rows.append(
                                 _build_position_daily_row(
@@ -628,6 +626,10 @@ def _simulate_position_states(
                                     trade_id=trade_id,
                                 )
                             )
+                            if pd.notna(row_dict["next_session_excess_return_pct"]):
+                                trade_returns.append(
+                                    float(row_dict["next_session_excess_return_pct"])
+                                )
                     if held:
                         last_row = {
                             str(key): value
@@ -646,6 +648,7 @@ def _simulate_position_states(
                                 last_held_date=last_held_date,
                                 exit_reason="open_at_end",
                                 trade_returns=trade_returns,
+                                holding_days=trade_holding_days,
                             )
                         )
 
@@ -676,6 +679,20 @@ def _build_coverage_diagnostics_df(
                 "observation_count": int(len(selected)),
                 "code_count": int(selected["code"].nunique()),
                 "date_count": int(selected["date"].nunique()),
+                "complete_outcome_count": int(
+                    selected["next_session_excess_return_pct"].notna().sum()
+                ),
+                "incomplete_outcome_count": int(
+                    selected["next_session_excess_return_pct"].isna().sum()
+                ),
+                "outcome_coverage_pct": float(
+                    selected["next_session_excess_return_pct"].notna().mean() * 100.0
+                ),
+                "outcome_coverage_status": (
+                    "complete"
+                    if selected["next_session_excess_return_pct"].notna().all()
+                    else "incomplete"
+                ),
                 "median_sma5_above_count_5d": _median(selected["sma5_above_count_5d"]),
                 "count_0_1_rate_pct": _rate(selected["sma5_above_count_5d"].le(1)),
                 "below_sma5_streak_ge3_rate_pct": _rate(
@@ -1193,6 +1210,7 @@ def _build_trade_row(
     last_held_date: str | None,
     exit_reason: str,
     trade_returns: Sequence[float],
+    holding_days: int,
 ) -> dict[str, Any]:
     returns = np.asarray(list(trade_returns), dtype=float)
     return {
@@ -1208,7 +1226,7 @@ def _build_trade_row(
         "trade_exit_date": trade_exit_date,
         "last_held_date": last_held_date,
         "exit_reason": exit_reason,
-        "holding_days": int(len(returns)),
+        "holding_days": int(holding_days),
         "trade_excess_return_pct": float((np.prod(1.0 + returns / 100.0) - 1.0) * 100.0)
         if len(returns) > 0
         else np.nan,
