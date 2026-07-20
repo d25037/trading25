@@ -3071,6 +3071,103 @@ async def test_incremental_sync_preserves_committed_stock_counters_when_later_st
 
 
 @pytest.mark.asyncio
+async def test_initial_sync_late_cancellation_preserves_stock_commit_checkpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    committed_progress: list[tuple[int, int, int, int]] = []
+
+    async def _stock_stage(ctx: SyncContext, **_kwargs: Any) -> dict[str, Any]:
+        ctx.stock_rows_appended = 7
+        ctx.affected_stock_codes = 2
+        ctx.stock_codes_replaced = 2
+        ctx.stock_rows_replaced = 5
+        assert ctx.on_stock_commit is not None
+        ctx.on_stock_commit(7, 2, 2, 5)
+        return {
+            "api_calls": 3,
+            "stocks_updated": 6,
+            "stock_rows_appended": 4,
+            "affected_stock_codes": 1,
+            "stock_codes_replaced": 1,
+            "stock_rows_replaced": 2,
+            "stock_recomputation_errors": [],
+            "failed_dates": [],
+            "errors": [],
+            "cancelled": False,
+        }
+
+    async def _cancel_options(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {"api_calls": 1, "errors": [], "cancelled": True}
+
+    monkeypatch.setattr(sync_strategies, "_sync_initial_stock_data_stage", _stock_stage)
+    monkeypatch.setattr(sync_strategies, "_sync_options_225_dates", _cancel_options)
+    ctx = _build_ctx(
+        client=InitialSyncClient(topix_dates=["2026-02-10"]),
+        market_db=DummyMarketDb(),
+    )
+    ctx.on_stock_commit = lambda *counts: committed_progress.append(counts)
+
+    result = await InitialSyncStrategy().execute(ctx)
+
+    assert result.success is False
+    assert result.errors == ["Cancelled"]
+    assert result.stockRowsAppended == 7
+    assert result.affectedStockCodes == 2
+    assert result.stockCodesReplaced == 2
+    assert result.stockRowsReplaced == 5
+    assert committed_progress == [(7, 2, 2, 5)]
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_late_cancellation_preserves_stock_commit_checkpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    committed_progress: list[tuple[int, int, int, int]] = []
+
+    async def _stock_stage(ctx: SyncContext, **_kwargs: Any) -> dict[str, Any]:
+        ctx.stock_rows_appended = 7
+        ctx.affected_stock_codes = 2
+        ctx.stock_codes_replaced = 2
+        ctx.stock_rows_replaced = 5
+        assert ctx.on_stock_commit is not None
+        ctx.on_stock_commit(7, 2, 2, 5)
+        return {
+            "api_calls": 3,
+            "stocks_updated": 6,
+            "stock_rows_appended": 4,
+            "affected_stock_codes": 1,
+            "stock_codes_replaced": 1,
+            "stock_rows_replaced": 2,
+            "stock_recomputation_errors": [],
+            "stock_target_dates": ["2026-02-10"],
+            "errors": [],
+            "cancelled": False,
+        }
+
+    async def _cancel_indices(*_args: Any, **_kwargs: Any) -> Any:
+        return sync_strategies._SyncStageOutcome(
+            api_calls=1,
+            errors=[],
+            cancelled=True,
+        )
+
+    monkeypatch.setattr(sync_strategies, "_sync_incremental_stock_data_stage", _stock_stage)
+    monkeypatch.setattr(sync_strategies, "_sync_incremental_indices_stage", _cancel_indices)
+    ctx = _build_ctx(client=DummyClient(), market_db=DummyMarketDb())
+    ctx.on_stock_commit = lambda *counts: committed_progress.append(counts)
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success is False
+    assert result.errors == ["Cancelled"]
+    assert result.stockRowsAppended == 7
+    assert result.affectedStockCodes == 2
+    assert result.stockCodesReplaced == 2
+    assert result.stockRowsReplaced == 5
+    assert committed_progress == [(7, 2, 2, 5)]
+
+
+@pytest.mark.asyncio
 async def test_incremental_sync_reports_stock_recomputation_failure_separately(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

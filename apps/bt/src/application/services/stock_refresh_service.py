@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Any, Protocol, cast
+from typing import Any, Protocol, TypeVar, cast
 
 from loguru import logger
 
@@ -65,6 +65,23 @@ class StockRefreshTimeSeriesStoreLike(Protocol):
     def index_stock_data(self) -> None: ...
 
 
+_T = TypeVar("_T")
+
+
+async def _to_thread_joined_with_cancellation(
+    function: Callable[..., _T], /, *args: Any
+) -> tuple[_T, asyncio.CancelledError | None]:
+    """Join a mutating worker and return any cancellation deferred while joining."""
+    worker = asyncio.create_task(asyncio.to_thread(function, *args))
+    deferred_cancellation: asyncio.CancelledError | None = None
+    while not worker.done():
+        try:
+            await asyncio.shield(worker)
+        except asyncio.CancelledError as exc:
+            deferred_cancellation = deferred_cancellation or exc
+    return worker.result(), deferred_cancellation
+
+
 async def _fetch_complete_provider_window(
     client: StockRefreshClientLike,
     *,
@@ -104,6 +121,7 @@ async def refresh_stocks(
     errors: list[str] = []
     any_rows_published = False
     cancelled = False
+    deferred_cancellation: asyncio.CancelledError | None = None
     unique_codes = list(
         dict.fromkeys(
             normalized for code in codes if (normalized := normalize_stock_code(code))
@@ -214,12 +232,14 @@ async def refresh_stocks(
                         PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
                     ),
                 }
-                mutation = await asyncio.to_thread(
-                    time_series_store.replace_stock_provider_window,
-                    normalized,
-                    rows,
-                    coverage,
-                    metadata,
+                mutation, replacement_cancellation = (
+                    await _to_thread_joined_with_cancellation(
+                        time_series_store.replace_stock_provider_window,
+                        normalized,
+                        rows,
+                        coverage,
+                        metadata,
+                    )
                 )
                 stored = mutation.mutated_rows
                 if mutation.mutated_rows or time_series_store.has_pending_index(
@@ -262,6 +282,10 @@ async def refresh_stocks(
                     total_codes,
                     f"Refreshed stock {index}/{total_codes}: {normalized}",
                 )
+            if replacement_cancellation is not None:
+                cancelled = True
+                deferred_cancellation = replacement_cancellation
+                break
         except Exception as e:
             logger.warning(f"Refresh failed for {code}: {e}")
             errors.append(f"{code}: {e}")
@@ -280,13 +304,18 @@ async def refresh_stocks(
                 )
 
     if any_rows_published:
-        await asyncio.to_thread(time_series_store.index_stock_data)
+        _, index_cancellation = await _to_thread_joined_with_cancellation(
+            time_series_store.index_stock_data
+        )
+        if index_cancellation is not None:
+            cancelled = True
+            deferred_cancellation = deferred_cancellation or index_cancellation
     if cancelled:
         errors.append("Cancelled")
 
     now_iso = datetime.now(UTC).isoformat()
 
-    return RefreshResponse(
+    response = RefreshResponse(
         totalStocks=total_codes,
         successCount=sum(1 for r in results if r.success),
         failedCount=sum(1 for r in results if not r.success),
@@ -296,3 +325,10 @@ async def refresh_stocks(
         errors=errors,
         lastUpdated=now_iso,
     )
+    if deferred_cancellation is not None:
+        deferred_cancellation.add_note(
+            "Stock refresh cancellation propagated after committed work was finalized"
+        )
+        setattr(deferred_cancellation, "response", response)
+        raise deferred_cancellation
+    return response

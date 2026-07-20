@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import threading
+import time
 from typing import Any
 
 import pytest
@@ -71,6 +74,43 @@ class DummyIndexFailingTimeSeriesStore(DummyTimeSeriesStore):
     def index_stock_data(self) -> None:
         self.index_calls += 1
         raise RuntimeError("index failed")
+
+
+class BlockingReplacementTimeSeriesStore(DummyTimeSeriesStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.replacement_started = threading.Event()
+        self.release_replacement = threading.Event()
+        self.replacement_completed = threading.Event()
+
+    def replace_stock_provider_window(
+        self,
+        code: str,
+        rows: list[dict[str, Any]],
+        coverage: dict[str, str],
+        metadata: dict[str, str],
+    ) -> SemanticDeltaResult:
+        self.replacement_started.set()
+        if not self.release_replacement.wait(timeout=2):
+            raise TimeoutError("replacement test worker was not released")
+        mutation = super().replace_stock_provider_window(code, rows, coverage, metadata)
+        self.replacement_completed.set()
+        return mutation
+
+
+class BlockingIndexTimeSeriesStore(DummyTimeSeriesStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.index_started = threading.Event()
+        self.release_index = threading.Event()
+        self.index_completed = threading.Event()
+
+    def index_stock_data(self) -> None:
+        self.index_started.set()
+        if not self.release_index.wait(timeout=2):
+            raise TimeoutError("index test worker was not released")
+        super().index_stock_data()
+        self.index_completed.set()
 
 
 class DummyJQuantsClient:
@@ -670,6 +710,98 @@ async def test_refresh_stocks_propagates_index_failure_after_commit() -> None:
 
     assert len(store.replacements) == 1
     assert store.index_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_refresh_stocks_cancellation_joins_committing_replacement() -> None:
+    store = BlockingReplacementTimeSeriesStore()
+    client = DummyJQuantsClient(
+        rows=[{"Code": "72030", "Date": "2026-02-10", "O": 10, "H": 12, "L": 9, "C": 11, "Vo": 1000}]
+    )
+    task = asyncio.create_task(refresh_stocks(["7203"], DummyMarketDb(), store, client))
+    assert await asyncio.to_thread(store.replacement_started.wait, 1)
+
+    task.cancel()
+    await asyncio.sleep(0.02)
+    try:
+        assert not task.done()
+        assert not store.replacement_completed.is_set()
+    finally:
+        store.release_replacement.set()
+
+    with pytest.raises(asyncio.CancelledError) as cancelled:
+        await task
+
+    assert store.replacement_completed.is_set()
+    response = getattr(cancelled.value, "response", None)
+    assert response is not None
+    assert response.successCount == 1
+    assert response.totalRecordsStored == 1
+    terminal_snapshot = (len(store.rows), len(store.replacements), store.index_calls)
+    await asyncio.sleep(0.02)
+    assert (len(store.rows), len(store.replacements), store.index_calls) == terminal_snapshot
+
+
+@pytest.mark.asyncio
+async def test_refresh_stocks_timeout_joins_committing_replacement() -> None:
+    store = BlockingReplacementTimeSeriesStore()
+    client = DummyJQuantsClient(
+        rows=[{"Code": "72030", "Date": "2026-02-10", "O": 10, "H": 12, "L": 9, "C": 11, "Vo": 1000}]
+    )
+
+    async def _release_worker() -> None:
+        assert await asyncio.to_thread(store.replacement_started.wait, 1)
+        await asyncio.sleep(0.05)
+        store.release_replacement.set()
+
+    release_task = asyncio.create_task(_release_worker())
+    started_at = time.monotonic()
+    terminal_elapsed = 0.0
+    try:
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(
+                refresh_stocks(["7203"], DummyMarketDb(), store, client),
+                timeout=0.01,
+            )
+        terminal_elapsed = time.monotonic() - started_at
+    finally:
+        await release_task
+
+    assert terminal_elapsed >= 0.04
+    assert store.replacement_completed.is_set()
+    terminal_snapshot = (len(store.rows), len(store.replacements), store.index_calls)
+    await asyncio.sleep(0.02)
+    assert (len(store.rows), len(store.replacements), store.index_calls) == terminal_snapshot
+
+
+@pytest.mark.asyncio
+async def test_refresh_stocks_cancellation_joins_stock_index() -> None:
+    store = BlockingIndexTimeSeriesStore()
+    client = DummyJQuantsClient(
+        rows=[{"Code": "72030", "Date": "2026-02-10", "O": 10, "H": 12, "L": 9, "C": 11, "Vo": 1000}]
+    )
+    task = asyncio.create_task(refresh_stocks(["7203"], DummyMarketDb(), store, client))
+    assert await asyncio.to_thread(store.index_started.wait, 1)
+
+    task.cancel()
+    await asyncio.sleep(0.02)
+    try:
+        assert not task.done()
+        assert not store.index_completed.is_set()
+    finally:
+        store.release_index.set()
+
+    with pytest.raises(asyncio.CancelledError) as cancelled:
+        await task
+
+    assert store.index_completed.is_set()
+    response = getattr(cancelled.value, "response", None)
+    assert response is not None
+    assert response.successCount == 1
+    assert response.totalRecordsStored == 1
+    terminal_snapshot = (len(store.rows), len(store.replacements), store.index_calls)
+    await asyncio.sleep(0.02)
+    assert (len(store.rows), len(store.replacements), store.index_calls) == terminal_snapshot
 
 
 @pytest.mark.asyncio

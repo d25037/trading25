@@ -156,6 +156,28 @@ class StockDataIngestionSession:
                     progress_callback=_on_refresh_progress,
                     cancel_check=ctx.cancelled.is_set,
                 )
+            except asyncio.CancelledError as exc:
+                response = getattr(exc, "response", None)
+                if response is None:
+                    await sync_publish_helpers._discard_staged_stock_data_rows(ctx)
+                    raise
+                successful_codes = frozenset(
+                    result.code for result in response.results if result.success
+                )
+                if successful_codes:
+                    self._record_committed_outcome(
+                        ctx,
+                        StockDataCommitOutcome(
+                            api_calls=response.totalApiCalls,
+                            affected_codes=successful_codes,
+                            replaced_codes=response.successCount,
+                            replaced_rows=response.totalRecordsStored,
+                        ),
+                    )
+                await sync_publish_helpers._discard_staged_stock_data_rows(ctx)
+                self._committed = bool(successful_codes)
+                self._finalized = True
+                raise
             except BaseException:
                 await sync_publish_helpers._discard_staged_stock_data_rows(ctx)
                 raise
