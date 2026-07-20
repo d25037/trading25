@@ -6,7 +6,6 @@ from typing import Any
 
 from src.infrastructure.db.market.query_helpers import (
     normalize_stock_code,
-    stock_code_query_candidates,
 )
 
 
@@ -17,57 +16,6 @@ CASE
     ELSE code
 END
 """
-
-
-def list_adjustment_materialization_codes(fetchall: Any) -> list[str]:
-    rows = fetchall(
-        f"""
-        SELECT normalized_code
-        FROM (
-            SELECT {_NORMALIZED_CODE_SQL} AS normalized_code
-            FROM stock_data_raw
-            UNION
-            SELECT {_NORMALIZED_CODE_SQL} AS normalized_code
-            FROM stock_adjustment_bases
-        ) AS materialization_codes
-        WHERE normalized_code IS NOT NULL AND normalized_code <> ''
-        ORDER BY normalized_code
-        """
-    )
-    return [str(row[0]) for row in rows]
-
-
-def load_raw_adjustment_points(
-    fetchall_dicts: Any,
-    codes: list[str] | None = None,
-) -> list[dict[str, Any]]:
-    normalized_codes = sorted({normalize_stock_code(code) for code in codes or []})
-    source_where = ""
-    params: list[Any] = []
-    if normalized_codes:
-        query_codes = stock_code_query_candidates(normalized_codes)
-        placeholders = ", ".join("?" for _ in query_codes)
-        source_where = f"WHERE code IN ({placeholders})"
-        params.extend(query_codes)
-    return fetchall_dicts(
-        f"""
-        WITH source AS (
-            SELECT code, date, adjustment_factor
-            FROM stock_data_raw
-            {source_where}
-        ),
-        raw_points AS (
-            SELECT {_NORMALIZED_CODE_SQL} AS normalized_code,
-                   date,
-                   adjustment_factor
-            FROM source
-        )
-        SELECT normalized_code AS code, date, adjustment_factor
-        FROM raw_points
-        ORDER BY normalized_code, date
-        """,
-        params,
-    )
 
 
 def get_ready_adjustment_basis(
@@ -97,23 +45,6 @@ def get_ready_adjustment_basis(
         ],
     )
     return rows[0] if len(rows) == 1 else None
-
-
-def get_adjustment_basis_segments(
-    fetchall_dicts: Any,
-    code: str,
-    basis_id: str,
-) -> list[dict[str, Any]]:
-    return fetchall_dicts(
-        """
-        SELECT code, basis_id, source_date_from, source_date_to_exclusive,
-               cumulative_factor
-        FROM stock_adjustment_basis_segments
-        WHERE code = ? AND basis_id = ?
-        ORDER BY source_date_from
-        """,
-        [normalize_stock_code(code), basis_id],
-    )
 
 
 def get_basis_adjusted_stock_data(

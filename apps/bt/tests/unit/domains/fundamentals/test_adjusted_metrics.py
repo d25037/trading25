@@ -2,9 +2,7 @@ import pytest
 
 from src.domains.fundamentals.adjusted_metrics import (
     AdjustedStatementInput,
-    DailyValuationInput,
     build_adjusted_statement_metric,
-    build_daily_valuation_metric,
 )
 from src.shared.utils.share_adjustment import ShareAdjustmentEvent
 
@@ -163,41 +161,3 @@ def test_share_count_change_without_adjustment_event_does_not_adjust_values() ->
     assert metric.adjusted_dividend_fy == pytest.approx(30.0)
     assert metric.adjusted_shares_outstanding == pytest.approx(10_000_000.0)
     assert metric.adjustment_factor_cumulative == pytest.approx(1.0)
-
-
-def test_daily_valuation_keeps_negative_values_but_ratios_are_undefined() -> None:
-    valuation = build_daily_valuation_metric(
-        DailyValuationInput(
-            code="9999",
-            date="2024-12-30",
-            price_basis_date="2024-12-30",
-            close=500.0,
-            eps=-10.0,
-            bps=0.0,
-            forward_eps=None,
-            sales=200_000_000.0,
-            forward_sales=250_000_000.0,
-            operating_profit=-100_000_000.0,
-            forward_operating_profit=None,
-            shares_outstanding=1_000_000.0,
-            treasury_shares=100_000.0,
-            statement_disclosed_date="2024-05-10",
-            forward_eps_disclosed_date=None,
-            forward_eps_source=None,
-            forward_sales_disclosed_date="2024-05-10",
-            forward_sales_source="fy",
-            basis_version="adjusted-v1:2024-12-30",
-        )
-    )
-
-    assert valuation.eps == -10.0
-    assert valuation.bps == 0.0
-    assert valuation.per is None
-    assert valuation.pbr is None
-    assert valuation.forward_per is None
-    assert valuation.psr == pytest.approx(2.5)
-    assert valuation.forward_psr == pytest.approx(2.0)
-    assert valuation.p_op is None
-    assert valuation.forward_p_op is None
-    assert valuation.market_cap == pytest.approx(500_000_000.0)
-    assert valuation.free_float_market_cap == pytest.approx(450_000_000.0)

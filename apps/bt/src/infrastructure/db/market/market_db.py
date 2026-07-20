@@ -13,7 +13,6 @@ import threading
 from pathlib import Path
 from typing import Any, cast
 
-from src.infrastructure.db.market import adjustment_basis_queries as _adjustment_basis_queries
 from src.infrastructure.db.market import metadata_writers as _metadata_writers
 from src.infrastructure.db.market import stock_master_writers as _stock_master_writers
 from src.infrastructure.db.market import technical_metric_writers as _technical_metric_writers
@@ -295,62 +294,6 @@ class MarketDb:
             [key],
         )
         return str(row[0]) if row and row[0] is not None else None
-
-    def load_raw_adjustment_points(
-        self,
-        codes: list[str] | None = None,
-    ) -> list[dict[str, Any]]:
-        """Load normalized raw adjustment facts from ``stock_data_raw`` only."""
-        return _adjustment_basis_queries.load_raw_adjustment_points(
-            self._fetchall_dicts,
-            codes,
-        )
-
-    def list_adjustment_materialization_codes(self) -> list[str]:
-        """Enumerate normalized raw/catalog codes without loading raw rows."""
-        return _adjustment_basis_queries.list_adjustment_materialization_codes(
-            self._fetchall
-        )
-
-    def get_ready_adjustment_basis(
-        self,
-        code: str,
-        effective_market_date: str,
-    ) -> dict[str, Any] | None:
-        """Resolve a ready basis by containing interval and coverage frontier."""
-        return _adjustment_basis_queries.get_ready_adjustment_basis(
-            self._fetchall_dicts,
-            code,
-            effective_market_date,
-        )
-
-    def get_adjustment_basis_segments(
-        self,
-        code: str,
-        basis_id: str,
-    ) -> list[dict[str, Any]]:
-        return _adjustment_basis_queries.get_adjustment_basis_segments(
-            self._fetchall_dicts,
-            code,
-            basis_id,
-        )
-
-    def get_basis_adjusted_stock_data(
-        self,
-        code: str,
-        basis_id: str,
-        *,
-        start: str | None = None,
-        end: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """Project basis-adjusted OHLCV exclusively from raw prices and segments."""
-        return _adjustment_basis_queries.get_basis_adjusted_stock_data(
-            self._fetchall_dicts,
-            code,
-            basis_id,
-            start=start,
-            end=end,
-        )
 
     def get_latest_trading_date(self) -> str | None:
         """topix_data の最新取引日を取得。"""

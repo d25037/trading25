@@ -23,6 +23,17 @@ STANDALONE_ADJUSTED_WRITERS = {
     "upsert_daily_valuation",
     "upsert_daily_valuation_from_adjusted_metrics",
 }
+LEGACY_MARKET_BASIS_READERS = {
+    "get_ready_adjustment_basis",
+    "get_adjustment_basis_segments",
+    "get_basis_adjusted_stock_data",
+    "load_raw_adjustment_points",
+    "list_adjustment_materialization_codes",
+}
+DEAD_DAILY_VALUATION_DOMAIN_TYPES = {
+    "DailyValuationInput",
+    "DailyValuationMetric",
+}
 ALLOWED_DATASET_WRITER_CALLS = {
     Path("infrastructure/db/dataset_io/dataset_writer.py"): {
         "upsert_stock_data",
@@ -57,6 +68,10 @@ def _module_functions(path: Path) -> set[str]:
         for node in _tree(path).body
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
     }
+
+
+def _module_classes(path: Path) -> set[str]:
+    return {node.name for node in _tree(path).body if isinstance(node, ast.ClassDef)}
 
 
 def _imported_names(path: Path, module: str) -> set[str]:
@@ -247,3 +262,24 @@ def test_current_basis_writer_has_no_retained_lineage_validation_dependency() ->
 
     assert removed.isdisjoint(_imported_names(path, module))
     assert removed.isdisjoint(_called_names(path))
+
+
+def test_market_db_has_no_archived_adjustment_basis_query_surface() -> None:
+    path = MARKET_ROOT / "market_db.py"
+    methods = _class_methods(path, "MarketDb")
+
+    assert LEGACY_MARKET_BASIS_READERS.isdisjoint(methods)
+    assert "adjustment_basis_queries" not in _imported_names(
+        path, "src.infrastructure.db.market"
+    )
+    assert _module_functions(MARKET_ROOT / "adjustment_basis_queries.py") == {
+        "get_ready_adjustment_basis",
+        "get_basis_adjusted_stock_data",
+    }
+
+
+def test_adjusted_metrics_domain_has_no_dead_daily_valuation_builder() -> None:
+    path = SRC_ROOT / "domains" / "fundamentals" / "adjusted_metrics.py"
+
+    assert DEAD_DAILY_VALUATION_DOMAIN_TYPES.isdisjoint(_module_classes(path))
+    assert "build_daily_valuation_metric" not in _module_functions(path)

@@ -3,20 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
-
-from src.domains.fundamentals.valuation_primitives import (
-    market_cap_from_price_and_shares,
-    valuation_ratio,
-)
 from src.shared.utils.share_adjustment import (
     ShareAdjustmentEvent,
     adjust_share_count_to_price_basis,
     cumulative_adjustment_factor_after,
 )
-
-
-ForwardEpsSource = Literal["revised", "fy"]
 
 
 @dataclass(frozen=True)
@@ -64,57 +55,6 @@ class AdjustedStatementMetric:
     adjusted_treasury_shares: float | None
     adjustment_factor_cumulative: float
     source_fingerprint: str
-
-
-@dataclass(frozen=True)
-class DailyValuationInput:
-    code: str
-    date: str
-    price_basis_date: str
-    close: float
-    eps: float | None
-    bps: float | None
-    forward_eps: float | None
-    sales: float | None
-    forward_sales: float | None
-    operating_profit: float | None
-    forward_operating_profit: float | None
-    shares_outstanding: float | None
-    treasury_shares: float | None
-    statement_disclosed_date: str | None
-    forward_eps_disclosed_date: str | None
-    forward_eps_source: ForwardEpsSource | None
-    forward_sales_disclosed_date: str | None
-    forward_sales_source: ForwardEpsSource | None
-    basis_version: str
-
-
-@dataclass(frozen=True)
-class DailyValuationMetric:
-    code: str
-    date: str
-    price_basis_date: str
-    close: float
-    eps: float | None
-    bps: float | None
-    forward_eps: float | None
-    per: float | None
-    forward_per: float | None
-    sales: float | None
-    forward_sales: float | None
-    psr: float | None
-    forward_psr: float | None
-    p_op: float | None
-    forward_p_op: float | None
-    pbr: float | None
-    market_cap: float | None
-    free_float_market_cap: float | None
-    statement_disclosed_date: str | None
-    forward_eps_disclosed_date: str | None
-    forward_eps_source: ForwardEpsSource | None
-    forward_sales_disclosed_date: str | None
-    forward_sales_source: ForwardEpsSource | None
-    basis_version: str
 
 
 def build_adjusted_statement_metric(
@@ -183,61 +123,7 @@ def build_adjusted_statement_metric(
     )
 
 
-def build_daily_valuation_metric(
-    valuation: DailyValuationInput,
-) -> DailyValuationMetric:
-    free_float_shares = _free_float_shares(
-        valuation.shares_outstanding,
-        valuation.treasury_shares,
-    )
-    market_cap = market_cap_from_price_and_shares(
-        valuation.close,
-        valuation.shares_outstanding,
-    )
-    return DailyValuationMetric(
-        code=valuation.code,
-        date=valuation.date,
-        price_basis_date=valuation.price_basis_date,
-        close=valuation.close,
-        eps=valuation.eps,
-        bps=valuation.bps,
-        forward_eps=valuation.forward_eps,
-        per=valuation_ratio(valuation.close, valuation.eps),
-        forward_per=valuation_ratio(valuation.close, valuation.forward_eps),
-        sales=valuation.sales,
-        forward_sales=valuation.forward_sales,
-        psr=valuation_ratio(market_cap, valuation.sales),
-        forward_psr=valuation_ratio(market_cap, valuation.forward_sales),
-        p_op=valuation_ratio(market_cap, valuation.operating_profit),
-        forward_p_op=valuation_ratio(market_cap, valuation.forward_operating_profit),
-        pbr=valuation_ratio(valuation.close, valuation.bps),
-        market_cap=market_cap,
-        free_float_market_cap=market_cap_from_price_and_shares(
-            valuation.close,
-            free_float_shares,
-        ),
-        statement_disclosed_date=valuation.statement_disclosed_date,
-        forward_eps_disclosed_date=valuation.forward_eps_disclosed_date,
-        forward_eps_source=valuation.forward_eps_source,
-        forward_sales_disclosed_date=valuation.forward_sales_disclosed_date,
-        forward_sales_source=valuation.forward_sales_source,
-        basis_version=valuation.basis_version,
-    )
-
-
 def _adjust_per_share_value(value: float | None, adjustment_factor: float) -> float | None:
     if value is None:
         return None
     return value * adjustment_factor
-
-
-def _free_float_shares(
-    shares_outstanding: float | None,
-    treasury_shares: float | None,
-) -> float | None:
-    if shares_outstanding is None:
-        return None
-    if treasury_shares is None:
-        return shares_outstanding
-    free_float = shares_outstanding - treasury_shares
-    return free_float if free_float > 0 else None
