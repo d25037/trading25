@@ -291,6 +291,11 @@ def test_relation_and_request_identifiers_are_validated() -> None:
     with pytest.raises(ValueError, match="namespace"):
         _request("Unsafe-Namespace")
 
+    with pytest.raises(ValueError, match="required_valid_sessions"):
+        replace(_request("too_short_history"), required_valid_sessions=504)
+    with pytest.raises(TypeError, match="required_valid_sessions"):
+        replace(_request("boolean_history"), required_valid_sessions=True)
+
 
 def test_deprecated_bridge_is_explicit_and_does_not_import_ranking_color() -> None:
     assert DAILY_RANKING_RESEARCH_BRIDGE_DEPRECATED is True
@@ -529,6 +534,36 @@ def test_typed_base_resolves_504d_warmup_from_sparse_valid_market_sessions(
         )
 
         assert snapshot("sparse_sessions_after") == baseline
+    finally:
+        conn.close()
+
+
+def test_typed_base_honors_large_custom_required_valid_session_window(
+    tmp_path: Path,
+) -> None:
+    sparse_dates = tuple(
+        (pd.Timestamp("2018-01-01") + pd.Timedelta(days=offset * 2)).date()
+        for offset in range(601)
+    )
+    conn = _build_market_v4_research_fixture(
+        tmp_path / "large-window-market.duckdb",
+        session_dates=sparse_dates,
+    )
+    request = DailyRankingPanelRequest(
+        namespace="large_required_history",
+        analysis_start_date=sparse_dates[600],
+        analysis_end_date=sparse_dates[600],
+        horizons=(2,),
+        market_scopes=("prime",),
+        include_liquidity=False,
+        percentile_features=(),
+        required_valid_sessions=600,
+    )
+
+    try:
+        relations = build_daily_ranking_research_base(conn, request)
+        assert relations.diagnostics.query_start_date == sparse_dates[1]
+        assert relations.price_history.row_count == 1_200
     finally:
         conn.close()
 

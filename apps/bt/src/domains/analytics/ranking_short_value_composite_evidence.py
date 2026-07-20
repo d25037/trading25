@@ -41,7 +41,10 @@ from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
     open_readonly_analysis_connection,
 )
-from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    write_research_bundle,
+)
 
 RANKING_SHORT_VALUE_COMPOSITE_EXPERIMENT_ID = (
     "market-behavior/ranking-short-value-composite-evidence"
@@ -257,7 +260,11 @@ def run_ranking_short_value_composite_evidence_research(
         )
         sma_features = build_sma_features(
             ctx.connection,
-            SmaFeaturesRequest(source=signal_source, namespace="short_value_sma"),
+            SmaFeaturesRequest(
+                source=signal_source,
+                price_history=relations.price_history,
+                namespace="short_value_sma",
+            ),
         )
         composed = compose_daily_ranking_signal_features(
             ctx.connection,
@@ -402,7 +409,9 @@ def build_summary_markdown(result: RankingShortValueCompositeEvidenceResult) -> 
 def _assert_required_tables(conn: Any) -> None:
     missing = [table for table in _REQUIRED_TABLES if not table_exists(conn, table)]
     if missing:
-        raise ValueError(f"market.duckdb is missing required tables: {', '.join(missing)}")
+        raise ValueError(
+            f"market.duckdb is missing required tables: {', '.join(missing)}"
+        )
 
 
 def _create_short_value_composite_panel(conn: Any, *, source_name: str) -> None:

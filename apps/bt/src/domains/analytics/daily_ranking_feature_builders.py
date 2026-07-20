@@ -22,6 +22,7 @@ from src.domains.analytics.daily_ranking_research_base import (
 )
 from src.domains.analytics.daily_ranking_event_time_prices import (
     DAILY_RANKING_VALID_RAW_BAR_PRICE_COLUMNS,
+    daily_ranking_valid_raw_bar_sql,
 )
 from src.domains.analytics.readonly_duckdb_support import normalize_code_sql
 from src.domains.analytics.trend_slope_features import rolling_log_slope_features
@@ -70,6 +71,7 @@ class PsrFeaturesRequest:
 @dataclass(frozen=True)
 class SmaFeaturesRequest:
     source: RelationRef
+    price_history: RelationRef
     namespace: str
 
 
@@ -109,6 +111,20 @@ class RollingTrendFeaturesRequest:
             raise ValueError(
                 "rolling trend features require windows=(20, 60), lags=(5, 20)"
             )
+
+
+@dataclass(frozen=True)
+class RollingAtrFeaturesRequest:
+    source: RelationRef
+    price_history: RelationRef
+    namespace: str
+    windows: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        windows = tuple(sorted({int(value) for value in self.windows}))
+        if not windows or any(window <= 1 for window in windows):
+            raise ValueError("rolling ATR windows must contain integers greater than 1")
+        object.__setattr__(self, "windows", windows)
 
 
 _ATR_SCHEMA: RelationSchema = (
@@ -664,27 +680,51 @@ def build_sma_features(conn: Any, request: SmaFeaturesRequest) -> RelationRef:
     """Build the shared SMA5 count, deviation, and below-streak primitives."""
 
     source = request.source
-    validate_daily_ranking_signal_relation(conn, source, required_columns=("close",))
-    partition = ", ".join(
-        f"source.{column}" for column in source.key_columns if column != "date"
+    history = request.price_history
+    validate_daily_ranking_signal_relation(
+        conn,
+        source,
+        required_columns=("code", "date", "price_basis_id"),
     )
+    validate_daily_ranking_price_history_relation(conn, history, authority=source)
+    missing_signal_key = conn.execute(
+        f"""
+        SELECT source.code, source.date, source.price_basis_id
+        FROM {source.name} source
+        LEFT JOIN {history.name} history
+          ON history.code = source.code
+         AND history.date = source.date
+         AND history.price_basis_id = source.price_basis_id
+        WHERE history.code IS NULL
+        LIMIT 1
+        """
+    ).fetchone()
+    if missing_signal_key is not None:
+        raise RuntimeError(
+            "price history is missing an exact signal-date basis key: "
+            f"code={missing_signal_key[0]}, date={missing_signal_key[1]}, "
+            f"price_basis_id={missing_signal_key[2]}"
+        )
+    valid_bar = daily_ranking_valid_raw_bar_sql("history")
     ctes = f"""
         valid_prices AS (
-            SELECT source.*
-            FROM {source.name} source
-            WHERE source.close > 0 AND isfinite(source.close)
+            SELECT history.*
+            FROM {history.name} history
+            WHERE {valid_bar}
         ),
         sma_base AS (
-            SELECT source.*,
-                   avg(source.close) OVER (
-                       PARTITION BY {partition} ORDER BY source.date
+            SELECT history.*,
+                   avg(history.close) OVER (
+                       PARTITION BY history.code, history.price_basis_id
+                       ORDER BY history.date
                        ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
                    ) AS sma5,
-                   count(source.close) OVER (
-                       PARTITION BY {partition} ORDER BY source.date
+                   count(history.close) OVER (
+                       PARTITION BY history.code, history.price_basis_id
+                       ORDER BY history.date
                        ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
                    ) AS sma5_sessions
-            FROM valid_prices source
+            FROM valid_prices history
         ),
         flags AS (
             SELECT *,
@@ -697,31 +737,22 @@ def build_sma_features(conn: Any, request: SmaFeaturesRequest) -> RelationRef:
         counted AS (
             SELECT *,
                    sum(below_flag) OVER (
-                       PARTITION BY {partition.replace("source.", "")} ORDER BY date
+                       PARTITION BY code, price_basis_id ORDER BY date
                        ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
                    ) AS below_count_3d,
                    count(below_flag) OVER (
-                       PARTITION BY {partition.replace("source.", "")} ORDER BY date
+                       PARTITION BY code, price_basis_id ORDER BY date
                        ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
                    ) AS below_sessions_3d,
                    sum(above_flag) OVER (
-                       PARTITION BY {partition.replace("source.", "")} ORDER BY date
+                       PARTITION BY code, price_basis_id ORDER BY date
                        ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
                    ) AS above_count_5d,
                    count(above_flag) OVER (
-                       PARTITION BY {partition.replace("source.", "")} ORDER BY date
+                       PARTITION BY code, price_basis_id ORDER BY date
                        ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
                    ) AS above_sessions_5d
             FROM flags
-        ),
-        featured AS (
-            SELECT source.*,
-                   counted.sma5, counted.sma5_sessions,
-                   counted.below_flag, counted.above_flag,
-                   counted.below_count_3d, counted.below_sessions_3d,
-                   counted.above_count_5d, counted.above_sessions_5d
-            FROM {source.name} source
-            LEFT JOIN counted USING ({", ".join(source.key_columns)})
         )
     """
     return _materialize(
@@ -730,8 +761,12 @@ def build_sma_features(conn: Any, request: SmaFeaturesRequest) -> RelationRef:
         namespace=request.namespace,
         family="sma",
         feature_schema=_SMA_SCHEMA,
-        source_sql="featured",
         ctes_sql=ctes,
+        joins_sql=(
+            "LEFT JOIN counted featured ON featured.code = source.code "
+            "AND featured.date = source.date "
+            "AND featured.price_basis_id = source.price_basis_id"
+        ),
         select_sql="""
                 CAST(CASE WHEN featured.sma5_sessions = 5 THEN featured.sma5 END
                      AS DOUBLE) AS sma5,
@@ -888,6 +923,116 @@ def build_rolling_trend_features(
         )
     finally:
         conn.unregister(registered_name)
+
+
+@_scoped_feature_builder
+def build_rolling_atr_features(
+    conn: Any,
+    request: RollingAtrFeaturesRequest,
+) -> RelationRef:
+    """Build arbitrary valid-session true-range windows from issued history."""
+
+    source = request.source
+    history = request.price_history
+    _validate_namespace(request.namespace)
+    validate_daily_ranking_signal_relation(
+        conn,
+        source,
+        required_columns=("code", "date", "price_basis_id"),
+    )
+    validate_daily_ranking_price_history_relation(conn, history, authority=source)
+    missing_signal_key = conn.execute(
+        f"""
+        SELECT source.code, source.date, source.price_basis_id
+        FROM {source.name} source
+        LEFT JOIN {history.name} history
+          ON history.code = source.code
+         AND history.date = source.date
+         AND history.price_basis_id = source.price_basis_id
+        WHERE history.code IS NULL
+        LIMIT 1
+        """
+    ).fetchone()
+    if missing_signal_key is not None:
+        raise RuntimeError(
+            "price history is missing an exact signal-date basis key: "
+            f"code={missing_signal_key[0]}, date={missing_signal_key[1]}, "
+            f"price_basis_id={missing_signal_key[2]}"
+        )
+
+    valid_bar = daily_ranking_valid_raw_bar_sql("history")
+    feature_schema: RelationSchema = tuple(
+        (column, sql_type)
+        for window in request.windows
+        for column, sql_type in (
+            (f"atr{window}", "DOUBLE"),
+            (f"atr{window}_sessions", "BIGINT"),
+        )
+    )
+    window_expressions = ",\n                   ".join(
+        expression
+        for window in request.windows
+        for expression in (
+            f"avg(true_range) OVER (PARTITION BY code, price_basis_id "
+            f"ORDER BY date ROWS BETWEEN {window - 1} PRECEDING AND CURRENT ROW) "
+            f"AS atr{window}",
+            f"count(true_range) OVER (PARTITION BY code, price_basis_id "
+            f"ORDER BY date ROWS BETWEEN {window - 1} PRECEDING AND CURRENT ROW) "
+            f"AS atr{window}_sessions",
+        )
+    )
+    ctes = f"""
+        valid_prices AS (
+            SELECT history.*
+            FROM {history.name} history
+            WHERE {valid_bar}
+        ),
+        lagged AS (
+            SELECT history.*,
+                   lag(history.close) OVER (
+                       PARTITION BY history.code, history.price_basis_id
+                       ORDER BY history.date
+                   ) AS prev_close
+            FROM valid_prices history
+        ),
+        true_ranges AS (
+            SELECT lagged.*,
+                   greatest(
+                       lagged.high - lagged.low,
+                       coalesce(abs(lagged.high - lagged.prev_close), 0.0),
+                       coalesce(abs(lagged.low - lagged.prev_close), 0.0)
+                   ) AS true_range
+            FROM lagged
+        ),
+        featured AS (
+            SELECT true_ranges.*, {window_expressions}
+            FROM true_ranges
+        )
+    """
+    return _materialize(
+        conn,
+        source=source,
+        namespace=request.namespace,
+        family="rolling_atr",
+        feature_schema=feature_schema,
+        ctes_sql=ctes,
+        joins_sql=(
+            "LEFT JOIN featured ON featured.code = source.code "
+            "AND featured.date = source.date "
+            "AND featured.price_basis_id = source.price_basis_id"
+        ),
+        select_sql=",\n                ".join(
+            f"CAST(CASE WHEN featured.atr{window}_sessions = {window} "
+            f"THEN featured.{column} END AS {sql_type}) AS {column}"
+            if column == f"atr{window}"
+            else f"CAST(featured.{column} AS {sql_type}) AS {column}"
+            for window in request.windows
+            for column, sql_type in (
+                (f"atr{window}", "DOUBLE"),
+                (f"atr{window}_sessions", "BIGINT"),
+            )
+        ),
+    )
 
 
 @_scoped_feature_builder

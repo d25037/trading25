@@ -490,6 +490,7 @@ class DailyRankingPanelRequest:
     market_scopes: tuple[MarketScope, ...]
     include_liquidity: bool = True
     percentile_features: tuple[DailyRankingPercentileFeature, ...] = ()
+    required_valid_sessions: int = _BASE_REQUIRED_VALID_SESSIONS
 
     def __post_init__(self) -> None:
         if not _NAMESPACE_RE.fullmatch(self.namespace) or len(self.namespace) > 48:
@@ -508,6 +509,15 @@ class DailyRankingPanelRequest:
             and self.analysis_start_date > self.analysis_end_date
         ):
             raise ValueError("analysis_start_date must not be after analysis_end_date")
+        if isinstance(self.required_valid_sessions, bool) or not isinstance(
+            self.required_valid_sessions, int
+        ):
+            raise TypeError("required_valid_sessions must be an integer")
+        if self.required_valid_sessions < _BASE_REQUIRED_VALID_SESSIONS:
+            raise ValueError(
+                f"required_valid_sessions must be at least "
+                f"{_BASE_REQUIRED_VALID_SESSIONS}"
+            )
         horizons = tuple(sorted({int(value) for value in self.horizons}))
         if not horizons or any(value <= 0 for value in horizons):
             raise ValueError("horizons must contain positive integers")
@@ -1668,6 +1678,7 @@ def _resolve_query_bounds(
         conn,
         analysis_start_date=request.analysis_start_date,
         market_codes=market_codes,
+        required_valid_sessions=request.required_valid_sessions,
     )
     return (
         query_start,
@@ -1682,6 +1693,7 @@ def _resolve_valid_session_query_start(
     *,
     analysis_start_date: date | None,
     market_codes: Sequence[str],
+    required_valid_sessions: int = _BASE_REQUIRED_VALID_SESSIONS,
 ) -> date | None:
     if analysis_start_date is None:
         return None
@@ -1709,7 +1721,7 @@ def _resolve_valid_session_query_start(
             SELECT date
             FROM valid_market_sessions
             ORDER BY date DESC
-            LIMIT {_BASE_REQUIRED_VALID_SESSIONS}
+            LIMIT {required_valid_sessions}
         )
         SELECT min(date) FROM required_history
         """,

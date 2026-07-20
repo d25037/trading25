@@ -521,6 +521,21 @@ def _rolling_source_and_history(
     return source, history
 
 
+def _reissue_relation(conn: Any, relation: RelationRef) -> RelationRef:
+    return _issue_relation_ref(
+        conn,
+        relation.name,
+        key_columns=relation.key_columns,
+        expected_schema=tuple(
+            zip(relation.columns, relation.column_types, strict=True)
+        ),
+        generation=relation.generation,
+        kind=relation.kind,
+        capability=relation._capability,
+        forbid_outcomes=True,
+    )
+
+
 def _assert_feature_contract(
     conn: Any, relation: RelationRef, source: RelationRef
 ) -> None:
@@ -593,6 +608,29 @@ def _public_long_leadership(
     )
 
 
+def _public_rolling_atr(
+    conn: Any,
+    source: RelationRef,
+    history: RelationRef,
+    *,
+    namespace: str,
+    windows: tuple[int, ...],
+) -> RelationRef:
+    request_type = getattr(feature_builders, "RollingAtrFeaturesRequest", None)
+    builder = getattr(feature_builders, "build_rolling_atr_features", None)
+    assert request_type is not None
+    assert builder is not None
+    return builder(
+        conn,
+        request_type(
+            source=source,
+            price_history=history,
+            namespace=namespace,
+            windows=windows,
+        ),
+    )
+
+
 def _long_leadership_rank_schema(
     windows: tuple[int, ...],
 ) -> tuple[tuple[str, str], ...]:
@@ -626,8 +664,17 @@ def test_all_public_builders_publish_generation_safe_explicit_signal_relations(
     psr = build_psr_features(
         conn, PsrFeaturesRequest(source=source, namespace="psr_case")
     )
+    sma_source, sma_history = _rolling_source_and_history(
+        conn,
+        first_signal_offset=0,
+    )
     sma = build_sma_features(
-        conn, SmaFeaturesRequest(source=source, namespace="sma_case")
+        conn,
+        SmaFeaturesRequest(
+            source=sma_source,
+            price_history=sma_history,
+            namespace="sma_case",
+        ),
     )
     roe = build_roe_features(
         conn, RoeFeaturesRequest(source=source, namespace="roe_case")
@@ -656,8 +703,9 @@ def test_all_public_builders_publish_generation_safe_explicit_signal_relations(
         ),
     )
 
-    for relation in (atr, sector, psr, sma, roe, short, leadership, long):
+    for relation in (atr, sector, psr, roe, short, leadership, long):
         _assert_feature_contract(conn, relation, source)
+    _assert_feature_contract(conn, sma, sma_source)
     for family, relation in (
         ("atr", atr),
         ("sector", sector),
@@ -671,11 +719,12 @@ def test_all_public_builders_publish_generation_safe_explicit_signal_relations(
         expected_schema = _EXPECTED_FEATURE_SCHEMAS[family]
         if family == "long_leadership":
             expected_schema += _long_leadership_rank_schema((20, 60))
+        relation_source = sma_source if family == "sma" else source
         assert (
             tuple(
                 zip(
-                    relation.columns[len(source.key_columns) :],
-                    relation.column_types[len(source.key_columns) :],
+                    relation.columns[len(relation_source.key_columns) :],
+                    relation.column_types[len(relation_source.key_columns) :],
                     strict=True,
                 )
             )
@@ -1140,6 +1189,329 @@ def test_rolling_trend_builder_rejects_forged_stale_and_wrong_connection(
     conn.execute(f"INSERT INTO {history.name} SELECT * FROM {history.name} LIMIT 1")
     with pytest.raises(RuntimeError, match="membership changed"):
         build_rolling_trend_features(conn, request(history))
+
+
+def test_sma_builder_uses_issued_history_warmup_for_one_signal_session(
+    feature_connection: Any,
+) -> None:
+    conn = feature_connection
+    source, history = _rolling_source_and_history(conn, first_signal_offset=60)
+    signal_date = date(2024, 3, 1)
+    conn.execute(f"DELETE FROM {source.name} WHERE date <> ?", [signal_date])
+    source = _reissue_relation(conn, source)
+
+    result = build_sma_features(
+        conn,
+        SmaFeaturesRequest(
+            source=source,
+            price_history=history,
+            namespace="sma_one_session",
+        ),
+    )
+
+    _assert_feature_contract(conn, result, source)
+    row = conn.execute(
+        f"SELECT sma5, sma5_deviation_pct, close_below_sma5_flag, "
+        f"close_below_sma5_count_3d, sma5_above_count_5d "
+        f"FROM {result.name} WHERE code = '1111'"
+    ).fetchone()
+    assert row == pytest.approx((158.0, (160.0 / 158.0 - 1.0) * 100.0, 0, 0, 5))
+
+
+@pytest.mark.parametrize(
+    ("column", "invalid_value"),
+    (
+        ("open", 0.0),
+        ("high", 0.0),
+        ("low", 0.0),
+        ("close", 0.0),
+        ("volume", -1.0),
+    ),
+)
+def test_sma_builder_excludes_canonical_invalid_bars_before_sparse_session_windows(
+    feature_connection: Any,
+    column: str,
+    invalid_value: float,
+) -> None:
+    conn = feature_connection
+    source, history = _rolling_source_and_history(conn, first_signal_offset=60)
+    signal_date = date(2024, 3, 1)
+    invalid_date = date(2024, 2, 28)
+    conn.execute(f"DELETE FROM {source.name} WHERE date <> ?", [signal_date])
+    conn.execute(
+        f"UPDATE {history.name} SET {column} = ? WHERE code = '1111' AND date = ?",
+        [invalid_value, invalid_date],
+    )
+    source = _reissue_relation(conn, source)
+    history = _reissue_relation(conn, history)
+
+    result = build_sma_features(
+        conn,
+        SmaFeaturesRequest(
+            source=source,
+            price_history=history,
+            namespace=f"sma_invalid_{column}",
+        ),
+    )
+    row = conn.execute(
+        f"SELECT sma5, sma5_deviation_pct, close_below_sma5_flag, "
+        f"close_below_sma5_count_3d, sma5_above_count_5d "
+        f"FROM {result.name} WHERE code = '1111'"
+    ).fetchone()
+
+    assert row == pytest.approx((157.4, (160.0 / 157.4 - 1.0) * 100.0, 0, 0, 5))
+
+
+def test_sma_builder_rejects_missing_exact_signal_history_key(
+    feature_connection: Any,
+) -> None:
+    conn = feature_connection
+    source, history = _rolling_source_and_history(conn, first_signal_offset=60)
+    missing_key = conn.execute(
+        f"SELECT code, date, price_basis_id FROM {source.name} LIMIT 1"
+    ).fetchone()
+    conn.execute(
+        f"DELETE FROM {history.name} WHERE code = ? AND date = ? "
+        "AND price_basis_id = ?",
+        list(missing_key),
+    )
+    history = _reissue_relation(conn, history)
+
+    with pytest.raises(RuntimeError, match="missing an exact signal-date basis key"):
+        build_sma_features(
+            conn,
+            SmaFeaturesRequest(
+                source=source,
+                price_history=history,
+                namespace="sma_missing_history",
+            ),
+        )
+
+
+def test_sma_builder_rejects_copied_cross_generation_and_wrong_connection_refs(
+    feature_connection: Any,
+) -> None:
+    conn = feature_connection
+    source, history = _rolling_source_and_history(conn)
+
+    def request(candidate: RelationRef) -> SmaFeaturesRequest:
+        return SmaFeaturesRequest(
+            source=source,
+            price_history=candidate,
+            namespace="sma_reject",
+        )
+
+    with pytest.raises(ValueError, match="generation/capability mismatch"):
+        build_sma_features(
+            conn,
+            request(replace(history, generation="feature_contract_g_other")),
+        )
+    with pytest.raises(ValueError, match="trusted relation registry"):
+        build_sma_features(conn, request(copy.copy(history)))
+    other = duckdb.connect(":memory:")
+    try:
+        with pytest.raises(ValueError, match="different DuckDB connection"):
+            build_sma_features(other, request(history))
+    finally:
+        other.close()
+
+
+def test_sma_builder_ignores_poisoned_stock_data_convenience_rows(
+    feature_connection: Any,
+) -> None:
+    conn = feature_connection
+    source, history = _rolling_source_and_history(conn, first_signal_offset=60)
+    before = build_sma_features(
+        conn,
+        SmaFeaturesRequest(
+            source=source,
+            price_history=history,
+            namespace="sma_poison_before",
+        ),
+    )
+    before_rows = _feature_rows(conn, before)
+    conn.execute("UPDATE stock_data SET close = close * 1000.0")
+    after = build_sma_features(
+        conn,
+        SmaFeaturesRequest(
+            source=source,
+            price_history=history,
+            namespace="sma_poison_after",
+        ),
+    )
+
+    assert _feature_rows(conn, after) == before_rows
+
+
+def test_rolling_atr_builder_uses_history_warmup_and_sorted_unique_windows(
+    feature_connection: Any,
+) -> None:
+    conn = feature_connection
+    source, history = _rolling_source_and_history(conn, first_signal_offset=60)
+    signal_date = date(2024, 3, 1)
+    conn.execute(f"DELETE FROM {source.name} WHERE date <> ?", [signal_date])
+    source = _reissue_relation(conn, source)
+
+    result = _public_rolling_atr(
+        conn,
+        source,
+        history,
+        namespace="rolling_atr_one_session",
+        windows=(20, 5, 20),
+    )
+
+    _assert_feature_contract(conn, result, source)
+    assert tuple(
+        zip(
+            result.columns[len(source.key_columns) :],
+            result.column_types[len(source.key_columns) :],
+            strict=True,
+        )
+    ) == (
+        ("atr5", "DOUBLE"),
+        ("atr5_sessions", "BIGINT"),
+        ("atr20", "DOUBLE"),
+        ("atr20_sessions", "BIGINT"),
+    )
+    assert conn.execute(
+        f"SELECT atr5, atr5_sessions, atr20, atr20_sessions FROM {result.name} "
+        "WHERE code = '1111'"
+    ).fetchone() == pytest.approx((1.0, 5, 1.0, 20))
+
+
+@pytest.mark.parametrize(
+    ("column", "invalid_value"),
+    (
+        ("open", 0.0),
+        ("high", 0.0),
+        ("low", 0.0),
+        ("close", 0.0),
+        ("volume", -1.0),
+    ),
+)
+def test_rolling_atr_builder_filters_invalid_bars_before_lag_and_window(
+    feature_connection: Any,
+    column: str,
+    invalid_value: float,
+) -> None:
+    conn = feature_connection
+    source, history = _rolling_source_and_history(conn, first_signal_offset=60)
+    signal_date = date(2024, 3, 1)
+    conn.execute(f"DELETE FROM {source.name} WHERE date <> ?", [signal_date])
+    conn.execute(
+        f"UPDATE {history.name} SET {column} = ? WHERE code = '1111' "
+        "AND date = DATE '2024-02-28'",
+        [invalid_value],
+    )
+    source = _reissue_relation(conn, source)
+    history = _reissue_relation(conn, history)
+
+    result = _public_rolling_atr(
+        conn,
+        source,
+        history,
+        namespace=f"rolling_atr_invalid_{column}",
+        windows=(5,),
+    )
+
+    assert conn.execute(
+        f"SELECT atr5, atr5_sessions FROM {result.name} WHERE code = '1111'"
+    ).fetchone() == pytest.approx((1.2, 5))
+
+
+def test_rolling_atr_builder_rejects_invalid_windows_and_missing_signal_key(
+    feature_connection: Any,
+) -> None:
+    conn = feature_connection
+    source, history = _rolling_source_and_history(conn)
+    request_type = getattr(feature_builders, "RollingAtrFeaturesRequest", None)
+    assert request_type is not None
+    for windows in ((), (1,), (0,), (-5,)):
+        with pytest.raises(ValueError, match="windows"):
+            request_type(
+                source=source,
+                price_history=history,
+                namespace="rolling_atr_invalid_windows",
+                windows=windows,
+            )
+
+    missing_key = conn.execute(
+        f"SELECT code, date, price_basis_id FROM {source.name} LIMIT 1"
+    ).fetchone()
+    conn.execute(
+        f"DELETE FROM {history.name} WHERE code = ? AND date = ? "
+        "AND price_basis_id = ?",
+        list(missing_key),
+    )
+    history = _reissue_relation(conn, history)
+    with pytest.raises(RuntimeError, match="missing an exact signal-date basis key"):
+        _public_rolling_atr(
+            conn,
+            source,
+            history,
+            namespace="rolling_atr_missing",
+            windows=(5,),
+        )
+
+
+def test_rolling_atr_builder_rejects_copied_cross_generation_and_wrong_connection(
+    feature_connection: Any,
+) -> None:
+    conn = feature_connection
+    source, history = _rolling_source_and_history(conn)
+    with pytest.raises(ValueError, match="generation/capability mismatch"):
+        _public_rolling_atr(
+            conn,
+            source,
+            replace(history, generation="feature_contract_g_other"),
+            namespace="rolling_atr_cross_generation",
+            windows=(5,),
+        )
+    with pytest.raises(ValueError, match="trusted relation registry"):
+        _public_rolling_atr(
+            conn,
+            source,
+            copy.copy(history),
+            namespace="rolling_atr_copied",
+            windows=(5,),
+        )
+    other = duckdb.connect(":memory:")
+    try:
+        with pytest.raises(ValueError, match="different DuckDB connection"):
+            _public_rolling_atr(
+                other,
+                source,
+                history,
+                namespace="rolling_atr_wrong_connection",
+                windows=(5,),
+            )
+    finally:
+        other.close()
+
+
+def test_rolling_atr_builder_ignores_poisoned_stock_data_rows(
+    feature_connection: Any,
+) -> None:
+    conn = feature_connection
+    source, history = _rolling_source_and_history(conn)
+    before = _public_rolling_atr(
+        conn,
+        source,
+        history,
+        namespace="rolling_atr_poison_before",
+        windows=(5, 20),
+    )
+    before_rows = _feature_rows(conn, before)
+    conn.execute("UPDATE stock_data SET open = 0, high = 0, low = 0, close = 0")
+    after = _public_rolling_atr(
+        conn,
+        source,
+        history,
+        namespace="rolling_atr_poison_after",
+        windows=(5, 20),
+    )
+
+    assert _feature_rows(conn, after) == before_rows
 
 
 def test_builders_reject_untrusted_stale_cross_generation_and_outcome_refs(
@@ -1635,9 +2007,14 @@ def test_sma_preserves_invalid_rows_and_requires_complete_valid_session_windows(
         f"UPDATE {_SOURCE_NAME} SET close = 0 "
         "WHERE code = '1111' AND date = DATE '2024-01-03'"
     )
-    source = _relation_ref(conn)
+    source, history = _rolling_source_and_history(conn, first_signal_offset=0)
     result = build_sma_features(
-        conn, SmaFeaturesRequest(source=source, namespace="sma_valid_sessions")
+        conn,
+        SmaFeaturesRequest(
+            source=source,
+            price_history=history,
+            namespace="sma_valid_sessions",
+        ),
     )
     feature_columns = result.columns[len(source.key_columns) :]
 
@@ -1944,10 +2321,14 @@ def test_sma_formulas_preserve_existing_rolling_definitions(
     feature_connection: Any,
 ) -> None:
     conn = feature_connection
-    source = _relation_ref(conn)
+    source, history = _rolling_source_and_history(conn, first_signal_offset=0)
     result = build_sma_features(
         conn,
-        SmaFeaturesRequest(source=source, namespace="sma_formula"),
+        SmaFeaturesRequest(
+            source=source,
+            price_history=history,
+            namespace="sma_formula",
+        ),
     )
     row = conn.execute(
         f"SELECT sma5, sma5_deviation_pct, sma5_above_count_5d, "
@@ -1961,14 +2342,21 @@ def test_sma_features_match_frozen_valid_session_golden_rows(
     feature_connection: Any,
 ) -> None:
     conn = feature_connection
-    source = _relation_ref(conn)
+    source, history = _rolling_source_and_history(conn, first_signal_offset=0)
     result = build_sma_features(
         conn,
-        SmaFeaturesRequest(source=source, namespace="sma_owner_parity"),
+        SmaFeaturesRequest(
+            source=source,
+            price_history=history,
+            namespace="sma_owner_parity",
+        ),
     )
     source_rows = conn.execute(
-        f"SELECT code, date, market_scope, close FROM {source.name} "
-        "ORDER BY code, date, market_scope"
+        f"SELECT source.code, source.date, source.market_scope, history.close "
+        f"FROM {source.name} source JOIN {history.name} history "
+        "ON history.code = source.code AND history.date = source.date "
+        "AND history.price_basis_id = source.price_basis_id "
+        "ORDER BY source.code, source.date, source.market_scope"
     ).fetchall()
     closes: dict[str, list[float]] = {}
     eligible_flags: dict[str, list[tuple[int, int]]] = {}
