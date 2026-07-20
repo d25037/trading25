@@ -677,7 +677,7 @@ wheels = [
 
 [[package]]
 name = "moomoo-api"
-version = "10.8.6808"
+version = "10.9.6908"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pandas" },
@@ -685,7 +685,7 @@ dependencies = [
     { name = "pycryptodome" },
     { name = "simplejson" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e3/ce/f45626f5e64e788372edcd4e6798f438583b200e429f01c5d8db57eca939/moomoo_api-10.8.6808.tar.gz", hash = "sha256:f144a21c7e928c90ab78ea6e06b6efb6f9fa4a9349aee9cd37e2fea0a4a4a219", size = 6408920, upload-time = "2026-06-25T08:31:00.216Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/49/3c/0789f8aa79a926719bd298bbf9cf192fa9bf73fbfe827480b648eb6004da/moomoo_api-10.9.6908.tar.gz", hash = "sha256:6df0370ed120ec6e9f0bf65576a07838a7d105bb91e3ebb929f496a096700304", size = 6429606, upload-time = "2026-07-15T07:59:40.292Z" }
 
 [[package]]
 name = "msgspec"
@@ -1559,7 +1559,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.139.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "loguru", specifier = ">=0.7.0" },
-    { name = "moomoo-api", specifier = ">=10.8.6808" },
+    { name = "moomoo-api", specifier = ">=10.9.6908" },
     { name = "numpy", specifier = ">=2.4.6" },
     { name = "optuna", specifier = ">=4.9.0" },
     { name = "pandas", specifier = ">=2.0.0" },
