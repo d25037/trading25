@@ -42,6 +42,7 @@ def test_build_stock_data_row_preserves_provider_raw_and_adjusted_fields() -> No
 def test_build_stock_data_row_keeps_raw_and_adjusted_ohlcv_separate() -> None:
     row = build_stock_data_row(
         {
+            "Code": "131A0",
             "Date": "2026-02-10",
             "AdjO": 201,
             "O": 100,
@@ -164,6 +165,48 @@ def test_build_stock_data_row_returns_none_for_invalid_code_or_date() -> None:
         )
         is None
     )
+    assert (
+        build_stock_data_row(
+            {
+                "Code": "72030",
+                "Date": "not-a-date",
+                "O": 1,
+                "H": 1,
+                "L": 1,
+                "C": 1,
+                "Vo": 1,
+                "Va": 1,
+                "AdjFactor": 1,
+                "AdjO": 1,
+                "AdjH": 1,
+                "AdjL": 1,
+                "AdjC": 1,
+                "AdjVo": 1,
+            }
+        )
+        is None
+    )
+
+
+def test_build_stock_data_row_rejects_payload_code_mismatch() -> None:
+    quote = {
+        "Code": "67580",
+        "Date": "2026-02-10",
+        "O": 100,
+        "H": 110,
+        "L": 90,
+        "C": 105,
+        "Vo": 1000,
+        "Va": 105_000,
+        "AdjFactor": 1.0,
+        "AdjO": 100,
+        "AdjH": 110,
+        "AdjL": 90,
+        "AdjC": 105,
+        "AdjVo": 1000,
+    }
+
+    assert build_stock_data_row(quote, normalized_code="7203") is None
     assert (
         build_stock_data_row(
             {"Code": "72030", "Date": None, "O": 1, "H": 1, "L": 1, "C": 1, "Vo": 1}

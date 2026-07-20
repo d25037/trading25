@@ -17,7 +17,7 @@ from src.application.services.provider_stock_window import (
     PROVIDER_DRIFT_COLUMNS,
     ProviderStockCoverage,
     ProviderStockMetadata,
-    provider_metadata_values,
+    provider_stock_source_fingerprint,
     validate_provider_stock_window,
 )
 from src.infrastructure.db.market.duckdb_connection import (
@@ -540,6 +540,18 @@ class DuckDbParquetTimeSeriesStore:
             )
             self._conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS stock_provider_windows (
+                    code TEXT PRIMARY KEY,
+                    coverage_start TEXT NOT NULL,
+                    coverage_end TEXT NOT NULL,
+                    provider_as_of TEXT NOT NULL,
+                    source_fingerprint TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            self._conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS stock_data (
                     code TEXT NOT NULL,
                     date TEXT NOT NULL,
@@ -886,9 +898,9 @@ class DuckDbParquetTimeSeriesStore:
         normalized_code, normalized_rows, normalized_coverage, normalized_metadata = (
             validate_provider_stock_window(code, rows, coverage, metadata)
         )
-        metadata_values = provider_metadata_values(
-            normalized_coverage, normalized_metadata
-        )
+        metadata_values = {
+            METADATA_KEYS["PROVIDER_PLAN"]: normalized_metadata.provider_plan
+        }
         if isinstance(metadata, dict):
             last_refresh = metadata.get(METADATA_KEYS["LAST_STOCKS_REFRESH"])
             if last_refresh is not None and str(last_refresh).strip():
@@ -962,6 +974,21 @@ class DuckDbParquetTimeSeriesStore:
                 for row in event_rows
             ]
             events_changed = existing_events != desired_events
+            desired_ledger = (
+                normalized_coverage.start,
+                normalized_coverage.end,
+                normalized_metadata.provider_as_of,
+                normalized_metadata.provider_source_fingerprint,
+            )
+            existing_ledger = self._conn.execute(
+                """
+                SELECT coverage_start, coverage_end, provider_as_of, source_fingerprint
+                FROM stock_provider_windows
+                WHERE code = ?
+                """,
+                [normalized_code],
+            ).fetchone()
+            ledger_changed = existing_ledger != desired_ledger
             existing_metadata = dict(
                 self._conn.execute(
                     "SELECT key, value FROM sync_metadata WHERE key IN ("
@@ -971,87 +998,127 @@ class DuckDbParquetTimeSeriesStore:
                 ).fetchall()
             )
             metadata_changed = existing_metadata != metadata_values
-            if not result.mutated_rows and not events_changed and not metadata_changed:
+            if (
+                not result.mutated_rows
+                and not events_changed
+                and not ledger_changed
+                and not metadata_changed
+            ):
                 return result
 
-            raw_dataframe = pd.DataFrame.from_records(
-                (
-                    {column: row.get(column) for column in raw_columns}
-                    for row in normalized_rows
-                ),
-                columns=raw_columns,
-            )
-            projection_dataframe = pd.DataFrame.from_records(
-                projected_rows, columns=projection_columns
-            )
-            event_dataframe = pd.DataFrame.from_records(
-                event_rows, columns=event_columns
-            )
-            relations = (
-                (self._STOCK_DATA_RAW_UPSERT_SPEC.relation_name, raw_dataframe),
-                (self._STOCK_DATA_UPSERT_SPEC.relation_name, projection_dataframe),
-                (
-                    self._STOCK_ADJUSTMENT_EVENTS_UPSERT_SPEC.relation_name,
-                    event_dataframe,
-                ),
-            )
+            relations: list[tuple[str, pd.DataFrame]] = []
+            if result.mutated_rows:
+                relations.extend(
+                    (
+                        (
+                            self._STOCK_DATA_RAW_UPSERT_SPEC.relation_name,
+                            pd.DataFrame.from_records(
+                                (
+                                    {column: row.get(column) for column in raw_columns}
+                                    for row in normalized_rows
+                                ),
+                                columns=raw_columns,
+                            ),
+                        ),
+                        (
+                            self._STOCK_DATA_UPSERT_SPEC.relation_name,
+                            pd.DataFrame.from_records(
+                                projected_rows, columns=projection_columns
+                            ),
+                        ),
+                    )
+                )
+            if events_changed and event_rows:
+                relations.append(
+                    (
+                        self._STOCK_ADJUSTMENT_EVENTS_UPSERT_SPEC.relation_name,
+                        pd.DataFrame.from_records(event_rows, columns=event_columns),
+                    )
+                )
             for relation_name, dataframe in relations:
                 self._conn.register(relation_name, dataframe)
+            transaction_started = False
             try:
                 self._conn.execute("BEGIN TRANSACTION")
-                self._conn.execute(
-                    "DELETE FROM stock_data_raw WHERE code = ?", [normalized_code]
-                )
-                self._conn.execute(
-                    "DELETE FROM stock_data WHERE code = ?", [normalized_code]
-                )
-                self._conn.execute(
-                    "DELETE FROM stock_adjustment_events WHERE code = ?",
-                    [normalized_code],
-                )
-                self._conn.execute(
-                    f"""
-                    INSERT INTO stock_data_raw ({", ".join(raw_columns)})
-                    SELECT {", ".join(raw_columns)}
-                    FROM {self._STOCK_DATA_RAW_UPSERT_SPEC.relation_name}
-                    """
-                )
-                self._conn.execute(
-                    f"""
-                    INSERT INTO stock_data ({", ".join(projection_columns)})
-                    SELECT {", ".join(projection_columns)}
-                    FROM {self._STOCK_DATA_UPSERT_SPEC.relation_name}
-                    """
-                )
-                self._conn.execute(
-                    f"""
-                    INSERT INTO stock_adjustment_events ({", ".join(event_columns)})
-                    SELECT {", ".join(event_columns)}
-                    FROM {self._STOCK_ADJUSTMENT_EVENTS_UPSERT_SPEC.relation_name}
-                    """
-                )
+                transaction_started = True
+                if result.mutated_rows:
+                    self._conn.execute(
+                        "DELETE FROM stock_data_raw WHERE code = ?", [normalized_code]
+                    )
+                    self._conn.execute(
+                        "DELETE FROM stock_data WHERE code = ?", [normalized_code]
+                    )
+                    self._conn.execute(
+                        f"""
+                        INSERT INTO stock_data_raw ({", ".join(raw_columns)})
+                        SELECT {", ".join(raw_columns)}
+                        FROM {self._STOCK_DATA_RAW_UPSERT_SPEC.relation_name}
+                        """
+                    )
+                    self._conn.execute(
+                        f"""
+                        INSERT INTO stock_data ({", ".join(projection_columns)})
+                        SELECT {", ".join(projection_columns)}
+                        FROM {self._STOCK_DATA_UPSERT_SPEC.relation_name}
+                        """
+                    )
+                if events_changed:
+                    self._conn.execute(
+                        "DELETE FROM stock_adjustment_events WHERE code = ?",
+                        [normalized_code],
+                    )
+                    if event_rows:
+                        self._conn.execute(
+                            f"""
+                            INSERT INTO stock_adjustment_events ({", ".join(event_columns)})
+                            SELECT {", ".join(event_columns)}
+                            FROM {self._STOCK_ADJUSTMENT_EVENTS_UPSERT_SPEC.relation_name}
+                            """
+                        )
                 updated_at = datetime.now(UTC).isoformat()
-                for key, value in metadata_values.items():
+                if ledger_changed:
                     self._conn.execute(
                         """
-                        INSERT INTO sync_metadata (key, value, updated_at)
-                        VALUES (?, ?, ?)
-                        ON CONFLICT (key) DO UPDATE SET
-                            value = excluded.value,
+                        INSERT INTO stock_provider_windows (
+                            code, coverage_start, coverage_end, provider_as_of,
+                            source_fingerprint, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        ON CONFLICT (code) DO UPDATE SET
+                            coverage_start = excluded.coverage_start,
+                            coverage_end = excluded.coverage_end,
+                            provider_as_of = excluded.provider_as_of,
+                            source_fingerprint = excluded.source_fingerprint,
                             updated_at = excluded.updated_at
                         """,
-                        [key, value, updated_at],
+                        [normalized_code, *desired_ledger, updated_at],
                     )
+                if metadata_changed:
+                    for key, value in metadata_values.items():
+                        self._conn.execute(
+                            """
+                            INSERT INTO sync_metadata (key, value, updated_at)
+                            VALUES (?, ?, ?)
+                            ON CONFLICT (key) DO UPDATE SET
+                                value = excluded.value,
+                                updated_at = excluded.updated_at
+                            WHERE sync_metadata.value IS DISTINCT FROM excluded.value
+                            """,
+                            [key, value, updated_at],
+                        )
                 self._conn.execute("COMMIT")
+                transaction_started = False
             except BaseException:
-                self._conn.execute("ROLLBACK")
+                if transaction_started:
+                    self._conn.execute("ROLLBACK")
                 raise
             finally:
                 for relation_name, _dataframe in relations:
                     self._conn.unregister(relation_name)
 
             if result.mutated_rows:
-                affected_dates = set(result.affected_dates)
+                affected_dates = {
+                    str(row["date"]) for row in (*existing_rows, *normalized_rows)
+                }
                 self._dirty_tables.update(("stock_data_raw", "stock_data"))
                 self._dirty_partition_dates.setdefault("stock_data_raw", set()).update(
                     affected_dates
@@ -1118,25 +1185,65 @@ class DuckDbParquetTimeSeriesStore:
     ) -> SemanticDeltaResult:
         if not rows:
             return SemanticDeltaResult.empty()
-
-        result = self._publish_and_mark_delta(
-            rows, spec=self._STOCK_DATA_RAW_UPSERT_SPEC
-        )
-        if not result.mutated_rows:
-            return result
-        mutated_keys = set(result.mutated_keys)
         staged_rows = deterministic_last_wins(
             rows, key_columns=self._STOCK_DATA_RAW_UPSERT_SPEC.conflict_columns
         )
-        self._publish_provider_adjusted_stock_rows(
-            [
-                row
-                for row in staged_rows
-                if (row.get("code"), row.get("date")) in mutated_keys
-            ]
-        )
+        projected_rows = self._provider_adjusted_stock_rows(staged_rows)
+        source_fingerprint = provider_stock_source_fingerprint(staged_rows)
+        event_rows = [
+            {
+                "code": row.get("code"),
+                "date": row.get("date"),
+                "adjustment_factor": row.get("adjustment_factor"),
+                "source_fingerprint": source_fingerprint,
+                "created_at": row.get("created_at"),
+            }
+            for row in staged_rows
+            if row.get("adjustment_factor") is not None
+            and float(row["adjustment_factor"]) != 1.0
+        ]
+        transaction_started = False
+        try:
+            self._conn.execute("BEGIN TRANSACTION")
+            transaction_started = True
+            raw_result = self._apply_semantic_delta(
+                rows, spec=self._STOCK_DATA_RAW_UPSERT_SPEC
+            )
+            consumer_result = self._apply_semantic_delta(
+                projected_rows, spec=self._STOCK_DATA_UPSERT_SPEC
+            )
+            event_result = self._apply_semantic_delta(
+                event_rows, spec=self._STOCK_ADJUSTMENT_EVENTS_UPSERT_SPEC
+            )
+            self._conn.execute("COMMIT")
+            transaction_started = False
+        except BaseException:
+            if transaction_started:
+                self._conn.execute("ROLLBACK")
+            raise
 
-        return result
+        affected_dates = (
+            raw_result.affected_dates
+            | consumer_result.affected_dates
+            | event_result.affected_dates
+        )
+        if raw_result.mutated_rows:
+            self._dirty_tables.add("stock_data_raw")
+            self._dirty_partition_dates.setdefault("stock_data_raw", set()).update(
+                affected_dates
+            )
+        if consumer_result.mutated_rows:
+            self._dirty_tables.add("stock_data")
+            self._dirty_partition_dates.setdefault("stock_data", set()).update(
+                affected_dates
+            )
+        if event_result.mutated_rows:
+            self._dirty_tables.add("stock_adjustment_events")
+        if raw_result.mutated_rows:
+            return raw_result
+        if consumer_result.mutated_rows:
+            return consumer_result
+        return event_result if event_result.mutated_rows else raw_result
 
     def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         self._assert_writable()
@@ -1720,12 +1827,11 @@ class DuckDbParquetTimeSeriesStore:
         self._dirty_stock_minute_dates.clear()
         self._dirty_tables.discard("stock_data_minute_raw")
 
-    def _publish_provider_adjusted_stock_rows(
-        self, rows: list[dict[str, Any]]
-    ) -> SemanticDeltaResult:
-        if not rows:
-            return SemanticDeltaResult.empty()
-        projected_rows = [
+    @staticmethod
+    def _provider_adjusted_stock_rows(
+        rows: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        return [
             {
                 "code": row.get("code"),
                 "date": row.get("date"),
@@ -1739,9 +1845,6 @@ class DuckDbParquetTimeSeriesStore:
             }
             for row in rows
         ]
-        return self._publish_and_mark_delta(
-            projected_rows, spec=self._STOCK_DATA_UPSERT_SPEC
-        )
 
     @staticmethod
     def _resolve_upsert_update_columns(spec: _RelationUpsertSpec) -> tuple[str, ...]:

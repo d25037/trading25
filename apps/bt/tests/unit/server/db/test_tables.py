@@ -29,6 +29,7 @@ from src.infrastructure.db.market.tables import (
     portfolios,
     stock_data_raw,
     stock_data,
+    stock_provider_windows,
     stocks,
     sync_metadata,
     topix_data,
@@ -167,6 +168,7 @@ class TestMarketDbContract:
     def test_market_meta_tracks_v5_tables(self) -> None:
         assert "daily_valuation" in market_meta.tables
         assert "stock_adjustment_events" in market_meta.tables
+        assert "stock_provider_windows" in market_meta.tables
         assert "statement_metrics_adjusted" in market_meta.tables
         assert "stock_adjustment_bases" not in market_meta.tables
         assert "stock_adjustment_basis_segments" not in market_meta.tables
@@ -340,6 +342,7 @@ class TestMarketDbContractV4:
         )
         required = set(self.contract["properties"]["tables"]["required"])
         assert "stock_adjustment_events" in required
+        assert "stock_provider_windows" in required
         assert "statement_metrics_adjusted" in required
         assert "daily_valuation" in required
         assert "stock_adjustment_bases" not in required
@@ -392,13 +395,17 @@ class TestMarketDbContractV4:
         assert "primary_key" not in valuation["properties"]
         assert "basis_version" not in valuation["properties"]["columns"]["properties"]
 
-    def test_v4_contract_requires_provider_metadata_keys(self) -> None:
+    def test_v4_contract_requires_per_code_provider_window_ledger(self) -> None:
+        assert list(
+            self.tables["stock_provider_windows"]["properties"]["columns"][
+                "properties"
+            ]
+        ) == [column.name for column in stock_provider_windows.columns]
+        assert self.tables["stock_provider_windows"]["properties"]["primary_key"][
+            "const"
+        ] == ["code"]
         assert self.tables["sync_metadata"]["properties"]["required_keys"]["const"] == [
             "provider_plan",
-            "provider_as_of",
-            "provider_coverage_start",
-            "provider_coverage_end",
-            "provider_source_fingerprint",
             "fundamentals_adjustment_basis_date",
         ]
 

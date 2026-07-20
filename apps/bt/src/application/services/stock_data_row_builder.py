@@ -8,7 +8,7 @@ J-Quants の日足レスポンスを DuckDB stock_data_raw 行へ安全に変換
 from __future__ import annotations
 
 import math
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
@@ -26,7 +26,13 @@ def _coerce_date(value: Any) -> str | None:
     if value is None:
         return None
     text = str(value).strip()
-    return text if text else None
+    if not text:
+        return None
+    try:
+        parsed = date.fromisoformat(text)
+    except ValueError:
+        return None
+    return text if parsed.isoformat() == text else None
 
 
 def _coerce_float(value: Any) -> float | None:
@@ -63,9 +69,11 @@ def build_stock_data_row(
     created_at: str | None = None,
 ) -> dict[str, Any] | None:
     """J-Quants 日足1件を stock_data_raw 行へ変換（欠損値がある場合は None）"""
-    code = normalized_code or normalize_stock_code(quote.get("Code", ""))
-    if not code:
+    payload_code = normalize_stock_code(quote.get("Code", ""))
+    requested_code = normalize_stock_code(normalized_code or "")
+    if not payload_code or (requested_code and payload_code != requested_code):
         return None
+    code = requested_code or payload_code
 
     date = _coerce_date(quote.get("Date"))
     if date is None:

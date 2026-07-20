@@ -27,6 +27,7 @@ class DummyTimeSeriesStore:
         ] = []
         self.metadata: dict[str, str] = {}
         self.index_calls = 0
+        self.pending_stock_index = False
 
     def inspect(
         self,
@@ -49,6 +50,7 @@ class DummyTimeSeriesStore:
         self.replacements.append((code, rows, coverage, metadata))
         self.rows.extend(rows)
         self.metadata.update(metadata)
+        self.pending_stock_index = True
         return SemanticDeltaResult(
             stats=MarketMutationStats(
                 input=len(rows), inserted=len(rows), updated=0, unchanged=0, deleted=0
@@ -57,7 +59,12 @@ class DummyTimeSeriesStore:
 
     def index_stock_data(self) -> None:
         self.index_calls += 1
+        self.pending_stock_index = False
         return None
+
+    def has_pending_index(self, table_name: str) -> bool:
+        assert table_name == "stock_data"
+        return self.pending_stock_index
 
 
 class DummyIndexFailingTimeSeriesStore(DummyTimeSeriesStore):
@@ -77,6 +84,15 @@ class DummyJQuantsClient:
         self.calls.append((path, params))
         return self.rows
 
+    async def get_paginated_with_meta(
+        self,
+        path: str,
+        params: dict[str, str] | None = None,
+        max_pages: int = 10,
+    ) -> tuple[list[dict[str, Any]], int]:
+        del max_pages
+        return await self.get_paginated(path, params), 1
+
 
 class DummyFailingJQuantsClient:
     async def get_paginated(
@@ -84,6 +100,15 @@ class DummyFailingJQuantsClient:
     ) -> list[dict[str, Any]]:
         del path, params
         raise RuntimeError("network error")
+
+    async def get_paginated_with_meta(
+        self,
+        path: str,
+        params: dict[str, str] | None = None,
+        max_pages: int = 10,
+    ) -> tuple[list[dict[str, Any]], int]:
+        del max_pages
+        return await self.get_paginated(path, params), 1
 
 
 class RoutingJQuantsClient:
@@ -110,6 +135,15 @@ class RoutingJQuantsClient:
         if isinstance(response, Exception):
             raise response
         return response
+
+    async def get_paginated_with_meta(
+        self,
+        path: str,
+        params: dict[str, str] | None = None,
+        max_pages: int = 10,
+    ) -> tuple[list[dict[str, Any]], int]:
+        del max_pages
+        return await self.get_paginated(path, params), 1
 
 
 def _complete_provider_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -190,6 +224,29 @@ async def test_refresh_stocks_rejects_invalid_date_before_range_filtering() -> N
                 "C": 101.0,
                 "Vo": 12345,
             },
+        ]
+    )
+
+    result = await refresh_stocks(["7203"], DummyMarketDb(), store, client)
+
+    assert result.failedCount == 1
+    assert store.replacements == []
+
+
+@pytest.mark.asyncio
+async def test_refresh_stocks_rejects_wrong_symbol_payload_before_replacement() -> None:
+    store = DummyTimeSeriesStore()
+    client = DummyJQuantsClient(
+        rows=[
+            {
+                "Code": "67580",
+                "Date": "2026-02-10",
+                "O": 100.0,
+                "H": 102.0,
+                "L": 99.0,
+                "C": 101.0,
+                "Vo": 12345,
+            }
         ]
     )
 
@@ -332,6 +389,39 @@ async def test_refresh_stocks_pagination_failure_does_not_mutate_rows_or_metadat
 
 
 @pytest.mark.asyncio
+async def test_refresh_stocks_rejects_client_without_terminal_pagination_proof() -> None:
+    class SilentlyCappedClient:
+        async def get_paginated(
+            self,
+            path: str,
+            params: dict[str, str] | None = None,
+        ) -> list[dict[str, Any]]:
+            del path, params
+            return [
+                _complete_provider_row(
+                    {
+                        "Code": "72030",
+                        "Date": "2026-02-10",
+                        "O": 10,
+                        "H": 12,
+                        "L": 9,
+                        "C": 11,
+                        "Vo": 1000,
+                    }
+                )
+            ]
+
+    store = DummyTimeSeriesStore()
+    result = await refresh_stocks(
+        ["7203"], DummyMarketDb(), store, SilentlyCappedClient()
+    )
+
+    assert result.failedCount == 1
+    assert "terminal pagination" in (result.results[0].error or "")
+    assert store.replacements == []
+
+
+@pytest.mark.asyncio
 async def test_refresh_stocks_handles_jquants_error() -> None:
     market_db = DummyMarketDb()
     store = DummyTimeSeriesStore()
@@ -449,6 +539,48 @@ async def test_refresh_stocks_treats_identical_zero_delta_publish_as_success() -
     assert result.results[0].success is True
     assert result.results[0].recordsStored == 0
     assert store.index_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_refresh_stocks_indexes_event_only_provider_window_change() -> None:
+    market_db = DummyMarketDb()
+
+    class EventOnlyStore(DummyTimeSeriesStore):
+        def replace_stock_provider_window(
+            self,
+            code: str,
+            rows: list[dict[str, Any]],
+            coverage: dict[str, str],
+            metadata: dict[str, str],
+        ) -> SemanticDeltaResult:
+            self.replacements.append((code, rows, coverage, metadata))
+            self.pending_stock_index = True
+            return SemanticDeltaResult(
+                stats=MarketMutationStats(
+                    input=len(rows), inserted=0, updated=0, unchanged=len(rows), deleted=0
+                )
+            )
+
+    store = EventOnlyStore()
+    client = DummyJQuantsClient(
+        rows=[
+            {
+                "Code": "72030",
+                "Date": "2026-02-10",
+                "O": 10,
+                "H": 12,
+                "L": 9,
+                "C": 11,
+                "Vo": 1000,
+            }
+        ]
+    )
+
+    result = await refresh_stocks(["7203"], market_db, store, client)
+
+    assert result.successCount == 1
+    assert result.totalRecordsStored == 0
+    assert store.index_calls == 1
 
 
 @pytest.mark.asyncio

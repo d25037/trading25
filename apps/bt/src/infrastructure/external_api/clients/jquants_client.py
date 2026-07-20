@@ -250,6 +250,7 @@ class JQuantsAsyncClient:
         all_data: list[dict[str, Any]] = []
         current_params = dict(params) if params else {}
         page_count = 0
+        pagination_key: Any = None
 
         while page_count < max_pages:
             page_count += 1
@@ -291,6 +292,12 @@ class JQuantsAsyncClient:
             if not pagination_key:
                 break
             current_params = {**current_params, "pagination_key": pagination_key}
+
+        if pagination_key:
+            raise JQuantsApiError(
+                502,
+                f"JQuants pagination incomplete after {max_pages} pages: {path}",
+            )
 
         logger.debug(f"JQuants paginated {path}: {len(all_data)} records in {page_count} pages")
         return all_data, page_count

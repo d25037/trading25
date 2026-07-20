@@ -45,6 +45,7 @@ STATS_TABLES: tuple[str, ...] = (
     "stock_data_raw",
     "stock_data",
     "stock_adjustment_events",
+    "stock_provider_windows",
     "stock_data_minute_raw",
     "topix_data",
     "indices_data",
@@ -340,6 +341,16 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         source_fingerprint TEXT NOT NULL,
         created_at TEXT,
         PRIMARY KEY (code, date)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS stock_provider_windows (
+        code TEXT PRIMARY KEY,
+        coverage_start TEXT NOT NULL,
+        coverage_end TEXT NOT NULL,
+        provider_as_of TEXT NOT NULL,
+        source_fingerprint TEXT NOT NULL,
+        updated_at TEXT NOT NULL
     )
     """,
     """

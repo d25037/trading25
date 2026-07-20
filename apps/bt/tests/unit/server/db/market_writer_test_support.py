@@ -219,7 +219,17 @@ def _publish(
 
 
 def publish_stock_data(db: MarketDb, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
-    return _publish(db, rows, DuckDbParquetTimeSeriesStore.publish_stock_data)
+    complete_rows = []
+    for source in rows:
+        row = dict(source)
+        row.setdefault("adjustment_factor", 1.0)
+        row.setdefault("adjusted_open", row.get("open"))
+        row.setdefault("adjusted_high", row.get("high"))
+        row.setdefault("adjusted_low", row.get("low"))
+        row.setdefault("adjusted_close", row.get("close"))
+        row.setdefault("adjusted_volume", row.get("volume"))
+        complete_rows.append(row)
+    return _publish(db, complete_rows, DuckDbParquetTimeSeriesStore.publish_stock_data)
 
 
 def publish_topix_data(db: MarketDb, rows: list[dict[str, Any]]) -> SemanticDeltaResult:

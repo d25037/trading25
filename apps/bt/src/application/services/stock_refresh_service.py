@@ -38,11 +38,12 @@ class StockRefreshMarketDbLike(Protocol):
 
 
 class StockRefreshClientLike(Protocol):
-    async def get_paginated(
+    async def get_paginated_with_meta(
         self,
         path: str,
         params: dict[str, str] | None = None,
-    ) -> list[dict[str, Any]]: ...
+        max_pages: int = 10,
+    ) -> tuple[list[dict[str, Any]], int]: ...
 
 
 class StockRefreshTimeSeriesStoreLike(Protocol):
@@ -60,6 +61,7 @@ class StockRefreshTimeSeriesStoreLike(Protocol):
         coverage: dict[str, str],
         metadata: dict[str, str],
     ) -> SemanticDeltaResult: ...
+    def has_pending_index(self, table_name: str) -> bool: ...
     def index_stock_data(self) -> None: ...
 
 
@@ -70,19 +72,20 @@ async def _fetch_complete_provider_window(
 ) -> tuple[list[dict[str, Any]], int]:
     params = {"code": code}
     get_with_meta = getattr(client, "get_paginated_with_meta", None)
-    if callable(get_with_meta):
-        get_with_meta_callable = cast(
-            Callable[..., Awaitable[tuple[list[dict[str, Any]], int]]],
-            get_with_meta,
+    if not callable(get_with_meta):
+        raise RuntimeError(
+            "Stock refresh requires terminal pagination proof before publication"
         )
-        rows, calls = await get_with_meta_callable(
-            "/equities/bars/daily",
-            params=params,
-            max_pages=10_000,
-        )
-        return rows, int(calls)
-    rows = await client.get_paginated("/equities/bars/daily", params=params)
-    return rows, 1
+    get_with_meta_callable = cast(
+        Callable[..., Awaitable[tuple[list[dict[str, Any]], int]]],
+        get_with_meta,
+    )
+    rows, calls = await get_with_meta_callable(
+        "/equities/bars/daily",
+        params=params,
+        max_pages=10_000,
+    )
+    return rows, int(calls)
 
 
 async def refresh_stocks(
@@ -219,7 +222,9 @@ async def refresh_stocks(
                     metadata,
                 )
                 stored = mutation.mutated_rows
-                if mutation.mutated_rows:
+                if mutation.mutated_rows or time_series_store.has_pending_index(
+                    "stock_data"
+                ):
                     any_rows_published = True
             else:
                 failure_message = (

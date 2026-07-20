@@ -27,6 +27,7 @@
         "stock_data_raw",
         "stock_data",
         "stock_adjustment_events",
+        "stock_provider_windows",
         "stock_data_minute_raw",
         "topix_data",
         "indices_data",
@@ -109,6 +110,30 @@
                 }
               ]
             }
+          }
+        },
+        "stock_provider_windows": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "code", "coverage_start", "coverage_end", "provider_as_of",
+                "source_fingerprint", "updated_at"
+              ],
+              "properties": {
+                "code": { "const": { "type": "text", "nullable": false } },
+                "coverage_start": { "const": { "type": "text", "nullable": false } },
+                "coverage_end": { "const": { "type": "text", "nullable": false } },
+                "provider_as_of": { "const": { "type": "text", "nullable": false } },
+                "source_fingerprint": { "const": { "type": "text", "nullable": false } },
+                "updated_at": { "const": { "type": "text", "nullable": false } }
+              }
+            },
+            "primary_key": { "const": ["code"] }
           }
         },
         "stock_data_minute_raw": { "$ref": "#/$defs/stock_data_minute_raw_table" },
@@ -255,10 +280,6 @@
             "required_keys": {
               "const": [
                 "provider_plan",
-                "provider_as_of",
-                "provider_coverage_start",
-                "provider_coverage_end",
-                "provider_source_fingerprint",
                 "fundamentals_adjustment_basis_date"
               ]
             }

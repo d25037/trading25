@@ -107,10 +107,12 @@ class TestMarketDbBasics:
         assert stats["sync_metadata"] == 1
         assert stats["index_membership_daily"] == 0
         assert stats["stock_adjustment_events"] == 0
+        assert stats["stock_provider_windows"] == 0
         assert market_db.get_market_schema_version() == 5
         assert market_db.is_market_schema_current() is True
         assert market_db.get_stock_price_adjustment_mode() == "provider_adjusted_v1"
         assert market_db._table_exists("stock_adjustment_events")
+        assert market_db._table_exists("stock_provider_windows")
         assert not market_db._table_exists("stock_adjustment_bases")
         assert not market_db._table_exists("stock_adjustment_basis_segments")
 
@@ -155,6 +157,19 @@ class TestMarketDbBasics:
             "source_fingerprint",
             "created_at",
         }
+        assert _table_columns(market_db, "stock_provider_windows") == {
+            "code",
+            "coverage_start",
+            "coverage_end",
+            "provider_as_of",
+            "source_fingerprint",
+            "updated_at",
+        }
+        provider_window_info = market_db._fetchall(
+            "PRAGMA table_info('stock_provider_windows')"
+        )
+        assert [row[1] for row in provider_window_info if row[5]] == ["code"]
+        assert all(bool(row[3]) for row in provider_window_info)
         pk_rows = market_db._fetchall("PRAGMA table_info('stock_adjustment_events')")
         assert [row[1] for row in sorted(pk_rows, key=lambda row: row[5]) if row[5]] == [
             "code",

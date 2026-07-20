@@ -159,17 +159,6 @@ def validate_provider_stock_window(
             float(row["open"]), float(row["high"]), float(row["close"])
         ):
             raise ValueError("Provider stock window raw OHLC is inconsistent")
-        if float(row["adjusted_high"]) < max(
-            float(row["adjusted_open"]),
-            float(row["adjusted_low"]),
-            float(row["adjusted_close"]),
-        ) or float(row["adjusted_low"]) > min(
-            float(row["adjusted_open"]),
-            float(row["adjusted_high"]),
-            float(row["adjusted_close"]),
-        ):
-            raise ValueError("Provider stock window adjusted OHLC is inconsistent")
-
         row["code"] = normalized_code
         row["date"] = row_date
         row["volume"] = int(row["volume"])
@@ -179,6 +168,45 @@ def validate_provider_stock_window(
     if not normalized_rows:
         raise ValueError("Provider stock window requires at least one row")
     normalized_rows.sort(key=lambda row: str(row["date"]))
+    observed_start = str(normalized_rows[0]["date"])
+    observed_end = str(normalized_rows[-1]["date"])
+    if (
+        normalized_coverage.start != observed_start
+        or normalized_coverage.end != observed_end
+    ):
+        raise ValueError(
+            "Provider stock window coverage must equal observed row date bounds"
+        )
+    if normalized_metadata.provider_as_of < normalized_coverage.end:
+        raise ValueError(
+            "Provider stock window provider as-of must be on or after coverage end"
+        )
+    future_factor = 1.0
+    for row in reversed(normalized_rows):
+        for raw_column, adjusted_column in (
+            ("open", "adjusted_open"),
+            ("high", "adjusted_high"),
+            ("low", "adjusted_low"),
+            ("close", "adjusted_close"),
+        ):
+            expected = float(row[raw_column]) * future_factor
+            actual = float(row[adjusted_column])
+            if not math.isclose(actual, expected, rel_tol=1e-9, abs_tol=1e-6):
+                raise ValueError(
+                    "Provider stock window provider-adjusted consistency failed: "
+                    f"{adjusted_column} on {row['date']}"
+                )
+        expected_volume = round(int(row["volume"]) / future_factor)
+        if int(row["adjusted_volume"]) != expected_volume:
+            raise ValueError(
+                "Provider stock window provider-adjusted consistency failed: "
+                f"adjusted_volume on {row['date']}"
+            )
+        future_factor *= float(row["adjustment_factor"])
+        if not math.isfinite(future_factor) or future_factor <= 0:
+            raise ValueError(
+                "Provider stock window cumulative adjustment factor must be positive and finite"
+            )
     return normalized_code, normalized_rows, normalized_coverage, normalized_metadata
 
 
@@ -198,18 +226,3 @@ def provider_stock_source_fingerprint(rows: Sequence[Mapping[str, Any]]) -> str:
         canonical_rows, ensure_ascii=True, separators=(",", ":"), sort_keys=True
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def provider_metadata_values(
-    coverage: ProviderStockCoverage,
-    metadata: ProviderStockMetadata,
-) -> dict[str, str]:
-    return {
-        METADATA_KEYS["PROVIDER_PLAN"]: metadata.provider_plan,
-        METADATA_KEYS["PROVIDER_AS_OF"]: metadata.provider_as_of,
-        METADATA_KEYS["PROVIDER_COVERAGE_START"]: coverage.start,
-        METADATA_KEYS["PROVIDER_COVERAGE_END"]: coverage.end,
-        METADATA_KEYS[
-            "PROVIDER_SOURCE_FINGERPRINT"
-        ]: metadata.provider_source_fingerprint,
-    }

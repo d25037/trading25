@@ -773,6 +773,26 @@ def test_publish_stock_data_batch_uses_semantic_delta_kernel(tmp_path: Path) -> 
     store.close()
 
 
+def test_publish_stock_data_rejects_missing_adjusted_values_without_partial_raw_write(
+    tmp_path: Path,
+) -> None:
+    store = create_time_series_store_for_test(
+        backend="duckdb-parquet",
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    assert store is not None
+    incomplete = _stock_row_for("2026-02-10")
+    incomplete.pop("adjusted_close")
+
+    with pytest.raises(duckdb.ConstraintException):
+        store.publish_stock_data([incomplete])
+
+    assert store._conn.execute("SELECT COUNT(*) FROM stock_data_raw").fetchone() == (0,)  # noqa: SLF001
+    assert store._conn.execute("SELECT COUNT(*) FROM stock_data").fetchone() == (0,)  # noqa: SLF001
+    store.close()
+
+
 def test_replace_stock_provider_window_publishes_exact_adjusted_rows_events_and_metadata(
     tmp_path: Path,
 ) -> None:
@@ -781,11 +801,15 @@ def test_replace_stock_provider_window_publishes_exact_adjusted_rows_events_and_
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
     rows = [
-        _provider_stock_row("2026-02-10", adjusted_close=2.125),
-        _provider_stock_row("2026-02-11", factor=0.5, adjusted_close=4.25),
+        _provider_stock_row("2026-02-10", adjusted_close=1.0),
+        _provider_stock_row("2026-02-11", factor=0.5, adjusted_close=2.0),
     ]
-    rows[0]["adjusted_high"] = 2.25
-    rows[1]["adjusted_high"] = 4.5
+    rows[0].update(
+        adjusted_open=0.5,
+        adjusted_high=1.0,
+        adjusted_low=0.5,
+        adjusted_volume=200,
+    )
 
     result = store.replace_stock_provider_window(
         "7203",
@@ -802,8 +826,8 @@ def test_replace_stock_provider_window_publishes_exact_adjusted_rows_events_and_
     assert store._conn.execute(  # noqa: SLF001
         "SELECT date, close, volume FROM stock_data ORDER BY date"
     ).fetchall() == [
-        ("2026-02-10", 2.125, 100),
-        ("2026-02-11", 4.25, 100),
+        ("2026-02-10", 1.0, 200),
+        ("2026-02-11", 2.0, 100),
     ]
     assert store._conn.execute(  # noqa: SLF001
         "SELECT code, date, adjustment_factor, source_fingerprint "
@@ -813,13 +837,19 @@ def test_replace_stock_provider_window_publishes_exact_adjusted_rows_events_and_
         store._conn.execute(  # noqa: SLF001
             "SELECT key, value FROM sync_metadata WHERE key LIKE 'provider_%'"
         ).fetchall()
-    ) == {
-        "provider_plan": "premium",
-        "provider_as_of": "2026-02-11",
-        "provider_coverage_start": "2026-02-10",
-        "provider_coverage_end": "2026-02-11",
-        "provider_source_fingerprint": "window-fingerprint",
-    }
+    ) == {"provider_plan": "premium"}
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, coverage_start, coverage_end, provider_as_of, "
+        "source_fingerprint FROM stock_provider_windows"
+    ).fetchall() == [
+        (
+            "7203",
+            "2026-02-10",
+            "2026-02-11",
+            "2026-02-11",
+            "window-fingerprint",
+        )
+    ]
     store.close()
 
 
@@ -903,6 +933,44 @@ def test_replace_stock_provider_window_prunes_coverage_and_is_idempotent(
     store.close()
 
 
+def test_replace_stock_provider_window_marks_every_rewritten_price_partition_dirty(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    rows = [_provider_stock_row("2026-02-09"), _provider_stock_row("2026-02-10")]
+    metadata = {
+        "provider_plan": "premium",
+        "provider_as_of": "2026-02-10",
+        "provider_source_fingerprint": "v1",
+    }
+    store.replace_stock_provider_window(
+        "7203", rows, {"start": "2026-02-09", "end": "2026-02-10"}, metadata
+    )
+    store.index_stock_data()
+    corrected = [dict(rows[0]), dict(rows[1])]
+    corrected[1].update(high=3.0, close=3.0, adjusted_high=3.0, adjusted_close=3.0)
+
+    store.replace_stock_provider_window(
+        "7203",
+        corrected,
+        {"start": "2026-02-09", "end": "2026-02-10"},
+        metadata,
+    )
+
+    assert store._dirty_partition_dates["stock_data_raw"] == {  # noqa: SLF001
+        "2026-02-09",
+        "2026-02-10",
+    }
+    assert store._dirty_partition_dates["stock_data"] == {  # noqa: SLF001
+        "2026-02-09",
+        "2026-02-10",
+    }
+    store.close()
+
+
 def test_replace_stock_provider_window_validation_failure_preserves_snapshot_and_metadata(
     tmp_path: Path,
 ) -> None:
@@ -933,7 +1001,7 @@ def test_replace_stock_provider_window_validation_failure_preserves_snapshot_and
         "SELECT adjusted_close FROM stock_data_raw"
     ).fetchall() == [(2.0,)]
     assert store._conn.execute(  # noqa: SLF001
-        "SELECT value FROM sync_metadata WHERE key = 'provider_source_fingerprint'"
+        "SELECT source_fingerprint FROM stock_provider_windows WHERE code = '7203'"
     ).fetchone() == ("v1",)
     store.close()
 
@@ -948,7 +1016,7 @@ def test_replace_stock_provider_window_rejects_inconsistent_adjusted_ohlc(
     inconsistent = _provider_stock_row("2026-02-10")
     inconsistent["adjusted_high"] = 0.5
 
-    with pytest.raises(ValueError, match="adjusted OHLC is inconsistent"):
+    with pytest.raises(ValueError, match="provider-adjusted consistency failed"):
         store.replace_stock_provider_window(
             "7203",
             [inconsistent],
@@ -1014,9 +1082,89 @@ def test_replace_stock_provider_window_transaction_failure_rolls_back_all_state(
         "SELECT date, adjusted_close FROM stock_data_raw"
     ).fetchall() == [("2026-02-10", 2.0)]
     assert real_connection.execute(
-        "SELECT value FROM sync_metadata WHERE key = 'provider_source_fingerprint'"
+        "SELECT source_fingerprint FROM stock_provider_windows WHERE code = '7203'"
     ).fetchone() == ("v1",)
     assert store._dirty_tables == dirty_before  # noqa: SLF001
+    store.close()
+
+
+def test_replace_stock_provider_window_metadata_only_update_preserves_price_rows(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    row = _provider_stock_row("2026-02-10")
+    metadata = {
+        "provider_plan": "premium",
+        "provider_as_of": "2026-02-10",
+        "provider_source_fingerprint": "v1",
+        "last_stocks_refresh": "2026-02-10T00:00:00+00:00",
+    }
+    store.replace_stock_provider_window(
+        "7203", [row], {"start": "2026-02-10", "end": "2026-02-10"}, metadata
+    )
+    store.index_stock_data()
+    ledger_updated_at = store._conn.execute(  # noqa: SLF001
+        "SELECT updated_at FROM stock_provider_windows WHERE code = '7203'"
+    ).fetchone()
+    repeated = dict(row, created_at="2026-02-11T00:00:00+00:00")
+
+    result = store.replace_stock_provider_window(
+        "7203",
+        [repeated],
+        {"start": "2026-02-10", "end": "2026-02-10"},
+        {**metadata, "last_stocks_refresh": "2026-02-11T00:00:00+00:00"},
+    )
+
+    assert result.mutated_rows == 0
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT created_at FROM stock_data_raw WHERE code = '7203'"
+    ).fetchone() == ("2026-02-10T00:00:00+00:00",)
+    assert store._dirty_tables == set()  # noqa: SLF001
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT updated_at FROM stock_provider_windows WHERE code = '7203'"
+    ).fetchone() == ledger_updated_at
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT value FROM sync_metadata WHERE key = 'last_stocks_refresh'"
+    ).fetchone() == ("2026-02-11T00:00:00+00:00",)
+    store.close()
+
+
+def test_replace_stock_provider_window_fingerprint_only_dirties_event_not_prices(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    row = _provider_stock_row("2026-02-10", factor=0.5)
+    metadata = {
+        "provider_plan": "premium",
+        "provider_as_of": "2026-02-10",
+        "provider_source_fingerprint": "v1",
+    }
+    store.replace_stock_provider_window(
+        "7203", [row], {"start": "2026-02-10", "end": "2026-02-10"}, metadata
+    )
+    store.index_stock_data()
+
+    result = store.replace_stock_provider_window(
+        "7203",
+        [row],
+        {"start": "2026-02-10", "end": "2026-02-10"},
+        {**metadata, "provider_source_fingerprint": "v2"},
+    )
+
+    assert result.mutated_rows == 0
+    assert store._dirty_tables == {"stock_adjustment_events"}  # noqa: SLF001
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT source_fingerprint FROM stock_adjustment_events"
+    ).fetchone() == ("v2",)
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT source_fingerprint FROM stock_provider_windows WHERE code = '7203'"
+    ).fetchone() == ("v2",)
     store.close()
 
 
@@ -1052,6 +1200,43 @@ def test_publish_stock_data_appends_exact_provider_adjusted_values(
 
     assert rows == [("7203", "2026-02-10", 1.25, 2.25, 1.125, 2.125, 80, 1.0)]
 
+    store.close()
+
+
+def test_publish_stock_data_rolls_back_raw_when_consumer_insert_fails_and_retry_repairs(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+
+    class ConsumerFailingConnection:
+        def __init__(self, connection: object) -> None:
+            self.connection = connection
+
+        def execute(self, sql: str, *args: object, **kwargs: object) -> object:
+            if sql.lstrip().upper().startswith("INSERT INTO STOCK_DATA ("):
+                raise RuntimeError("consumer insert failed")
+            return self.connection.execute(sql, *args, **kwargs)  # type: ignore[attr-defined]
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(self.connection, name)
+
+    real_connection = store._conn  # noqa: SLF001
+    store._conn = ConsumerFailingConnection(real_connection)  # type: ignore[assignment]  # noqa: SLF001
+    with pytest.raises(RuntimeError, match="consumer insert failed"):
+        store.publish_stock_data([_stock_row()])
+    store._conn = real_connection  # noqa: SLF001
+
+    assert real_connection.execute("SELECT COUNT(*) FROM stock_data_raw").fetchone() == (0,)
+    assert real_connection.execute("SELECT COUNT(*) FROM stock_data").fetchone() == (0,)
+
+    result = store.publish_stock_data([_stock_row()])
+
+    assert result.stats.inserted == 1
+    assert real_connection.execute("SELECT COUNT(*) FROM stock_data_raw").fetchone() == (1,)
+    assert real_connection.execute("SELECT COUNT(*) FROM stock_data").fetchone() == (1,)
     store.close()
 
 

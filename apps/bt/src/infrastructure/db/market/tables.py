@@ -2,9 +2,9 @@
 SQLAlchemy Core Table Definitions
 
 Drizzle スキーマ（apps/ts）を正（Single Source of Truth）として、
-19 テーブルを 2 つの MetaData に分離定義する。
+20 テーブルを 2 つの MetaData に分離定義する。
 
-- market_meta: market DuckDB（13 relation 定義、daily_valuation view を含む）
+- market_meta: market DuckDB（14 relation 定義、daily_valuation view を含む）
 - portfolio_meta: portfolio.db（6 テーブル）
 
 銘柄コード: DB 内は 4桁統一（Drizzle stockCode() と同一ルール）。
@@ -34,7 +34,7 @@ market_meta = MetaData()
 portfolio_meta = MetaData()
 
 # ===========================================================================
-# market DuckDB (12 tables)
+# market DuckDB (14 relations)
 # ===========================================================================
 
 # --- stocks ---
@@ -116,6 +116,18 @@ stock_adjustment_events = Table(
     ),
 )
 Index("idx_stock_adjustment_events_date", stock_adjustment_events.c.date)
+
+# --- stock_provider_windows ---
+stock_provider_windows = Table(
+    "stock_provider_windows",
+    market_meta,
+    Column("code", Text, primary_key=True),
+    Column("coverage_start", Text, nullable=False),
+    Column("coverage_end", Text, nullable=False),
+    Column("provider_as_of", Text, nullable=False),
+    Column("source_fingerprint", Text, nullable=False),
+    Column("updated_at", Text, nullable=False),
+)
 
 # --- statement_metrics_adjusted (current provider basis only) ---
 statement_metrics_adjusted = Table(
