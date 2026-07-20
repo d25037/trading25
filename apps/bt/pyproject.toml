@@ -48,7 +48,7 @@ dev = [
     "mypy>=2.3.0",
 ]
 research = [
-    "lightgbm>=4.0.0",
+    "lightgbm>=4.7.0",
 ]
 nautilus = [
     "nautilus-trader>=1.230.0",
