@@ -188,7 +188,8 @@ class TestFundamentalsComputeEndpoint:
         ("reason", "status"),
         [
             ("stock_not_listed_as_of", 404),
-            ("historical_adjustment_basis_required", 409),
+            ("provider_window_required", 409),
+            ("current_adjusted_metrics_required", 409),
             ("stock_master_snapshot_required", 409),
             ("pit_snapshot_inconsistent", 409),
         ],

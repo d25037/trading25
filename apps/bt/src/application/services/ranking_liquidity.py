@@ -10,7 +10,8 @@ import pandas as pd
 
 from src.application.contracts import ranking as ranking_contracts
 from src.application.services.ranking_fundamental_queries import (
-    resolve_ready_adjustment_bases,
+    provider_price_cte,
+    resolve_provider_windows,
 )
 from src.application.services.ranking_collection_filters import (
     group_ranking_items_by_normalized_code,
@@ -205,84 +206,50 @@ def load_prime_liquidity_metrics(
     )
     if not prime_code_rows:
         return {}
-    bases = resolve_ready_adjustment_bases(
+    resolve_provider_windows(
         reader,
         [str(row["code"]) for row in prime_code_rows],
         target_date,
     )
-    basis_values = ", ".join("(?, ?)" for _ in bases)
-    basis_params = tuple(
-        value for code, basis in bases.items() for value in (code, basis.basis_id)
-    )
-    raw_code = normalized_code_sql("raw.code")
-    raw_order = prefer_4digit_order_sql("raw.code")
+    price_ctes = provider_price_cte()
     valuation_code = normalized_code_sql("valuation.code")
+    valuation_order = prefer_4digit_order_sql("valuation.code")
     rows = reader.query(
         f"""
-        WITH resolved_bases(code, basis_id) AS (
-            VALUES {basis_values}
-        ),
-        normalized_raw AS (
-            SELECT code, date, close, volume
-            FROM (
-                SELECT
-                    {raw_code} AS code,
-                    raw.date,
-                    raw.close,
-                    raw.volume,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY {raw_code}, raw.date
-                        ORDER BY {raw_order}
-                    ) AS rn
-                FROM stock_data_raw AS raw
-                WHERE raw.date >= ?
-                  AND raw.date <= ?
-                  AND raw.close > 0
-                  AND raw.volume IS NOT NULL
-            )
-            WHERE rn = 1
-        ),
-        basis_price AS (
-            SELECT
-                raw.code,
-                raw.date,
-                raw.close * segment.cumulative_factor AS close,
-                ROUND(raw.volume / segment.cumulative_factor) AS volume
-            FROM normalized_raw AS raw
-            JOIN resolved_bases AS basis USING (code)
-            JOIN stock_adjustment_basis_segments AS segment
-              ON segment.code = basis.code
-             AND segment.basis_id = basis.basis_id
-             AND raw.date >= segment.source_date_from
-             AND (
-                 segment.source_date_to_exclusive IS NULL
-                 OR raw.date < segment.source_date_to_exclusive
-             )
-        ),
+        WITH {price_ctes},
         price_features AS (
             SELECT
-                *,
+                normalized_code AS code,
+                date,
+                close,
+                volume,
                 MEDIAN(close * volume) OVER (
-                    PARTITION BY code ORDER BY date
+                    PARTITION BY normalized_code ORDER BY date
                     ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
                 ) AS adv60_jpy,
                 COUNT(*) OVER (
-                    PARTITION BY code ORDER BY date
+                    PARTITION BY normalized_code ORDER BY date
                     ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
                 ) AS adv60_count,
-                LAG(close, 20) OVER (PARTITION BY code ORDER BY date) AS close_20d_ago,
-                LAG(close, 60) OVER (PARTITION BY code ORDER BY date) AS close_60d_ago
-            FROM basis_price
+                LAG(close, 20) OVER (PARTITION BY normalized_code ORDER BY date) AS close_20d_ago,
+                LAG(close, 60) OVER (PARTITION BY normalized_code ORDER BY date) AS close_60d_ago
+            FROM provider_price
+            WHERE date >= ? AND date <= ? AND close > 0 AND volume IS NOT NULL
         ),
         exact_valuation AS (
-            SELECT
-                {valuation_code} AS code,
-                valuation.free_float_market_cap
-            FROM daily_valuation AS valuation
-            JOIN resolved_bases AS basis
-              ON basis.code = {valuation_code}
-             AND basis.basis_id = valuation.basis_version
-            WHERE valuation.date = ?
+            SELECT code, free_float_market_cap
+            FROM (
+                SELECT
+                    {valuation_code} AS code,
+                    valuation.free_float_market_cap,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {valuation_code}, valuation.date
+                        ORDER BY {valuation_order}
+                    ) AS rn
+                FROM daily_valuation AS valuation
+                WHERE valuation.date = ?
+            )
+            WHERE rn = 1
         )
         SELECT
             pf.code,
@@ -296,7 +263,7 @@ def load_prime_liquidity_metrics(
         WHERE pf.date = ?
         ORDER BY pf.code
         """,
-        (*basis_params, start_date, target_date, target_date, target_date),
+        (start_date, target_date, target_date, target_date),
     )
 
     samples: list[dict[str, float | str | None]] = []

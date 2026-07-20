@@ -46,38 +46,36 @@ class DummyReader:
         return self.rows
 
 
-def test_screening_adjusted_metrics_select_reference_date_basis(tmp_path) -> None:
+def test_screening_adjusted_metrics_use_current_provider_basis_without_future_leak(tmp_path) -> None:
     import duckdb
 
     db_path = tmp_path / "screening-bases.duckdb"
     conn = duckdb.connect(str(db_path))
     conn.execute("""
-        CREATE TABLE stock_adjustment_bases (
-            code TEXT, basis_id TEXT, valid_from TEXT, valid_to_exclusive TEXT,
-            adjustment_through_date TEXT, source_fingerprint TEXT,
-            materialized_through_date TEXT, status TEXT
+        CREATE TABLE stock_provider_windows (
+            code TEXT, coverage_start TEXT, coverage_end TEXT,
+            provider_as_of TEXT, source_fingerprint TEXT
         )
     """)
+    conn.execute("CREATE TABLE current_basis_recompute_pending (code TEXT)")
     conn.execute("""
         CREATE TABLE statement_metrics_adjusted (
             code TEXT, disclosed_date TEXT, period_end TEXT, period_type TEXT,
             adjusted_eps DOUBLE,
             adjusted_bps DOUBLE, adjusted_forecast_eps DOUBLE,
-            adjusted_dividend_fy DOUBLE, basis_version TEXT
+            adjusted_dividend_fy DOUBLE,
+            fundamentals_adjustment_basis_date TEXT
         )
     """)
-    conn.executemany(
-        "INSERT INTO stock_adjustment_bases VALUES (?, ?, ?, ?, ?, 'fp', ?, 'ready')",
-        [
-            ("7203", "event-pit-v1:7203:2024-01-04", "2024-01-04", "2024-06-28", "2024-01-04", "2024-06-27"),
-            ("7203", "event-pit-v1:7203:2024-06-28", "2024-06-28", None, "2024-06-28", "2024-07-31"),
-        ],
+    conn.execute(
+        "INSERT INTO stock_provider_windows VALUES "
+        "('7203', '2024-01-04', '2024-07-31', '2024-07-31T16:30:00+09:00', 'fp')"
     )
     conn.executemany(
-        "INSERT INTO statement_metrics_adjusted VALUES ('7203', '2024-05-10', '2024-03-31', 'FY', ?, 1000, 120, 30, ?)",
+        "INSERT INTO statement_metrics_adjusted VALUES ('7203', ?, '2024-03-31', 'FY', ?, 1000, 120, 30, '2024-07-31')",
         [
-            (100.0, "event-pit-v1:7203:2024-01-04"),
-            (999.0, "event-pit-v1:7203:2024-06-28"),
+            ("2024-05-10", 100.0),
+            ("2024-06-28", 999.0),
         ],
     )
     conn.close()
@@ -93,9 +91,8 @@ def test_screening_adjusted_metrics_select_reference_date_basis(tmp_path) -> Non
     finally:
         reader.close()
 
-    assert {row["basis_version"] for row in rows} == {
-        "event-pit-v1:7203:2024-01-04"
-    }
+    assert "basis_version" not in rows[0]
+    assert rows[0]["fundamentals_adjustment_basis_date"] == "2024-07-31"
     assert rows[0]["adjusted_eps"] == pytest.approx(100.0)
 
 
@@ -107,30 +104,29 @@ def test_screening_adjusted_metrics_preserve_same_day_materialization_keys(
     db_path = tmp_path / "screening-same-day.duckdb"
     conn = duckdb.connect(str(db_path))
     conn.execute("""
-        CREATE TABLE stock_adjustment_bases (
-            code TEXT, basis_id TEXT, valid_from TEXT, valid_to_exclusive TEXT,
-            adjustment_through_date TEXT, source_fingerprint TEXT,
-            materialized_through_date TEXT, status TEXT
+        CREATE TABLE stock_provider_windows (
+            code TEXT, coverage_start TEXT, coverage_end TEXT,
+            provider_as_of TEXT, source_fingerprint TEXT
         )
     """)
+    conn.execute("CREATE TABLE current_basis_recompute_pending (code TEXT)")
     conn.execute("""
         CREATE TABLE statement_metrics_adjusted (
             code TEXT, disclosed_date TEXT, period_end TEXT, period_type TEXT,
             adjusted_eps DOUBLE, adjusted_bps DOUBLE,
             adjusted_forecast_eps DOUBLE, adjusted_dividend_fy DOUBLE,
-            basis_version TEXT
+            fundamentals_adjustment_basis_date TEXT
         )
     """)
-    basis_id = "event-pit-v1:7203:2024-01-04"
     conn.execute(
-        "INSERT INTO stock_adjustment_bases VALUES ('7203', ?, '2024-01-04', NULL, '2024-01-04', 'fp', '2024-06-27', 'ready')",
-        (basis_id,),
+        "INSERT INTO stock_provider_windows VALUES "
+        "('7203', '2024-01-04', '2024-07-31', '2024-07-31T16:30:00+09:00', 'fp')"
     )
     conn.executemany(
-        "INSERT INTO statement_metrics_adjusted VALUES ('7203', '2024-05-10', ?, ?, ?, 1000, 120, 30, ?)",
+        "INSERT INTO statement_metrics_adjusted VALUES ('7203', '2024-05-10', ?, ?, ?, 1000, 120, 30, '2024-07-31')",
         [
-            ("2024-03-31", "FY", 100.0, basis_id),
-            ("2024-06-30", "Q1", 25.0, basis_id),
+            ("2024-03-31", "FY", 100.0),
+            ("2024-06-30", "Q1", 25.0),
         ],
     )
     conn.close()

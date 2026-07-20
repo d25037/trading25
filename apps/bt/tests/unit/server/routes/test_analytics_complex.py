@@ -283,67 +283,50 @@ def analytics_timeseries_dir(tmp_path_factory):
                 ),
             )
 
-    # statements data for fundamental ranking
-    conn.execute(
+    # statements data for fundamental ranking (Market v5 disclosure identity)
+    conn.executemany(
         """
         INSERT INTO statements (
-            code, disclosed_date, earnings_per_share, type_of_current_period,
-            next_year_forecast_earnings_per_share, forecast_eps, shares_outstanding
+            code, statement_id, disclosed_date, disclosed_at,
+            period_start, period_end, earnings_per_share,
+            type_of_current_period, next_year_forecast_earnings_per_share,
+            forecast_eps, shares_outstanding
         )
-        VALUES (?,?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)
         """,
-        ("72030", "2024-01-10", 100.0, "FY", 120.0, 118.0, 100.0),
+        [
+            ("72030", "7203-fy", "2024-01-10", "2024-01-10T15:00:00+09:00", "2023-01-01", "2023-12-31", 100.0, "FY", 120.0, 118.0, 100.0),
+            ("72030", "7203-q1", "2024-01-20", "2024-01-20T15:00:00+09:00", "2024-01-01", "2024-03-31", None, "1Q", None, 130.0, 100.0),
+            ("67580", "6758-fy", "2024-01-12", "2024-01-12T15:00:00+09:00", "2023-01-01", "2023-12-31", 180.0, "FY", 210.0, None, 200.0),
+            ("67580", "6758-q1", "2024-01-22", "2024-01-22T15:00:00+09:00", "2024-01-01", "2024-03-31", None, "Q1", None, 225.0, 200.0),
+            ("33330", "3333-fy-2023", "2023-05-20", "2023-05-20T15:00:00+09:00", "2022-04-01", "2023-03-31", 300.0, "FY", 320.0, 320.0, 100.0),
+            ("33330", "3333-fy-2024", "2024-01-20", "2024-01-20T15:00:00+09:00", "2023-04-01", "2024-03-31", 200.0, "FY", 250.0, 250.0, 100.0),
+        ],
     )
     conn.execute(
         """
-        INSERT INTO statements (
-            code, disclosed_date, type_of_current_period, forecast_eps, shares_outstanding
+        INSERT INTO stock_provider_windows
+        SELECT normalized_code, MIN(date), MAX(date),
+               '2024-03-01T16:30:00+09:00',
+               'analytics-fixture-' || normalized_code,
+               '2024-03-01T17:00:00+09:00'
+        FROM (
+            SELECT CASE WHEN length(code) = 5 AND right(code, 1) = '0'
+                        THEN left(code, 4) ELSE code END AS normalized_code,
+                   date
+            FROM stock_data
         )
-        VALUES (?,?,?,?,?)
-        """,
-        ("72030", "2024-01-20", "1Q", 130.0, 100.0),
+        GROUP BY normalized_code
+        """
     )
     conn.execute(
         """
-        INSERT INTO statements (
-            code, disclosed_date, earnings_per_share, type_of_current_period,
-            next_year_forecast_earnings_per_share, shares_outstanding
-        )
-        VALUES (?,?,?,?,?,?)
-        """,
-        ("67580", "2024-01-12", 180.0, "FY", 210.0, 200.0),
-    )
-    conn.execute(
+        INSERT INTO current_basis_recompute_pending
+        SELECT code, 'fixture materialization', source_fingerprint,
+               '2024-03-01T17:00:00+09:00'
+        FROM stock_provider_windows
         """
-        INSERT INTO statements (
-            code, disclosed_date, type_of_current_period, forecast_eps, shares_outstanding
-        )
-        VALUES (?,?,?,?,?)
-        """,
-        ("67580", "2024-01-22", "Q1", 225.0, 200.0),
     )
-    conn.execute(
-        """
-        INSERT INTO statements (
-            code, disclosed_date, earnings_per_share, type_of_current_period,
-            next_year_forecast_earnings_per_share, forecast_eps, shares_outstanding
-        )
-        VALUES (?,?,?,?,?,?,?)
-        """,
-        ("33330", "2023-05-20", 300.0, "FY", 320.0, 320.0, 100.0),
-    )
-    conn.execute(
-        """
-        INSERT INTO statements (
-            code, disclosed_date, earnings_per_share, type_of_current_period,
-            next_year_forecast_earnings_per_share, forecast_eps, shares_outstanding
-        )
-        VALUES (?,?,?,?,?,?,?)
-        """,
-        ("33330", "2024-01-20", 200.0, "FY", 250.0, 250.0, 100.0),
-    )
-
-    conn.execute("INSERT INTO stock_data_raw SELECT * FROM stock_data")
     conn.close()
 
     from src.application.services.adjusted_metrics_materializer import (
@@ -351,7 +334,9 @@ def analytics_timeseries_dir(tmp_path_factory):
     )
 
     market_db = open_market_db(db_path)
-    AdjustedMetricsMaterializer(market_db).rebuild_current_basis([])
+    AdjustedMetricsMaterializer(market_db).rebuild_current_basis(
+        ["7203", "6758", "3333"]
+    )
     market_db.close()
     return str(base_dir)
 

@@ -8,7 +8,7 @@ from typing import Any
 import pandas as pd
 
 from src.application.services.ranking_fundamental_queries import (
-    resolve_ready_adjustment_bases,
+    resolve_provider_windows,
 )
 from src.infrastructure.external_api.dataset.statements_mixin import APIPeriodType
 from src.infrastructure.data_access.loaders.statements_loaders import (
@@ -341,23 +341,16 @@ def query_adjusted_statement_metric_rows(
     strict_reference_date = reference_date or end_date
     if strict_reference_date is None:
         raise ValueError("adjusted_metrics_pit requires a screening reference date")
-    bases = resolve_ready_adjustment_bases(
+    resolve_provider_windows(
         reader,
         normalized_codes,
         strict_reference_date,
     )
-    basis_values = ", ".join("(?, ?)" for _ in bases)
-    basis_params = [
-        value
-        for code, basis in bases.items()
-        for value in (code, basis.basis_id)
-    ]
     normalized_metric_code = (
         "CASE WHEN length(m.code) = 5 AND right(m.code, 1) = '0' "
         "THEN left(m.code, 4) ELSE m.code END"
     )
     sql = f"""
-        WITH resolved_bases(code, basis_id) AS (VALUES {basis_values})
         SELECT
             m.code,
             m.disclosed_date,
@@ -367,14 +360,11 @@ def query_adjusted_statement_metric_rows(
             m.adjusted_bps,
             m.adjusted_forecast_eps,
             m.adjusted_dividend_fy,
-            m.basis_version
+            m.fundamentals_adjustment_basis_date
         FROM statement_metrics_adjusted AS m
-        JOIN resolved_bases AS b
-          ON b.code = {normalized_metric_code}
-         AND b.basis_id = m.basis_version
-        WHERE 1 = 1
+        WHERE {normalized_metric_code} IN ({", ".join("?" for _ in normalized_codes)})
     """
-    params: list[Any] = basis_params
+    params: list[Any] = list(normalized_codes)
     if start_date:
         sql += " AND disclosed_date >= ?"
         params.append(start_date)

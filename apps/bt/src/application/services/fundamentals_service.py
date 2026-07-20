@@ -800,12 +800,12 @@ class FundamentalsService:
         provenance = build_market_provenance(
             reference_date=snapshot.knowledge_cutoff_date.isoformat(),
             loaded_domains=(
-                "stock_adjustment_bases",
+                "stock_provider_windows",
                 "stock_master_daily",
                 "statements",
                 "statement_metrics_adjusted",
                 "daily_valuation",
-                "stock_data_raw",
+                "stock_data",
             ),
         )
         from_date = request.from_date.isoformat() if request.from_date else None
@@ -826,9 +826,9 @@ class FundamentalsService:
                 ]
                 or None,
                 fundamentalsAdjustmentBasisDate=(
-                    snapshot.adjustment_through_date.isoformat()
+                    snapshot.fundamentals_adjustment_basis_date.isoformat()
                 ),
-                providerAsOf=None,
+                providerAsOf=snapshot.provider_as_of,
                 liquidityProfile=liquidity_profile,
                 tradingValuePeriod=request.trading_value_period,
                 forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,
@@ -948,9 +948,9 @@ class FundamentalsService:
             latestMetricsSource=latest_metrics_source,
             dailyValuation=api_daily_valuation,
             fundamentalsAdjustmentBasisDate=(
-                snapshot.adjustment_through_date.isoformat()
+                snapshot.fundamentals_adjustment_basis_date.isoformat()
             ),
-            providerAsOf=None,
+            providerAsOf=snapshot.provider_as_of,
             liquidityProfile=liquidity_profile,
             tradingValuePeriod=request.trading_value_period,
             forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,

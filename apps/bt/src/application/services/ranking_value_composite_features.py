@@ -7,8 +7,8 @@ from typing import Any
 import pandas as pd
 
 from src.application.services.ranking_fundamental_queries import (
-    resolve_ready_adjustment_bases,
-    resolved_basis_price_ctes,
+    provider_price_cte,
+    resolve_provider_windows,
 )
 from src.application.services.ranking_query_helpers import (
     normalize_equity_code,
@@ -109,8 +109,8 @@ def load_value_composite_technical_metrics(
     if not normalized_codes:
         return {}
     placeholders = ",".join("?" for _ in normalized_codes)
-    bases = resolve_ready_adjustment_bases(reader, normalized_codes, target_date)
-    price_ctes, basis_params = resolved_basis_price_ctes(bases)
+    resolve_provider_windows(reader, normalized_codes, target_date)
+    price_ctes = provider_price_cte()
     sql = f"""
         WITH {price_ctes},
         stock_history AS (
@@ -118,7 +118,7 @@ def load_value_composite_technical_metrics(
                 normalized_code,
                 date,
                 close
-            FROM basis_price
+            FROM provider_price
             WHERE date <= ?
               AND normalized_code IN ({placeholders})
         ),
@@ -207,7 +207,7 @@ def load_value_composite_technical_metrics(
                 ROW_NUMBER() OVER (
                     PARTITION BY normalized_code ORDER BY date
                 ) AS signal_row_number
-            FROM basis_price
+            FROM provider_price
             WHERE date < ?
               AND normalized_code IN ({placeholders})
         ),
@@ -297,7 +297,6 @@ def load_value_composite_technical_metrics(
     rows = reader.query(
         sql,
         (
-            *basis_params,
             target_date,
             *normalized_codes,
             target_date,
@@ -356,8 +355,8 @@ def load_value_composite_profile_metrics(
         return {}
 
     placeholders = ",".join("?" for _ in normalized_codes)
-    bases = resolve_ready_adjustment_bases(reader, normalized_codes, target_date)
-    price_ctes, basis_params = resolved_basis_price_ctes(bases)
+    resolve_provider_windows(reader, normalized_codes, target_date)
+    price_ctes = provider_price_cte()
     required_session_offset = 0
     if profile.min_adv60_mil_jpy is not None:
         required_session_offset = max(required_session_offset, 59)
@@ -369,7 +368,7 @@ def load_value_composite_profile_metrics(
     start_row = reader.query_one(
         """
         SELECT date
-        FROM (SELECT DISTINCT date FROM stock_data_raw WHERE date < ? ORDER BY date DESC)
+        FROM (SELECT DISTINCT date FROM stock_data WHERE date < ? ORDER BY date DESC)
         LIMIT 1 OFFSET ?
         """,
         (target_date, required_session_offset),
@@ -377,9 +376,9 @@ def load_value_composite_profile_metrics(
     start_date = str(start_row["date"]) if start_row is not None else None
     lower_bound_clause = " AND date >= ?" if start_date is not None else ""
     params: tuple[Any, ...] = (
-        (*basis_params, target_date, start_date, *normalized_codes)
+        (target_date, start_date, *normalized_codes)
         if start_date is not None
-        else (*basis_params, target_date, *normalized_codes)
+        else (target_date, *normalized_codes)
     )
 
     if profile.breakout_window is None:
@@ -392,7 +391,7 @@ def load_value_composite_profile_metrics(
                     close,
                     volume,
                     close * volume AS trading_value
-                FROM basis_price
+                FROM provider_price
                 WHERE date < ?{lower_bound_clause}
                   AND normalized_code IN ({placeholders})
             ),
@@ -453,7 +452,7 @@ def load_value_composite_profile_metrics(
                 ROW_NUMBER() OVER (
                     PARTITION BY normalized_code ORDER BY date
                 ) AS signal_row_number
-            FROM basis_price
+            FROM provider_price
             WHERE date < ?{lower_bound_clause}
               AND normalized_code IN ({placeholders})
         ),

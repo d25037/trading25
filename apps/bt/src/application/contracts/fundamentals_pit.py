@@ -14,7 +14,8 @@ from src.infrastructure.external_api.jquants_client import StockInfo
 
 FundamentalsPitReason = Literal[
     "stock_not_listed_as_of",
-    "historical_adjustment_basis_required",
+    "provider_window_required",
+    "current_adjusted_metrics_required",
     "stock_master_snapshot_required",
     "pit_snapshot_inconsistent",
 ]
@@ -26,9 +27,10 @@ class FundamentalsPitSnapshot:
     knowledge_cutoff_date: date
     effective_market_date: date
     stock_master_snapshot_date: date
-    basis_id: str
-    adjustment_through_date: date
-    materialized_through_date: date
+    fundamentals_adjustment_basis_date: date
+    provider_as_of: str
+    provider_coverage_start: date
+    provider_coverage_end: date
     stock_info: StockInfo
     statements: pd.DataFrame
     adjusted_statement_metrics: Sequence[dict[str, Any]]
