@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -562,6 +563,212 @@ def _synthetic_walkforward_observations() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+_EXPECTED_NARROW_TECHNICAL_FIT_COLUMNS = (
+    "date",
+    "code",
+    "ring",
+    "sector_33_code",
+    "raw_score_name",
+    "family",
+    "role",
+    "horizon",
+    "technical_fit_score",
+    "outcome_pct",
+    "n225_outcome_pct",
+    "raw_level",
+    "sector_33_name",
+    "value_composite_equal_score",
+    "long_hybrid_leadership_score",
+    "liquidity_residual_z",
+    "atr20_pct",
+    "recent_return_20d_pct",
+    "ols_r2_20",
+    "ols20_minus_ols60_move_pct",
+    "fixed20_ols20_sign_conflict",
+    "fixed60_ols60_sign_conflict",
+    "fixed20_negative_flag",
+    "fixed20_overheat_flag",
+)
+
+
+def _technical_fit_scoring_inputs(
+    *, horizons: tuple[int, ...] = (20,)
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    observations = _synthetic_walkforward_observations()
+    for horizon in horizons:
+        if horizon == 20:
+            continue
+        observations[f"forward_close_excess_return_{horizon}d_pct"] = observations[
+            "forward_close_excess_return_20d_pct"
+        ]
+        observations[f"forward_close_n225_excess_return_{horizon}d_pct"] = observations[
+            "forward_close_n225_excess_return_20d_pct"
+        ]
+    mapping = technical_fit._build_all_walkforward_mappings(
+        observations,
+        min_training_observations=1,
+        min_training_dates=1,
+    )
+    return observations, mapping
+
+
+def test_narrow_technical_fit_frame_has_exact_fixed_schema() -> None:
+    observations, mapping = _technical_fit_scoring_inputs(horizons=(5, 20, 60))
+
+    scored = technical_fit._score_walkforward_observations(
+        observations,
+        mapping,
+        horizons=(5, 20, 60),
+    )
+
+    assert tuple(scored.columns) == _EXPECTED_NARROW_TECHNICAL_FIT_COLUMNS
+
+
+def test_narrow_technical_fit_amplification_uses_unique_available_horizons() -> None:
+    observations, mapping = _technical_fit_scoring_inputs()
+    oos_rows = int(observations["date"].dt.year.ge(2022).sum())
+    available_score_count = sum(
+        definition.name in observations.columns for definition in RAW_SCORE_REGISTRY
+    )
+    unique_available_horizons = 1
+
+    scored = technical_fit._score_walkforward_observations(
+        observations,
+        mapping,
+        horizons=(20, 20),
+    )
+
+    assert len(scored) <= (oos_rows * available_score_count * unique_available_horizons)
+
+
+def test_narrow_technical_fit_amplification_ignores_source_index_labels() -> None:
+    observations, mapping = _technical_fit_scoring_inputs()
+    observations.index = pd.Index([0] * len(observations))
+    oos_rows = int(observations["date"].dt.year.ge(2022).sum())
+    available_score_count = sum(
+        definition.name in observations.columns for definition in RAW_SCORE_REGISTRY
+    )
+
+    scored = technical_fit._score_walkforward_observations(
+        observations,
+        mapping,
+        horizons=(20,),
+    )
+
+    assert len(scored) <= oos_rows * available_score_count
+
+
+def test_narrow_technical_fit_copy_never_copies_wide_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observations, mapping = _technical_fit_scoring_inputs(horizons=(5, 20, 60))
+    ballast_columns = tuple(f"unused_wide_column_{index}" for index in range(64))
+    for index, column in enumerate(ballast_columns):
+        observations[column] = index
+    original_copy = pd.DataFrame.copy
+    copied_shapes: list[tuple[int, int, bool]] = []
+
+    def counting_copy(frame: pd.DataFrame, deep: bool = True) -> pd.DataFrame:
+        copied_shapes.append(
+            (
+                len(frame),
+                len(frame.columns),
+                any(column in frame.columns for column in ballast_columns),
+            )
+        )
+        return original_copy(frame, deep=deep)
+
+    monkeypatch.setattr(pd.DataFrame, "copy", counting_copy)
+
+    scored = technical_fit._score_walkforward_observations(
+        observations,
+        mapping,
+        horizons=(5, 20, 60),
+    )
+
+    copied_cells = sum(rows * columns for rows, columns, _ in copied_shapes)
+    wide_source_copied_cells = sum(
+        rows * columns for rows, columns, copied_wide in copied_shapes if copied_wide
+    )
+    assert len(scored) > 0
+    assert copied_cells > 0
+    assert wide_source_copied_cells == 0
+
+
+@pytest.mark.parametrize(
+    "observations",
+    [
+        pd.DataFrame(
+            {
+                "date": [pd.Timestamp("2022-06-01")],
+                "code": ["1111"],
+                "ring": ["core_high_high"],
+            }
+        ),
+        pd.DataFrame(
+            {
+                "date": [pd.Timestamp("2022-06-01")],
+                "code": ["1111"],
+                "ring": ["core_high_high"],
+                "fixed_equal_level": [0.5],
+            }
+        ),
+    ],
+    ids=("unavailable_scores", "unavailable_outcomes"),
+)
+def test_narrow_technical_fit_unavailable_inputs_keep_exact_empty_schema(
+    observations: pd.DataFrame,
+) -> None:
+    scored = technical_fit._score_walkforward_observations(
+        observations,
+        pd.DataFrame(),
+        horizons=(20,),
+    )
+
+    assert scored.empty
+    assert tuple(scored.columns) == _EXPECTED_NARROW_TECHNICAL_FIT_COLUMNS
+
+
+_TECHNICAL_FIT_GOLDEN_FRAME_HASHES = {
+    "annual_stability_df": "842209a81ebd16b9f84d197ab604a44a3376870a924ef4bda4dbba25f97f7822",
+    "bootstrap_effect_ci_df": "944c5f8a8e8cc470cb23fb8f7b0e08cb1593c092694b7ea3fbf5d371e11d03f4",
+    "fixed_vs_ols_paired_df": "73bcadd6376c1553087921369c1fa2abaedf34f2929c02b9ae6f42242cd26d28",
+    "oos_fit_score_lift_df": "9ca6d24feb0e40976671bad384acb4bd36bf573691982ece2ade95989735d25d",
+    "overheat_negative_diagnostics_df": "ecd786c28bbfb5ad4d1e5a245aada4de96844b8fdec728d7e38e7bd62674a3be",
+    "raw_shape_daily_df": "a52583cdfce1cdce0d29a339e996555f52343e098eb231f44554df37364f1827",
+    "raw_shape_summary_df": "0ee0caac4e857d183a911f8a36ae50deb13fbe1992f5c1d5305e288d0c1e7987",
+    "segment_stability_df": "d85aca1223f6dbff23d12d69ba2528db72b3bb28c6206b95f8178e5e4ca88527",
+    "topk_operational_lift_df": "61b9bb4a42c91f87e46d25cdc118c7bf7cac63ebe50aea67c3aa1ab25619195e",
+    "walkforward_mapping_df": "a1313c073a7d45d4ddd9d3e4ee59a75a6194e4d19c58b7b7d55eb4b526764c82",
+}
+
+
+def test_narrow_technical_fit_refactor_preserves_golden_artifact_frames() -> None:
+    tables = build_technical_fit_evidence_tables(
+        _synthetic_walkforward_observations(),
+        horizons=(20,),
+        min_training_observations=1,
+        min_training_dates=1,
+        bootstrap_resamples=17,
+        bootstrap_seed=20260718,
+    )
+
+    actual = {
+        name: hashlib.sha256(
+            getattr(tables, name)
+            .to_json(
+                orient="split",
+                date_format="iso",
+                date_unit="ns",
+                double_precision=15,
+            )
+            .encode()
+        ).hexdigest()
+        for name in tables.__dataclass_fields__
+    }
+    assert actual == _TECHNICAL_FIT_GOLDEN_FRAME_HASHES
+
+
 def test_walkforward_evidence_uses_expanding_prior_only_mapping() -> None:
     observations = _synthetic_walkforward_observations()
     evaluation_year_rows = observations.loc[
@@ -625,7 +832,6 @@ def test_oos_selection_missing_outcome_preserves_membership_and_fails_closed() -
             {
                 "raw_score_name": "fixed_equal_level",
                 "family": "fixed",
-                "is_primary": True,
                 "role": "primary",
                 "ring": "core_high_high",
                 "horizon": 20,
@@ -674,7 +880,7 @@ def test_topk_operational_lift_missing_outcome_does_not_backfill_ranked_selectio
             {
                 "family": "fixed",
                 "raw_score_name": "fixed_equal_level",
-                "is_primary": True,
+                "role": "primary",
                 "horizon": 20,
                 "date": pd.Timestamp("2024-03-01"),
                 "code": f"{index:02d}",

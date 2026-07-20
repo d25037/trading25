@@ -237,6 +237,53 @@ _MAPPING_COLUMNS = (
     "training_completion_end_date",
 )
 
+_TECHNICAL_FIT_LONG_COLUMNS: tuple[str, ...] = (
+    "date",
+    "code",
+    "ring",
+    "sector_33_code",
+    "raw_score_name",
+    "family",
+    "role",
+    "horizon",
+    "technical_fit_score",
+    "outcome_pct",
+    "n225_outcome_pct",
+    "raw_level",
+    "sector_33_name",
+    "value_composite_equal_score",
+    "long_hybrid_leadership_score",
+    "liquidity_residual_z",
+    "atr20_pct",
+    "recent_return_20d_pct",
+    "ols_r2_20",
+    "ols20_minus_ols60_move_pct",
+    "fixed20_ols20_sign_conflict",
+    "fixed60_ols60_sign_conflict",
+    "fixed20_negative_flag",
+    "fixed20_overheat_flag",
+)
+_TECHNICAL_FIT_IDENTITY_COLUMNS: tuple[str, ...] = (
+    "date",
+    "code",
+    "ring",
+    "sector_33_code",
+)
+_TECHNICAL_FIT_DIAGNOSTIC_COLUMNS: tuple[str, ...] = (
+    "sector_33_name",
+    "value_composite_equal_score",
+    "long_hybrid_leadership_score",
+    "liquidity_residual_z",
+    "atr20_pct",
+    "recent_return_20d_pct",
+    "ols_r2_20",
+    "ols20_minus_ols60_move_pct",
+    "fixed20_ols20_sign_conflict",
+    "fixed60_ols60_sign_conflict",
+    "fixed20_negative_flag",
+    "fixed20_overheat_flag",
+)
+
 
 @dataclass(frozen=True)
 class PitLineageAudit:
@@ -1420,7 +1467,11 @@ def _build_raw_shape_tables(
             outcome = f"forward_close_excess_return_{int(horizon)}d_pct"
             if outcome not in observations.columns:
                 continue
-            usable = _finite_rows(observations, [definition.name, outcome])
+            raw_shape_columns = ("ring", "date", definition.name, outcome)
+            usable = _finite_rows(
+                observations.loc[:, list(raw_shape_columns)],
+                [definition.name, outcome],
+            )
             usable = usable.loc[usable[definition.name].between(0.0, 1.0)]
             usable["raw_bin"] = usable[definition.name].map(classify_raw_level_bin)
             for (ring, signal_date, raw_bin), group in usable.groupby(
@@ -1587,13 +1638,27 @@ def _build_all_walkforward_mappings(
     mappings: list[pd.DataFrame] = []
     if outcome not in observations.columns:
         return pd.DataFrame(columns=_MAPPING_COLUMNS)
-    training_source = observations.loc[dates.dt.year.ge(FIRST_TRAINING_YEAR)].copy()
+    training_columns = [
+        "date",
+        "forward_outcome_completion_date_20d",
+        outcome,
+        *(
+            definition.name
+            for definition in RAW_SCORE_REGISTRY
+            if definition.name in observations.columns
+        ),
+    ]
+    if "forward_outcome_completion_date_20d" not in observations.columns:
+        return pd.DataFrame(columns=(*_MAPPING_COLUMNS, "family", "is_primary", "role"))
+    training_source = observations.loc[
+        dates.dt.year.ge(FIRST_TRAINING_YEAR), training_columns
+    ].copy()
     for definition in RAW_SCORE_REGISTRY:
         if definition.name not in observations.columns:
             continue
-        source = training_source.rename(
-            columns={definition.name: "raw_level", outcome: "mapping_outcome"}
-        )
+        source = training_source.loc[
+            :, ["date", "forward_outcome_completion_date_20d", definition.name, outcome]
+        ].rename(columns={definition.name: "raw_level", outcome: "mapping_outcome"})
         for evaluation_year in evaluation_years:
             mapping = build_walkforward_mapping(
                 source,
@@ -1829,40 +1894,110 @@ def _score_walkforward_observations(
     *,
     horizons: Sequence[int],
 ) -> pd.DataFrame:
+    """Build the single fixed-schema OOS score/horizon evaluation frame."""
+
     rows: list[pd.DataFrame] = []
     dates = pd.to_datetime(observations["date"], errors="coerce").dt.normalize()
-    evaluation = observations.loc[dates.dt.year.ge(FIRST_EVALUATION_YEAR)].copy()
-    evaluation["date"] = dates.loc[evaluation.index]
-    for definition in RAW_SCORE_REGISTRY:
-        if definition.name not in evaluation.columns:
-            continue
-        source = evaluation.rename(columns={definition.name: "raw_level"})
+    resolved_horizons = tuple(dict.fromkeys(int(horizon) for horizon in horizons))
+    available_horizons = tuple(
+        horizon
+        for horizon in resolved_horizons
+        if f"forward_close_excess_return_{horizon}d_pct" in observations.columns
+    )
+    available_definitions = tuple(
+        definition
+        for definition in RAW_SCORE_REGISTRY
+        if definition.name in observations.columns
+    )
+    if not available_horizons or not available_definitions:
+        return pd.DataFrame(columns=_TECHNICAL_FIT_LONG_COLUMNS)
+
+    projected_columns = list(
+        dict.fromkeys(
+            (
+                *(
+                    column
+                    for column in _TECHNICAL_FIT_IDENTITY_COLUMNS
+                    if column in observations.columns
+                ),
+                *(
+                    column
+                    for column in _TECHNICAL_FIT_DIAGNOSTIC_COLUMNS
+                    if column in observations.columns
+                ),
+                *(definition.name for definition in available_definitions),
+                *(
+                    f"forward_close_excess_return_{horizon}d_pct"
+                    for horizon in available_horizons
+                ),
+                *(
+                    f"forward_close_n225_excess_return_{horizon}d_pct"
+                    for horizon in available_horizons
+                    if f"forward_close_n225_excess_return_{horizon}d_pct"
+                    in observations.columns
+                ),
+            )
+        )
+    )
+    evaluation = observations.loc[
+        dates.dt.year.ge(FIRST_EVALUATION_YEAR), projected_columns
+    ].copy()
+    evaluation["date"] = pd.to_datetime(
+        evaluation["date"], errors="coerce"
+    ).dt.normalize()
+    evaluation = evaluation.reset_index(drop=True)
+    for column in (
+        *_TECHNICAL_FIT_IDENTITY_COLUMNS,
+        *_TECHNICAL_FIT_DIAGNOSTIC_COLUMNS,
+    ):
+        if column not in evaluation.columns:
+            evaluation[column] = np.nan
+
+    score_source_columns = (
+        *_TECHNICAL_FIT_IDENTITY_COLUMNS,
+        *_TECHNICAL_FIT_DIAGNOSTIC_COLUMNS,
+    )
+    for definition in available_definitions:
+        source = evaluation.loc[:, [*score_source_columns, definition.name]].rename(
+            columns={definition.name: "raw_level"}
+        )
         scored = apply_walkforward_mapping(
             source,
             mapping,
             raw_score_name=definition.name,
         )
-        scored["raw_score_name"] = definition.name
-        scored["family"] = definition.family
-        scored["is_primary"] = definition.is_primary
-        scored["role"] = "primary" if definition.is_primary else "attribution_only"
-        for horizon in horizons:
+        for horizon in available_horizons:
             outcome = f"forward_close_excess_return_{int(horizon)}d_pct"
-            if outcome not in scored.columns:
-                continue
-            horizon_frame = scored.copy()
+            horizon_frame = scored.loc[
+                :,
+                [
+                    *_TECHNICAL_FIT_IDENTITY_COLUMNS,
+                    "technical_fit_score",
+                    "raw_level",
+                    *_TECHNICAL_FIT_DIAGNOSTIC_COLUMNS,
+                ],
+            ].copy()
+            horizon_frame["raw_score_name"] = definition.name
+            horizon_frame["family"] = definition.family
+            horizon_frame["role"] = (
+                "primary" if definition.is_primary else "attribution_only"
+            )
             horizon_frame["horizon"] = int(horizon)
             horizon_frame["outcome_pct"] = pd.to_numeric(
-                horizon_frame[outcome], errors="coerce"
+                evaluation[outcome], errors="coerce"
             )
             n225 = f"forward_close_n225_excess_return_{int(horizon)}d_pct"
             horizon_frame["n225_outcome_pct"] = (
-                pd.to_numeric(horizon_frame[n225], errors="coerce")
-                if n225 in horizon_frame.columns
+                pd.to_numeric(evaluation[n225], errors="coerce")
+                if n225 in evaluation.columns
                 else np.nan
             )
-            rows.append(horizon_frame)
-    return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
+            rows.append(horizon_frame.loc[:, list(_TECHNICAL_FIT_LONG_COLUMNS)])
+    if not rows:
+        return pd.DataFrame(columns=_TECHNICAL_FIT_LONG_COLUMNS)
+    return pd.concat(rows, ignore_index=True).reindex(
+        columns=_TECHNICAL_FIT_LONG_COLUMNS
+    )
 
 
 def _build_oos_fit_score_lift_df(scored: pd.DataFrame) -> pd.DataFrame:
@@ -1909,7 +2044,6 @@ def _build_oos_fit_score_lift_df(scored: pd.DataFrame) -> pd.DataFrame:
     keys = [
         "raw_score_name",
         "family",
-        "is_primary",
         "role",
         "ring",
         "horizon",
@@ -2014,6 +2148,7 @@ def _build_oos_fit_score_lift_df(scored: pd.DataFrame) -> pd.DataFrame:
             }
         )
         row: dict[str, object] = dict(zip(keys, group_key, strict=True))
+        row["is_primary"] = row["role"] == "primary"
         row.update(
             {
                 "candidate_count": evaluated.candidate_count,
@@ -2144,7 +2279,7 @@ def _build_topk_operational_lift_df(scored: pd.DataFrame) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     if scored.empty:
         return pd.DataFrame(rows, columns=columns)
-    primary = scored.loc[scored["is_primary"].eq(True)].copy()
+    primary = scored.loc[scored["role"].eq("primary")].copy()
     previous_codes: dict[tuple[str, int, int], set[str]] = {}
     for (family, raw_score_name, horizon, signal_date), group in primary.groupby(
         ["family", "raw_score_name", "horizon", "date"], observed=True, sort=True
@@ -2403,7 +2538,7 @@ def _build_diagnostics_df(scored: pd.DataFrame) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     if scored.empty:
         return pd.DataFrame(rows)
-    primary = scored.loc[scored["is_primary"].eq(True)].copy()
+    primary = scored.loc[scored["role"].eq("primary")].copy()
     group_keys = ["family", "raw_score_name", "ring", "horizon"]
     for group_key, group in primary.groupby(group_keys, observed=True, sort=True):
         base: dict[str, object] = dict(zip(group_keys, group_key, strict=True))
@@ -2616,7 +2751,31 @@ def build_technical_fit_evidence_tables(
     if missing:
         raise ValueError(f"observations is missing required columns: {sorted(missing)}")
 
-    source = observations.copy()
+    source_columns = list(
+        dict.fromkeys(
+            (
+                "date",
+                "code",
+                "ring",
+                "sector_33_code",
+                "sector_33_name",
+                *(definition.name for definition in RAW_SCORE_REGISTRY),
+                *_TECHNICAL_FIT_DIAGNOSTIC_COLUMNS,
+                "forward_outcome_completion_date_20d",
+                *(
+                    f"forward_close_excess_return_{horizon}d_pct"
+                    for horizon in sorted({*resolved_horizons, 20})
+                ),
+                *(
+                    f"forward_close_n225_excess_return_{horizon}d_pct"
+                    for horizon in resolved_horizons
+                ),
+            )
+        )
+    )
+    source = observations.loc[
+        :, [column for column in source_columns if column in observations.columns]
+    ].copy()
     source["date"] = pd.to_datetime(source["date"], errors="coerce").dt.normalize()
     source = source.loc[source["date"].notna()].copy()
     raw_daily, raw_summary = _build_raw_shape_tables(
