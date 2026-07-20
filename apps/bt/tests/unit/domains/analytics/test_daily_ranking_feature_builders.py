@@ -731,10 +731,53 @@ def test_long_leadership_publishes_requested_window_ranks_in_request_order(
         (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
         (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
     ]
+    assert (
+        conn.execute(
+            f"SELECT {', '.join(column for column, _ in _long_leadership_rank_schema(windows))} "
+            f"FROM {result.name} WHERE date = DATE '2024-01-01' ORDER BY code"
+        ).fetchall()
+        == [(None,) * 6] * 3
+    )
+
+
+def test_long_leadership_ranks_each_metric_on_its_own_valid_population(
+    feature_connection: Any,
+) -> None:
+    conn = feature_connection
+    source = _relation_ref(conn)
+    sector = build_sector_strength_features(
+        conn,
+        SectorStrengthFeaturesRequest(
+            source=source,
+            population_source=source,
+            namespace="sector_mixed_leadership_population",
+        ),
+    )
+    conn.execute(
+        "DELETE FROM indices_data WHERE code = '0041' AND date < DATE '2024-01-06'"
+    )
+
+    result = _public_long_leadership(
+        conn,
+        source,
+        sector,
+        namespace="mixed_leadership_population",
+        leadership_windows=(20, 60),
+    )
+
     assert conn.execute(
-        f"SELECT {', '.join(column for column, _ in _long_leadership_rank_schema(windows))} "
-        f"FROM {result.name} WHERE date = DATE '2024-01-01' ORDER BY code"
-    ).fetchall() == [(None,) * 6] * 3
+        f"SELECT long_index_leadership_score, "
+        f"long_constituent_breadth_leadership_score, "
+        f"long_hybrid_leadership_score, "
+        f"sector_index_20d_rank, sector_constituent_20d_rank, "
+        f"sector_breadth_20d_rank, sector_index_60d_rank, "
+        f"sector_constituent_60d_rank, sector_breadth_60d_rank "
+        f"FROM {result.name} WHERE date = DATE '2024-03-05' ORDER BY code"
+    ).fetchall() == [
+        (0.5, 0.75, 0.625, 1.0, 1.0, 1.0, 0.0, 1.0, 0.0),
+        (None, 0.0, None, 0.0, 0.0, 0.0, None, 0.0, 0.0),
+        (None, 0.0, None, 0.0, 0.0, 0.0, None, 0.0, 0.0),
+    ]
 
 
 def test_long_leadership_request_preserves_all_supported_windows_deterministically(
@@ -751,9 +794,12 @@ def test_long_leadership_request_preserves_all_supported_windows_deterministical
     )
 
     assert request.leadership_windows == (504, 20, 150, 60, 252, 120)
-    assert feature_builders._long_leadership_schema(  # noqa: SLF001
-        request.leadership_windows
-    )[-18:] == _long_leadership_rank_schema(request.leadership_windows)
+    assert (
+        feature_builders._long_leadership_schema(  # noqa: SLF001
+            request.leadership_windows
+        )[-18:]
+        == _long_leadership_rank_schema(request.leadership_windows)
+    )
 
 
 def test_rolling_trend_builder_uses_warmup_and_preserves_all_source_keys(

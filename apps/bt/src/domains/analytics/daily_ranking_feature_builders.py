@@ -1161,44 +1161,57 @@ def build_long_leadership_features(
         f"* 100.0 AS sector_breadth_{window}d_pct"
         for window in windows
     )
+    rank_specs = tuple(
+        (metric, rank_column)
+        for window in windows
+        for metric, rank_column in (
+            (
+                f"sector_index_{window}d_topix_excess_pct",
+                f"sector_index_{window}d_rank",
+            ),
+            (
+                f"sector_constituent_{window}d_topix_excess_pct",
+                f"sector_constituent_{window}d_rank",
+            ),
+            (f"sector_breadth_{window}d_pct", f"sector_breadth_{window}d_rank"),
+        )
+    )
     rank_expressions = ",\n                   ".join(
-        expression
-        for window in windows
-        for expression in (
-            "percent_rank() OVER (PARTITION BY constituent.market_scope, "
-            "constituent.date ORDER BY "
-            f"indexes.sector_index_{window}d_topix_excess_pct) "
-            f"AS sector_index_{window}d_rank",
-            "percent_rank() OVER (PARTITION BY constituent.market_scope, "
-            "constituent.date ORDER BY "
-            f"constituent.sector_constituent_{window}d_topix_excess_pct) "
-            f"AS sector_constituent_{window}d_rank",
-            "percent_rank() OVER (PARTITION BY constituent.market_scope, "
-            "constituent.date ORDER BY "
-            f"constituent.sector_breadth_{window}d_pct) "
-            f"AS sector_breadth_{window}d_rank",
-        )
+        f"CASE WHEN state.{metric} IS NULL THEN NULL "
+        f"WHEN count(state.{metric}) OVER ("
+        "PARTITION BY state.market_scope, state.date) = 1 THEN 0.0 "
+        "ELSE CAST(rank() OVER (PARTITION BY state.market_scope, state.date "
+        f"ORDER BY state.{metric} NULLS LAST) - 1 AS DOUBLE) / "
+        f"(count(state.{metric}) OVER ("
+        "PARTITION BY state.market_scope, state.date) - 1) END "
+        f"AS {rank_column}"
+        for metric, rank_column in rank_specs
     )
-    completeness = " AND ".join(
-        condition
-        for window in windows
-        for condition in (
-            f"constituent.sector_constituent_{window}d_topix_excess_pct IS NOT NULL",
-            f"constituent.sector_breadth_{window}d_pct IS NOT NULL",
-            f"indexes.sector_index_{window}d_topix_excess_pct IS NOT NULL",
-        )
-    )
-    index_score = (
+    index_score_value = (
         "("
         + " + ".join(f"sector_index_{window}d_rank" for window in windows)
         + f") / {len(windows)}.0"
     )
+    index_complete = " AND ".join(
+        f"sector_index_{window}d_rank IS NOT NULL" for window in windows
+    )
+    index_score = f"CASE WHEN {index_complete} THEN {index_score_value} END"
     constituent_terms = [
         *(f"sector_constituent_{window}d_rank" for window in windows),
         *(f"sector_breadth_{window}d_rank" for window in windows),
     ]
-    constituent_score = (
+    constituent_score_value = (
         "(" + " + ".join(constituent_terms) + f") / {len(constituent_terms)}.0"
+    )
+    constituent_complete = " AND ".join(
+        f"{column} IS NOT NULL" for column in constituent_terms
+    )
+    constituent_score = (
+        f"CASE WHEN {constituent_complete} THEN {constituent_score_value} END"
+    )
+    hybrid_score = (
+        f"CASE WHEN {index_complete} AND {constituent_complete} "
+        f"THEN ({index_score_value} + {constituent_score_value}) / 2.0 END"
     )
     key_join = " AND ".join(
         f"dependency.{column} = source.{column}" for column in source.key_columns
@@ -1263,26 +1276,22 @@ def build_long_leadership_features(
             GROUP BY featured.market_scope, featured.date,
                      featured.sector_33_code, featured.sector_33_name
         ),
-        complete_state AS (
+        leadership_state AS (
             SELECT constituent.*, indexes.* EXCLUDE (sector_33_code, date)
             FROM constituent_state constituent
-            JOIN index_excess indexes
+            LEFT JOIN index_excess indexes
               ON indexes.sector_33_code = constituent.sector_33_code
              AND indexes.date = constituent.date
-            WHERE {completeness}
         ),
         ranked_state AS (
-            SELECT constituent.*, {rank_expressions}
-            FROM complete_state constituent
-            JOIN index_excess indexes
-              ON indexes.sector_33_code = constituent.sector_33_code
-             AND indexes.date = constituent.date
+            SELECT state.*, {rank_expressions}
+            FROM leadership_state state
         ),
         scored_state AS (
             SELECT *, ({index_score}) AS long_index_leadership_score,
                    ({constituent_score})
                        AS long_constituent_breadth_leadership_score,
-                   (({index_score}) + ({constituent_score})) / 2.0
+                   ({hybrid_score})
                        AS long_hybrid_leadership_score
             FROM ranked_state
         ),
