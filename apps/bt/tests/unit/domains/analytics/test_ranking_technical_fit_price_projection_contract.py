@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import duckdb
 import pytest
@@ -359,7 +360,7 @@ def _describe_relation(
 
 
 def _legacy_projection(
-    conn: duckdb.DuckDBPyConnection,
+    conn: Any,
 ) -> tuple[object, object]:
     return create_event_time_price_relations(
         conn,
@@ -369,6 +370,37 @@ def _legacy_projection(
         analysis_end_date="2024-01-04",
         horizons=(1,),
     )
+
+
+def _technical_fit_generation_tables(
+    conn: duckdb.DuckDBPyConnection,
+) -> tuple[str, ...]:
+    return tuple(
+        str(row[0])
+        for row in conn.execute(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE starts_with(table_name, 'ranking_technical_fit_g_')
+            ORDER BY table_name
+            """
+        ).fetchall()
+    )
+
+
+class _FailingForwardViewPublishConnection:
+    def __init__(self, conn: duckdb.DuckDBPyConnection) -> None:
+        self._conn = conn
+
+    def execute(self, query: str, parameters: object = None) -> Any:
+        if f"CREATE OR REPLACE TEMP VIEW {FORWARD_OUTCOME_RELATION}" in query:
+            raise RuntimeError("injected forward view publish failure")
+        if parameters is None:
+            return self._conn.execute(query)
+        return self._conn.execute(query, parameters)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._conn, name)
 
 
 def test_technical_fit_compatibility_preserves_exact_schema_and_hashes(
@@ -464,6 +496,64 @@ def test_first_failed_compatibility_build_publishes_no_legacy_relation(
     assert published == []
 
 
+def test_consecutive_compatibility_rebuilds_retain_only_current_view_backing_tables(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_price_projection_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+    try:
+        _legacy_projection(conn)
+        _legacy_projection(conn)
+        generation_tables = _technical_fit_generation_tables(conn)
+    finally:
+        conn.close()
+
+    assert len(generation_tables) == 2
+    assert (
+        sum(name.endswith("_signal_price_features") for name in generation_tables) == 1
+    )
+    assert (
+        sum(name.endswith("_forward_price_outcomes") for name in generation_tables) == 1
+    )
+    assert not any(name.endswith("_price_history") for name in generation_tables)
+
+
+def test_failed_view_publish_preserves_stable_views_and_cleans_price_history(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_price_projection_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+    try:
+        _legacy_projection(conn)
+        prior_signal = conn.execute(
+            f"SELECT * FROM {SIGNAL_FEATURE_RELATION}"
+        ).fetchall()
+        prior_outcome = conn.execute(
+            f"SELECT * FROM {FORWARD_OUTCOME_RELATION}"
+        ).fetchall()
+        conn.execute(
+            "CREATE TEMP TABLE ranking_technical_fit_g_orphan_price_history(value INT)"
+        )
+
+        with pytest.raises(RuntimeError, match="injected forward view publish failure"):
+            _legacy_projection(_FailingForwardViewPublishConnection(conn))
+
+        after_signal = conn.execute(
+            f"SELECT * FROM {SIGNAL_FEATURE_RELATION}"
+        ).fetchall()
+        after_outcome = conn.execute(
+            f"SELECT * FROM {FORWARD_OUTCOME_RELATION}"
+        ).fetchall()
+        generation_tables = _technical_fit_generation_tables(conn)
+    finally:
+        conn.close()
+
+    assert after_signal == prior_signal
+    assert after_outcome == prior_outcome
+    assert len(generation_tables) == 2
+    assert not any(name.endswith("_price_history") for name in generation_tables)
+
+
 def test_failed_compatibility_rebuild_keeps_prior_signal_and_outcome_generation(
     tmp_path: Path,
 ) -> None:
@@ -492,8 +582,17 @@ def test_failed_compatibility_rebuild_keeps_prior_signal_and_outcome_generation(
             _legacy_projection(conn)
         after_signal = conn.execute(f"SELECT * FROM {SIGNAL_FEATURE_RELATION}").fetchall()
         after_outcome = conn.execute(f"SELECT * FROM {FORWARD_OUTCOME_RELATION}").fetchall()
+        generation_tables = _technical_fit_generation_tables(conn)
     finally:
         conn.close()
 
     assert after_signal == prior_signal
     assert after_outcome == prior_outcome
+    assert len(generation_tables) == 2
+    assert (
+        sum(name.endswith("_signal_price_features") for name in generation_tables) == 1
+    )
+    assert (
+        sum(name.endswith("_forward_price_outcomes") for name in generation_tables) == 1
+    )
+    assert not any(name.endswith("_price_history") for name in generation_tables)

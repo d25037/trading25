@@ -46,21 +46,30 @@ def create_event_time_price_relations(
               AND (
                   ends_with(table_name, '_signal_price_features')
                   OR ends_with(table_name, '_forward_price_outcomes')
+                  OR ends_with(table_name, '_price_history')
               )
             """
         ).fetchall()
     }
-    built = build_daily_ranking_event_time_prices(
-        conn,
-        DailyRankingPriceRequest(
-            namespace="ranking_technical_fit",
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=analysis_start_date,
-            analysis_end_date=analysis_end_date,
-            horizons=tuple(int(value) for value in horizons),
-        ),
-    )
+    prior_price_history_tables = {
+        name for name in prior_generation_tables if name.endswith("_price_history")
+    }
+    try:
+        built = build_daily_ranking_event_time_prices(
+            conn,
+            DailyRankingPriceRequest(
+                namespace="ranking_technical_fit",
+                query_start=query_start,
+                query_end=query_end,
+                analysis_start_date=analysis_start_date,
+                analysis_end_date=analysis_end_date,
+                horizons=tuple(int(value) for value in horizons),
+            ),
+        )
+    except Exception:
+        for relation_name in prior_price_history_tables:
+            conn.execute(f"DROP TABLE IF EXISTS {relation_name}")
+        raise
     signal_columns = ", ".join(DAILY_RANKING_SIGNAL_FEATURE_COLUMNS)
     legacy_outcome_columns = ", ".join(
         column
@@ -97,9 +106,13 @@ def create_event_time_price_relations(
             conn.execute("ROLLBACK")
         conn.execute(f"DROP TABLE IF EXISTS {built.signal_features}")
         conn.execute(f"DROP TABLE IF EXISTS {built.forward_outcomes}")
+        conn.execute(f"DROP TABLE IF EXISTS {built.price_history}")
+        for relation_name in prior_price_history_tables:
+            conn.execute(f"DROP TABLE IF EXISTS {relation_name}")
         raise
     for relation_name in prior_generation_tables:
         conn.execute(f"DROP TABLE IF EXISTS {relation_name}")
+    conn.execute(f"DROP TABLE IF EXISTS {built.price_history}")
     return (
         EventTimePriceRelations(),
         built.lineage,
