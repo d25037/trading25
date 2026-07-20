@@ -164,6 +164,104 @@ def test_rerating_bubble_regime_ignores_poisoned_stock_data(tmp_path: Path) -> N
     )
 
 
+def test_rerating_bubble_regime_keeps_each_snapshot_on_its_issued_price_basis(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_bubble_footprint_db(tmp_path / "market.duckdb")
+    kwargs = {
+        "start_date": "2024-01-31",
+        "end_date": "2024-10-31",
+        "signal_horizons": (20,),
+        "footprint_horizons": (60,),
+        "market_scopes": ("prime",),
+        "frequency": "monthly",
+        "min_observations": 1,
+        "severe_loss_threshold_pct": -10.0,
+        "observation_sample_limit": 100,
+    }
+    baseline = run_rerating_bubble_regime_forward_response_research(db_path, **kwargs)
+    _add_equivalent_split_basis(db_path, code="1000", valid_from="2024-07-01")
+
+    split = run_rerating_bubble_regime_forward_response_research(db_path, **kwargs)
+
+    pd.testing.assert_frame_equal(baseline.footprint_df, split.footprint_df)
+    pd.testing.assert_frame_equal(
+        baseline.rerating_bubble_regime_df,
+        split.rerating_bubble_regime_df,
+    )
+    assert split.observation_count == baseline.observation_count
+    assert (
+        split.footprint_df["observation_count"]
+        == split.footprint_df["code_count"]
+    ).all()
+
+
+def _add_equivalent_split_basis(
+    db_path: Path,
+    *,
+    code: str,
+    valid_from: str,
+) -> None:
+    conn = duckdb.connect(str(db_path))
+    old_basis = str(
+        conn.execute(
+            "SELECT basis_id FROM stock_adjustment_bases WHERE code = ?",
+            [code],
+        ).fetchone()[0]
+    )
+    new_basis = f"event-pit-v1:{code}:{valid_from}"
+    conn.execute(
+        "UPDATE stock_adjustment_bases SET valid_to_exclusive = ? "
+        "WHERE code = ? AND basis_id = ?",
+        [valid_from, code, old_basis],
+    )
+    conn.execute(
+        """
+        INSERT INTO stock_adjustment_bases
+        SELECT ?, ?, CAST(? AS DATE), NULL, CAST(? AS DATE),
+               'split-fixture', max(date), 'ready'
+        FROM stock_data_raw
+        WHERE code = ?
+        """,
+        [code, new_basis, valid_from, valid_from, code],
+    )
+    conn.execute(
+        """
+        INSERT INTO stock_adjustment_basis_segments VALUES
+            (?, ?, (SELECT min(date) FROM stock_data_raw WHERE code = ?),
+             CAST(? AS DATE), 0.5),
+            (?, ?, CAST(? AS DATE), NULL, 1.0)
+        """,
+        [code, new_basis, code, valid_from, code, new_basis, valid_from],
+    )
+    conn.execute(
+        """
+        INSERT INTO daily_valuation
+        SELECT code, date, price_basis_date,
+               close * 0.5, eps * 0.5, bps * 0.5, forward_eps * 0.5,
+               per, forward_per, pbr, market_cap, free_float_market_cap,
+               ?, p_op, forward_p_op
+        FROM daily_valuation
+        WHERE code = ? AND basis_version = ?
+        """,
+        [new_basis, code, old_basis],
+    )
+    conn.execute(
+        """
+        UPDATE stock_data_raw
+        SET open = open * 0.5,
+            high = high * 0.5,
+            low = low * 0.5,
+            close = close * 0.5,
+            volume = volume * 2,
+            adjustment_factor = 0.5
+        WHERE code = ? AND date >= CAST(? AS DATE)
+        """,
+        [code, valid_from],
+    )
+    conn.close()
+
+
 def _build_bubble_footprint_db(db_path: Path) -> Path:
     dates = duckdb.execute(
         "SELECT strftime(d, '%Y-%m-%d') FROM range(DATE '2021-01-04', DATE '2025-02-01', INTERVAL 1 DAY) t(d) WHERE dayofweek(d) BETWEEN 1 AND 5"

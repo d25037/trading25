@@ -320,7 +320,13 @@ def find_research_code_guardrail_findings_in_text(
         )
     if (
         relative_path.stem == "market_bubble_footprint_support"
-        and "price_history_name=ranking_relations.price_history.name" not in text
+        and not all(
+            marker in text
+            for marker in (
+                "price_history_name=ranking_relations.price_history.name",
+                "signal_basis_name=ranking_relations.signal_prices.name",
+            )
+        )
     ):
         findings.append(
             ResearchGuardrailFinding(
@@ -329,7 +335,7 @@ def find_research_code_guardrail_findings_in_text(
                 rule_name="daily-ranking-stock-data-read",
                 message=(
                     "Rerating footprint grouping must consume the issued event-time "
-                    "price history relation."
+                    "price history and exact signal basis relations."
                 ),
             )
         )

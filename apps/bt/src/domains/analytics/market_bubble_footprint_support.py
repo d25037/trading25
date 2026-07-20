@@ -255,6 +255,7 @@ def run_rerating_bubble_regime_forward_response_research(
             frequency=frequency,
             table_name="bubble_footprint_with_regimes",
             price_history_name=ranking_relations.price_history.name,
+            signal_basis_name=ranking_relations.signal_prices.name,
         )
         signal_source = ranking_relations.liquidity_ranked_signals
         if signal_source is None:
@@ -498,7 +499,12 @@ def _build_footprint_table(
     frequency: Frequency,
     table_name: str,
     price_history_name: str | None = None,
+    signal_basis_name: str | None = None,
 ) -> pd.DataFrame:
+    if (price_history_name is None) != (signal_basis_name is None):
+        raise ValueError(
+            "event-time footprint requires both price history and signal basis"
+        )
     _create_footprint_base_tables(
         conn,
         market_scopes=market_scopes,
@@ -506,6 +512,16 @@ def _build_footprint_table(
         start_date=start_date,
         end_date=end_date,
         price_history_name=price_history_name,
+    )
+    snapshot_basis_join_sql = (
+        ""
+        if signal_basis_name is None
+        else f"""
+            JOIN {signal_basis_name} snapshot_basis
+              ON snapshot_basis.code = l.code
+             AND CAST(snapshot_basis.date AS DATE) = CAST(l.date AS DATE)
+             AND CAST(snapshot_basis.price_basis_id AS VARCHAR) = l.price_basis_id
+        """
     )
     horizons_sql = ", ".join(f"({int(horizon)})" for horizon in return_horizons)
     conn.execute(
@@ -548,18 +564,22 @@ def _build_footprint_table(
             FROM pairs p
             JOIN bubble_stock_features l
               ON l.date = p.snapshot_date
+            {snapshot_basis_join_sql}
             JOIN bubble_stock_features a
               ON a.code = l.code
              AND a.date = p.anchor_date
+             AND a.price_basis_id = l.price_basis_id
             JOIN bubble_market_master m
               ON m.code = l.code
              AND m.date = l.date
             LEFT JOIN bubble_daily_valuation va
               ON va.code = l.code
              AND va.date = a.date
+             AND va.price_basis_id = l.price_basis_id
             LEFT JOIN bubble_daily_valuation vl
               ON vl.code = l.code
              AND vl.date = l.date
+             AND vl.price_basis_id = l.price_basis_id
             JOIN topix_data t0
               ON t0.date = p.snapshot_date
             JOIN topix_data ta
@@ -690,6 +710,16 @@ def _create_footprint_base_tables(
     stock_source_sql = (
         "stock_data sd" if price_history_name is None else f"{price_history_name} sd"
     )
+    stock_basis_sql = (
+        "'__convenience__'"
+        if price_history_name is None
+        else "CAST(sd.price_basis_id AS VARCHAR)"
+    )
+    valuation_basis_sql = (
+        "'__convenience__'"
+        if price_history_name is None
+        else "CAST(price_basis.price_basis_id AS VARCHAR)"
+    )
     valuation_basis_join_sql = (
         ""
         if price_history_name is None
@@ -788,18 +818,20 @@ def _create_footprint_base_tables(
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE bubble_stock_norm AS
-        SELECT code, date, close, volume, company_name, market, sector_33_name
+        SELECT code, date, price_basis_id, close, volume,
+               company_name, market, sector_33_name
         FROM (
             SELECT
                 {stock_code} AS code,
                 sd.date,
+                {stock_basis_sql} AS price_basis_id,
                 CAST(sd.close AS DOUBLE) AS close,
                 CAST(sd.volume AS DOUBLE) AS volume,
                 mm.company_name,
                 mm.market,
                 mm.sector_33_name,
                 row_number() OVER (
-                    PARTITION BY {stock_code}, sd.date
+                    PARTITION BY {stock_code}, sd.date, {stock_basis_sql}
                     ORDER BY CASE WHEN length(sd.code) = 4 THEN 0 ELSE 1 END, sd.code
                 ) AS row_rank
             FROM {stock_source_sql}
@@ -825,25 +857,32 @@ def _create_footprint_base_tables(
         SELECT
             *,
             avg(close) OVER (
-                PARTITION BY code ORDER BY date ROWS BETWEEN 49 PRECEDING AND CURRENT ROW
+                PARTITION BY code, price_basis_id
+                ORDER BY date ROWS BETWEEN 49 PRECEDING AND CURRENT ROW
             ) AS sma50,
             avg(close) OVER (
-                PARTITION BY code ORDER BY date ROWS BETWEEN 199 PRECEDING AND CURRENT ROW
+                PARTITION BY code, price_basis_id
+                ORDER BY date ROWS BETWEEN 199 PRECEDING AND CURRENT ROW
             ) AS sma200,
             count(close) OVER (
-                PARTITION BY code ORDER BY date ROWS BETWEEN 199 PRECEDING AND CURRENT ROW
+                PARTITION BY code, price_basis_id
+                ORDER BY date ROWS BETWEEN 199 PRECEDING AND CURRENT ROW
             ) AS sma200_count,
             avg(close * volume) OVER (
-                PARTITION BY code ORDER BY date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW
+                PARTITION BY code, price_basis_id
+                ORDER BY date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW
             ) AS trading_value_20d,
             median(close * volume) OVER (
-                PARTITION BY code ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+                PARTITION BY code, price_basis_id
+                ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
             ) AS med_adv60_jpy,
             count(close * volume) OVER (
-                PARTITION BY code ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+                PARTITION BY code, price_basis_id
+                ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
             ) AS med_adv60_sessions,
             avg(close * volume) OVER (
-                PARTITION BY code ORDER BY date ROWS BETWEEN 251 PRECEDING AND 20 PRECEDING
+                PARTITION BY code, price_basis_id
+                ORDER BY date ROWS BETWEEN 251 PRECEDING AND 20 PRECEDING
             ) AS trading_value_prev232d
         FROM bubble_stock_norm
         """
@@ -854,6 +893,7 @@ def _create_footprint_base_tables(
         SELECT
             code,
             date,
+            price_basis_id,
             market_cap,
             free_float_market_cap,
             per,
@@ -867,6 +907,7 @@ def _create_footprint_base_tables(
             SELECT
                 {valuation_code} AS code,
                 dv.date,
+                {valuation_basis_sql} AS price_basis_id,
                 CAST(dv.market_cap AS DOUBLE) AS market_cap,
                 {_optional_double_expr(conn, "daily_valuation", "dv", "free_float_market_cap")}
                     AS free_float_market_cap,
@@ -881,7 +922,7 @@ def _create_footprint_base_tables(
                 {_optional_double_expr(conn, "daily_valuation", "dv", "forward_eps")}
                     AS forward_eps,
                 row_number() OVER (
-                    PARTITION BY {valuation_code}, dv.date
+                    PARTITION BY {valuation_code}, dv.date, {valuation_basis_sql}
                     ORDER BY dv.price_basis_date DESC NULLS LAST,
                              dv.basis_version DESC NULLS LAST,
                              CASE WHEN length(dv.code) = 4 THEN 0 ELSE 1 END,

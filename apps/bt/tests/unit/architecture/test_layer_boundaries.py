@@ -2313,6 +2313,9 @@ def test_daily_ranking_clean_cut_has_no_compatibility_or_stock_data_path() -> No
     support_source = support_path.read_text()
     assert "_create_rerating_bubble_observation_table" not in support_source
     assert "price_history_name=ranking_relations.price_history.name" in support_source
+    assert "signal_basis_name=ranking_relations.signal_prices.name" in support_source
+    assert "PARTITION BY code, price_basis_id" in support_source
+    assert "a.price_basis_id = l.price_basis_id" in support_source
 
     consumers = (
         _DAILY_RANKING_TASK8_CONSUMERS

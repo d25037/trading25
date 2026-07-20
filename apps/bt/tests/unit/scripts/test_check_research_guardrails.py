@@ -55,7 +55,7 @@ conn.execute("SELECT * FROM stock_data")
     }
 
 
-def test_daily_ranking_guardrail_requires_issued_footprint_price_history() -> None:
+def test_daily_ranking_guardrail_requires_issued_footprint_basis_pair() -> None:
     module = _load_module()
     path = Path(
         "apps/bt/src/domains/analytics/market_bubble_footprint_support.py"
@@ -70,7 +70,10 @@ def run_rerating_bubble_regime_forward_response_research(conn):
         conn,
         DailyRankingPanelRequest(),
     )
-    return _build_footprint_table(conn)
+    return _build_footprint_table(
+        conn,
+        price_history_name=ranking_relations.price_history.name,
+    )
 """.strip(),
     )
 
