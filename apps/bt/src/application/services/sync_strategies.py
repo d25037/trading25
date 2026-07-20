@@ -666,6 +666,19 @@ async def _sync_initial_stock_data_stage(
     stocks_updated += (
         commit_outcome.appended_rows + commit_outcome.replaced_rows
     )
+    if commit_outcome.cancelled:
+        return {
+            "api_calls": api_calls,
+            "stocks_updated": stocks_updated,
+            "stock_rows_appended": commit_outcome.appended_rows,
+            "affected_stock_codes": len(commit_outcome.affected_codes),
+            "stock_codes_replaced": commit_outcome.replaced_codes,
+            "stock_rows_replaced": commit_outcome.replaced_rows,
+            "stock_recomputation_errors": [],
+            "failed_dates": failed_dates,
+            "errors": errors,
+            "cancelled": True,
+        }
 
     await sync_publish_helpers._index_stock_data_rows(
         ctx,
@@ -1099,6 +1112,19 @@ async def _sync_incremental_stock_data_stage(
     stocks_updated += (
         commit_outcome.appended_rows + commit_outcome.replaced_rows
     )
+    if commit_outcome.cancelled:
+        return {
+            "api_calls": api_calls,
+            "stocks_updated": stocks_updated,
+            "stock_rows_appended": commit_outcome.appended_rows,
+            "affected_stock_codes": len(commit_outcome.affected_codes),
+            "stock_codes_replaced": commit_outcome.replaced_codes,
+            "stock_rows_replaced": commit_outcome.replaced_rows,
+            "stock_recomputation_errors": [],
+            "stock_target_dates": stock_target_dates,
+            "errors": errors,
+            "cancelled": True,
+        }
 
     await sync_publish_helpers._index_stock_data_rows(
         ctx,

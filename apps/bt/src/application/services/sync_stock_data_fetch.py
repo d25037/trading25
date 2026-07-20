@@ -57,6 +57,7 @@ class StockDataCommitOutcome:
     replaced_codes: int = 0
     replaced_rows: int = 0
     recomputation_errors: tuple[str, ...] = ()
+    cancelled: bool = False
 
 
 _T = TypeVar("_T")
@@ -158,25 +159,15 @@ class StockDataIngestionSession:
                 )
             except asyncio.CancelledError as exc:
                 response = getattr(exc, "response", None)
-                if response is None:
-                    await sync_publish_helpers._discard_staged_stock_data_rows(ctx)
-                    raise
-                successful_codes = frozenset(
-                    result.code for result in response.results if result.success
+                await self._finalize_cancelled_commit(
+                    ctx,
+                    affected_codes=affected_codes,
+                    api_calls=response.totalApiCalls if response is not None else 0,
+                    replaced_codes=response.successCount if response is not None else 0,
+                    replaced_rows=(
+                        response.totalRecordsStored if response is not None else 0
+                    ),
                 )
-                if successful_codes:
-                    self._record_committed_outcome(
-                        ctx,
-                        StockDataCommitOutcome(
-                            api_calls=response.totalApiCalls,
-                            affected_codes=successful_codes,
-                            replaced_codes=response.successCount,
-                            replaced_rows=response.totalRecordsStored,
-                        ),
-                    )
-                await sync_publish_helpers._discard_staged_stock_data_rows(ctx)
-                self._committed = bool(successful_codes)
-                self._finalized = True
                 raise
             except BaseException:
                 await sync_publish_helpers._discard_staged_stock_data_rows(ctx)
@@ -184,10 +175,27 @@ class StockDataIngestionSession:
             api_calls = response.totalApiCalls
             replaced_codes = response.successCount
             replaced_rows = response.totalRecordsStored
+            if "Cancelled" in response.errors or ctx.cancelled.is_set():
+                return await self._finalize_cancelled_commit(
+                    ctx,
+                    affected_codes=affected_codes,
+                    api_calls=api_calls,
+                    replaced_codes=replaced_codes,
+                    replaced_rows=replaced_rows,
+                )
             if response.failedCount or response.errors:
                 await sync_publish_helpers._discard_staged_stock_data_rows(ctx)
                 detail = "; ".join(response.errors) or "affected stock refresh failed"
                 raise AffectedStockRefreshError(detail)
+
+        if ctx.cancelled.is_set():
+            return await self._finalize_cancelled_commit(
+                ctx,
+                affected_codes=affected_codes,
+                api_calls=api_calls,
+                replaced_codes=replaced_codes,
+                replaced_rows=replaced_rows,
+            )
 
         append_result = await sync_publish_helpers._flush_staged_stock_data_rows(
             ctx,
@@ -217,6 +225,30 @@ class StockDataIngestionSession:
                         f"Affected stock recomputation failed: {exc}",
                     ),
                 )
+        self.affected_codes.clear()
+        self.staged_rows = 0
+        return outcome
+
+    async def _finalize_cancelled_commit(
+        self,
+        ctx: Any,
+        *,
+        affected_codes: frozenset[str],
+        api_calls: int,
+        replaced_codes: int,
+        replaced_rows: int,
+    ) -> StockDataCommitOutcome:
+        outcome = StockDataCommitOutcome(
+            api_calls=api_calls,
+            affected_codes=affected_codes,
+            replaced_codes=replaced_codes,
+            replaced_rows=replaced_rows,
+            cancelled=True,
+        )
+        self._record_committed_outcome(ctx, outcome)
+        await sync_publish_helpers._discard_staged_stock_data_rows(ctx)
+        self._committed = replaced_codes > 0
+        self._finalized = True
         self.affected_codes.clear()
         self.staged_rows = 0
         return outcome

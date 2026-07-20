@@ -286,6 +286,15 @@ async def refresh_stocks(
                 cancelled = True
                 deferred_cancellation = replacement_cancellation
                 break
+            if cancel_check is not None and cancel_check():
+                cancelled = True
+                if progress_callback is not None:
+                    progress_callback(
+                        index,
+                        total_codes,
+                        f"Cancelled stock refresh after publishing stock {index}/{total_codes}: {normalized}",
+                    )
+                break
         except Exception as e:
             logger.warning(f"Refresh failed for {code}: {e}")
             errors.append(f"{code}: {e}")

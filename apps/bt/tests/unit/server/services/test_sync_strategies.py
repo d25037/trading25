@@ -2584,6 +2584,28 @@ class _UnserializedBlockingStageStore(_StagedStockDataStore):
         return super().stage_stock_data_rows(rows)
 
 
+class _UnserializedBlockingReplacementStore(_StagedStockDataStore):
+    """Block provider replacement without depending on the store process lock."""
+
+    def __init__(self, market_db: DummyMarketDb) -> None:
+        super().__init__(market_db)
+        self.replacement_started = threading.Event()
+        self.release_replacement = threading.Event()
+        self.replacement_codes: list[str] = []
+
+    def replace_stock_provider_window(
+        self,
+        code: str,
+        rows: list[dict[str, Any]],
+        coverage: dict[str, str],
+        metadata: dict[str, str],
+    ) -> SemanticDeltaResult:
+        self.replacement_codes.append(code)
+        self.replacement_started.set()
+        assert self.release_replacement.wait(timeout=2)
+        return super().replace_stock_provider_window(code, rows, coverage, metadata)
+
+
 class _CompleteWindowClient:
     plan = "light"
 
@@ -3032,6 +3054,94 @@ async def test_stock_session_reports_recompute_failure_after_publishing_price_co
     assert published[-1] == (1, 1, 1, outcome.replaced_rows)
     assert session.committed is True
     assert session.finalized is True
+
+
+@pytest.mark.asyncio
+async def test_stock_session_cooperative_cancel_during_only_replacement_skips_normal_append() -> None:
+    market_db = DummyMarketDb()
+    market_db.topix_rows = [
+        {"date": "2026-02-10", "open": 1, "high": 1, "low": 1, "close": 1}
+    ]
+    store = _UnserializedBlockingReplacementStore(market_db)
+    cancelled = asyncio.Event()
+    ctx = _build_ctx(
+        client=_CompleteWindowClient(
+            {"72030": [_provider_daily_quote("72030", "2026-02-10")]}
+        ),
+        market_db=market_db,
+        time_series_store=store,
+        cancelled=cancelled,
+    )
+    session = sync_stock_data_fetch.StockDataIngestionSession()
+    await session.stage(
+        ctx,
+        [
+            _normalized_provider_daily_row("72030", "2026-02-10", factor=0.5),
+            _normalized_provider_daily_row("67580", "2026-02-10", base=20.0),
+        ],
+    )
+
+    task = asyncio.create_task(session.commit(ctx))
+    assert await asyncio.to_thread(store.replacement_started.wait, 1)
+    cancelled.set()
+    store.release_replacement.set()
+    outcome = await task
+
+    assert outcome.cancelled is True
+    assert outcome.appended_rows == 0
+    assert outcome.affected_codes == frozenset({"7203"})
+    assert outcome.replaced_codes == 1
+    assert store.flush_calls == 0
+    assert store.discard_calls == 1
+    assert "6758" not in {str(row["code"]) for row in market_db.stock_rows}
+
+
+@pytest.mark.asyncio
+async def test_stock_session_partial_cooperative_cancel_keeps_detected_and_replaced_counts() -> None:
+    market_db = DummyMarketDb()
+    market_db.topix_rows = [
+        {"date": "2026-02-10", "open": 1, "high": 1, "low": 1, "close": 1}
+    ]
+    store = _UnserializedBlockingReplacementStore(market_db)
+    cancelled = asyncio.Event()
+    committed_progress: list[tuple[int, int, int, int]] = []
+    ctx = _build_ctx(
+        client=_CompleteWindowClient(
+            {
+                "67580": [_provider_daily_quote("67580", "2026-02-10")],
+                "72030": [_provider_daily_quote("72030", "2026-02-10")],
+            }
+        ),
+        market_db=market_db,
+        time_series_store=store,
+        cancelled=cancelled,
+    )
+    ctx.on_stock_commit = lambda *counts: committed_progress.append(counts)
+    session = sync_stock_data_fetch.StockDataIngestionSession()
+    await session.stage(
+        ctx,
+        [
+            _normalized_provider_daily_row("72030", "2026-02-10", factor=0.5),
+            _normalized_provider_daily_row("67580", "2026-02-10", factor=0.5),
+            _normalized_provider_daily_row("99840", "2026-02-10", base=30.0),
+        ],
+    )
+
+    task = asyncio.create_task(session.commit(ctx))
+    assert await asyncio.to_thread(store.replacement_started.wait, 1)
+    cancelled.set()
+    store.release_replacement.set()
+    outcome = await task
+
+    assert outcome.cancelled is True
+    assert outcome.affected_codes == frozenset({"6758", "7203"})
+    assert outcome.replaced_codes == 1
+    assert len(store.replacement_codes) == 1
+    assert store.flush_calls == 0
+    assert ctx.affected_stock_codes == 2
+    assert ctx.stock_codes_replaced == 1
+    assert committed_progress == [(0, 2, 1, outcome.replaced_rows)]
+    assert "9984" not in {str(row["code"]) for row in market_db.stock_rows}
 
 
 @pytest.mark.asyncio
