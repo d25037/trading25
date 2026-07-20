@@ -153,5 +153,13 @@ def _build_roe_quality_db(db_path: Path) -> Path:
         "INSERT INTO statement_metrics_adjusted VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         quality_rows,
     )
+    conn.execute(
+        """
+        UPDATE statement_metrics_adjusted AS metrics
+        SET basis_version = basis.basis_id
+        FROM stock_adjustment_bases basis
+        WHERE basis.code = metrics.code
+        """
+    )
     conn.close()
     return db_path

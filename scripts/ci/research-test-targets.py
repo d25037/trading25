@@ -13,6 +13,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+from test_taxonomy import is_research_path  # noqa: E402
 from test_targets import BT_FAST_RESEARCH_TESTS  # noqa: E402
 
 RESEARCH_PY_PREFIXES = (
@@ -23,6 +24,179 @@ RESEARCH_INFRA_TESTS = (
     "tests/unit/scripts/test_check_research_guardrails.py",
     "tests/unit/domains/analytics/test_research_bundle.py",
 )
+RESEARCH_ANALYTICS_TEST_PREFIX = "apps/bt/tests/unit/domains/analytics/test_"
+RESEARCH_FIXTURE_CONSUMER_TESTS = {
+    "apps/bt/tests/fixtures/research/ranking_publication_registry.json": (
+        "tests/unit/domains/analytics/test_ranking_publication_registry.py",
+    ),
+    (
+        "apps/bt/tests/fixtures/research/"
+        "ranking_technical_fit_score_shape_evidence_published_digest.json"
+    ): (
+        "tests/unit/domains/analytics/"
+        "test_ranking_technical_fit_score_shape_evidence.py",
+    ),
+    (
+        "apps/bt/tests/fixtures/research/"
+        "ranking_trend_acceleration_conditional_lift_v8_published_digest.json"
+    ): (
+        "tests/unit/domains/analytics/test_ranking_publication_registry.py",
+        "tests/unit/domains/analytics/"
+        "test_ranking_trend_acceleration_conditional_lift.py",
+    ),
+    (
+        "apps/bt/tests/fixtures/research/"
+        "ranking_fixed_return_priority_evidence_v11_published_digest.json"
+    ): (
+        "tests/unit/domains/analytics/test_ranking_publication_registry.py",
+        "tests/unit/domains/analytics/test_ranking_fixed_return_priority_evidence.py",
+    ),
+    (
+        "apps/bt/tests/fixtures/research/"
+        "ranking_technical_fit_score_shape_evidence_v12_published_digest.json"
+    ): (
+        "tests/unit/domains/analytics/test_ranking_publication_registry.py",
+        "tests/unit/domains/analytics/"
+        "test_ranking_technical_fit_score_shape_evidence.py",
+    ),
+    (
+        "apps/bt/tests/fixtures/research/"
+        "ranking_trend_acceleration_conditional_lift_v9_published_digest.json"
+    ): (
+        "tests/unit/domains/analytics/test_ranking_publication_registry.py",
+        "tests/unit/domains/analytics/"
+        "test_ranking_trend_acceleration_conditional_lift.py",
+    ),
+    (
+        "apps/bt/tests/fixtures/research/"
+        "ranking_fixed_return_priority_evidence_v12_published_digest.json"
+    ): (
+        "tests/unit/domains/analytics/test_ranking_publication_registry.py",
+        "tests/unit/domains/analytics/test_ranking_fixed_return_priority_evidence.py",
+    ),
+    (
+        "apps/bt/tests/fixtures/research/"
+        "ranking_technical_fit_score_shape_evidence_v13_published_digest.json"
+    ): (
+        "tests/unit/domains/analytics/test_ranking_publication_registry.py",
+        "tests/unit/domains/analytics/"
+        "test_ranking_technical_fit_score_shape_evidence.py",
+    ),
+}
+RESEARCH_TEST_SUPPORT_CONSUMER_TESTS = {
+    (
+        "apps/bt/tests/unit/domains/analytics/"
+        "daily_ranking_market_v4_fixture.py"
+    ): (
+        "tests/unit/domains/analytics/test_atr_expansion_forward_response.py",
+        "tests/unit/domains/analytics/test_market_bubble_footprint.py",
+        "tests/unit/domains/analytics/test_ranking_sector_strength_evidence.py",
+        "tests/unit/domains/analytics/test_ranking_short_red_evidence.py",
+        (
+            "tests/unit/domains/analytics/"
+            "test_ranking_short_sector_strength_evidence.py"
+        ),
+    ),
+}
+DAILY_RANKING_SHARED_CONSUMER_TESTS = (
+    "tests/unit/domains/analytics/test_atr_expansion_forward_response.py",
+    "tests/unit/domains/analytics/test_daily_ranking_consumer_support.py",
+    "tests/unit/domains/analytics/test_daily_ranking_feature_builders.py",
+    "tests/unit/domains/analytics/test_daily_ranking_research_base.py",
+    "tests/unit/domains/analytics/test_market_bubble_footprint.py",
+    "tests/unit/domains/analytics/test_market_bubble_footprint_monitor.py",
+    "tests/unit/domains/analytics/test_ranking_color_evidence.py",
+    "tests/unit/domains/analytics/test_ranking_core_factor_regime_breakdown.py",
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_core_sector_neutral_value_regime_breakdown.py"
+    ),
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_core_sector_relative_value_evidence.py"
+    ),
+    "tests/unit/domains/analytics/test_ranking_crowded_long_tail_evidence.py",
+    "tests/unit/domains/analytics/test_ranking_daily_triage_lens.py",
+    "tests/unit/domains/analytics/test_ranking_fixed_return_priority_evidence.py",
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_forecast_operating_profit_growth_evidence.py"
+    ),
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_liquidity_price_action_recomposition.py"
+    ),
+    "tests/unit/domains/analytics/test_ranking_liquidity_z_long_evidence.py",
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_long_scaffold_factor_cross_evidence.py"
+    ),
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_long_scaffold_value_composite_evidence.py"
+    ),
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_long_sector_leadership_horizon_decomposition.py"
+    ),
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_moving_average_replacement_evidence.py"
+    ),
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_n225_crowded_rerating_benchmark.py"
+    ),
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_n225_neutral_rerating_benchmark.py"
+    ),
+    "tests/unit/domains/analytics/test_ranking_psr_valuation_evidence.py",
+    "tests/unit/domains/analytics/test_ranking_roe_quality_evidence.py",
+    "tests/unit/domains/analytics/test_ranking_sector_strength_evidence.py",
+    "tests/unit/domains/analytics/test_ranking_short_red_evidence.py",
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_short_sector_strength_evidence.py"
+    ),
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_short_value_composite_evidence.py"
+    ),
+    "tests/unit/domains/analytics/test_ranking_sma5_atr_deviation_evidence.py",
+    "tests/unit/domains/analytics/test_ranking_sma5_below_streak_evidence.py",
+    "tests/unit/domains/analytics/test_ranking_sma5_count_long_evidence.py",
+    "tests/unit/domains/analytics/test_ranking_sma5_count_short_evidence.py",
+    "tests/unit/domains/analytics/test_ranking_sma5_deviation_evidence.py",
+    "tests/unit/domains/analytics/test_ranking_sma5_position_state_evidence.py",
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_technical_fit_score_shape_evidence.py"
+    ),
+    (
+        "tests/unit/domains/analytics/"
+        "test_ranking_trend_acceleration_conditional_lift.py"
+    ),
+    "tests/unit/domains/analytics/test_ranking_trend_slope_evidence.py",
+)
+DOMAIN_CONSUMER_TESTS = {
+    "daily_ranking_consumer_support": DAILY_RANKING_SHARED_CONSUMER_TESTS,
+    "daily_ranking_research_base": DAILY_RANKING_SHARED_CONSUMER_TESTS,
+    "market_bubble_footprint_support": (
+        "tests/unit/domains/analytics/test_market_bubble_footprint.py",
+        "tests/unit/domains/analytics/test_market_bubble_footprint_monitor.py",
+    ),
+    "ranking_n225_rerating_benchmark_support": (
+        (
+            "tests/unit/domains/analytics/"
+            "test_ranking_n225_crowded_rerating_benchmark.py"
+        ),
+        (
+            "tests/unit/domains/analytics/"
+            "test_ranking_n225_neutral_rerating_benchmark.py"
+        ),
+    ),
+}
 
 
 def _normalize(path: str) -> str:
@@ -62,6 +236,19 @@ def pytest_targets_for_research_changes(paths: list[str]) -> tuple[str, ...]:
         )
 
     for path in normalized_paths:
+        support_target = RESEARCH_TEST_SUPPORT_CONSUMER_TESTS.get(path)
+        if support_target is not None:
+            targets.extend(support_target)
+            continue
+        if path.startswith(RESEARCH_ANALYTICS_TEST_PREFIX) and is_research_path(path):
+            target = path.removeprefix("apps/bt/")
+            if _exists(target):
+                targets.append(target)
+            continue
+        fixture_target = RESEARCH_FIXTURE_CONSUMER_TESTS.get(path)
+        if fixture_target is not None:
+            targets.extend(fixture_target)
+            continue
         if path == "scripts/check-research-guardrails.py":
             targets.append("tests/unit/scripts/test_check_research_guardrails.py")
             continue
@@ -79,7 +266,14 @@ def pytest_targets_for_research_changes(paths: list[str]) -> tuple[str, ...]:
                 targets.append("tests/unit/scripts")
                 continue
             target = f"tests/unit/scripts/test_{module_name}.py"
-            targets.append(target if _exists(target) else "tests/unit/scripts")
+            if _exists(target):
+                targets.append(target)
+                continue
+            domain_module = module_name.removeprefix("run_")
+            domain_target = f"tests/unit/domains/analytics/test_{domain_module}.py"
+            targets.append(
+                domain_target if _exists(domain_target) else "tests/unit/scripts"
+            )
             continue
         if path.startswith("apps/bt/src/domains/analytics/"):
             module_name = _module_name(path, prefix="apps/bt/src/domains/analytics/")
@@ -87,6 +281,9 @@ def pytest_targets_for_research_changes(paths: list[str]) -> tuple[str, ...]:
                 continue
             if module_name == "research_bundle":
                 targets.extend(RESEARCH_INFRA_TESTS)
+                continue
+            if module_name in DOMAIN_CONSUMER_TESTS:
+                targets.extend(DOMAIN_CONSUMER_TESTS[module_name])
                 continue
             target = f"tests/unit/domains/analytics/test_{module_name}.py"
             targets.append(
@@ -103,14 +300,48 @@ def fast_research_pytest_targets() -> tuple[str, ...]:
     return BT_FAST_RESEARCH_TESTS
 
 
+def shard_targets(
+    targets: tuple[str, ...],
+    *,
+    shard_index: int,
+    shard_count: int,
+) -> tuple[str, ...]:
+    """Partition ordered pytest targets without dropping or duplicating any."""
+    if shard_count < 1:
+        raise ValueError("shard_count must be positive")
+    if not 0 <= shard_index < shard_count:
+        raise ValueError("shard_index must be within shard_count")
+
+    bt_root = REPO_ROOT / "apps" / "bt"
+    expanded_targets: list[str] = []
+    for target in targets:
+        normalized = _normalize(target)
+        if not normalized:
+            continue
+        target_path = bt_root / normalized.split("::", maxsplit=1)[0]
+        if target_path.is_dir():
+            expanded_targets.extend(
+                path.relative_to(bt_root).as_posix()
+                for path in sorted(target_path.rglob("test_*.py"))
+                if path.is_file()
+            )
+        else:
+            expanded_targets.append(normalized)
+
+    unique_targets = tuple(dict.fromkeys(expanded_targets))
+    return unique_targets[shard_index::shard_count]
+
+
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--mode",
-        choices=("pytest", "py-files", "fast-pytest"),
+        choices=("pytest", "py-files", "fast-pytest", "shard"),
         default="pytest",
         help="Output pytest targets or changed research Python files.",
     )
+    parser.add_argument("--shard-index", type=int, default=0)
+    parser.add_argument("--shard-count", type=int, default=1)
     parser.add_argument("paths", nargs="*", help="Changed paths. Reads stdin when empty.")
     return parser.parse_args(argv)
 
@@ -122,9 +353,16 @@ def main(argv: list[str] | None = None) -> int:
         output = fast_research_pytest_targets()
     elif args.mode == "py-files":
         output = research_python_files(paths)
+    elif args.mode == "shard":
+        output = shard_targets(
+            tuple(paths),
+            shard_index=args.shard_index,
+            shard_count=args.shard_count,
+        )
     else:
         output = pytest_targets_for_research_changes(paths)
-    print("\n".join(output))
+    if output:
+        print("\n".join(output))
     return 0
 
 

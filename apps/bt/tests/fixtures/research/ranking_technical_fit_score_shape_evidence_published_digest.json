@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "experiment_id": "market-behavior/ranking-technical-fit-score-shape-evidence",
+  "published_run_id": "20260719_prime_pit_technical_fit_shape_v11",
+  "decision": "neither",
+  "publication_metrics": {
+    "observation_count": 433882,
+    "fixed_core_oos_mean_lift_pct": 0.2561,
+    "ols_core_oos_mean_lift_pct": 0.3765,
+    "near1_fixed_minus_ols_mean_lift_pct": -0.2125,
+    "fixed_top5_mean_lift_pct": 0.0155,
+    "ols_top5_mean_lift_pct": 0.4670
+  }
+}

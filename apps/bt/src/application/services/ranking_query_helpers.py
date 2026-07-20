@@ -2,6 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+
+from src.application.services.market_data_errors import MarketDataError
+from src.domains.analytics.daily_ranking_event_time_prices import (
+    EVENT_TIME_SIGNAL_MATERIALIZED_RELATION,
+    EVENT_TIME_SIGNAL_MAX_CODES,
+    EVENT_TIME_SIGNAL_MAX_ROWS,
+    EVENT_TIME_SIGNAL_RELATION,
+    EventTimeSignalRequest,
+    EventTimeSignalSql,
+    build_event_time_signal_sql,
+)
+from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.shared.utils.market_code_alias import normalize_market_scope
 
 
@@ -45,8 +59,8 @@ def normalized_code_sql(column_ref: str) -> str:
     """4桁/5桁コード混在を吸収する正規化SQL式。"""
     return (
         "CASE "
-        f"WHEN length({column_ref}) = 5 AND right({column_ref}, 1) = '0' "
-        f"THEN left({column_ref}, 4) "
+        f"WHEN length({column_ref}) IN (5, 6) AND right({column_ref}, 1) = '0' "
+        f"THEN left({column_ref}, length({column_ref}) - 1) "
         f"ELSE {column_ref} "
         "END"
     )
@@ -116,39 +130,81 @@ def stocks_canonical_cte() -> str:
     """
 
 
-def stock_data_dedup_cte(
-    cte_name: str,
+@contextmanager
+def event_time_signal_sql(
+    reader: MarketDbReader,
     *,
-    where_clause: str,
-    code_ref: str = "code",
-    include_ohlc: bool = True,
-) -> str:
-    normalized = normalized_code_sql(code_ref)
-    order = prefer_4digit_order_sql(code_ref)
-    select_ohlc = (
-        ", open, high, low, close, volume" if include_ohlc else ", close, volume"
-    )
-    return f"""
-        {cte_name} AS (
-            SELECT
-                normalized_code,
-                date
-                {select_ohlc}
-            FROM (
-                SELECT
-                    {normalized} AS normalized_code,
-                    date
-                    {select_ohlc},
-                    ROW_NUMBER() OVER (
-                        PARTITION BY {normalized}, date
-                        ORDER BY {order}
-                    ) AS rn
-                FROM stock_data
-                WHERE {where_clause}
-            )
-            WHERE rn = 1
+    signal_date: str,
+    start_date: str | None,
+    market_codes: list[str],
+) -> Iterator[EventTimeSignalSql]:
+    """Build, validate, and materialize one bounded signal-price relation."""
+
+    built = build_event_time_signal_sql(
+        EventTimeSignalRequest(
+            signal_date=signal_date,
+            start_date=start_date,
+            market_codes=tuple(market_codes),
         )
-    """
+    )
+    frame = reader.query_dataframe(
+        built.materialization_sql,
+        built.materialization_params,
+    )
+    if len(frame.index) > EVENT_TIME_SIGNAL_MAX_ROWS:
+        raise MarketDataError(
+            message=(
+                "Daily Ranking event-time signal projection exceeds the bounded "
+                f"row limit ({EVENT_TIME_SIGNAL_MAX_ROWS})"
+            ),
+            reason="event_time_signal_projection_too_large",
+            recovery="adjusted_metrics_pit",
+            status_code=409,
+        )
+    issues = frame.loc[frame["issue"].notna()]
+    if not issues.empty:
+        first = issues.sort_values(["issue", "normalized_code", "date"]).iloc[0]
+        raise MarketDataError(
+            message=(
+                "Daily Ranking event-time signal lineage is unavailable: "
+                f"{first['issue']} for {first['normalized_code']} on {first['date']}"
+            ),
+            reason="event_time_signal_lineage_unavailable",
+            recovery="adjusted_metrics_pit",
+            status_code=409,
+        )
+
+    prices = frame.loc[:, list(built.columns)].copy()
+    code_count = int(prices["normalized_code"].nunique())
+    if code_count > EVENT_TIME_SIGNAL_MAX_CODES:
+        raise MarketDataError(
+            message=(
+                "Daily Ranking event-time signal projection exceeds the bounded "
+                f"code limit ({EVENT_TIME_SIGNAL_MAX_CODES})"
+            ),
+            reason="event_time_signal_projection_too_large",
+            recovery="adjusted_metrics_pit",
+            status_code=409,
+        )
+    with reader.temporary_in_memory_relation(
+        EVENT_TIME_SIGNAL_MATERIALIZED_RELATION,
+        prices,
+    ) as materialized_relation:
+        yield EventTimeSignalSql(
+            relation_name=EVENT_TIME_SIGNAL_RELATION,
+            columns=built.columns,
+            cte_sql=(
+                f"{EVENT_TIME_SIGNAL_RELATION} AS "
+                f"(SELECT * FROM {materialized_relation})"
+            ),
+            params=(),
+            validation_sql=built.validation_sql,
+            validation_params=built.validation_params,
+            materialization_sql=built.materialization_sql,
+            materialization_params=built.materialization_params,
+            row_count=len(prices.index),
+            code_count=code_count,
+        )
 
 
 def limit_clause(limit: int) -> tuple[str, tuple[int, ...]]:

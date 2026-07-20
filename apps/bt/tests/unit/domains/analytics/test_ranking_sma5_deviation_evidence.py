@@ -38,7 +38,9 @@ def test_sma5_deviation_evidence_builds_bucket_and_overlay_tables(
         "forward_close_excess_return_5d_pct",
         "forward_close_excess_return_20d_pct",
     }.issubset(result.observation_sample_df.columns)
-    assert set(result.sma5_deviation_bucket_evidence_df["sma5_deviation_bucket"]).issubset(
+    assert set(
+        result.sma5_deviation_bucket_evidence_df["sma5_deviation_bucket"]
+    ).issubset(
         {
             "below_sma5_le_neg2",
             "below_sma5_neg2_to_0",
@@ -59,7 +61,9 @@ def test_sma5_deviation_evidence_builds_bucket_and_overlay_tables(
         "all_high_liquidity",
         "high_psr",
         "sector_weak",
-    }.intersection(set(result.short_overlay_sma5_deviation_evidence_df["short_overlay"]))
+    }.intersection(
+        set(result.short_overlay_sma5_deviation_evidence_df["short_overlay"])
+    )
 
 
 def test_sma5_deviation_evidence_writes_bundle(tmp_path: Path) -> None:
@@ -109,7 +113,7 @@ def _add_statements_fixture(db_path: Path) -> None:
     )
     codes = [
         str(row[0])
-        for row in conn.execute("SELECT DISTINCT code FROM stock_data").fetchall()
+        for row in conn.execute("SELECT DISTINCT code FROM stock_data_raw").fetchall()
     ]
     conn.executemany(
         "INSERT INTO statements VALUES (?, ?, ?, ?, ?)",
@@ -117,5 +121,8 @@ def _add_statements_fixture(db_path: Path) -> None:
             (code, "2023-12-31", 1000000000.0 + index * 10000000.0, "FY", "")
             for index, code in enumerate(codes)
         ],
+    )
+    conn.execute(
+        "UPDATE stock_data SET open = 1, high = 1, low = 1, close = 1, volume = 0"
     )
     conn.close()

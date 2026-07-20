@@ -3,41 +3,41 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
-from src.domains.analytics.atr_expansion_forward_response import (
-    _create_observation_panel as _create_atr_observation_panel,
+from src.domains.analytics.daily_ranking_consumer_support import (
+    aggregate_lateral_conditions,
+    aggregate_metric_columns,
+    compose_daily_ranking_signal_features,
+    condition_values_sql,
+    deep_dive_metric_columns,
+    deep_dive_metric_sql,
+)
+from src.domains.analytics.daily_ranking_feature_builders import (
+    AtrFeaturesRequest,
+    LongLeadershipFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    ShortScaffoldFeaturesRequest,
+    build_atr_features,
+    build_long_leadership_features,
+    build_sector_strength_features,
+    build_short_scaffold_features,
 )
 from src.domains.analytics.daily_ranking_research_base import (
-    DAILY_RANKING_RESEARCH_RANKED_TABLE,
-    assert_daily_ranking_research_tables,
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    MarketScope,
+    SignalExpression,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
     normalize_daily_ranking_market_scopes,
 )
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
-)
-from src.domains.analytics.ranking_forecast_operating_profit_growth_evidence import (
-    _aggregate_lateral_conditions,
-    _aggregate_metric_columns,
-    _condition_values_sql,
-    _deep_dive_metric_columns,
-    _deep_dive_metric_sql,
-)
-from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition import (
-    _create_long_sector_leadership_tables,
-    _create_long_signal_tables,
-)
-from src.domains.analytics.ranking_sector_strength_evidence import (
-    _create_sector_strength_tables,
-)
-from src.domains.analytics.ranking_short_red_evidence import (
-    _create_feature_panel as _create_short_red_feature_panel,
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
@@ -54,9 +54,6 @@ DEFAULT_MIN_OBSERVATIONS = 200
 DEFAULT_SEVERE_LOSS_THRESHOLD_PCT = -10.0
 DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
 _LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
-_REQUIRED_ATR_WINDOWS: tuple[int, ...] = (20, 60)
-_REQUIRED_RETURN_WINDOWS: tuple[int, ...] = (20, 60)
-_LONG_WARMUP_CALENDAR_DAYS = 820
 _REQUIRED_TABLES: tuple[str, ...] = (
     "stock_data",
     "topix_data",
@@ -172,11 +169,6 @@ def run_ranking_liquidity_z_long_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = daily_ranking_query_start_date(
-        start_date,
-        warmup_calendar_days=max(_LONG_WARMUP_CALENDAR_DAYS, max(_LEADERSHIP_WINDOWS) * 3),
-    )
-    query_end = daily_ranking_query_end_date(end_date, max_horizon=max(resolved_horizons))
     market_source = "stock_master_daily_exact_date"
 
     with open_readonly_analysis_connection(
@@ -184,42 +176,84 @@ def run_ranking_liquidity_z_long_evidence_research(
         snapshot_prefix="ranking-liquidity-z-long-evidence-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
-        assert_daily_ranking_research_tables(ctx.connection)
-        create_daily_ranking_research_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_scopes=resolved_market_scopes,
-            market_source=market_source,
-            include_liquidity_ranked=True,
-            include_relation_percentiles=False,
+            DailyRankingPanelRequest(
+                namespace="liquidity_z_long",
+                analysis_start_date=_parse_optional_date(start_date),
+                analysis_end_date=_parse_optional_date(end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(
+                    tuple[MarketScope, ...],
+                    resolved_market_scopes,
+                ),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
         )
-        _create_atr_observation_panel(
+        signal_source = relations.liquidity_ranked_signals
+        if signal_source is None:
+            raise RuntimeError("liquidity-z research requires liquidity-ranked signals")
+        atr_features = build_atr_features(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=_REQUIRED_ATR_WINDOWS,
-            return_windows=_REQUIRED_RETURN_WINDOWS,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            AtrFeaturesRequest(source=signal_source, namespace="liquidity_z_long_atr"),
         )
-        _create_short_red_feature_panel(ctx.connection)
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
-        _create_long_sector_leadership_tables(
+        short_features = build_short_scaffold_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            ShortScaffoldFeaturesRequest(
+                source=signal_source,
+                atr_features=atr_features,
+                namespace="liquidity_z_long_short",
+            ),
         )
-        _create_long_signal_tables(
+        sector_features = build_sector_strength_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="liquidity_z_long_sector",
+            ),
         )
-        _create_liquidity_z_long_panel(ctx.connection)
+        leadership_features = build_long_leadership_features(
+            ctx.connection,
+            LongLeadershipFeaturesRequest(
+                source=signal_source,
+                sector_features=sector_features,
+                namespace="liquidity_z_long_leadership",
+                leadership_windows=_LEADERSHIP_WINDOWS,
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(leadership_features, short_features),
+            namespace="liquidity_z_long",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="liquidity_z_long_signals",
+            predicate=SignalExpression(
+                sql=(
+                    "liquidity_residual_z IS NOT NULL "
+                    "AND recent_return_20d_pct >= 0 "
+                    "AND recent_return_60d_pct >= 0"
+                ),
+                referenced_columns=(
+                    "liquidity_residual_z",
+                    "recent_return_20d_pct",
+                    "recent_return_60d_pct",
+                ),
+            ),
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="liquidity_z_long_outcomes",
+        )
+        _create_liquidity_z_long_panel(ctx.connection, source_name=evaluated.name)
         observation_count = int(
             ctx.connection.execute(
                 "SELECT count(*) FROM ranking_liquidity_z_long_panel"
@@ -364,9 +398,9 @@ def _assert_required_tables(conn: Any) -> None:
         raise ValueError(f"market.duckdb is missing required tables: {', '.join(missing)}")
 
 
-def _create_liquidity_z_long_panel(conn: Any) -> None:
+def _create_liquidity_z_long_panel(conn: Any, *, source_name: str) -> None:
     conn.execute(
-        """
+        f"""
         CREATE OR REPLACE TEMP TABLE ranking_liquidity_z_long_panel AS
         SELECT
             g.*,
@@ -385,45 +419,34 @@ def _create_liquidity_z_long_panel(conn: Any) -> None:
                  AND g.liquidity_residual_z < 1.0 THEN 'z_cap_minus1_to_1'
                 WHEN g.liquidity_residual_z >= 3.0 THEN 'z_cap_ge_3_tail'
             END AS liquidity_z_cap,
-            l.sector_33_code,
-            l.sector_33_name,
-            l.sector_strength_bucket,
-            l.sector_strength_score,
-            l.sector_index_strength_score,
-            l.sector_constituent_strength_score,
-            l.long_index_leadership_score,
-            l.long_constituent_breadth_leadership_score,
-            l.long_hybrid_leadership_score,
-            l.balanced_sector_strength_bucket_label,
-            l.long_hybrid_bucket_label,
-            coalesce(l.momentum_20_60_top20_flag, FALSE)
+            g.sector_33_code,
+            g.sector_33_name,
+            g.sector_strength_bucket,
+            g.sector_strength_score,
+            g.sector_index_strength_score,
+            g.sector_constituent_strength_score,
+            g.long_index_leadership_score,
+            g.long_constituent_breadth_leadership_score,
+            g.long_hybrid_leadership_score,
+            g.balanced_sector_strength_bucket_label,
+            g.long_hybrid_bucket_label,
+            coalesce(g.momentum_20_60_top20_flag, FALSE)
                 AS momentum_20_60_top20_flag,
-            s.atr20_pct,
-            s.atr60_pct,
-            s.atr20_to_atr60,
-            s.atr20_change_20d_pct,
-            coalesce(s.atr20_acceleration, FALSE) AS atr20_acceleration_flag,
+            g.atr20_pct,
+            g.atr60_pct,
+            g.atr20_to_atr60,
+            g.atr20_change_20d_pct,
+            coalesce(g.atr20_acceleration, FALSE) AS atr20_acceleration_flag,
             coalesce(
-                s.atr20_acceleration
+                g.atr20_acceleration
                 AND coalesce(g.recent_return_20d_pct, 0.0) < 30.0,
                 FALSE
             ) AS atr20_acceleration_ex_overheat_flag,
-            coalesce(s.atr20_to_atr60_overheat, FALSE)
+            coalesce(g.atr20_to_atr60_overheat, FALSE)
                 AS atr20_to_atr60_overheat,
-            coalesce(s.weak_trend, FALSE) AS weak_trend
-        FROM {ranked_table} g
-        LEFT JOIN long_sector_leadership_base_panel l
-          ON l.code = g.code
-         AND l.date = g.date
-         AND l.market_scope = g.market_scope
-        LEFT JOIN ranking_short_red_feature_panel s
-          ON s.code = g.code
-         AND s.date = g.date
-         AND s.market_scope = g.market_scope
-        WHERE g.liquidity_residual_z IS NOT NULL
-          AND g.recent_return_20d_pct >= 0
-          AND g.recent_return_60d_pct >= 0
-        """.format(ranked_table=DAILY_RANKING_RESEARCH_RANKED_TABLE)
+            coalesce(g.weak_trend, FALSE) AS weak_trend
+        FROM {source_name} g
+        """
     )
 
 
@@ -451,7 +474,7 @@ def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
             median(recent_return_20d_pct) AS median_recent_return_20d_pct,
             median(recent_return_60d_pct) AS median_recent_return_60d_pct,
             median(pbr_percentile) AS median_pbr_percentile,
-            median(forward_per_percentile) AS median_forward_per_percentile
+            median(forecast_per_percentile) AS median_forward_per_percentile
         FROM ranking_liquidity_z_long_panel
         GROUP BY market_scope, liquidity_z_bucket
         ORDER BY market_scope, liquidity_z_bucket
@@ -469,7 +492,7 @@ def _build_z_bucket_evidence_df(
     frames: list[pd.DataFrame] = []
     z_bucket_lateral_sql = f"""
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_LIQUIDITY_Z_BUCKETS)}
+            VALUES {condition_values_sql(_LIQUIDITY_Z_BUCKETS)}
         ) AS liquidity_z_bucket(
             liquidity_z_bucket,
             liquidity_z_bucket_order,
@@ -478,7 +501,7 @@ def _build_z_bucket_evidence_df(
     """
     for horizon in horizons:
         frames.append(
-            _aggregate_lateral_conditions(
+            aggregate_lateral_conditions(
                 conn,
                 source_name="ranking_liquidity_z_long_panel",
                 lateral_sql=z_bucket_lateral_sql,
@@ -497,7 +520,7 @@ def _build_z_bucket_evidence_df(
                 return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
                 min_observations=min_observations,
                 severe_loss_threshold_pct=severe_loss_threshold_pct,
-                extra_metric_sql=_deep_dive_metric_sql(),
+                extra_metric_sql=deep_dive_metric_sql(),
             )
         )
     return _concat_sorted(frames, columns=_z_bucket_columns())
@@ -513,14 +536,14 @@ def _build_long_scaffold_z_bucket_evidence_df(
     frames: list[pd.DataFrame] = []
     lateral_sql = f"""
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_LONG_SCAFFOLDS)}
+            VALUES {condition_values_sql(_LONG_SCAFFOLDS)}
         ) AS long_scaffold(
             long_scaffold,
             long_scaffold_order,
             long_scaffold_matches
         )
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_LIQUIDITY_Z_BUCKETS)}
+            VALUES {condition_values_sql(_LIQUIDITY_Z_BUCKETS)}
         ) AS liquidity_z_bucket(
             liquidity_z_bucket,
             liquidity_z_bucket_order,
@@ -529,7 +552,7 @@ def _build_long_scaffold_z_bucket_evidence_df(
     """
     for horizon in horizons:
         frames.append(
-            _aggregate_lateral_conditions(
+            aggregate_lateral_conditions(
                 conn,
                 source_name="ranking_liquidity_z_long_panel",
                 lateral_sql=lateral_sql,
@@ -555,7 +578,7 @@ def _build_long_scaffold_z_bucket_evidence_df(
                 return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
                 min_observations=min_observations,
                 severe_loss_threshold_pct=severe_loss_threshold_pct,
-                extra_metric_sql=_deep_dive_metric_sql(),
+                extra_metric_sql=deep_dive_metric_sql(),
             )
         )
     return _concat_sorted(frames, columns=_long_scaffold_z_bucket_columns())
@@ -571,14 +594,14 @@ def _build_long_scaffold_z_cap_evidence_df(
     frames: list[pd.DataFrame] = []
     lateral_sql = f"""
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_LONG_SCAFFOLDS)}
+            VALUES {condition_values_sql(_LONG_SCAFFOLDS)}
         ) AS long_scaffold(
             long_scaffold,
             long_scaffold_order,
             long_scaffold_matches
         )
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_LIQUIDITY_Z_CAPS)}
+            VALUES {condition_values_sql(_LIQUIDITY_Z_CAPS)}
         ) AS liquidity_z_cap(
             liquidity_z_cap,
             liquidity_z_cap_order,
@@ -587,7 +610,7 @@ def _build_long_scaffold_z_cap_evidence_df(
     """
     for horizon in horizons:
         frames.append(
-            _aggregate_lateral_conditions(
+            aggregate_lateral_conditions(
                 conn,
                 source_name="ranking_liquidity_z_long_panel",
                 lateral_sql=lateral_sql,
@@ -613,7 +636,7 @@ def _build_long_scaffold_z_cap_evidence_df(
                 return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
                 min_observations=min_observations,
                 severe_loss_threshold_pct=severe_loss_threshold_pct,
-                extra_metric_sql=_deep_dive_metric_sql(),
+                extra_metric_sql=deep_dive_metric_sql(),
             )
         )
     return _concat_sorted(frames, columns=_long_scaffold_z_cap_columns())
@@ -646,8 +669,8 @@ def _query_observation_sample_df(
             valuation_signal,
             pbr,
             pbr_percentile,
-            forward_per,
-            forward_per_percentile,
+            forecast_per AS forward_per,
+            forecast_per_percentile AS forward_per_percentile,
             sector_strength_bucket,
             sector_strength_score,
             long_hybrid_leadership_score,
@@ -679,6 +702,10 @@ def _validate_params(
         raise ValueError("observation_sample_limit must be positive")
 
 
+def _parse_optional_date(value: str | None) -> date | None:
+    return None if value is None else date.fromisoformat(value)
+
+
 def _z_bucket_columns() -> list[str]:
     return [
         "condition_family",
@@ -686,8 +713,8 @@ def _z_bucket_columns() -> list[str]:
         "liquidity_z_bucket_order",
         "horizon",
         "market_scope",
-        *_aggregate_metric_columns(),
-        *_deep_dive_metric_columns(),
+        *aggregate_metric_columns(),
+        *deep_dive_metric_columns(),
     ]
 
 
@@ -700,8 +727,8 @@ def _long_scaffold_z_bucket_columns() -> list[str]:
         "liquidity_z_bucket_order",
         "horizon",
         "market_scope",
-        *_aggregate_metric_columns(),
-        *_deep_dive_metric_columns(),
+        *aggregate_metric_columns(),
+        *deep_dive_metric_columns(),
     ]
 
 
@@ -714,8 +741,8 @@ def _long_scaffold_z_cap_columns() -> list[str]:
         "liquidity_z_cap_order",
         "horizon",
         "market_scope",
-        *_aggregate_metric_columns(),
-        *_deep_dive_metric_columns(),
+        *aggregate_metric_columns(),
+        *deep_dive_metric_columns(),
     ]
 
 

@@ -1,0 +1,1181 @@
+{
+  "artifacts": {
+    "manifest_sha256": "66a9c0e6fd49118b8be9e62a31824aeb0a6589446c77ffd3c2fdc58db78e2183",
+    "results_file_sha256": "28eef384322cbc819e960964292095355419faf7c20eb4e97d4e3af9257b37fd",
+    "results_semantic_sha256": "26b79b9af189ebfab317230a8ba293c4a1a250578463700d7daf48fe5cc5374d",
+    "summary_sha256": "3315050da12e4ca67d78981cf16a224de4f2e800cb17f4e8353241b2e2c97d59"
+  },
+  "database_fingerprint": {
+    "exists": true,
+    "mtime_ns": 1784156788626266842,
+    "size_bytes": 6987198464
+  },
+  "decision": "neither",
+  "decision_metrics": {
+    "fixed_core_oos_mean_lift_pct": 0.2700659415040731,
+    "fixed_top5_mean_lift_pct": -0.2125659411962519,
+    "near1_fixed_minus_ols_mean_lift_pct": 0.044833817620329015,
+    "observation_count": 429764,
+    "ols_core_oos_mean_lift_pct": 0.18357365342371035,
+    "ols_top5_mean_lift_pct": -0.2385391573762308,
+    "topk_complete_row_count": 12956,
+    "topk_incomplete_row_count": 340
+  },
+  "experiment_id": "market-behavior/ranking-technical-fit-score-shape-evidence",
+  "manifest_audit": {
+    "observation_count": 429764,
+    "pit_lineage": {
+      "basis_id_count": 1365,
+      "basis_id_sha256": "4a2c292833a75944342d33aaabcdb0679cc0a144013a5fb8b43c6ca1522fc0c2",
+      "consumed_daily_valuation_row_count": 429764,
+      "price_projection": {
+        "canonical_raw_row_count": 9748001,
+        "completed_outcome_row_count": 14047442,
+        "completion_basis_row_count": 3725,
+        "completion_basis_sha256": "5a957544cebf4ae5368e402359e8a7705893d928f35372decc79b30cd8e4068a",
+        "completion_segment_row_count": 5008,
+        "completion_segment_sha256": "00c164249d971eae188d016bfb27542bfaf54bce0a597d0829c56224d6a4d5e3",
+        "forward_outcome_sha256": "8e011747c14e0f2749d08e1bdfddc44af76ac8b7d5d4aecfe7dc8725c53551ce",
+        "next_open_outcome_sha256": "ef3aa54c4feedf472fdafafed969696c103320a06c65f7ec5c7fa340637fe43f",
+        "outcome_request_row_count": 14207772,
+        "price_projection_sha256": "398bc1145ad24b85b8615c3ed2f420fd5e8dff62a4b0fb353228025aed07cfd2",
+        "signal_basis_row_count": 3724,
+        "signal_basis_sha256": "887e668c9fb4b8c31534a7367091d0384c997c025c7bf86b78670f4d5e415842",
+        "signal_feature_row_count": 4735924,
+        "signal_segment_row_count": 5684,
+        "signal_segment_sha256": "6c93023fa755a64eca3524252d306619c5c7361f6c5ff12aeaf634f9e94c951f"
+      },
+      "verified_basis_row_count": 1365,
+      "verified_segment_row_count": 1365
+    },
+    "selection_audit": {
+      "row_count": 429764,
+      "sha256": "8914cd0086a1c3c1340df492e200034622775e2d63e36de22e7bf7cbab2a1d4b"
+    }
+  },
+  "pit_contract": {
+    "as_of_policy": "exact_signal_date_no_latest_fallback",
+    "basis_dependent_sources": [
+      "daily_valuation",
+      "stock_data_raw"
+    ],
+    "data_plane": "physical_market.duckdb_schema_v4",
+    "no_basis_fallback": true,
+    "no_service_local_recomputation": true,
+    "price_projection": {
+      "completion_basis_policy": "exact_completion_date_basis_applied_to_signal_and_completion_endpoints",
+      "next_open_integrity_policy": "exact_stock_entry_session_and_topix_entry_endpoint_no_backfill",
+      "no_stock_data_fallback": true,
+      "physical_price_source": "stock_data_raw",
+      "signal_basis_policy": "exact_signal_date_basis_across_full_lookback",
+      "verification_status": "verified"
+    },
+    "stock_price_adjustment_mode": "local_projection_v2_event_time",
+    "universe_source": "stock_master_daily",
+    "verification_status": "verified"
+  },
+  "published_run_id": "20260719_prime_pit_technical_fit_shape_v13",
+  "readme": {
+    "decision": "neither",
+    "experiment_id": "market-behavior/ranking-technical-fit-score-shape-evidence",
+    "git_dirty": "false",
+    "path": "apps/bt/docs/experiments/market-behavior/ranking-technical-fit-score-shape-evidence/README.md",
+    "run_id": "20260719_prime_pit_technical_fit_shape_v13",
+    "sha256": "075b4e27eca90b10a5f2395d45de6ca47bbbd3f2ed817eb65ee049f5535e43b5",
+    "source_commit": "e33f76f1a8fecb1f8c3c731b3692c1e10dd123d4"
+  },
+  "schema_version": 3,
+  "selection_audit": {
+    "key_columns": [
+      "date",
+      "code",
+      "ring"
+    ],
+    "policy": "technical_fit_ring_membership_before_outcomes_v1",
+    "row_count": 429764,
+    "sha256": "8914cd0086a1c3c1340df492e200034622775e2d63e36de22e7bf7cbab2a1d4b"
+  },
+  "source": {
+    "git_commit": "e33f76f1a8fecb1f8c3c731b3692c1e10dd123d4",
+    "git_dirty": false
+  },
+  "tables": [
+    {
+      "content_sha256": "2a119daa967a6b007059b9ed02146d47b736d4bb79480b93d56808f451432d4e",
+      "name": "annual_stability",
+      "row_count": 375,
+      "schema": [
+        {
+          "name": "family",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "raw_score_name",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "ring",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "analysis",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "period_label",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "date_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "mean_effect_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "median_effect_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "positive_date_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "k",
+          "type": "DOUBLE"
+        }
+      ]
+    },
+    {
+      "content_sha256": "3a699912f25cf745a398679072a18b149af972a4b776822a429b482191291adc",
+      "name": "bootstrap_effect_ci",
+      "row_count": 75,
+      "schema": [
+        {
+          "name": "family",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "raw_score_name",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "ring",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "analysis",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "date_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "block_length",
+          "type": "BIGINT"
+        },
+        {
+          "name": "resamples",
+          "type": "BIGINT"
+        },
+        {
+          "name": "seed",
+          "type": "BIGINT"
+        },
+        {
+          "name": "point_estimate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ci_lower_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ci_upper_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "k",
+          "type": "DOUBLE"
+        }
+      ]
+    },
+    {
+      "content_sha256": "464ec3175bfdf8a2f2281206b71ff43aa1fc1013e149033b01fb5aa765ddf406",
+      "name": "coverage_attrition",
+      "row_count": 3,
+      "schema": [
+        {
+          "name": "ring",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "observation_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "symbol_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "date_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "first_date",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "last_date",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "median_candidates_per_date",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "fixed_equal_coverage_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ols_equal_coverage_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "completed_20d_coverage_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "market_codes",
+          "type": "VARCHAR"
+        }
+      ]
+    },
+    {
+      "content_sha256": "986ee867d133036773b4ad308e0ac9ba1668bf3081dbe0b367b26b5516ba124f",
+      "name": "decision_gate",
+      "row_count": 3,
+      "schema": [
+        {
+          "name": "decision_key",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "decision",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "sufficient_sample",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "passed",
+          "type": "BOOLEAN"
+        }
+      ]
+    },
+    {
+      "content_sha256": "bbdfdb0bf86e64251613a1be0b507def70d15a2bc2a22aba96083743ab647dce",
+      "name": "fixed_vs_ols_paired",
+      "row_count": 8907,
+      "schema": [
+        {
+          "name": "ring",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "date",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "fixed_date",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "ols_date",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "fixed_raw_score_name",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "ols_raw_score_name",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "fixed_mean_lift_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ols_mean_lift_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "fixed_minus_ols_lift_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "sufficient_sample",
+          "type": "BOOLEAN"
+        }
+      ]
+    },
+    {
+      "content_sha256": "33f480cb3037325f15ab76a660262206a2392876da463194228d15a7b1633b7f",
+      "name": "observation_sample",
+      "row_count": 10000,
+      "schema": [
+        {
+          "name": "date",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "code",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "market_scope",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "market_code",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "ring",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "company_name",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "sector_33_code",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "sector_33_name",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "value_composite_equal_score",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "long_hybrid_leadership_score",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "liquidity_residual_z",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "atr20_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "atr20_change_20d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "recent_return_20d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "recent_return_60d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "fixed20_level",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "fixed60_level",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "fixed_equal_level",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ols_move_20d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ols_move_60d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ols20_level",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ols60_level",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ols_equal_level",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ols_r2_20",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ols_r2_60",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ols20_minus_ols60_move_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "fixed20_ols20_sign_conflict",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "fixed60_ols60_sign_conflict",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "fixed20_negative_flag",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "fixed60_negative_flag",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "fixed20_overheat_flag",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "forward_outcome_completion_date_5d",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "forward_close_return_5d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_close_excess_return_5d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_close_n225_excess_return_5d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_outcome_completion_date_20d",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "forward_close_return_20d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_close_excess_return_20d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_close_n225_excess_return_20d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_outcome_completion_date_60d",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "forward_close_return_60d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_close_excess_return_60d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_close_n225_excess_return_60d_pct",
+          "type": "DOUBLE"
+        }
+      ]
+    },
+    {
+      "content_sha256": "20b514d83d344456cb1415ef46335f74d014354726ae48df13aece10c0b80997",
+      "name": "oos_fit_score_lift",
+      "row_count": 54972,
+      "schema": [
+        {
+          "name": "raw_score_name",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "family",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "is_primary",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "role",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "ring",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "date",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "candidate_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "candidate_outcome_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "candidate_outcome_coverage_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "selected_outcome_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "selected_outcome_coverage_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "outcome_status",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "top_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "bottom_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "top_mean_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bottom_mean_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "mean_lift_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "top_median_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bottom_median_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "median_lift_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "spearman_ic",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "top_win_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bottom_win_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "top_p10_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bottom_p10_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "top_p25_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bottom_p25_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "severe_loss_rate_difference_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "top_fixed20_negative_share_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bottom_fixed20_negative_share_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "top_overheat_share_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bottom_overheat_share_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "top_sector_hhi",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bottom_sector_hhi",
+          "type": "DOUBLE"
+        }
+      ]
+    },
+    {
+      "content_sha256": "799ac56c4550fc0779229f59c278c505971e74c94918ad1ee0d2b2ce71ed3c41",
+      "name": "overheat_negative_diagnostics",
+      "row_count": 549,
+      "schema": [
+        {
+          "name": "family",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "raw_score_name",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "ring",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "sensitivity_type",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "sensitivity_bucket",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "observation_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "date_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "mean_outcome_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "fit_effect_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "controls",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "diagnostic_status",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "role",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "spline_degree",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "spline_knots",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "spline_raw_level",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "spline_fitted_outcome_pct",
+          "type": "DOUBLE"
+        }
+      ]
+    },
+    {
+      "content_sha256": "ed20097ce9fc0657cfd00b69e09a419c5d441bde1b6e7f405de787fc9201b93a",
+      "name": "raw_score_registry",
+      "row_count": 6,
+      "schema": [
+        {
+          "name": "raw_score_name",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "family",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "is_primary",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "role",
+          "type": "VARCHAR"
+        }
+      ]
+    },
+    {
+      "content_sha256": "4efc746c20dd0bd8827abfcd51839ab85a2ff9efbe1231e004e6ea6c4f7d4604",
+      "name": "raw_shape_daily",
+      "row_count": 477123,
+      "schema": [
+        {
+          "name": "raw_score_name",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "family",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "is_primary",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "role",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "ring",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "date",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "year",
+          "type": "BIGINT"
+        },
+        {
+          "name": "segment",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "raw_bin",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "code_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "mean_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "median_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "win_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "p10_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "p25_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "severe_loss_rate_pct",
+          "type": "DOUBLE"
+        }
+      ]
+    },
+    {
+      "content_sha256": "f55ffab33c7a0015def7c7d8a9e3f3e0c78cb2d03afd66d168689e53137f7d7a",
+      "name": "raw_shape_summary",
+      "row_count": 3510,
+      "schema": [
+        {
+          "name": "raw_score_name",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "family",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "is_primary",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "role",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "ring",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "raw_bin",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "period_type",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "period_label",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "date_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "observation_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "date_equal_mean_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "date_equal_median_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "date_equal_win_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "date_equal_p10_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "date_equal_p25_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "date_equal_severe_loss_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "shape_classification",
+          "type": "VARCHAR"
+        }
+      ]
+    },
+    {
+      "content_sha256": "192f42310b483228a73c6f949bfa16ec8c91055b92270398887f5643c37026ed",
+      "name": "ring_registry",
+      "row_count": 3,
+      "schema": [
+        {
+          "name": "ring",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "predicate",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "candidate_selection",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "role",
+          "type": "VARCHAR"
+        }
+      ]
+    },
+    {
+      "content_sha256": "2f5e199400a7bae7679dafa36ac2c9f424f3e6ab93e4188b9998599ff94a189a",
+      "name": "segment_stability",
+      "row_count": 174,
+      "schema": [
+        {
+          "name": "family",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "raw_score_name",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "ring",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "analysis",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "period_label",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "date_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "mean_effect_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "median_effect_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "positive_date_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "k",
+          "type": "DOUBLE"
+        }
+      ]
+    },
+    {
+      "content_sha256": "d145908f1abb3b23d349804e628bc2d7b474eaad13bf3f63232fc0ac9b0d06af",
+      "name": "topk_operational_lift",
+      "row_count": 13296,
+      "schema": [
+        {
+          "name": "family",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "raw_score_name",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "role",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "date",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "k",
+          "type": "BIGINT"
+        },
+        {
+          "name": "candidate_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "candidate_outcome_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "candidate_outcome_coverage_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "selected_outcome_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "selected_outcome_coverage_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "outcome_status",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "eligible_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "selected_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "eligible_mean_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "selected_mean_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "topk_lift_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "eligible_severe_loss_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "selected_severe_loss_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "severe_loss_rate_difference_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "eligible_sector_hhi",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "selected_sector_hhi",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "turnover_rate",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "core_high_high_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "near_high_high_1_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "near_high_high_2_count",
+          "type": "BIGINT"
+        }
+      ]
+    },
+    {
+      "content_sha256": "1fbddce8b4d02c800a8f2bf859ec06ae73fd875d2d319a9af19a0cb055ef5b2e",
+      "name": "walkforward_mapping",
+      "row_count": 150,
+      "schema": [
+        {
+          "name": "raw_score_name",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "evaluation_year",
+          "type": "BIGINT"
+        },
+        {
+          "name": "raw_bin",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "bin_lower",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bin_upper",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bin_center",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "observation_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "signal_date_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "expectancy_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "technical_fit_score",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "mapping_status",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "shape_classification",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "training_start_date",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "training_end_date",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "training_completion_end_date",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "family",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "is_primary",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "role",
+          "type": "VARCHAR"
+        }
+      ]
+    }
+  ]
+}

@@ -479,6 +479,20 @@ class TestRanking:
         parameters = resp.json()["paths"]["/api/analytics/ranking"]["get"]["parameters"]
         assert "liquidityState" not in {parameter["name"] for parameter in parameters}
 
+    def test_openapi_registers_ranking_lineage_conflicts(self, analytics_client):
+        response = analytics_client.get("/openapi.json")
+
+        assert response.status_code == 200
+        paths = response.json()["paths"]
+        for path in (
+            "/api/analytics/ranking",
+            "/api/analytics/ranking/symbol/{code}",
+        ):
+            schema = paths[path]["get"]["responses"]["409"]["content"][
+                "application/json"
+            ]["schema"]
+            assert schema == {"$ref": "#/components/schemas/ErrorResponse"}
+
     def test_422_no_db(self):
         """DB なしの場合 422"""
         app = create_app()
@@ -1042,6 +1056,28 @@ class TestScreening:
 
 
 class TestAnalyticsRouteErrorMapping:
+    def test_ranking_returns_adjusted_metrics_pit_recovery_for_missing_basis(
+        self, analytics_client, monkeypatch
+    ):
+        from src.application.services.market_data_errors import MarketDataError
+        from src.application.services.ranking_service import RankingService
+
+        def _raise_missing_basis(self, **_kwargs):  # noqa: ANN001
+            raise MarketDataError(
+                message="Daily Ranking signal basis is unavailable",
+                reason="event_time_signal_lineage_unavailable",
+                recovery="adjusted_metrics_pit",
+                status_code=409,
+            )
+
+        monkeypatch.setattr(RankingService, "get_rankings", _raise_missing_basis)
+        response = analytics_client.get("/api/analytics/ranking?limit=20")
+
+        assert response.status_code == 409
+        assert {"field": "recovery", "message": "adjusted_metrics_pit"} in response.json()[
+            "details"
+        ]
+
     def test_ranking_maps_value_error_to_422(self, analytics_client, monkeypatch):
         from src.application.services.ranking_service import RankingService
 

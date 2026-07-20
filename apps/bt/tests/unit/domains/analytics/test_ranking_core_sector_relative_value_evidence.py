@@ -116,8 +116,29 @@ def test_ranking_core_sector_relative_value_evidence_classifies_core_rules() -> 
             ),
         ],
     )
+    conn.execute(
+        """
+        CREATE TEMP TABLE core_sector_relative_source AS
+        SELECT
+            panel.* EXCLUDE (pbr_percentile, forward_per_percentile),
+            ranked.pbr,
+            ranked.forward_per AS forecast_per,
+            ranked.pbr_percentile,
+            ranked.forward_per_percentile AS forecast_per_percentile,
+            0.7::DOUBLE AS per_percentile,
+            1.2::DOUBLE AS forecast_per_to_per_ratio,
+            1.0::DOUBLE AS forward_close_return_20d_pct
+        FROM ranking_sector_signal_panel panel
+        JOIN ranking_color_ranked ranked USING (market_scope, date, code)
+        """
+    )
 
-    _create_core_sector_relative_tables(conn, min_sector_observations=2)
+    _create_core_sector_relative_tables(
+        conn,
+        source_name="core_sector_relative_source",
+        horizons=(20,),
+        min_sector_observations=2,
+    )
 
     rules = {
         row[0]

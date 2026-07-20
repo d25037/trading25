@@ -3,11 +3,27 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
+from src.domains.analytics.daily_ranking_consumer_support import (
+    compose_daily_ranking_signal_features,
+)
+from src.domains.analytics.daily_ranking_feature_builders import (
+    SectorStrengthFeaturesRequest,
+    build_sector_strength_features,
+)
+from src.domains.analytics.daily_ranking_research_base import (
+    DailyRankingPanelRequest,
+    MarketScope,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
+    normalize_daily_ranking_market_scopes,
+)
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
@@ -16,20 +32,18 @@ from src.domains.analytics.ranking_color_evidence import (
     DEFAULT_MIN_OBSERVATIONS,
     DEFAULT_OBSERVATION_SAMPLE_LIMIT,
     DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
-    _assert_required_tables as _assert_ranking_required_tables,
-    _create_observation_panel as _create_ranking_observation_panel,
-    _normalize_market_scopes,
-    _offset_calendar_date,
 )
 from src.domains.analytics.ranking_sector_strength_evidence import (
     DEFAULT_HORIZONS,
-    _create_sector_strength_tables,
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
     open_readonly_analysis_connection,
 )
-from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    write_research_bundle,
+)
 
 RANKING_CORE_SECTOR_RELATIVE_VALUE_EVIDENCE_EXPERIMENT_ID = (
     "market-behavior/ranking-core-sector-relative-value-evidence"
@@ -85,7 +99,7 @@ def run_ranking_core_sector_relative_value_evidence_research(
     observation_sample_limit: int = DEFAULT_OBSERVATION_SAMPLE_LIMIT,
 ) -> RankingCoreSectorRelativeValueEvidenceResult:
     resolved_horizons = tuple(sorted({int(horizon) for horizon in horizons}))
-    resolved_market_scopes = _normalize_market_scopes(market_scopes)
+    resolved_market_scopes = normalize_daily_ranking_market_scopes(market_scopes)
     _validate_params(
         horizons=resolved_horizons,
         min_observations=min_observations,
@@ -98,28 +112,59 @@ def run_ranking_core_sector_relative_value_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = _offset_calendar_date(start_date, days=-180)
-    query_end = _offset_calendar_date(end_date, days=max(resolved_horizons) * 4 + 30)
     market_source = "stock_master_daily_exact_date"
 
     with open_readonly_analysis_connection(
         str(db_path_obj),
         snapshot_prefix="ranking-core-sector-relative-value-evidence-",
     ) as ctx:
-        _assert_ranking_required_tables(ctx.connection)
-        _create_ranking_observation_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            DailyRankingPanelRequest(
+                namespace="core_sector_relative_value",
+                analysis_start_date=_parse_optional_date(start_date),
+                analysis_end_date=_parse_optional_date(end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(tuple[MarketScope, ...], resolved_market_scopes),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
         )
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
+        signal_source = relations.liquidity_ranked_signals
+        if signal_source is None:
+            raise RuntimeError(
+                "sector-relative value requires liquidity-ranked signals"
+            )
+        sector_features = build_sector_strength_features(
+            ctx.connection,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="core_sector_relative_value_sector",
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(sector_features,),
+            namespace="core_sector_relative_value",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="core_sector_relative_value_signals",
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="core_sector_relative_value_outcomes",
+        )
         _create_core_sector_relative_tables(
             ctx.connection,
+            source_name=evaluated.name,
+            horizons=resolved_horizons,
             min_sector_observations=min_sector_observations,
         )
         observation_count = int(
@@ -260,40 +305,98 @@ def build_summary_markdown(
 def _create_core_sector_relative_tables(
     conn: Any,
     *,
+    source_name: str,
+    horizons: Sequence[int],
     min_sector_observations: int,
 ) -> None:
+    sector_forward = ",\n                ".join(
+        f"avg(forward_close_return_{int(horizon)}d_pct) OVER ("
+        "PARTITION BY market_scope, date, sector_33_name) "
+        f"AS sector_forward_return_{int(horizon)}d_pct"
+        for horizon in horizons
+    )
+    sector_excess = ",\n                ".join(
+        f"forward_close_return_{int(horizon)}d_pct "
+        f"- sector_forward_return_{int(horizon)}d_pct "
+        f"AS forward_sector_excess_return_{int(horizon)}d_pct"
+        for horizon in horizons
+    )
     conn.execute(
-        """
+        f"""
         CREATE OR REPLACE TEMP TABLE ranking_core_sector_relative_universe AS
-        WITH sector_universe AS (
+        WITH sector_outcomes AS (
             SELECT
-                r.market_scope,
-                r.date,
-                r.code,
-                sm.sector_33_code,
-                sm.sector_33_name,
-                r.pbr,
-                r.forward_per,
-                r.pbr_percentile AS raw_pbr_percentile,
-                r.forward_per_percentile AS raw_forward_per_percentile,
-                count(*) FILTER (WHERE r.pbr > 0) OVER (
-                    PARTITION BY r.market_scope, r.date, sm.sector_33_name
+                source.*,
+                {sector_forward}
+            FROM {source_name} source
+        ),
+        adapted AS (
+            SELECT
+                r.*,
+                r.forecast_per AS forward_per,
+                r.forecast_per_percentile AS forward_per_percentile,
+                {sector_excess},
+                CASE
+                    WHEN r.liquidity_scope = 'crowded_rerating'
+                     AND ((r.pbr_percentile <= 0.2
+                           AND r.forecast_per_percentile <= 0.2)
+                          OR (r.per_percentile <= 0.2
+                              AND r.forecast_per_to_per_ratio <= 0.8))
+                        THEN 'green'
+                    WHEN r.liquidity_scope = 'crowded_rerating'
+                     AND (r.pbr_percentile <= 0.2
+                          OR (r.per_percentile <= 0.2
+                              AND r.forecast_per_to_per_ratio <= 1.0))
+                        THEN 'blue'
+                    WHEN r.liquidity_scope = 'neutral_rerating'
+                     AND r.per_percentile <= 0.2
+                     AND r.forecast_per_to_per_ratio <= 0.8
+                        THEN 'green'
+                    WHEN r.liquidity_scope = 'neutral_rerating'
+                        THEN 'blue'
+                END AS ui_color,
+                CASE
+                    WHEN r.per_percentile <= 0.2
+                     AND r.forecast_per_to_per_ratio <= 0.8
+                        THEN 'low_per20_fwdper_per_lte_0_8'
+                    WHEN r.pbr_percentile <= 0.2
+                     AND r.forecast_per_percentile <= 0.2
+                        THEN 'low_pbr20_low_fwd_per20'
+                    WHEN r.pbr_percentile <= 0.2
+                        THEN 'low_pbr20_only'
+                    WHEN r.per_percentile <= 0.2
+                     AND r.forecast_per_to_per_ratio <= 1.0
+                        THEN 'low_per20_fwdper_per_lte_1_0'
+                    ELSE 'no_value_confirmation'
+                END AS value_condition
+            FROM sector_outcomes r
+        ),
+        sector_universe AS (
+            SELECT
+                adapted.*,
+                adapted.pbr_percentile AS raw_pbr_percentile,
+                adapted.forward_per_percentile AS raw_forward_per_percentile,
+                count(*) FILTER (WHERE adapted.pbr > 0) OVER (
+                    PARTITION BY adapted.market_scope, adapted.date,
+                                 adapted.sector_33_name
                 ) AS sector_pbr_valid_count,
                 rank() OVER (
-                    PARTITION BY r.market_scope, r.date, sm.sector_33_name
-                    ORDER BY CASE WHEN r.pbr > 0 THEN r.pbr END NULLS LAST
+                    PARTITION BY adapted.market_scope, adapted.date,
+                                 adapted.sector_33_name
+                    ORDER BY CASE WHEN adapted.pbr > 0 THEN adapted.pbr END NULLS LAST
                 ) AS sector_pbr_rank,
-                count(*) FILTER (WHERE r.forward_per > 0) OVER (
-                    PARTITION BY r.market_scope, r.date, sm.sector_33_name
+                count(*) FILTER (WHERE adapted.forward_per > 0) OVER (
+                    PARTITION BY adapted.market_scope, adapted.date,
+                                 adapted.sector_33_name
                 ) AS sector_forward_per_valid_count,
                 rank() OVER (
-                    PARTITION BY r.market_scope, r.date, sm.sector_33_name
-                    ORDER BY CASE WHEN r.forward_per > 0 THEN r.forward_per END NULLS LAST
+                    PARTITION BY adapted.market_scope, adapted.date,
+                                 adapted.sector_33_name
+                    ORDER BY CASE WHEN adapted.forward_per > 0
+                                  THEN adapted.forward_per END NULLS LAST
                 ) AS sector_forward_per_rank
-            FROM ranking_color_ranked r
-            JOIN ranking_sector_master sm
-              ON sm.code = r.code
-             AND sm.date = r.date
+            FROM adapted
+            WHERE adapted.sector_33_name IS NOT NULL
         )
         SELECT
             *,
@@ -315,29 +418,21 @@ def _create_core_sector_relative_tables(
         CREATE OR REPLACE TEMP TABLE ranking_core_sector_relative_panel AS
         WITH joined AS (
             SELECT
-                sp.*,
-                u.sector_pbr_valid_count,
-                u.sector_forward_per_valid_count,
-                u.sector_pbr_percentile,
-                u.sector_forward_per_percentile,
+                u.*,
                 CASE
-                    WHEN sp.pbr_percentile IS NOT NULL
-                     AND sp.forward_per_percentile IS NOT NULL
+                    WHEN u.pbr_percentile IS NOT NULL
+                     AND u.forward_per_percentile IS NOT NULL
                      AND u.sector_pbr_percentile IS NOT NULL
                      AND u.sector_forward_per_percentile IS NOT NULL
                         THEN (
-                            sp.pbr_percentile
-                            + sp.forward_per_percentile
+                            u.pbr_percentile
+                            + u.forward_per_percentile
                             + u.sector_pbr_percentile
                             + u.sector_forward_per_percentile
                         ) / 4.0
                 END AS hybrid_value_score
-            FROM ranking_sector_signal_panel sp
-            LEFT JOIN ranking_core_sector_relative_universe u
-              ON u.market_scope = sp.market_scope
-             AND u.date = sp.date
-             AND u.code = sp.code
-             AND u.sector_33_name = sp.sector_33_name
+            FROM ranking_core_sector_relative_universe u
+            WHERE u.liquidity_scope IN ('crowded_rerating', 'neutral_rerating')
         ),
         ranked AS (
             SELECT
@@ -465,7 +560,9 @@ def _aggregate_core_rules(
         return frame
     frame.insert(0, "return_lens", return_lens)
     frame.insert(0, "horizon", int(horizon))
-    frame["core_rule_order"] = frame["core_rule"].map(_core_rule_order_map()).fillna(999)
+    frame["core_rule_order"] = (
+        frame["core_rule"].map(_core_rule_order_map()).fillna(999)
+    )
     return frame.sort_values(["horizon", "return_lens", "core_rule_order", "core_rule"])
 
 
@@ -522,7 +619,9 @@ def _build_yearly_core_rule_summary_df(
     frame = _concat_sorted(frames, columns=_yearly_core_rule_summary_columns())
     if frame.empty:
         return frame
-    frame["core_rule_order"] = frame["core_rule"].map(_core_rule_order_map()).fillna(999)
+    frame["core_rule_order"] = (
+        frame["core_rule"].map(_core_rule_order_map()).fillna(999)
+    )
     return frame.sort_values(["horizon", "year", "core_rule_order", "core_rule"])
 
 
@@ -700,6 +799,10 @@ def _validate_params(
         raise ValueError("observation_sample_limit must be positive")
 
 
+def _parse_optional_date(value: str | None) -> date | None:
+    return None if value is None else date.fromisoformat(value)
+
+
 def _return_column(return_key: str, horizon: int) -> str:
     if return_key == "forward_close_return":
         return f"forward_close_return_{horizon}d_pct"
@@ -723,7 +826,9 @@ def _percentile_bucket_case(column: str) -> str:
     """
 
 
-def _concat_sorted(frames: Sequence[pd.DataFrame], *, columns: Sequence[str]) -> pd.DataFrame:
+def _concat_sorted(
+    frames: Sequence[pd.DataFrame], *, columns: Sequence[str]
+) -> pd.DataFrame:
     non_empty = [frame for frame in frames if not frame.empty]
     if not non_empty:
         return pd.DataFrame(columns=list(columns))

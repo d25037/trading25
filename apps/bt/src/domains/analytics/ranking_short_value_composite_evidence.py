@@ -3,44 +3,48 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
-from src.domains.analytics.atr_expansion_forward_response import (
-    _create_observation_panel as _create_atr_observation_panel,
+from src.domains.analytics.daily_ranking_consumer_support import (
+    compose_daily_ranking_signal_features,
+    condition_values_sql,
+    table_exists,
+)
+from src.domains.analytics.daily_ranking_feature_builders import (
+    AtrFeaturesRequest,
+    PsrFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    ShortScaffoldFeaturesRequest,
+    SmaFeaturesRequest,
+    build_atr_features,
+    build_psr_features,
+    build_sector_strength_features,
+    build_short_scaffold_features,
+    build_sma_features,
 )
 from src.domains.analytics.daily_ranking_research_base import (
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    MarketScope,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
     normalize_daily_ranking_market_scopes,
 )
-from src.domains.analytics.earnings_holdthrough_expectancy import _table_exists
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
-)
-from src.domains.analytics.ranking_forecast_operating_profit_growth_evidence import (
-    _condition_values_sql,
-)
-from src.domains.analytics.ranking_psr_valuation_evidence import (
-    _create_psr_valuation_panel,
-)
-from src.domains.analytics.ranking_sector_strength_evidence import (
-    _create_sector_strength_tables,
-)
-from src.domains.analytics.ranking_short_red_evidence import (
-    _create_feature_panel as _create_short_red_feature_panel,
-)
-from src.domains.analytics.ranking_sma5_count_short_evidence import (
-    _create_sma5_count_short_panel,
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
     open_readonly_analysis_connection,
 )
-from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    write_research_bundle,
+)
 
 RANKING_SHORT_VALUE_COMPOSITE_EXPERIMENT_ID = (
     "market-behavior/ranking-short-value-composite-evidence"
@@ -50,9 +54,6 @@ DEFAULT_MARKET_SCOPES: tuple[str, ...] = ("prime",)
 DEFAULT_MIN_OBSERVATIONS = 100
 DEFAULT_TAIL_RETURN_THRESHOLD_PCT = 10.0
 DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
-_REQUIRED_ATR_WINDOWS: tuple[int, ...] = (20, 60)
-_REQUIRED_RETURN_WINDOWS: tuple[int, ...] = (20, 60)
-_WARMUP_CALENDAR_DAYS = 720
 _REQUIRED_TABLES: tuple[str, ...] = (
     "stock_data",
     "topix_data",
@@ -209,53 +210,84 @@ def run_ranking_short_value_composite_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = daily_ranking_query_start_date(
-        start_date,
-        warmup_calendar_days=_WARMUP_CALENDAR_DAYS,
-    )
-    query_end = daily_ranking_query_end_date(
-        end_date,
-        max_horizon=max(resolved_horizons),
-    )
-
     with open_readonly_analysis_connection(
         str(db_path_obj),
         snapshot_prefix="ranking-short-value-composite-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
         market_source = "stock_master_daily_exact_date"
-        create_daily_ranking_research_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_scopes=resolved_market_scopes,
-            market_source=market_source,
-            include_liquidity_ranked=True,
-            include_relation_percentiles=False,
+            DailyRankingPanelRequest(
+                namespace="short_value_composite",
+                analysis_start_date=_parse_optional_date(start_date),
+                analysis_end_date=_parse_optional_date(end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(
+                    tuple[MarketScope, ...],
+                    resolved_market_scopes,
+                ),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
         )
-        _create_atr_observation_panel(
+        signal_source = relations.liquidity_ranked_signals
+        if signal_source is None:
+            raise RuntimeError("short value research requires liquidity-ranked signals")
+        atr_features = build_atr_features(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=_REQUIRED_ATR_WINDOWS,
-            return_windows=_REQUIRED_RETURN_WINDOWS,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            AtrFeaturesRequest(source=signal_source, namespace="short_value_atr"),
         )
-        _create_psr_valuation_panel(ctx.connection)
-        _create_short_red_feature_panel(ctx.connection)
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
-        _create_sma5_count_short_panel(
+        psr_features = build_psr_features(
             ctx.connection,
-            liquidity_bands=("high", "mid", "low"),
+            PsrFeaturesRequest(source=signal_source, namespace="short_value_psr"),
         )
-        _create_short_value_composite_panel(ctx.connection)
+        short_features = build_short_scaffold_features(
+            ctx.connection,
+            ShortScaffoldFeaturesRequest(
+                source=signal_source,
+                atr_features=atr_features,
+                namespace="short_value_short",
+            ),
+        )
+        sector_features = build_sector_strength_features(
+            ctx.connection,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="short_value_sector",
+            ),
+        )
+        sma_features = build_sma_features(
+            ctx.connection,
+            SmaFeaturesRequest(
+                source=signal_source,
+                price_history=relations.price_history,
+                namespace="short_value_sma",
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(psr_features, short_features, sector_features, sma_features),
+            namespace="short_value_composite",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="short_value_signals",
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="short_value_outcomes",
+        )
+        _create_short_value_composite_panel(
+            ctx.connection,
+            source_name=evaluated.name,
+        )
         observation_count = int(
             ctx.connection.execute(
                 "SELECT count(*) FROM ranking_short_value_composite_panel"
@@ -375,25 +407,25 @@ def build_summary_markdown(result: RankingShortValueCompositeEvidenceResult) -> 
 
 
 def _assert_required_tables(conn: Any) -> None:
-    missing = [table for table in _REQUIRED_TABLES if not _table_exists(conn, table)]
+    missing = [table for table in _REQUIRED_TABLES if not table_exists(conn, table)]
     if missing:
-        raise ValueError(f"market.duckdb is missing required tables: {', '.join(missing)}")
+        raise ValueError(
+            f"market.duckdb is missing required tables: {', '.join(missing)}"
+        )
 
 
-def _create_short_value_composite_panel(conn: Any) -> None:
+def _create_short_value_composite_panel(conn: Any, *, source_name: str) -> None:
     conn.execute(
-        """
+        f"""
         CREATE OR REPLACE TEMP TABLE ranking_short_value_composite_panel AS
         SELECT
             p.*,
-            r.atr20_to_atr60,
-            r.atr20_change_20d_pct,
-            coalesce(r.atr20_acceleration, FALSE) AS atr20_acceleration,
-            coalesce(r.atr20_to_atr60_overheat, FALSE) AS atr20_to_atr60_overheat,
+            p.forecast_per AS forward_per,
+            p.forecast_per_percentile AS forward_per_percentile,
             CASE
-                WHEN p.forward_per_percentile IS NOT NULL
+                WHEN p.forecast_per_percentile IS NOT NULL
                  AND p.pbr_percentile IS NOT NULL
-                    THEN (p.forward_per_percentile + p.pbr_percentile) / 2.0
+                    THEN (p.forecast_per_percentile + p.pbr_percentile) / 2.0
             END AS high_fwd_per_pbr_composite_score,
             CASE
                 WHEN p.overvalued_warning OR p.psr_percentile >= 0.8
@@ -404,18 +436,14 @@ def _create_short_value_composite_panel(conn: Any) -> None:
                 WHEN p.overvalued_warning
                   OR p.psr_percentile >= 0.8
                   OR (
-                      p.forward_per_percentile IS NOT NULL
+                      p.forecast_per_percentile IS NOT NULL
                       AND p.pbr_percentile IS NOT NULL
-                      AND (p.forward_per_percentile + p.pbr_percentile) / 2.0 >= 0.8
+                      AND (p.forecast_per_percentile + p.pbr_percentile) / 2.0 >= 0.8
                   )
                     THEN TRUE
                 ELSE FALSE
             END AS overvalued_or_high_psr_or_high_fpbr_flag
-        FROM ranking_sma5_count_short_panel p
-        LEFT JOIN ranking_short_red_feature_panel r
-          ON r.code = p.code
-         AND r.date = p.date
-         AND r.market_scope = p.market_scope
+        FROM {source_name} p
         """
     )
 
@@ -462,7 +490,7 @@ def _build_condition_evidence_df(
     frames: list[pd.DataFrame] = []
     condition_lateral_sql = f"""
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(conditions)}
+            VALUES {condition_values_sql(conditions)}
         ) AS condition_item(
             condition_name,
             condition_order,
@@ -515,7 +543,7 @@ def _aggregate_short_conditions(
 ) -> pd.DataFrame:
     horizon_prefix = return_column.replace("forward_close_excess_return_", "")
     raw_return_column = f"forward_close_return_{horizon_prefix}"
-    topix_return_column = f"topix_close_return_{horizon_prefix}"
+    topix_return_expression = f"({raw_return_column} - {return_column})"
     return conn.execute(
         f"""
         SELECT
@@ -527,8 +555,8 @@ def _aggregate_short_conditions(
             count(DISTINCT date) AS date_count,
             avg({raw_return_column}) AS mean_forward_return_pct,
             median({raw_return_column}) AS median_forward_return_pct,
-            avg({topix_return_column}) AS mean_topix_return_pct,
-            median({topix_return_column}) AS median_topix_return_pct,
+            avg({topix_return_expression}) AS mean_topix_return_pct,
+            median({topix_return_expression}) AS median_topix_return_pct,
             avg({return_column}) AS mean_forward_excess_return_pct,
             median({return_column}) AS median_forward_excess_return_pct,
             quantile_cont({return_column}, 0.10) AS p10_forward_excess_return_pct,
@@ -637,6 +665,10 @@ def _validate_params(
         raise ValueError("tail_return_threshold_pct must be positive and finite")
     if observation_sample_limit <= 0:
         raise ValueError("observation_sample_limit must be positive")
+
+
+def _parse_optional_date(value: str | None) -> date | None:
+    return None if value is None else date.fromisoformat(value)
 
 
 def _condition_evidence_columns() -> list[str]:

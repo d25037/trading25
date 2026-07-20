@@ -50,3 +50,15 @@ paths = [
 regexes = [
   '''^\s*\{ label: 'SMA5', minKey: 'minSma5AboveCount5d', maxKey: 'maxSma5AboveCount5d' \},\s*$''',
 ]
+
+[[allowlists]]
+description = "Allow only the synthetic Daily Ranking research decision-key fixtures."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''^apps/bt/tests/unit/domains/analytics/test_ranking_fixed_return_priority_evidence\.py$''',
+]
+regexes = [
+  '''^\s*"decision_key": "fixed(?:20|60)_priority",\s*$''',
+]

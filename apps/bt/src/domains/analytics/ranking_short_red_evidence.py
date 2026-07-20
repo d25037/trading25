@@ -3,26 +3,32 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
-from src.domains.analytics.atr_expansion_forward_response import (
-    _create_observation_panel as _create_atr_observation_panel,
+from src.domains.analytics.daily_ranking_consumer_support import (
+    compose_daily_ranking_signal_features,
 )
-from src.domains.analytics.earnings_holdthrough_expectancy import (
-    _sort_summary_df,
+from src.domains.analytics.daily_ranking_feature_builders import (
+    AtrFeaturesRequest,
+    ShortScaffoldFeaturesRequest,
+    build_atr_features,
+    build_short_scaffold_features,
+    publish_legacy_short_scaffold_features,
 )
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
+    sort_summary_df,
 )
 from src.domains.analytics.daily_ranking_research_base import (
-    DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE,
-    assert_daily_ranking_research_tables,
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    MarketScope,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
     normalize_daily_ranking_market_scopes,
 )
 from src.domains.analytics.readonly_duckdb_support import (
@@ -178,69 +184,94 @@ def run_ranking_short_red_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = daily_ranking_query_start_date(start_date, warmup_calendar_days=720)
-    query_end = daily_ranking_query_end_date(
-        end_date,
-        max_horizon=max(resolved_horizons),
-    )
-
     with open_readonly_analysis_connection(
         str(db_path_obj),
         snapshot_prefix="ranking-short-red-evidence-",
     ) as ctx:
-        assert_daily_ranking_research_tables(ctx.connection)
         market_source = "stock_master_daily_exact_date"
-        create_daily_ranking_research_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
-            include_relation_percentiles=False,
+            DailyRankingPanelRequest(
+                namespace="short_red",
+                analysis_start_date=_parse_optional_date(start_date),
+                analysis_end_date=_parse_optional_date(end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(
+                    tuple[MarketScope, ...],
+                    resolved_market_scopes,
+                ),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
         )
-        _create_atr_observation_panel(
+        signal_source = relations.liquidity_ranked_signals
+        if signal_source is None:
+            raise RuntimeError("short/red research requires liquidity-ranked signals")
+        atr_features = build_atr_features(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=_REQUIRED_ATR_WINDOWS,
-            return_windows=_REQUIRED_RETURN_WINDOWS,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            AtrFeaturesRequest(source=signal_source, namespace="short_red_atr"),
         )
-        _create_feature_panel(ctx.connection)
-        _create_candidate_work(ctx.connection)
+        short_features = build_short_scaffold_features(
+            ctx.connection,
+            ShortScaffoldFeaturesRequest(
+                source=signal_source,
+                atr_features=atr_features,
+                namespace="short_red_scaffold",
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(short_features,),
+            namespace="short_red",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="short_red_signals",
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="short_red_outcomes",
+        )
+        candidate_source_name = _create_candidate_work(
+            ctx.connection,
+            source_name=evaluated.name,
+        )
         observation_count = int(
-            ctx.connection.execute(
-                "SELECT count(*) FROM ranking_short_red_feature_panel"
-            ).fetchone()[0]
+            ctx.connection.execute(f"SELECT count(*) FROM {evaluated.name}").fetchone()[0]
         )
-        coverage_diagnostics_df = _build_coverage_diagnostics_df(ctx.connection)
+        coverage_diagnostics_df = _build_coverage_diagnostics_df(
+            ctx.connection,
+            source_name=evaluated.name,
+        )
         short_red_candidate_df = _build_short_red_candidate_df(
             ctx.connection,
+            source_name=candidate_source_name,
             horizons=resolved_horizons,
             min_observations=min_observations,
             tail_return_threshold_pct=tail_return_threshold_pct,
         )
         regime_valuation_interaction_df = _build_regime_valuation_interaction_df(
             ctx.connection,
+            source_name=evaluated.name,
             horizons=resolved_horizons,
             min_observations=min_observations,
             tail_return_threshold_pct=tail_return_threshold_pct,
         )
         technical_atr_short_interaction_df = _build_technical_atr_short_interaction_df(
             ctx.connection,
+            source_name=candidate_source_name,
             horizons=resolved_horizons,
             min_observations=min_observations,
             tail_return_threshold_pct=tail_return_threshold_pct,
         )
         stale_liquidity_short_diagnostics_df = _build_stale_liquidity_short_diagnostics_df(
             ctx.connection,
+            source_name=evaluated.name,
             horizons=resolved_horizons,
             min_observations=min_observations,
             tail_return_threshold_pct=tail_return_threshold_pct,
@@ -248,6 +279,7 @@ def run_ranking_short_red_evidence_research(
         stale_overvalued_trend_split_df = (
             _build_stale_overvalued_trend_split_df(
                 ctx.connection,
+                source_name=evaluated.name,
                 horizons=resolved_horizons,
                 min_observations=min_observations,
                 tail_return_threshold_pct=tail_return_threshold_pct,
@@ -255,10 +287,12 @@ def run_ranking_short_red_evidence_research(
         )
         live_ranking_replay_df = _query_live_ranking_replay_df(
             ctx.connection,
+            source_name=candidate_source_name,
             limit=observation_sample_limit,
         )
         observation_sample_df = _query_observation_sample_df(
             ctx.connection,
+            source_name=evaluated.name,
             limit=observation_sample_limit,
         )
         source_mode = ctx.source_mode
@@ -437,80 +471,8 @@ def _validate_params(
         raise ValueError("observation_sample_limit must be positive")
 
 
-def _create_feature_panel(conn: Any) -> None:
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE ranking_short_red_feature_panel AS
-        SELECT
-            r.*,
-            r.liquidity_scope AS liquidity_regime,
-            a.atr20_pct,
-            a.atr60_pct,
-            a.atr20_to_atr60,
-            a.atr20_change_20d_pct,
-            CASE
-                WHEN r.pbr_percentile <= 0.2 AND r.forward_per_percentile <= 0.2
-                    THEN TRUE
-                WHEN r.per_percentile <= 0.2 AND r.forward_per_to_per_ratio <= 0.8
-                    THEN TRUE
-                ELSE FALSE
-            END AS strong_value_confirmation,
-            CASE
-                WHEN r.pbr_percentile <= 0.2
-                    THEN TRUE
-                WHEN r.per_percentile <= 0.2 AND r.forward_per_to_per_ratio <= 1.0
-                    THEN TRUE
-                ELSE FALSE
-            END AS medium_value_confirmation,
-            CASE
-                WHEN r.per_percentile >= 0.8 THEN TRUE
-                WHEN r.forward_per_percentile >= 0.8 THEN TRUE
-                WHEN r.forward_p_op_percentile >= 0.8 THEN TRUE
-                WHEN r.pbr_percentile >= 0.8 THEN TRUE
-                ELSE FALSE
-            END AS overvalued_percentile,
-            CASE
-                WHEN r.per_percentile IS NULL AND r.forward_per_percentile IS NULL
-                    THEN TRUE
-                ELSE FALSE
-            END AS missing_earnings_warning,
-            CASE
-                WHEN r.recent_return_20d_pct <= 0 OR r.recent_return_60d_pct <= 0
-                    THEN TRUE
-                ELSE FALSE
-            END AS weak_trend
-        FROM {DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE} r
-        JOIN atr_expansion_scoped a
-          ON a.code = r.code
-         AND a.date = r.date
-         AND a.market_scope = r.market_scope
-        WHERE r.liquidity_scope IN (
-            'crowded_rerating',
-            'distribution_stress',
-            'stale_liquidity',
-            'neutral_rerating',
-            'neutral'
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE OR REPLACE TEMP TABLE ranking_short_red_feature_panel AS
-        SELECT
-            *,
-            overvalued_percentile OR missing_earnings_warning
-                AS overvalued_or_no_earnings_warning,
-            NOT medium_value_confirmation AS no_value_confirmation,
-            atr20_change_20d_pct >= 25.0 AND atr20_to_atr60 < 1.25
-                AS atr20_acceleration,
-            atr20_change_20d_pct >= 25.0 AND atr20_to_atr60 >= 1.25
-                AS atr20_to_atr60_overheat
-        FROM ranking_short_red_feature_panel
-        """
-    )
-
-
-def _create_candidate_work(conn: Any) -> None:
+def _create_candidate_work(conn: Any, *, source_name: str) -> str:
+    relation_name = "ranking_short_red_candidate_work"
     selects = []
     for order, (bucket, condition) in enumerate(_CANDIDATE_BUCKETS):
         selects.append(
@@ -519,19 +481,31 @@ def _create_candidate_work(conn: Any) -> None:
                 *,
                 '{bucket}' AS candidate_bucket,
                 {order} AS candidate_bucket_order
-            FROM ranking_short_red_feature_panel
+            FROM {source_name}
             WHERE {condition}
             """
         )
     conn.execute(
-        "CREATE OR REPLACE TEMP TABLE ranking_short_red_candidate_work AS\n"
+        f"CREATE OR REPLACE TEMP TABLE {relation_name} AS\n"
         + "\nUNION ALL\n".join(selects)
     )
+    return relation_name
 
 
-def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
+def _create_feature_panel(  # pyright: ignore[reportUnusedFunction]
+    conn: Any,
+) -> None:
+    """Compatibility bridge for remaining Task 9-10 consumers."""
+
+    publish_legacy_short_scaffold_features(conn)
+
+
+PUBLIC_FEATURE_BUILDER = build_short_scaffold_features
+
+
+def _build_coverage_diagnostics_df(conn: Any, *, source_name: str) -> pd.DataFrame:
     frame = conn.execute(
-        """
+        f"""
         SELECT
             market_scope,
             count(*) AS observation_count,
@@ -549,16 +523,17 @@ def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
                 AS atr20_coverage_pct,
             avg(CASE WHEN atr20_change_20d_pct IS NOT NULL THEN 1.0 ELSE 0.0 END) * 100.0
                 AS atr20_change_20d_coverage_pct
-        FROM ranking_short_red_feature_panel
+        FROM {source_name}
         GROUP BY market_scope
         """
     ).fetchdf()
-    return _sort_summary_df(frame, columns=list(frame.columns))
+    return sort_summary_df(frame, columns=list(frame.columns))
 
 
 def _build_short_red_candidate_df(
     conn: Any,
     *,
+    source_name: str,
     horizons: Sequence[int],
     min_observations: int,
     tail_return_threshold_pct: float,
@@ -568,7 +543,7 @@ def _build_short_red_candidate_df(
         frames.append(
             _aggregate_condition(
                 conn,
-                source_name="ranking_short_red_candidate_work",
+                source_name=source_name,
                 condition="TRUE",
                 condition_fields={"horizon": int(horizon)},
                 horizon=int(horizon),
@@ -587,6 +562,7 @@ def _build_short_red_candidate_df(
 def _build_regime_valuation_interaction_df(
     conn: Any,
     *,
+    source_name: str,
     horizons: Sequence[int],
     min_observations: int,
     tail_return_threshold_pct: float,
@@ -600,7 +576,7 @@ def _build_regime_valuation_interaction_df(
                 frames.append(
                     _aggregate_condition(
                         conn,
-                        source_name="ranking_short_red_feature_panel",
+                        source_name=source_name,
                         condition=f"liquidity_regime = '{regime}' AND ({condition})",
                         condition_fields={
                             "liquidity_regime_order": regime_order,
@@ -620,6 +596,7 @@ def _build_regime_valuation_interaction_df(
 def _build_technical_atr_short_interaction_df(
     conn: Any,
     *,
+    source_name: str,
     horizons: Sequence[int],
     min_observations: int,
     tail_return_threshold_pct: float,
@@ -630,7 +607,7 @@ def _build_technical_atr_short_interaction_df(
             frames.append(
                 _aggregate_condition(
                     conn,
-                    source_name="ranking_short_red_candidate_work",
+                    source_name=source_name,
                     condition=condition,
                     condition_fields={
                         "technical_state": technical_state,
@@ -653,6 +630,7 @@ def _build_technical_atr_short_interaction_df(
 def _build_stale_liquidity_short_diagnostics_df(
     conn: Any,
     *,
+    source_name: str,
     horizons: Sequence[int],
     min_observations: int,
     tail_return_threshold_pct: float,
@@ -663,7 +641,7 @@ def _build_stale_liquidity_short_diagnostics_df(
             frames.append(
                 _aggregate_condition(
                     conn,
-                    source_name="ranking_short_red_feature_panel",
+                    source_name=source_name,
                     condition=condition,
                     condition_fields={
                         "stale_condition": stale_condition,
@@ -682,6 +660,7 @@ def _build_stale_liquidity_short_diagnostics_df(
 def _build_stale_overvalued_trend_split_df(
     conn: Any,
     *,
+    source_name: str,
     horizons: Sequence[int],
     min_observations: int,
     tail_return_threshold_pct: float,
@@ -698,7 +677,7 @@ def _build_stale_overvalued_trend_split_df(
             frames.append(
                 _aggregate_condition(
                     conn,
-                    source_name="ranking_short_red_feature_panel",
+                    source_name=source_name,
                     condition=f"{base_condition} AND ({condition})",
                     condition_fields={
                         "trend_split": trend_split,
@@ -728,8 +707,8 @@ def _aggregate_condition(
     group_select = ",\n            ".join(group_columns)
     group_by = ", ".join(group_columns)
     raw_return_column = f"forward_close_return_{horizon}d_pct"
-    topix_return_column = f"topix_close_return_{horizon}d_pct"
     excess_return_column = f"forward_close_excess_return_{horizon}d_pct"
+    topix_return_expression = f"({raw_return_column} - {excess_return_column})"
     frame = conn.execute(
         f"""
         SELECT
@@ -751,8 +730,8 @@ def _aggregate_condition(
                 AS downside_raw_tail_rate_pct,
             avg(CASE WHEN {raw_return_column} >= ? THEN 1.0 ELSE 0.0 END) * 100.0
                 AS upside_raw_tail_rate_pct,
-            avg({topix_return_column}) AS mean_topix_return_pct,
-            median({topix_return_column}) AS median_topix_return_pct,
+            avg({topix_return_expression}) AS mean_topix_return_pct,
+            median({topix_return_expression}) AS median_topix_return_pct,
             avg({excess_return_column}) AS mean_forward_excess_return_pct,
             median({excess_return_column}) AS median_forward_excess_return_pct,
             quantile_cont({excess_return_column}, 0.10) AS p10_forward_excess_return_pct,
@@ -775,8 +754,8 @@ def _aggregate_condition(
             median(market_cap_bil_jpy) AS median_market_cap_bil_jpy,
             median(liquidity_residual_z) AS median_liquidity_residual_z,
             median(per_percentile) AS median_per_percentile,
-            median(forward_per_percentile) AS median_forward_per_percentile,
-            median(forward_p_op_percentile) AS median_forward_p_op_percentile,
+            median(forecast_per_percentile) AS median_forward_per_percentile,
+            median(forecast_p_op_percentile) AS median_forward_p_op_percentile,
             median(pbr_percentile) AS median_pbr_percentile,
             median(atr20_pct) AS median_atr20_pct,
             median(atr60_pct) AS median_atr60_pct,
@@ -789,7 +768,6 @@ def _aggregate_condition(
         FROM {source_name}
         WHERE {condition}
           AND {raw_return_column} IS NOT NULL
-          AND {topix_return_column} IS NOT NULL
           AND {excess_return_column} IS NOT NULL
         GROUP BY {group_by}
         HAVING count(*) >= ?
@@ -811,12 +789,17 @@ def _aggregate_condition(
     return frame.reindex(columns=ordered)
 
 
-def _query_live_ranking_replay_df(conn: Any, *, limit: int) -> pd.DataFrame:
+def _query_live_ranking_replay_df(
+    conn: Any,
+    *,
+    source_name: str,
+    limit: int,
+) -> pd.DataFrame:
     return conn.execute(
-        """
+        f"""
         WITH latest_dates AS (
             SELECT market_scope, max(date) AS max_date
-            FROM ranking_short_red_candidate_work
+            FROM {source_name}
             GROUP BY market_scope
         )
         SELECT
@@ -831,17 +814,19 @@ def _query_live_ranking_replay_df(conn: Any, *, limit: int) -> pd.DataFrame:
             c.recent_return_60d_pct,
             c.liquidity_residual_z,
             c.per_percentile,
-            c.forward_per_percentile,
-            c.forward_p_op_percentile,
+            c.forecast_per_percentile AS forward_per_percentile,
+            c.forecast_p_op_percentile AS forward_p_op_percentile,
             c.pbr_percentile,
             c.atr20_pct,
             c.atr60_pct,
             c.atr20_to_atr60,
             c.atr20_change_20d_pct,
             c.forward_close_return_20d_pct,
-            c.topix_close_return_20d_pct,
+            c.forward_close_return_20d_pct
+                - c.forward_close_excess_return_20d_pct
+                AS topix_close_return_20d_pct,
             c.forward_close_excess_return_20d_pct
-        FROM ranking_short_red_candidate_work c
+        FROM {source_name} c
         JOIN latest_dates d
           ON d.market_scope = c.market_scope
          AND d.max_date = c.date
@@ -852,9 +837,14 @@ def _query_live_ranking_replay_df(conn: Any, *, limit: int) -> pd.DataFrame:
     ).fetchdf()
 
 
-def _query_observation_sample_df(conn: Any, *, limit: int) -> pd.DataFrame:
+def _query_observation_sample_df(
+    conn: Any,
+    *,
+    source_name: str,
+    limit: int,
+) -> pd.DataFrame:
     return conn.execute(
-        """
+        f"""
         SELECT
             date,
             market_scope,
@@ -868,8 +858,8 @@ def _query_observation_sample_df(conn: Any, *, limit: int) -> pd.DataFrame:
             med_adv60_jpy / 1000000.0 AS med_adv60_mil_jpy,
             liquidity_residual_z,
             per_percentile,
-            forward_per_percentile,
-            forward_p_op_percentile,
+            forecast_per_percentile AS forward_per_percentile,
+            forecast_p_op_percentile AS forward_p_op_percentile,
             pbr_percentile,
             overvalued_or_no_earnings_warning,
             missing_earnings_warning,
@@ -879,9 +869,11 @@ def _query_observation_sample_df(conn: Any, *, limit: int) -> pd.DataFrame:
             atr20_to_atr60,
             atr20_change_20d_pct,
             forward_close_return_20d_pct,
-            topix_close_return_20d_pct,
+            forward_close_return_20d_pct
+                - forward_close_excess_return_20d_pct
+                AS topix_close_return_20d_pct,
             forward_close_excess_return_20d_pct
-        FROM ranking_short_red_feature_panel
+        FROM {source_name}
         ORDER BY date, code, liquidity_regime
         LIMIT ?
         """,
@@ -896,6 +888,10 @@ def _analysis_start_from_sample(frame: pd.DataFrame, fallback: str | None) -> st
     if pd.isna(value):
         return fallback
     return str(value)
+
+
+def _parse_optional_date(value: str | None) -> date | None:
+    return None if value is None else date.fromisoformat(value)
 
 
 def _short_red_metric_columns() -> list[str]:

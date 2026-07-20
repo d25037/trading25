@@ -3,47 +3,49 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
-from src.domains.analytics.atr_expansion_forward_response import (
-    _create_observation_panel as _create_atr_observation_panel,
+from src.domains.analytics.daily_ranking_consumer_support import (
+    aggregate_lateral_conditions,
+    aggregate_metric_columns,
+    compose_daily_ranking_signal_features,
+    condition_values_sql,
+    concat_sorted,
+    deep_dive_metric_columns,
+    deep_dive_metric_sql,
+    sql_literal,
+    table_exists,
+)
+from src.domains.analytics.daily_ranking_feature_builders import (
+    AtrFeaturesRequest,
+    LongLeadershipFeaturesRequest,
+    PsrFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    ShortScaffoldFeaturesRequest,
+    build_atr_features,
+    build_long_leadership_features,
+    build_psr_features,
+    build_sector_strength_features,
+    build_short_scaffold_features,
+    publish_legacy_psr_features,
 )
 from src.domains.analytics.daily_ranking_research_base import (
-    DAILY_RANKING_RESEARCH_RANKED_TABLE,
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    MarketScope,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
     normalize_daily_ranking_market_scopes,
 )
-from src.domains.analytics.earnings_holdthrough_expectancy import _table_exists
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
-from src.domains.analytics.ranking_forecast_operating_profit_growth_evidence import (
-    _aggregate_lateral_conditions,
-    _aggregate_metric_columns,
-    _concat_sorted,
-    _condition_values_sql,
-    _deep_dive_metric_columns,
-    _deep_dive_metric_sql,
-    _sql_literal,
-)
-from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition import (
-    _create_long_sector_leadership_tables,
-    _create_long_signal_tables,
-)
-from src.domains.analytics.ranking_sector_strength_evidence import (
-    _create_sector_strength_tables,
-)
-from src.domains.analytics.ranking_short_red_evidence import (
-    _create_feature_panel as _create_short_red_feature_panel,
-)
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
-    normalize_code_sql,
     open_readonly_analysis_connection,
 )
 from src.domains.analytics.research_bundle import (
@@ -69,8 +71,6 @@ _REQUIRED_TABLES: tuple[str, ...] = (
     "index_master",
 )
 _LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
-_REQUIRED_ATR_WINDOWS: tuple[int, ...] = (20, 60)
-_REQUIRED_RETURN_WINDOWS: tuple[int, ...] = (20, 60)
 _PSR_BUCKETS: tuple[tuple[str, str], ...] = (
     ("missing_psr", "psr IS NULL"),
     ("low_psr_10pct", "psr_percentile <= 0.1"),
@@ -227,55 +227,84 @@ def run_ranking_psr_valuation_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = daily_ranking_query_start_date(
-        start_date,
-        warmup_calendar_days=max(720, max(_LEADERSHIP_WINDOWS) * 3),
-    )
-    query_end = daily_ranking_query_end_date(
-        end_date,
-        max_horizon=max(resolved_horizons),
-    )
-
     with open_readonly_analysis_connection(
         str(db_path_obj),
         snapshot_prefix="ranking-psr-valuation-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
         market_source = "stock_master_daily_exact_date"
-        create_daily_ranking_research_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_scopes=resolved_market_scopes,
-            market_source=market_source,
-            include_liquidity_ranked=True,
-            include_relation_percentiles=False,
+            DailyRankingPanelRequest(
+                namespace="psr_valuation",
+                analysis_start_date=_parse_optional_date(start_date),
+                analysis_end_date=_parse_optional_date(end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(
+                    tuple[MarketScope, ...],
+                    resolved_market_scopes,
+                ),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
         )
-        _create_atr_observation_panel(
+        signal_source = relations.liquidity_ranked_signals
+        if signal_source is None:
+            raise RuntimeError("PSR research requires liquidity-ranked signals")
+        psr_features = build_psr_features(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=_REQUIRED_ATR_WINDOWS,
-            return_windows=_REQUIRED_RETURN_WINDOWS,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            PsrFeaturesRequest(source=signal_source, namespace="psr_valuation_psr"),
         )
-        _create_psr_valuation_panel(ctx.connection)
-        _create_short_red_feature_panel(ctx.connection)
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
-        _create_long_sector_leadership_tables(
+        atr_features = build_atr_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            AtrFeaturesRequest(source=signal_source, namespace="psr_valuation_atr"),
         )
-        _create_long_signal_tables(
+        short_features = build_short_scaffold_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            ShortScaffoldFeaturesRequest(
+                source=signal_source,
+                atr_features=atr_features,
+                namespace="psr_valuation_short",
+            ),
+        )
+        sector_features = build_sector_strength_features(
+            ctx.connection,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="psr_valuation_sector",
+            ),
+        )
+        leadership_features = build_long_leadership_features(
+            ctx.connection,
+            LongLeadershipFeaturesRequest(
+                source=signal_source,
+                sector_features=sector_features,
+                namespace="psr_valuation_leadership",
+                leadership_windows=_LEADERSHIP_WINDOWS,
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(psr_features, leadership_features, short_features),
+            namespace="psr_valuation",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="psr_valuation_signals",
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="psr_valuation_outcomes",
+        )
+        _create_evaluated_psr_valuation_panel(
+            ctx.connection,
+            source_name=evaluated.name,
         )
         _create_deep_dive_panel(ctx.connection)
         observation_count = int(
@@ -423,101 +452,35 @@ def build_summary_markdown(result: RankingPsrValuationEvidenceResult) -> str:
 
 
 def _assert_required_tables(conn: Any) -> None:
-    missing = [table for table in _REQUIRED_TABLES if not _table_exists(conn, table)]
+    missing = [table for table in _REQUIRED_TABLES if not table_exists(conn, table)]
     if missing:
         raise ValueError(f"market.duckdb is missing required tables: {', '.join(missing)}")
 
 
-def _create_psr_valuation_panel(conn: Any) -> None:
-    statement_code = normalize_code_sql("st.code")
-    valuation_code = normalize_code_sql("dv.code")
-    daily_psr_expr = (
-        "dv.psr"
-        if _daily_valuation_column_exists(conn, "psr")
-        else "CAST(NULL AS DOUBLE)"
-    )
+def _create_psr_valuation_panel(  # pyright: ignore[reportUnusedFunction]
+    conn: Any,
+) -> None:
+    """Compatibility bridge for remaining Task 8 and Task 10 consumers."""
+
+    publish_legacy_psr_features(conn)
+
+
+PUBLIC_FEATURE_BUILDER = build_psr_features
+
+
+def _create_evaluated_psr_valuation_panel(conn: Any, *, source_name: str) -> None:
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE ranking_psr_valuation_panel AS
-        WITH actual_fy_sales AS (
-            SELECT
-                {statement_code} AS code,
-                st.disclosed_date,
-                st.sales AS actual_sales,
-                lead(st.disclosed_date) OVER (
-                    PARTITION BY {statement_code}
-                    ORDER BY st.disclosed_date
-                ) AS valid_to
-            FROM statements st
-            WHERE st.sales > 0
-              AND upper(st.type_of_current_period) = 'FY'
-              AND (
-                  st.type_of_document LIKE '%FinancialStatements%'
-                  OR coalesce(st.type_of_document, '') = ''
-              )
-        ),
-        joined AS (
-            SELECT
-                r.*,
-                s.actual_sales,
-                s.disclosed_date AS actual_sales_disclosed_date,
-                COALESCE(
-                    d.psr,
-                    CASE
-                    WHEN r.market_cap_bil_jpy > 0 AND s.actual_sales > 0
-                    THEN (r.market_cap_bil_jpy * 1000000000.0) / s.actual_sales
-                    END
-                ) AS psr
-            FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE} r
-            LEFT JOIN (
-                SELECT {valuation_code} AS code, date, {daily_psr_expr} AS psr
-                FROM daily_valuation dv
-            ) d
-              ON d.code = r.code
-             AND d.date = r.date
-            LEFT JOIN actual_fy_sales s
-              ON s.code = r.code
-             AND s.disclosed_date <= r.date
-             AND (s.valid_to IS NULL OR r.date < s.valid_to)
-        ),
-        ranked AS (
-            SELECT
-                *,
-                count(*) FILTER (WHERE psr > 0) OVER (
-                    PARTITION BY market_scope, date
-                ) AS psr_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
-                    ORDER BY CASE WHEN psr > 0 THEN psr END NULLS LAST
-                ) AS psr_rank
-            FROM joined
-        )
         SELECT
-            * EXCLUDE (psr_valid_count, psr_rank),
-            CASE
-                WHEN psr > 0 AND psr_valid_count <= 1 THEN 0.0
-                WHEN psr > 0 THEN (psr_rank - 1.0) / (psr_valid_count - 1.0)
-            END AS psr_percentile,
-            CASE
-                WHEN psr IS NULL THEN 'missing_psr'
-                WHEN psr_valid_count <= 1 OR (psr_rank - 1.0) / (psr_valid_count - 1.0) <= 0.2
-                    THEN 'psr_undervalued'
-                WHEN (psr_rank - 1.0) / (psr_valid_count - 1.0) >= 0.9
-                    THEN 'psr_very_overvalued'
-                WHEN (psr_rank - 1.0) / (psr_valid_count - 1.0) >= 0.8
-                    THEN 'psr_overvalued'
-            END AS psr_signal
-        FROM ranked
+            source.*,
+            source.forecast_per AS forward_per,
+            source.forecast_per_percentile AS forward_per_percentile,
+            source.forecast_p_op AS forward_p_op,
+            source.forecast_p_op_percentile AS forward_p_op_percentile
+        FROM {source_name} source
         """
     )
-
-
-def _daily_valuation_column_exists(conn: Any, column: str) -> bool:
-    row = conn.execute(
-        "SELECT count(*) FROM pragma_table_info('daily_valuation') WHERE name = ?",
-        [column],
-    ).fetchone()
-    return bool(row and int(row[0] or 0) > 0)
 
 
 def _create_deep_dive_panel(conn: Any) -> None:
@@ -526,31 +489,12 @@ def _create_deep_dive_panel(conn: Any) -> None:
         CREATE OR REPLACE TEMP TABLE ranking_psr_valuation_deep_panel AS
         SELECT
             p.*,
-            l.sector_33_code,
-            l.sector_33_name,
-            l.sector_strength_bucket,
-            l.sector_strength_score,
-            l.sector_index_strength_score,
-            l.sector_constituent_strength_score,
-            l.long_index_leadership_score,
-            l.long_constituent_breadth_leadership_score,
-            l.long_hybrid_leadership_score,
-            l.long_hybrid_bucket_label,
-            coalesce(l.momentum_20_60_top20_flag, FALSE)
-                AS momentum_20_60_top20_flag,
-            s.atr20_pct,
-            s.atr60_pct,
-            s.atr20_to_atr60,
-            s.atr20_change_20d_pct,
-            coalesce(s.atr20_acceleration, FALSE) AS atr20_acceleration_flag,
+            coalesce(p.atr20_acceleration, FALSE) AS atr20_acceleration_flag,
             coalesce(
-                s.atr20_acceleration
+                p.atr20_acceleration
                 AND coalesce(p.recent_return_20d_pct, 0.0) < 30.0,
                 FALSE
             ) AS atr20_acceleration_ex_overheat_flag,
-            coalesce(s.atr20_to_atr60_overheat, FALSE)
-                AS atr20_to_atr60_overheat,
-            coalesce(s.weak_trend, FALSE) AS weak_trend,
             (
                 p.liquidity_regime = 'crowded_rerating'
                 AND p.no_value_confirmation
@@ -563,14 +507,6 @@ def _create_deep_dive_panel(conn: Any) -> None:
                 )
             ) AS crowded_overvalued_flag
         FROM ranking_psr_valuation_panel p
-        LEFT JOIN long_sector_leadership_base_panel l
-          ON l.code = p.code
-         AND l.date = p.date
-         AND l.market_scope = p.market_scope
-        LEFT JOIN ranking_short_red_feature_panel s
-          ON s.code = p.code
-         AND s.date = p.date
-         AND s.market_scope = p.market_scope
         """
     )
 
@@ -611,12 +547,12 @@ def _build_psr_bucket_evidence_df(
     frames: list[pd.DataFrame] = []
     psr_lateral_sql = f"""
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_PSR_BUCKETS)}
+            VALUES {condition_values_sql(_PSR_BUCKETS)}
         ) AS psr_bucket(psr_bucket, psr_bucket_order, condition_matches)
     """
     for horizon in horizons:
         frames.append(
-            _aggregate_lateral_conditions(
+            aggregate_lateral_conditions(
                 conn,
                 source_name="ranking_psr_valuation_panel",
                 lateral_sql=psr_lateral_sql,
@@ -634,7 +570,7 @@ def _build_psr_bucket_evidence_df(
                 extra_metric_sql=_psr_metric_sql(),
             )
         )
-    return _concat_sorted(frames, columns=_psr_bucket_columns())
+    return concat_sorted(frames, columns=_psr_bucket_columns())
 
 
 def _build_decision_scope_psr_evidence_df(
@@ -647,15 +583,15 @@ def _build_decision_scope_psr_evidence_df(
     frames: list[pd.DataFrame] = []
     decision_lateral_sql = f"""
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_DECISION_SCOPES)}
+            VALUES {condition_values_sql(_DECISION_SCOPES)}
         ) AS decision_scope(decision_scope, decision_scope_order, decision_matches)
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_PSR_CONDITIONS)}
+            VALUES {condition_values_sql(_PSR_CONDITIONS)}
         ) AS psr_condition(psr_condition, psr_condition_order, psr_matches)
     """
     for horizon in horizons:
         frames.append(
-            _aggregate_lateral_conditions(
+            aggregate_lateral_conditions(
                 conn,
                 source_name="ranking_psr_valuation_panel",
                 lateral_sql=decision_lateral_sql,
@@ -683,7 +619,7 @@ def _build_decision_scope_psr_evidence_df(
                 extra_metric_sql=_psr_metric_sql(),
             )
         )
-    return _concat_sorted(frames, columns=_decision_scope_psr_columns())
+    return concat_sorted(frames, columns=_decision_scope_psr_columns())
 
 
 def _build_deep_dive_psr_evidence_df(
@@ -698,18 +634,18 @@ def _build_deep_dive_psr_evidence_df(
     frames: list[pd.DataFrame] = []
     deep_lateral_sql = f"""
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(conditions)}
+            VALUES {condition_values_sql(conditions)}
         ) AS deep_scope(deep_scope, deep_scope_order, deep_scope_matches)
     """
     for horizon in horizons:
         frames.append(
-            _aggregate_lateral_conditions(
+            aggregate_lateral_conditions(
                 conn,
                 source_name="ranking_psr_valuation_deep_panel",
                 lateral_sql=deep_lateral_sql,
                 match_condition="deep_scope.deep_scope_matches",
                 group_select_sql=(
-                    f"{_sql_literal(condition_family)} AS condition_family,\n"
+                    f"{sql_literal(condition_family)} AS condition_family,\n"
                     "            deep_scope.deep_scope,\n"
                     "            deep_scope.deep_scope_order,\n"
                     f"            {int(horizon)} AS horizon"
@@ -718,10 +654,10 @@ def _build_deep_dive_psr_evidence_df(
                 return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
                 min_observations=min_observations,
                 severe_loss_threshold_pct=severe_loss_threshold_pct,
-                extra_metric_sql=_deep_dive_metric_sql() + _psr_metric_sql(),
+                extra_metric_sql=deep_dive_metric_sql() + _psr_metric_sql(),
             )
         )
-    return _concat_sorted(frames, columns=_deep_dive_psr_columns())
+    return concat_sorted(frames, columns=_deep_dive_psr_columns())
 
 
 def _psr_metric_sql() -> str:
@@ -794,6 +730,10 @@ def _validate_params(
         raise ValueError("observation_sample_limit must be positive")
 
 
+def _parse_optional_date(value: str | None) -> date | None:
+    return None if value is None else date.fromisoformat(value)
+
+
 def _psr_bucket_columns() -> list[str]:
     return [
         "condition_family",
@@ -801,7 +741,7 @@ def _psr_bucket_columns() -> list[str]:
         "psr_bucket_order",
         "horizon",
         "market_scope",
-        *_aggregate_metric_columns(),
+        *aggregate_metric_columns(),
         *_psr_metric_columns(),
     ]
 
@@ -815,7 +755,7 @@ def _decision_scope_psr_columns() -> list[str]:
         "psr_condition_order",
         "horizon",
         "market_scope",
-        *_aggregate_metric_columns(),
+        *aggregate_metric_columns(),
         *_psr_metric_columns(),
     ]
 
@@ -827,8 +767,8 @@ def _deep_dive_psr_columns() -> list[str]:
         "deep_scope_order",
         "horizon",
         "market_scope",
-        *_aggregate_metric_columns(),
-        *_deep_dive_metric_columns(),
+        *aggregate_metric_columns(),
+        *deep_dive_metric_columns(),
         *_psr_metric_columns(),
     ]
 

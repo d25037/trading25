@@ -12,6 +12,8 @@ RESEARCH_TEST_PREFIXES = (
     "apps/bt/tests/unit/scripts/test_run_",
     "apps/bt/tests/unit/domains/analytics/test_topix",
 )
+RESEARCH_FIXTURE_PREFIX = "apps/bt/tests/fixtures/research/"
+ANALYTICS_TEST_PREFIX = "apps/bt/tests/unit/domains/analytics/test_"
 RESEARCH_MODULE_MARKERS = (
     "/topix",
     "_research.py",
@@ -25,6 +27,17 @@ PRODUCTION_ANALYTICS_MODULES = {
     "screening_requirements",
     "screening_results",
     "market_bubble_footprint_monitor",
+    "value_composite_scoring",
+}
+# Test ownership is intentionally independent from source-module taxonomy:
+# selected research helpers have product-facing regression tests.
+PRODUCTION_ANALYTICS_TEST_MODULES = {
+    "annual_value_composite_selection",
+    "market_bubble_footprint_monitor",
+    "readonly_duckdb_support",
+    "screening_evaluator",
+    "screening_requirements",
+    "screening_results",
     "value_composite_scoring",
 }
 PRODUCTION_ANALYTICS_DEPENDENCIES = {
@@ -112,6 +125,12 @@ def analytics_module_name(path: str) -> str | None:
     return path.removeprefix(prefix).removesuffix(".py")
 
 
+def analytics_test_module_name(path: str) -> str | None:
+    if not path.startswith(ANALYTICS_TEST_PREFIX) or not path.endswith(".py"):
+        return None
+    return path.removeprefix(ANALYTICS_TEST_PREFIX).removesuffix(".py")
+
+
 def production_analytics_test_targets(path: str) -> tuple[str, ...]:
     module_name = analytics_module_name(path)
     if module_name is None:
@@ -130,8 +149,15 @@ def is_governance_path(path: str) -> bool:
 
 
 def is_research_path(path: str) -> bool:
-    if path.startswith(RESEARCH_PREFIXES) or path.startswith(RESEARCH_TEST_PREFIXES):
+    if (
+        path.startswith(RESEARCH_PREFIXES)
+        or path.startswith(RESEARCH_TEST_PREFIXES)
+        or path.startswith(RESEARCH_FIXTURE_PREFIX)
+    ):
         return True
+    analytics_test_module = analytics_test_module_name(path)
+    if analytics_test_module is not None:
+        return analytics_test_module not in PRODUCTION_ANALYTICS_TEST_MODULES
     if path.startswith("scripts/check-research-guardrails.py"):
         return True
     if path.startswith("apps/bt/src/domains/analytics/"):
@@ -146,10 +172,12 @@ def is_research_path(path: str) -> bool:
 
 def is_product_path(path: str) -> bool:
     module_name = analytics_module_name(path)
+    analytics_test_module = analytics_test_module_name(path)
     return (
         path.startswith(PRODUCT_PREFIXES)
         or path.startswith(ALWAYS_PRODUCT_PREFIXES)
         or module_name in PRODUCTION_ANALYTICS_MODULES
+        or analytics_test_module in PRODUCTION_ANALYTICS_TEST_MODULES
         or bool(production_analytics_test_targets(path))
     )
 

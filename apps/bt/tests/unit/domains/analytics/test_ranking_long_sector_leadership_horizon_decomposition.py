@@ -131,7 +131,7 @@ def _run_test_research(
         start_date="2024-03-01",
         end_date="2024-04-30",
         horizons=(20,),
-        leadership_windows=(1, 2),
+        leadership_windows=(20, 60),
         sector_strength_family=sector_strength_family,
         market_scopes=("prime",),
         min_observations=1,
@@ -157,6 +157,17 @@ def _boost_low_value_momentum_fixture(db_path: Path) -> None:
         ) d
         WHERE s.date = d.date
           AND s.code IN ('1100', '1101', '1102', '1103', '1104')
+        """
+    )
+    conn.execute(
+        """
+        UPDATE stock_data_raw AS raw
+        SET open = source.open,
+            high = source.high,
+            low = source.low,
+            close = source.close
+        FROM stock_data source
+        WHERE source.code = raw.code AND CAST(source.date AS DATE) = raw.date
         """
     )
     conn.close()

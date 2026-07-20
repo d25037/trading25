@@ -76,6 +76,12 @@
   - SMA5 count / below-streak / ATR20 正規化乖離を position-state に変換し、保有中だけの翌営業日 TOPIX excess を検証する実験。
 - [market-behavior/ranking-moving-average-replacement-evidence/](./market-behavior/ranking-moving-average-replacement-evidence/README.md)
   - Daily Ranking の `20D/60D` 定点比較と `Overheat` を、`SMA20/SMA60`・`EMA20/EMA60` 乖離・符号判定で代替した場合の forward response 変化を検証する実験。
+- [market-behavior/ranking-trend-acceleration-conditional-lift/](./market-behavior/ranking-trend-acceleration-conditional-lift/README.md)
+  - 既存 long candidate の内側で、Prime 相当 PIT universe に限定した rolling OLS trend acceleration が forward TOPIX-excess return の追加的な priority ordering になるかを検証する実験。
+- [market-behavior/ranking-fixed-return-priority-evidence/](./market-behavior/ranking-fixed-return-priority-evidence/README.md)
+  - fixed returnを使わずに抽出したPrime相当 PIT long候補内で、fixed 20D/60Dと等ウェイト合成がRanking優先度として再現するかを検証する実験。
+- [market-behavior/ranking-technical-fit-score-shape-evidence/](./market-behavior/ranking-technical-fit-score-shape-evidence/README.md)
+  - Value Score / Long Hybrid Score がともに高い三つのPrime PIT ring内で、fixed / OLSのraw five-bin shapeからprior-only Technical Fit Scoreを学習し、第三のRanking score導入可否を検証する実験。published v11 は `stock_data_raw` のsignal-date / completion-date event-time basis、authoritative completion dateに揃えたN225 sensitivity、全price lineage hash、同一near×period shape gate、hermetic CI publication contract、現行版まで閉じたsupersession lineageを検証済みで、判定は `neither`。v1–v10 はimmutable superseded archive。
 - [market-behavior/market-bubble-footprint/](./market-behavior/market-bubble-footprint/README.md)
   - breadth / concentration / valuation pressure / dispersion / 上位寄与で bubble footprint を月次監視し、終盤入口の警戒 regime を作る実験。
 - [market-behavior/rerating-bubble-regime-forward-response/](./market-behavior/rerating-bubble-regime-forward-response/README.md)

@@ -3,37 +3,43 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
+import math
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
-from src.domains.analytics.atr_expansion_forward_response import (
-    _create_observation_panel as _create_atr_observation_panel,
+from src.domains.analytics.daily_ranking_consumer_support import (
+    DailyValuationPsrPercentileFeaturesRequest,
+    build_daily_valuation_psr_percentile_features,
+    compose_daily_ranking_signal_features,
+    table_exists,
+)
+from src.domains.analytics.daily_ranking_feature_builders import (
+    AtrFeaturesRequest,
+    LongLeadershipFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    ShortScaffoldFeaturesRequest,
+    build_atr_features,
+    build_long_leadership_features,
+    build_sector_strength_features,
+    build_short_scaffold_features,
 )
 from src.domains.analytics.daily_ranking_research_base import (
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    MarketScope,
+    SignalExpression,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
     normalize_daily_ranking_market_scopes,
 )
-from src.domains.analytics.earnings_holdthrough_expectancy import _table_exists
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
-from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition import (
-    _create_long_sector_leadership_tables,
-    _create_long_signal_tables,
-)
-from src.domains.analytics.ranking_sector_strength_evidence import (
-    _create_sector_strength_tables,
-)
-from src.domains.analytics.ranking_short_red_evidence import (
-    _create_feature_panel as _create_short_red_feature_panel,
-)
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
-    normalize_code_sql,
     open_readonly_analysis_connection,
 )
 from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
@@ -49,9 +55,6 @@ DEFAULT_SEVERE_LOSS_THRESHOLD_PCT = -10.0
 DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
 DEFAULT_LONG_HYBRID_THRESHOLD = 0.799999
 _LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
-_REQUIRED_ATR_WINDOWS: tuple[int, ...] = (20, 60)
-_REQUIRED_RETURN_WINDOWS: tuple[int, ...] = (20, 60)
-_LONG_WARMUP_CALENDAR_DAYS = 820
 _REQUIRED_TABLES: tuple[str, ...] = (
     "stock_data",
     "topix_data",
@@ -142,20 +145,12 @@ def run_ranking_crowded_long_tail_evidence_research(
     _validate_params(
         horizons=resolved_horizons,
         min_observations=min_observations,
+        long_hybrid_threshold=long_hybrid_threshold,
         observation_sample_limit=observation_sample_limit,
     )
     db_path_obj = Path(db_path).expanduser().resolve()
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
-
-    query_start = daily_ranking_query_start_date(
-        start_date,
-        warmup_calendar_days=_LONG_WARMUP_CALENDAR_DAYS,
-    )
-    query_end = daily_ranking_query_end_date(
-        end_date,
-        max_horizon=max(resolved_horizons),
-    )
 
     with open_readonly_analysis_connection(
         str(db_path_obj),
@@ -163,43 +158,91 @@ def run_ranking_crowded_long_tail_evidence_research(
     ) as ctx:
         _assert_required_tables(ctx.connection)
         market_source = "stock_master_daily_exact_date"
-        create_daily_ranking_research_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_scopes=resolved_market_scopes,
-            market_source=market_source,
-            include_liquidity_ranked=True,
-            include_relation_percentiles=False,
+            DailyRankingPanelRequest(
+                namespace="crowded_long_tail",
+                analysis_start_date=_parse_optional_date(start_date),
+                analysis_end_date=_parse_optional_date(end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(
+                    tuple[MarketScope, ...],
+                    resolved_market_scopes,
+                ),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
         )
-        _create_atr_observation_panel(
+        signal_source = relations.ranked_signals
+        psr_features = build_daily_valuation_psr_percentile_features(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=_REQUIRED_ATR_WINDOWS,
-            return_windows=_REQUIRED_RETURN_WINDOWS,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            DailyValuationPsrPercentileFeaturesRequest(
+                source=signal_source,
+                authority=signal_source,
+                namespace="crowded_long_tail_psr",
+            ),
         )
-        _create_short_red_feature_panel(ctx.connection)
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
-        _create_long_sector_leadership_tables(
+        atr_features = build_atr_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            AtrFeaturesRequest(source=signal_source, namespace="crowded_long_tail_atr"),
         )
-        _create_long_signal_tables(
+        short_features = build_short_scaffold_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            ShortScaffoldFeaturesRequest(
+                source=signal_source,
+                atr_features=atr_features,
+                namespace="crowded_long_tail_short",
+            ),
+        )
+        sector_features = build_sector_strength_features(
+            ctx.connection,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="crowded_long_tail_sector",
+            ),
+        )
+        leadership_features = build_long_leadership_features(
+            ctx.connection,
+            LongLeadershipFeaturesRequest(
+                source=signal_source,
+                sector_features=sector_features,
+                namespace="crowded_long_tail_leadership",
+                leadership_windows=_LEADERSHIP_WINDOWS,
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(psr_features, leadership_features, short_features),
+            namespace="crowded_long_tail",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="crowded_long_tail_signals",
+            predicate=SignalExpression(
+                sql=(
+                    "liquidity_regime = 'crowded_rerating' "
+                    "AND long_hybrid_leadership_score >= "
+                    f"{float(long_hybrid_threshold):.17g}"
+                ),
+                referenced_columns=(
+                    "liquidity_regime",
+                    "long_hybrid_leadership_score",
+                ),
+            ),
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="crowded_long_tail_outcomes",
         )
         _create_crowded_long_tail_panel(
             ctx.connection,
-            long_hybrid_threshold=long_hybrid_threshold,
+            source_name=evaluated.name,
         )
         observation_count = int(
             ctx.connection.execute(
@@ -341,7 +384,7 @@ def build_summary_markdown(result: RankingCrowdedLongTailEvidenceResult) -> str:
 
 
 def _assert_required_tables(conn: Any) -> None:
-    missing = [table for table in _REQUIRED_TABLES if not _table_exists(conn, table)]
+    missing = [table for table in _REQUIRED_TABLES if not table_exists(conn, table)]
     if missing:
         raise ValueError(f"market.duckdb is missing required tables: {', '.join(missing)}")
 
@@ -349,94 +392,29 @@ def _assert_required_tables(conn: Any) -> None:
 def _create_crowded_long_tail_panel(
     conn: Any,
     *,
-    long_hybrid_threshold: float,
+    source_name: str,
 ) -> None:
-    valuation_code = normalize_code_sql("dv.code")
-    psr_expr = (
-        "dv.psr"
-        if _daily_valuation_column_exists(conn, "psr")
-        else "CAST(NULL AS DOUBLE)"
-    )
-    forward_psr_expr = (
-        "dv.forward_psr"
-        if _daily_valuation_column_exists(conn, "forward_psr")
-        else "CAST(NULL AS DOUBLE)"
-    )
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE ranking_crowded_long_tail_panel AS
-        WITH valuation AS (
-            SELECT
-                {valuation_code} AS code,
-                date,
-                {psr_expr} AS psr,
-                {forward_psr_expr} AS forward_psr
-            FROM daily_valuation dv
-        ),
-        joined AS (
-            SELECT
-                l.*,
-                v.psr,
-                v.forward_psr,
-                coalesce(s.atr20_acceleration, FALSE)
-                    AS atr20_acceleration_flag,
-                coalesce(
-                    s.atr20_acceleration
-                    AND coalesce(l.recent_return_20d_pct, 0.0) < 30.0,
-                    FALSE
-                ) AS atr20_acceleration_ex_overheat_flag,
-                coalesce(s.atr20_to_atr60_overheat, FALSE)
-                    AS atr20_to_atr60_overheat_flag,
-                coalesce(s.weak_trend, FALSE) AS weak_trend_flag
-            FROM long_sector_leadership_base_panel l
-            LEFT JOIN valuation v
-              ON v.code = l.code
-             AND v.date = l.date
-            LEFT JOIN ranking_short_red_feature_panel s
-              ON s.code = l.code
-             AND s.date = l.date
-             AND s.market_scope = l.market_scope
-            WHERE l.liquidity_regime = 'crowded_rerating'
-              AND l.long_hybrid_leadership_score >= ?
-        ),
-        ranked AS (
-            SELECT
-                *,
-                count(*) FILTER (WHERE psr > 0) OVER (
-                    PARTITION BY market_scope, date
-                ) AS psr_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
-                    ORDER BY CASE WHEN psr > 0 THEN psr END NULLS LAST
-                ) AS psr_rank,
-                count(*) FILTER (WHERE forward_psr > 0) OVER (
-                    PARTITION BY market_scope, date
-                ) AS forward_psr_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
-                    ORDER BY CASE WHEN forward_psr > 0 THEN forward_psr END NULLS LAST
-                ) AS forward_psr_rank
-            FROM joined
-        )
         SELECT
-            * EXCLUDE (
-                psr_valid_count,
-                psr_rank,
-                forward_psr_valid_count,
-                forward_psr_rank
-            ),
-            CASE
-                WHEN psr > 0 AND psr_valid_count <= 1 THEN 0.0
-                WHEN psr > 0 THEN (psr_rank - 1.0) / (psr_valid_count - 1.0)
-            END AS psr_percentile,
-            CASE
-                WHEN forward_psr > 0 AND forward_psr_valid_count <= 1 THEN 0.0
-                WHEN forward_psr > 0
-                    THEN (forward_psr_rank - 1.0) / (forward_psr_valid_count - 1.0)
-            END AS forward_psr_percentile
-        FROM ranked
-        """,
-        [float(long_hybrid_threshold)],
+            source.*,
+            source.forecast_per_percentile AS forward_per_percentile,
+            source.forecast_p_op_percentile AS forward_p_op_percentile,
+            source.forecast_psr AS forward_psr,
+            source.forecast_psr_percentile AS forward_psr_percentile,
+            coalesce(source.atr20_acceleration, FALSE)
+                AS atr20_acceleration_flag,
+            coalesce(
+                source.atr20_acceleration
+                AND coalesce(source.recent_return_20d_pct, 0.0) < 30.0,
+                FALSE
+            ) AS atr20_acceleration_ex_overheat_flag,
+            coalesce(source.atr20_to_atr60_overheat, FALSE)
+                AS atr20_to_atr60_overheat_flag,
+            coalesce(source.weak_trend, FALSE) AS weak_trend_flag
+        FROM {source_name} source
+        """
     )
 
 
@@ -766,14 +744,6 @@ def _sql_literal(value: str) -> str:
     return str(value).replace("'", "''")
 
 
-def _daily_valuation_column_exists(conn: Any, column: str) -> bool:
-    row = conn.execute(
-        "SELECT count(*) FROM pragma_table_info('daily_valuation') WHERE name = ?",
-        [column],
-    ).fetchone()
-    return bool(row and int(row[0] or 0) > 0)
-
-
 def _concat_frames(frames: Sequence[pd.DataFrame]) -> pd.DataFrame:
     if not frames:
         return pd.DataFrame()
@@ -784,11 +754,18 @@ def _validate_params(
     *,
     horizons: Sequence[int],
     min_observations: int,
+    long_hybrid_threshold: float,
     observation_sample_limit: int,
 ) -> None:
     if not horizons or any(int(horizon) <= 0 for horizon in horizons):
         raise ValueError("horizons must contain positive integers")
     if min_observations <= 0:
         raise ValueError("min_observations must be positive")
+    if not math.isfinite(long_hybrid_threshold):
+        raise ValueError("long_hybrid_threshold must be finite")
     if observation_sample_limit <= 0:
         raise ValueError("observation_sample_limit must be positive")
+
+
+def _parse_optional_date(value: str | None) -> date | None:
+    return None if value is None else date.fromisoformat(value)

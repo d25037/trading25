@@ -58,6 +58,21 @@ def test_research_experiment_doc_change_is_research_only() -> None:
     assert scope.docs_only is False
 
 
+def test_research_fixture_change_is_research_only() -> None:
+    module = _load_module()
+
+    scope = module.classify_changed_paths(
+        [
+            "apps/bt/tests/fixtures/research/"
+            "ranking_technical_fit_score_shape_evidence_published_digest.json"
+        ]
+    )
+
+    assert scope.product_ci is False
+    assert scope.research_ci is True
+    assert scope.docs_only is False
+
+
 def test_research_analytics_module_change_is_research_only() -> None:
     module = _load_module()
 
@@ -87,6 +102,51 @@ def test_api_backed_analytics_module_change_is_product_only() -> None:
 
     scope = module.classify_changed_paths(
         ["apps/bt/src/domains/analytics/screening_evaluator.py"]
+    )
+
+    assert scope.product_ci is True
+    assert scope.research_ci is False
+    assert scope.docs_only is False
+
+
+def test_research_analytics_test_change_is_research_only() -> None:
+    module = _load_module()
+
+    scope = module.classify_changed_paths(
+        [
+            "apps/bt/tests/unit/domains/analytics/"
+            "test_ranking_research_selection_contract.py"
+        ]
+    )
+
+    assert scope.product_ci is False
+    assert scope.research_ci is True
+    assert scope.docs_only is False
+
+
+def test_production_analytics_test_change_is_product_only() -> None:
+    module = _load_module()
+
+    scope = module.classify_changed_paths(
+        ["apps/bt/tests/unit/domains/analytics/test_screening_evaluator.py"]
+    )
+
+    assert scope.product_ci is True
+    assert scope.research_ci is False
+    assert scope.docs_only is False
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    ["annual_value_composite_selection", "readonly_duckdb_support"],
+)
+def test_explicit_production_analytics_test_change_is_product_only(
+    module_name: str,
+) -> None:
+    module = _load_module()
+
+    scope = module.classify_changed_paths(
+        [f"apps/bt/tests/unit/domains/analytics/test_{module_name}.py"]
     )
 
     assert scope.product_ci is True

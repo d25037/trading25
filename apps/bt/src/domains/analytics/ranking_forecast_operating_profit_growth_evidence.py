@@ -3,38 +3,36 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
+from src.domains.analytics.daily_ranking_consumer_support import (
+    compose_daily_ranking_signal_features,
+    table_exists,
+)
+from src.domains.analytics.daily_ranking_feature_builders import (
+    AtrFeaturesRequest,
+    LongLeadershipFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    ShortScaffoldFeaturesRequest,
+    build_atr_features,
+    build_long_leadership_features,
+    build_sector_strength_features,
+    build_short_scaffold_features,
+)
 from src.domains.analytics.daily_ranking_research_base import (
-    DAILY_RANKING_RESEARCH_RANKED_TABLE,
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    MarketScope,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
     normalize_daily_ranking_market_scopes,
 )
-from src.domains.analytics.earnings_holdthrough_expectancy import _table_exists
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
-)
-from src.domains.analytics.atr_expansion_forward_response import (
-    _create_observation_panel as _create_atr_observation_panel,
-)
-from src.domains.analytics.ranking_color_evidence import (
-    _crowded_rerating_good_condition,
-    _neutral_rerating_good_condition,
-)
-from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition import (
-    _create_long_sector_leadership_tables,
-    _create_long_signal_tables,
-)
-from src.domains.analytics.ranking_sector_strength_evidence import (
-    _create_sector_strength_tables,
-)
-from src.domains.analytics.ranking_short_red_evidence import (
-    _create_feature_panel as _create_short_red_feature_panel,
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
@@ -62,8 +60,6 @@ _REQUIRED_TABLES: tuple[str, ...] = (
     "index_master",
 )
 _LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
-_REQUIRED_ATR_WINDOWS: tuple[int, ...] = (20, 60)
-_REQUIRED_RETURN_WINDOWS: tuple[int, ...] = (20, 60)
 _GROWTH_BUCKETS: tuple[tuple[str, str], ...] = (
     ("missing_or_non_positive", "forecast_operating_profit_growth_ratio IS NULL"),
     ("contraction_lt_1_0", "forecast_operating_profit_growth_ratio < 1.0"),
@@ -103,8 +99,20 @@ _DECISION_SCOPES: tuple[tuple[str, str], ...] = (
     ),
     ("low_per20", "per_percentile <= 0.2"),
     ("low_forward_per20", "forward_per_percentile <= 0.2"),
-    ("neutral_rerating_good", _neutral_rerating_good_condition()),
-    ("crowded_rerating_good", _crowded_rerating_good_condition()),
+    (
+        "neutral_rerating_good",
+        "liquidity_regime = 'neutral_rerating' AND ("
+        "(pbr_percentile <= 0.2 AND forward_per_percentile <= 0.2) OR "
+        "(per_percentile <= 0.2 AND forward_per_to_per_ratio <= 0.8))",
+    ),
+    (
+        "crowded_rerating_good",
+        "liquidity_regime = 'crowded_rerating' AND ("
+        "(pbr_percentile <= 0.2 AND forward_per_percentile <= 0.2) OR "
+        "(per_percentile <= 0.2 AND forward_per_to_per_ratio <= 0.8) OR "
+        "pbr_percentile <= 0.2 OR "
+        "(per_percentile <= 0.2 AND forward_per_to_per_ratio <= 1.0))",
+    ),
     (
         "rally_overvalued",
         "recent_return_20d_pct >= 0 AND recent_return_60d_pct >= 0 "
@@ -311,54 +319,83 @@ def run_ranking_forecast_operating_profit_growth_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = daily_ranking_query_start_date(
-        start_date,
-        warmup_calendar_days=max(720, max(_LEADERSHIP_WINDOWS) * 3),
-    )
-    query_end = daily_ranking_query_end_date(
-        end_date,
-        max_horizon=max(resolved_horizons),
-    )
-
     with open_readonly_analysis_connection(
         str(db_path_obj),
         snapshot_prefix="ranking-forecast-op-growth-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
         market_source = "stock_master_daily_exact_date"
-        create_daily_ranking_research_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_scopes=resolved_market_scopes,
-            market_source=market_source,
-            include_liquidity_ranked=True,
+            DailyRankingPanelRequest(
+                namespace="forecast_op_growth",
+                analysis_start_date=_parse_optional_date(start_date),
+                analysis_end_date=_parse_optional_date(end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(
+                    tuple[MarketScope, ...],
+                    resolved_market_scopes,
+                ),
+                include_liquidity=True,
+                percentile_features=(
+                    "per_to_fop_growth_ratio",
+                    "forecast_per_to_fop_growth_ratio",
+                ),
+            ),
         )
-        _create_atr_observation_panel(
+        signal_source = relations.liquidity_ranked_signals
+        if signal_source is None:
+            raise RuntimeError("forecast growth research requires liquidity-ranked signals")
+        atr_features = build_atr_features(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=_REQUIRED_ATR_WINDOWS,
-            return_windows=_REQUIRED_RETURN_WINDOWS,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            AtrFeaturesRequest(source=signal_source, namespace="forecast_op_growth_atr"),
         )
-        _create_forecast_operating_profit_growth_panel(ctx.connection)
-        _create_short_red_feature_panel(ctx.connection)
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
-        _create_long_sector_leadership_tables(
+        short_features = build_short_scaffold_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            ShortScaffoldFeaturesRequest(
+                source=signal_source,
+                atr_features=atr_features,
+                namespace="forecast_op_growth_short",
+            ),
         )
-        _create_long_signal_tables(
+        sector_features = build_sector_strength_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="forecast_op_growth_sector",
+            ),
+        )
+        leadership_features = build_long_leadership_features(
+            ctx.connection,
+            LongLeadershipFeaturesRequest(
+                source=signal_source,
+                sector_features=sector_features,
+                namespace="forecast_op_growth_leadership",
+                leadership_windows=_LEADERSHIP_WINDOWS,
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(leadership_features, short_features),
+            namespace="forecast_op_growth",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="forecast_op_growth_signals",
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="forecast_op_growth_outcomes",
+        )
+        _create_forecast_operating_profit_growth_panel(
+            ctx.connection,
+            source_name=evaluated.name,
         )
         _create_deep_dive_panel(ctx.connection)
         observation_count = int(
@@ -532,18 +569,31 @@ def build_summary_markdown(
 
 
 def _assert_required_tables(conn: Any) -> None:
-    missing = [table for table in _REQUIRED_TABLES if not _table_exists(conn, table)]
+    missing = [table for table in _REQUIRED_TABLES if not table_exists(conn, table)]
     if missing:
         raise ValueError(f"market.duckdb is missing required tables: {', '.join(missing)}")
 
 
-def _create_forecast_operating_profit_growth_panel(conn: Any) -> None:
+def _create_forecast_operating_profit_growth_panel(
+    conn: Any,
+    *,
+    source_name: str,
+) -> None:
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE ranking_forecast_op_growth_panel AS
         SELECT
-            *
-        FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE}
+            source.*,
+            source.forecast_per AS forward_per,
+            source.forecast_per_percentile AS forward_per_percentile,
+            source.forecast_per_to_per_ratio AS forward_per_to_per_ratio,
+            source.forecast_p_op AS forward_p_op,
+            source.forecast_p_op_percentile AS forward_p_op_percentile,
+            source.forecast_per_to_fop_growth_ratio
+                AS forward_per_to_fop_growth_ratio,
+            source.forecast_per_to_fop_growth_ratio_percentile
+                AS forward_per_to_fop_growth_ratio_percentile
+        FROM {source_name} source
         """
     )
 
@@ -554,32 +604,12 @@ def _create_deep_dive_panel(conn: Any) -> None:
         CREATE OR REPLACE TEMP TABLE ranking_forecast_op_growth_deep_panel AS
         SELECT
             g.*,
-            l.sector_33_code,
-            l.sector_33_name,
-            l.sector_strength_bucket,
-            l.sector_strength_score,
-            l.sector_index_strength_score,
-            l.sector_constituent_strength_score,
-            l.long_index_leadership_score,
-            l.long_constituent_breadth_leadership_score,
-            l.long_hybrid_leadership_score,
-            l.balanced_sector_strength_bucket_label,
-            l.long_hybrid_bucket_label,
-            coalesce(l.momentum_20_60_top20_flag, FALSE)
-                AS momentum_20_60_top20_flag,
-            s.atr20_pct,
-            s.atr60_pct,
-            s.atr20_to_atr60,
-            s.atr20_change_20d_pct,
-            coalesce(s.atr20_acceleration, FALSE) AS atr20_acceleration_flag,
+            coalesce(g.atr20_acceleration, FALSE) AS atr20_acceleration_flag,
             coalesce(
-                s.atr20_acceleration
+                g.atr20_acceleration
                 AND coalesce(g.recent_return_20d_pct, 0.0) < 30.0,
                 FALSE
             ) AS atr20_acceleration_ex_overheat_flag,
-            coalesce(s.atr20_to_atr60_overheat, FALSE)
-                AS atr20_to_atr60_overheat,
-            coalesce(s.weak_trend, FALSE) AS weak_trend,
             (
                 g.liquidity_regime = 'crowded_rerating'
                 AND g.no_value_confirmation
@@ -597,11 +627,11 @@ def _create_deep_dive_panel(conn: Any) -> None:
                     g.overvalued_warning
                     OR g.no_positive_earnings_valuation
                 )
-                AND coalesce(s.weak_trend, FALSE)
+                AND coalesce(g.weak_trend, FALSE)
             ) AS crowded_overvalued_weak_trend_flag,
             (
                 g.liquidity_regime = 'distribution_stress'
-                AND coalesce(s.weak_trend, FALSE)
+                AND coalesce(g.weak_trend, FALSE)
             ) AS distribution_stress_weak_trend_flag,
             (
                 g.liquidity_regime = 'distribution_stress'
@@ -616,7 +646,7 @@ def _create_deep_dive_panel(conn: Any) -> None:
                     g.overvalued_warning
                     OR g.no_positive_earnings_valuation
                 )
-                AND coalesce(s.weak_trend, FALSE)
+                AND coalesce(g.weak_trend, FALSE)
             ) AS stale_overvalued_weak_trend_flag,
             (
                 g.liquidity_regime = 'stale_liquidity'
@@ -635,14 +665,6 @@ def _create_deep_dive_panel(conn: Any) -> None:
                 AND g.recent_return_60d_pct > 0
             ) AS stale_rally_fade_flag
         FROM ranking_forecast_op_growth_panel g
-        LEFT JOIN long_sector_leadership_base_panel l
-          ON l.code = g.code
-         AND l.date = g.date
-         AND l.market_scope = g.market_scope
-        LEFT JOIN ranking_short_red_feature_panel s
-          ON s.code = g.code
-         AND s.date = g.date
-         AND s.market_scope = g.market_scope
         """
     )
 
@@ -891,7 +913,7 @@ def _aggregate_lateral_conditions(
 ) -> pd.DataFrame:
     horizon_prefix = return_column.replace("forward_close_excess_return_", "")
     raw_return_column = f"forward_close_return_{horizon_prefix}"
-    topix_return_column = f"topix_close_return_{horizon_prefix}"
+    topix_return_expression = f"({raw_return_column} - {return_column})"
     frame = conn.execute(
         f"""
         SELECT
@@ -902,8 +924,8 @@ def _aggregate_lateral_conditions(
             count(DISTINCT date) AS date_count,
             avg({raw_return_column}) AS mean_forward_return_pct,
             median({raw_return_column}) AS median_forward_return_pct,
-            avg({topix_return_column}) AS mean_topix_return_pct,
-            median({topix_return_column}) AS median_topix_return_pct,
+            avg({topix_return_expression}) AS mean_topix_return_pct,
+            median({topix_return_expression}) AS median_topix_return_pct,
             avg({return_column}) AS mean_forward_excess_return_pct,
             median({return_column}) AS median_forward_excess_return_pct,
             quantile_cont({return_column}, 0.10) AS p10_forward_excess_return_pct,
@@ -1045,6 +1067,10 @@ def _validate_params(
         raise ValueError("severe_loss_threshold_pct must be negative")
     if observation_sample_limit <= 0:
         raise ValueError("observation_sample_limit must be positive")
+
+
+def _parse_optional_date(value: str | None) -> date | None:
+    return None if value is None else date.fromisoformat(value)
 
 
 def _growth_bucket_columns() -> list[str]:

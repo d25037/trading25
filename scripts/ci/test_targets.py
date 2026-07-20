@@ -34,6 +34,8 @@ BT_PRODUCT_SCRIPT_TESTS = (
     "tests/unit/scripts/test_export_openapi_unittest.py",
     "tests/unit/scripts/test_maintainability_snapshot.py",
     "tests/unit/scripts/test_openapi_compat.py",
+    "tests/unit/scripts/test_publish_ranking_research.py",
+    "tests/unit/scripts/test_prepush_ci_execution.py",
     "tests/unit/scripts/test_refresh_skill_references.py",
     "tests/unit/scripts/test_research_common.py",
     "tests/unit/scripts/test_research_test_targets.py",
@@ -73,6 +75,8 @@ BT_FAST_RESEARCH_TESTS = (
     "tests/unit/scripts/test_check_research_guardrails.py",
     "tests/unit/domains/analytics/test_research_bundle.py",
     "tests/unit/domains/analytics/test_research_core.py",
+    "tests/unit/domains/analytics/test_ranking_research_selection_contract.py",
+    "tests/unit/domains/analytics/test_ranking_publication_registry.py",
 )
 
 

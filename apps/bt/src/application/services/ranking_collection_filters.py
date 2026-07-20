@@ -6,6 +6,12 @@ from datetime import date as calendar_date, datetime, timedelta
 
 from src.application.contracts import ranking as ranking_contracts
 from src.application.services.ranking_query_helpers import normalize_equity_code
+from src.domains.analytics.daily_ranking_core import (
+    DailyRankingValuationMetrics,
+    DailyRankingValuationState,
+    classify_valuation_state,
+)
+from src.shared.utils.market_code_alias import normalize_market_scope
 
 
 def filter_ranking_collections_by_forward_eps_source_date(
@@ -118,116 +124,48 @@ def matches_fundamental_state(
     *,
     fundamental_state: ranking_contracts.RankingFundamentalStateFilter,
 ) -> bool:
+    state = _valuation_state_for_item(item)
     if fundamental_state == "deep_value":
-        return _has_deep_value_confirmation(item)
+        return state.strong_value_confirmation
     if fundamental_state == "value_confirmed":
-        return _has_value_confirmation(item)
+        return state.medium_value_confirmation
     if fundamental_state == "undervalued":
         return (
-            not _has_deep_value_confirmation(item)
-            and not _has_very_expensive_valuation_warning(item)
-            and not _has_expensive_valuation_warning(item)
-            and not _has_no_earnings_valuation_warning(item)
-            and _has_value_confirmation(item)
+            not state.strong_value_confirmation
+            and not state.very_overvalued_warning
+            and not state.overvalued_warning
+            and not state.no_positive_earnings_valuation
+            and state.medium_value_confirmation
         )
     if fundamental_state == "expensive_or":
-        return _has_expensive_per_or_psr(item)
+        return state.expensive_per_or_psr
     if fundamental_state == "overvalued":
-        return (
-            not _has_very_expensive_valuation_warning(item)
-            and _has_expensive_valuation_warning(item)
-        )
+        return not state.very_overvalued_warning and state.overvalued_warning
     if fundamental_state == "very_overvalued":
-        return _has_very_expensive_valuation_warning(item)
+        return state.very_overvalued_warning
     if fundamental_state == "no_earnings":
-        return _has_no_earnings_valuation_warning(item)
+        return state.no_positive_earnings_valuation
     return False
 
 
-def _has_deep_value_confirmation(item: ranking_contracts.RankingItem) -> bool:
-    return _has_low_pbr_and_low_forward_per(
-        item
-    ) or _has_low_per_forward_per_improvement(item, max_ratio=0.8)
-
-
-def _has_value_confirmation(item: ranking_contracts.RankingItem) -> bool:
-    return (
-        _has_deep_value_confirmation(item)
-        or _has_low_pbr(item)
-        or _has_low_per_forward_per_improvement(item, max_ratio=1.0)
-    )
-
-
-def _has_low_pbr(item: ranking_contracts.RankingItem) -> bool:
-    return _is_percentile_at_or_below(item.pbrPercentile, 0.2)
-
-
-def _has_low_pbr_and_low_forward_per(item: ranking_contracts.RankingItem) -> bool:
-    return _is_percentile_at_or_below(
-        item.pbrPercentile, 0.2
-    ) and _is_percentile_at_or_below(item.forwardPerPercentile, 0.2)
-
-
-def _has_low_per_forward_per_improvement(
+def _valuation_state_for_item(
     item: ranking_contracts.RankingItem,
-    *,
-    max_ratio: float,
-) -> bool:
-    if not _is_percentile_at_or_below(item.perPercentile, 0.2):
-        return False
-    if item.forwardPer is None or item.per is None:
-        return False
-    if item.forwardPer <= 0 or item.per <= 0:
-        return False
-    return item.forwardPer / item.per <= max_ratio
-
-
-def _is_percentile_at_or_below(value: float | None, threshold: float) -> bool:
-    return value is not None and value <= threshold
-
-
-def _has_expensive_per_or_psr(item: ranking_contracts.RankingItem) -> bool:
-    return any(
-        _is_percentile_at_or_above(value, 0.8)
-        for value in (
-            item.perPercentile,
-            item.forwardPerPercentile,
-            item.psrPercentile,
-            item.forwardPsrPercentile,
+) -> DailyRankingValuationState:
+    market_scope = normalize_market_scope(item.marketCode, default="unknown")
+    population = "prime" if market_scope == "prime" else "non_prime_unsupported"
+    return classify_valuation_state(
+        DailyRankingValuationMetrics(
+            percentile_population=population,
+            per_percentile=item.perPercentile,
+            forward_per_percentile=item.forwardPerPercentile,
+            forward_p_op_percentile=item.forwardPOpPercentile,
+            pbr_percentile=item.pbrPercentile,
+            per=item.per,
+            forward_per=item.forwardPer,
+            psr_percentile=item.psrPercentile,
+            forward_psr_percentile=item.forwardPsrPercentile,
         )
     )
-
-
-def _has_expensive_valuation_warning(item: ranking_contracts.RankingItem) -> bool:
-    return any(
-        _is_percentile_at_or_above(value, 0.8)
-        for value in (
-            item.perPercentile,
-            item.forwardPerPercentile,
-            item.forwardPOpPercentile,
-            item.pbrPercentile,
-        )
-    )
-
-
-def _has_very_expensive_valuation_warning(item: ranking_contracts.RankingItem) -> bool:
-    return any(
-        _is_percentile_at_or_above(value, 0.9)
-        for value in (
-            item.perPercentile,
-            item.forwardPerPercentile,
-            item.forwardPOpPercentile,
-            item.pbrPercentile,
-        )
-    )
-
-
-def _has_no_earnings_valuation_warning(item: ranking_contracts.RankingItem) -> bool:
-    return item.perPercentile is None and item.forwardPerPercentile is None
-
-
-def _is_percentile_at_or_above(value: float | None, threshold: float) -> bool:
-    return value is not None and value >= threshold
 
 
 def filter_ranking_collections_by_technical_state(

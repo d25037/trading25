@@ -14,6 +14,10 @@ from src.domains.analytics.ranking_short_red_evidence import (
     write_ranking_short_red_evidence_bundle,
 )
 
+from daily_ranking_market_v4_fixture import (
+    upgrade_daily_ranking_fixture_to_market_v4,
+)
+
 
 def test_ranking_short_red_evidence_emits_independent_tables(tmp_path: Path) -> None:
     db_path = _build_short_red_db(tmp_path / "market.duckdb")
@@ -71,6 +75,42 @@ def test_ranking_short_red_evidence_emits_independent_tables(tmp_path: Path) -> 
         "topix_close_return_20d_pct",
         "forward_close_excess_return_20d_pct",
     }.issubset(result.live_ranking_replay_df.columns)
+
+
+def test_ranking_short_red_120_symbol_fixture_classifies_named_profiles_exactly(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_short_red_db(tmp_path / "market.duckdb")
+
+    replay = _run_test_research(db_path).live_ranking_replay_df
+    named = replay[replay["code"].isin(["1001", "1002", "1003", "1004", "1005"])]
+    observed = {
+        code: (
+            set(group["liquidity_regime"].astype(str)),
+            set(group["candidate_bucket"].astype(str)),
+        )
+        for code, group in named.groupby("code", sort=True)
+    }
+
+    assert observed == {
+        "1001": (
+            {"crowded_rerating"},
+            {"crowded_no_value", "crowded_overvalued"},
+        ),
+        "1002": (
+            {"crowded_rerating"},
+            {"crowded_no_value", "crowded_overvalued"},
+        ),
+        "1003": (
+            {"distribution_stress"},
+            {"distribution_stress_weak_trend", "distribution_stress_overvalued"},
+        ),
+        "1004": (
+            {"stale_liquidity"},
+            {"stale_overvalued_weak_trend"},
+        ),
+    }
+    assert "1005" not in set(replay["code"])
 
 
 def test_ranking_short_red_evidence_writes_bundle(tmp_path: Path) -> None:
@@ -205,11 +245,11 @@ def _build_short_red_db(db_path: Path) -> Path:
             70.0 + code_idx,
             -0.0003 + (code_idx % 9) * 0.00008,
             1_000_000 + code_idx * 50_000,
-            8.0 + code_idx * 0.35,
-            7.5 + code_idx * 0.35,
-            0.8 + code_idx * 0.03,
+            8.0 + (code_idx % 55) * 0.35,
+            7.5 + (code_idx % 55) * 0.35,
+            0.8 + (code_idx % 55) * 0.03,
         )
-        for code_idx in range(55)
+        for code_idx in range(115)
     )
 
     stock_rows: list[tuple[str, str, float, float, float, float, int]] = []
@@ -284,5 +324,6 @@ def _build_short_red_db(db_path: Path) -> Path:
         "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         valuation_rows,
     )
+    upgrade_daily_ranking_fixture_to_market_v4(conn)
     conn.close()
     return db_path

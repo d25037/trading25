@@ -14,6 +14,10 @@ from src.domains.analytics.ranking_short_sector_strength_evidence import (
     write_ranking_short_sector_strength_evidence_bundle,
 )
 
+from daily_ranking_market_v4_fixture import (
+    upgrade_daily_ranking_fixture_to_market_v4,
+)
+
 
 def test_ranking_short_sector_strength_evidence_builds_interactions(
     tmp_path: Path,
@@ -43,7 +47,11 @@ def test_ranking_short_sector_strength_evidence_builds_interactions(
         "no_value_confirmation_rate_pct",
     }.issubset(result.short_candidate_sector_interaction_df.columns)
     assert {"sector_weak", "sector_strong"}.issubset(
-        set(result.short_candidate_sector_interaction_df["sector_strength_bucket"].astype(str))
+        set(
+            result.short_candidate_sector_interaction_df[
+                "sector_strength_bucket"
+            ].astype(str)
+        )
     )
     assert {
         "valuation_state",
@@ -58,7 +66,9 @@ def test_ranking_short_sector_strength_evidence_builds_interactions(
         "stale_overvalued_sector_weak",
         "distribution_stress_overvalued_sector_weak",
         "strong_low_value_sector_strong_short_prohibit",
-    }.issubset(set(result.priority_short_sector_readout_df["priority_condition"].astype(str)))
+    }.issubset(
+        set(result.priority_short_sector_readout_df["priority_condition"].astype(str))
+    )
     assert {
         "sector_33_name",
         "sector_strength_score",
@@ -213,9 +223,11 @@ def _build_short_sector_db(db_path: Path) -> Path:
         ("6100", "Neutral Retail", 0.03),
         ("3200", "Weak Chemicals", -0.08),
     ]
-    stock_specs: list[tuple[str, str, str, str, float, float, int, float, float, float]] = []
+    stock_specs: list[
+        tuple[str, str, str, str, float, float, int, float, float, float]
+    ] = []
     for sector_index, (sector_code, sector_name, sector_slope) in enumerate(sectors):
-        for rank in range(25):
+        for rank in range(40):
             code = f"{sector_index + 1}{rank + 100:03d}"
             base = 80.0 + sector_index * 30.0 + rank
             slope = sector_slope + rank * 0.002
@@ -388,5 +400,6 @@ def _build_short_sector_db(db_path: Path) -> Path:
         "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?)",
         index_rows,
     )
+    upgrade_daily_ranking_fixture_to_market_v4(conn)
     conn.close()
     return db_path

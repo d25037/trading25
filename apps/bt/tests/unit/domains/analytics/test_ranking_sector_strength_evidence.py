@@ -12,6 +12,10 @@ from src.domains.analytics.ranking_sector_strength_evidence import (
     write_ranking_sector_strength_evidence_bundle,
 )
 
+from daily_ranking_market_v4_fixture import (
+    upgrade_daily_ranking_fixture_to_market_v4,
+)
+
 
 def test_ranking_sector_strength_evidence_builds_pit_sector_interactions(
     tmp_path: Path,
@@ -375,5 +379,6 @@ def _build_sector_strength_db(db_path: Path) -> Path:
         "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?)",
         index_rows,
     )
+    upgrade_daily_ranking_fixture_to_market_v4(conn)
     conn.close()
     return db_path
