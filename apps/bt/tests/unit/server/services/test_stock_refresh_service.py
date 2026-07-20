@@ -168,6 +168,38 @@ async def test_refresh_stocks_rejects_incomplete_provider_window_atomically() ->
 
 
 @pytest.mark.asyncio
+async def test_refresh_stocks_rejects_invalid_date_before_range_filtering() -> None:
+    store = DummyTimeSeriesStore()
+    client = DummyJQuantsClient(
+        rows=[
+            {
+                "Code": "72030",
+                "Date": "2026-02-10",
+                "O": 100.0,
+                "H": 102.0,
+                "L": 99.0,
+                "C": 101.0,
+                "Vo": 12345,
+            },
+            {
+                "Code": "72030",
+                "Date": None,
+                "O": 100.0,
+                "H": 102.0,
+                "L": 99.0,
+                "C": 101.0,
+                "Vo": 12345,
+            },
+        ]
+    )
+
+    result = await refresh_stocks(["7203"], DummyMarketDb(), store, client)
+
+    assert result.failedCount == 1
+    assert store.replacements == []
+
+
+@pytest.mark.asyncio
 async def test_refresh_stocks_applies_topix_date_range_filter() -> None:
     market_db = DummyMarketDb()
     store = DummyTimeSeriesStore()

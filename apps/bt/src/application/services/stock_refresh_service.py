@@ -153,11 +153,6 @@ async def refresh_stocks(
             skipped_rows = 0
             created_at = datetime.now(UTC).isoformat()
             for d in data:
-                provider_date = str(d.get("Date", "")).strip()
-                if min_date and provider_date < min_date:
-                    continue
-                if max_date and provider_date > max_date:
-                    continue
                 row = build_stock_data_row(
                     d,
                     normalized_code=normalized,
@@ -165,6 +160,11 @@ async def refresh_stocks(
                 )
                 if row is None:
                     skipped_rows += 1
+                    continue
+                provider_date = str(row["date"])
+                if min_date and provider_date < min_date:
+                    continue
+                if max_date and provider_date > max_date:
                     continue
                 rows.append(row)
 
