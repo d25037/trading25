@@ -17,6 +17,7 @@ from types import SimpleNamespace
 import pytest
 
 import src.application.services.market_v4_cutover.filesystem as filesystem_module
+from src.application.contracts.market_data_plane import ProviderVintageStats
 from src.application.services.market_v4_cutover.contracts import (
     MarketSourceMetadata,
     PromotionIdentityEvidence,
@@ -167,10 +168,39 @@ class FakeRuntime:
         self.stop_calls += 1
 
 
+def _ready_provider_vintage_payload() -> dict[str, object]:
+    return ProviderVintageStats(
+        providerPlan="standard",
+        providerAsOf="2026-07-20",
+        providerAsOfRange={"min": "2026-07-20", "max": "2026-07-20"},
+        effectiveCoverage={"min": "2016-07-20", "max": "2026-07-18"},
+        sourceFingerprint="a" * 64,
+        providerWindowCoherent=True,
+        providerWindowCount=2,
+        readyProviderWindowCount=2,
+        providerWindowFingerprintCount=2,
+        adjustmentEventCount=1,
+        adjustmentEventFingerprintCount=1,
+        currentBasisStatementCount=4,
+        currentBasisStateCount=2,
+        fundamentalsAdjustmentBasisDate="2026-07-18",
+        sourceStatementKeyCount=2,
+        expectedAdjustedStatementRows=4,
+        status="ready",
+    ).model_dump(mode="json")
+
+
 class FakeApi:
-    def __init__(self, *, invalid_lineage: bool = False, parity: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        invalid_lineage: bool = False,
+        parity: bool = True,
+        provider_vintage: dict[str, object] | None = None,
+    ) -> None:
         self.invalid_lineage = invalid_lineage
         self.parity = parity
+        self.provider_vintage = provider_vintage or _ready_provider_vintage_payload()
         self.calls: list[tuple[str, str, dict[str, object] | None]] = []
 
     def request(
@@ -183,29 +213,16 @@ class FakeApi:
         if path == "/api/db/stats":
             return {
                 "schema": {"version": 5, "requiredVersion": 5, "current": True},
-                "providerVintage": {
-                    "status": "ready",
-                    "currentBasisStatementCount": 4,
-                    "dailyValuationRows": 10,
-                    "readyProviderWindowCount": 2,
-                },
+                "providerVintage": dict(self.provider_vintage),
             }
         if path == "/api/db/validate":
+            provider_vintage = dict(self.provider_vintage)
+            if self.invalid_lineage:
+                provider_vintage["status"] = "invalid"
+                provider_vintage["wrongBasisAdjustedStatementRows"] = 1
             return {
                 "status": "healthy",
-                "providerVintage": {
-                    "status": "invalid_lineage" if self.invalid_lineage else "ready",
-                    "sourceStatementKeyCount": 2,
-                    "expectedAdjustedStatementRows": 4,
-                    "missingAdjustedStatementRows": 0,
-                    "extraAdjustedStatementRows": 0,
-                    "staleAdjustedStatementRows": 0,
-                    "wrongBasisAdjustedStatementRows": 1 if self.invalid_lineage else 0,
-                    "expectedDailyValuationRows": 10,
-                    "missingDailyValuationRows": 0,
-                    "extraDailyValuationRows": 0,
-                    "wrongBasisDailyValuationRows": 0,
-                },
+                "providerVintage": provider_vintage,
             }
         if path == "/api/db/sync":
             return {"jobId": "sync-1", "status": "pending"}

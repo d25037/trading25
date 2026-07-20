@@ -90,19 +90,23 @@ class PromotionReportService:
         "dataset_create_info_open",
     )
     _PROMOTION_ZERO_LINEAGE_KEYS = (
+        "invalidProviderWindowCount",
+        "invalidAdjustmentEventCount",
+        "providerAdjustedMismatchCount",
+        "invalidCurrentBasisStateCount",
+        "pendingCurrentBasisCodeCount",
         "missingAdjustedStatementRows",
         "extraAdjustedStatementRows",
         "staleAdjustedStatementRows",
         "wrongBasisAdjustedStatementRows",
-        "missingDailyValuationRows",
-        "extraDailyValuationRows",
-        "wrongBasisDailyValuationRows",
+        "orphanAdjustedStatementRows",
     )
     _PROMOTION_POSITIVE_LINEAGE_KEYS = (
         "sourceStatementKeyCount",
         "expectedAdjustedStatementRows",
         "currentBasisStatementCount",
-        "dailyValuationRows",
+        "currentBasisStateCount",
+        "providerWindowCount",
         "readyProviderWindowCount",
     )
 

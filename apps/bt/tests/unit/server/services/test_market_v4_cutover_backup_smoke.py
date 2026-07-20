@@ -25,6 +25,7 @@ from tests.unit.server.services.market_v4_cutover_test_support import (
     _market_root,
     _service,
     _changing_code_version,
+    _ready_provider_vintage_payload,
 )
 
 
@@ -284,6 +285,31 @@ def test_smoke_requires_market_v4_exact_lineage_and_semantic_api_parity(
         service.smoke(FakeApi(invalid_lineage=True), config, operation_id="smoke-002")
     with pytest.raises(CutoverSafetyError, match="Fundamentals GET/POST parity"):
         service.smoke(FakeApi(parity=False), config, operation_id="smoke-003")
+
+
+def test_smoke_accepts_exact_provider_vintage_model_without_fake_fields(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+    )
+    provider_vintage = _ready_provider_vintage_payload()
+
+    assert "dailyValuationRows" not in provider_vintage
+    assert "missingDailyValuationRows" not in provider_vintage
+    assert "extraDailyValuationRows" not in provider_vintage
+    assert "wrongBasisDailyValuationRows" not in provider_vintage
+
+    result = service.smoke(
+        FakeApi(provider_vintage=provider_vintage),
+        SmokeConfig("7203", "production/smoke", "primeMarket"),
+        operation_id="smoke-provider-vintage-model",
+    )
+
+    assert result.lineage["providerWindowCount"] == 2
+    assert result.lineage["currentBasisStateCount"] == 2
 
 
 def test_smoke_reads_adjustment_mode_directly_from_duckdb(tmp_path: Path) -> None:

@@ -111,15 +111,19 @@ class PromotionEligibilityService:
         lineage_keys = {
             "sourceStatementKeyCount",
             "expectedAdjustedStatementRows",
+            "invalidProviderWindowCount",
+            "invalidAdjustmentEventCount",
+            "providerAdjustedMismatchCount",
+            "invalidCurrentBasisStateCount",
+            "pendingCurrentBasisCodeCount",
             "missingAdjustedStatementRows",
             "extraAdjustedStatementRows",
             "staleAdjustedStatementRows",
             "wrongBasisAdjustedStatementRows",
-            "missingDailyValuationRows",
-            "extraDailyValuationRows",
-            "wrongBasisDailyValuationRows",
+            "orphanAdjustedStatementRows",
             "currentBasisStatementCount",
-            "dailyValuationRows",
+            "currentBasisStateCount",
+            "providerWindowCount",
             "readyProviderWindowCount",
         }
         if not isinstance(coverage, dict) or set(coverage) != {
@@ -142,7 +146,8 @@ class PromotionEligibilityService:
                     "sourceStatementKeyCount",
                     "expectedAdjustedStatementRows",
                     "currentBasisStatementCount",
-                    "dailyValuationRows",
+                    "currentBasisStateCount",
+                    "providerWindowCount",
                     "readyProviderWindowCount",
                 )
             )
@@ -153,7 +158,8 @@ class PromotionEligibilityService:
                     "sourceStatementKeyCount",
                     "expectedAdjustedStatementRows",
                     "currentBasisStatementCount",
-                    "dailyValuationRows",
+                    "currentBasisStateCount",
+                    "providerWindowCount",
                     "readyProviderWindowCount",
                 }
             )

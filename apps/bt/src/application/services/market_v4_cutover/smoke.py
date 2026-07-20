@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import os
+from datetime import date
 from pathlib import Path
+import re
 import time
 from typing import cast
 from urllib.parse import quote
@@ -293,8 +295,11 @@ class RuntimeSmokeService:
                 "currentBasisStatementCount": int(
                     cast(int | str, stats_adjusted["currentBasisStatementCount"])
                 ),
-                "dailyValuationRows": int(
-                    cast(int | str, stats_adjusted["dailyValuationRows"])
+                "currentBasisStateCount": int(
+                    cast(int | str, stats_adjusted["currentBasisStateCount"])
+                ),
+                "providerWindowCount": int(
+                    cast(int | str, stats_adjusted["providerWindowCount"])
                 ),
                 "readyProviderWindowCount": int(
                     cast(int | str, stats_adjusted["readyProviderWindowCount"])
@@ -343,6 +348,109 @@ class RuntimeSmokeService:
         return metadata
 
     @staticmethod
+    def _is_iso_date(value: object) -> bool:
+        if not isinstance(value, str):
+            return False
+        try:
+            return date.fromisoformat(value).isoformat() == value
+        except ValueError:
+            return False
+
+    @staticmethod
+    def _is_ready_provider_vintage(payload: object) -> bool:
+        if not isinstance(payload, dict):
+            return False
+        provider_plan = payload.get("providerPlan")
+        provider_as_of = payload.get("providerAsOf")
+        provider_as_of_range = payload.get("providerAsOfRange")
+        effective_coverage = payload.get("effectiveCoverage")
+        source_fingerprint = payload.get("sourceFingerprint")
+        if (
+            payload.get("status") != "ready"
+            or payload.get("recoveryStage") is not None
+            or not isinstance(provider_plan, str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", provider_plan)
+            or not isinstance(source_fingerprint, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", source_fingerprint)
+            or not isinstance(provider_as_of_range, dict)
+            or not isinstance(effective_coverage, dict)
+        ):
+            return False
+        as_of_min = provider_as_of_range.get("min")
+        as_of_max = provider_as_of_range.get("max")
+        coverage_min = effective_coverage.get("min")
+        coverage_max = effective_coverage.get("max")
+        if not all(
+            RuntimeSmokeService._is_iso_date(value)
+            for value in (as_of_min, as_of_max, coverage_min, coverage_max)
+        ):
+            return False
+        assert isinstance(as_of_min, str)
+        assert isinstance(as_of_max, str)
+        assert isinstance(coverage_min, str)
+        assert isinstance(coverage_max, str)
+        if (
+            as_of_min > as_of_max
+            or coverage_min > coverage_max
+            or as_of_min < coverage_max
+            or provider_as_of != (as_of_min if as_of_min == as_of_max else None)
+        ):
+            return False
+        integer_fields = (
+            "providerWindowCount",
+            "readyProviderWindowCount",
+            "providerWindowFingerprintCount",
+            "invalidProviderWindowCount",
+            "adjustmentEventCount",
+            "adjustmentEventFingerprintCount",
+            "invalidAdjustmentEventCount",
+            "providerAdjustedMismatchCount",
+            "currentBasisStatementCount",
+            "currentBasisStateCount",
+            "invalidCurrentBasisStateCount",
+            "pendingCurrentBasisCodeCount",
+            "sourceStatementKeyCount",
+            "expectedAdjustedStatementRows",
+            "missingAdjustedStatementRows",
+            "extraAdjustedStatementRows",
+            "staleAdjustedStatementRows",
+            "wrongBasisAdjustedStatementRows",
+            "orphanAdjustedStatementRows",
+        )
+        if any(type(payload.get(field)) is not int for field in integer_fields):
+            return False
+        provider_window_count = int(cast(int, payload["providerWindowCount"]))
+        adjustment_event_count = int(cast(int, payload["adjustmentEventCount"]))
+        zero_counters = (
+            "invalidProviderWindowCount",
+            "invalidAdjustmentEventCount",
+            "providerAdjustedMismatchCount",
+            "invalidCurrentBasisStateCount",
+            "pendingCurrentBasisCodeCount",
+            "missingAdjustedStatementRows",
+            "extraAdjustedStatementRows",
+            "staleAdjustedStatementRows",
+            "wrongBasisAdjustedStatementRows",
+            "orphanAdjustedStatementRows",
+        )
+        return bool(
+            payload.get("providerWindowCoherent") is True
+            and provider_window_count > 0
+            and adjustment_event_count >= 0
+            and payload["readyProviderWindowCount"] == provider_window_count
+            and payload["providerWindowFingerprintCount"] == provider_window_count
+            and payload["adjustmentEventFingerprintCount"] == adjustment_event_count
+            and int(cast(int, payload["currentBasisStatementCount"])) > 0
+            and int(cast(int, payload["currentBasisStateCount"])) > 0
+            and int(cast(int, payload["sourceStatementKeyCount"])) > 0
+            and int(cast(int, payload["expectedAdjustedStatementRows"])) > 0
+            and RuntimeSmokeService._is_iso_date(
+                payload.get("fundamentalsAdjustmentBasisDate")
+            )
+            and all(payload[counter] == 0 for counter in zero_counters)
+        )
+
+    @staticmethod
     def _validate_smoke_lineage(
         api: ApiAdapter,
     ) -> tuple[dict[str, object], dict[str, object], tuple[str, ...]]:
@@ -355,16 +463,9 @@ class RuntimeSmokeService:
         }:
             raise _managed_root.CutoverSafetyError("Market stats schema v5 gate failed")
         stats_adjusted = stats.get("providerVintage")
-        if (
-            not isinstance(stats_adjusted, dict)
-            or stats_adjusted.get("status") != "ready"
-            or not isinstance(stats_adjusted.get("currentBasisStatementCount"), int)
-            or int(stats_adjusted["currentBasisStatementCount"]) <= 0
-            or not isinstance(stats_adjusted.get("dailyValuationRows"), int)
-            or int(stats_adjusted["dailyValuationRows"]) <= 0
-            or not isinstance(stats_adjusted.get("readyProviderWindowCount"), int)
-            or int(stats_adjusted["readyProviderWindowCount"]) <= 0
-        ):
+        if not isinstance(
+            stats_adjusted, dict
+        ) or not RuntimeSmokeService._is_ready_provider_vintage(stats_adjusted):
             raise _managed_root.CutoverSafetyError(
                 "Market provider-vintage coverage is not ready"
             )
@@ -380,20 +481,19 @@ class RuntimeSmokeService:
                 "Validation omitted provider-vintage lineage"
             )
         zero_counters = (
+            "invalidProviderWindowCount",
+            "invalidAdjustmentEventCount",
+            "providerAdjustedMismatchCount",
+            "invalidCurrentBasisStateCount",
+            "pendingCurrentBasisCodeCount",
             "missingAdjustedStatementRows",
             "extraAdjustedStatementRows",
             "staleAdjustedStatementRows",
             "wrongBasisAdjustedStatementRows",
-            "missingDailyValuationRows",
-            "extraDailyValuationRows",
-            "wrongBasisDailyValuationRows",
+            "orphanAdjustedStatementRows",
         )
         if (
-            adjusted.get("status") != "ready"
-            or not isinstance(adjusted.get("sourceStatementKeyCount"), int)
-            or int(adjusted["sourceStatementKeyCount"]) <= 0
-            or not isinstance(adjusted.get("expectedAdjustedStatementRows"), int)
-            or int(adjusted["expectedAdjustedStatementRows"]) <= 0
+            not RuntimeSmokeService._is_ready_provider_vintage(adjusted)
             or any(adjusted.get(counter) != 0 for counter in zero_counters)
         ):
             raise _managed_root.CutoverSafetyError(
