@@ -35,18 +35,52 @@ def _canonical_date(value: object, *, field: str) -> str:
     return text
 
 
-def load_global_cutoff(source: DatasetSelectionSource) -> str:
+def load_latest_stock_master_date(source: DatasetSelectionSource) -> str:
+    rows = source.query("SELECT max(date) AS latest_date FROM stock_master_daily")
+    latest = rows[0]["latest_date"] if rows else None
+    if latest is None:
+        raise DatasetSnapshotSelectionError(
+            "Dataset stock universe is missing; sync stock_master_daily before creation"
+        )
+    return _canonical_date(latest, field="Dataset stock universe date")
+
+
+def load_global_cutoff(
+    source: DatasetSelectionSource, normalized_codes: Sequence[str]
+) -> str:
+    codes = sorted(
+        {normalize_stock_code(str(code)) for code in normalized_codes if str(code)}
+    )
+    if not codes:
+        raise DatasetSnapshotSelectionError(
+            "No selected stock codes are available for Dataset provider coverage"
+        )
+    values = ", ".join("(?)" for _ in codes)
     rows = source.query(
-        """
+        f"""
+        WITH selected_codes(code) AS (VALUES {values}),
+        selected_windows AS (
+            SELECT selected.code, provider_window.coverage_start,
+                   provider_window.coverage_end
+            FROM selected_codes AS selected
+            LEFT JOIN stock_provider_windows AS provider_window
+              ON CASE
+                    WHEN length(provider_window.code) IN (5, 6)
+                     AND right(provider_window.code, 1) = '0'
+                    THEN left(provider_window.code, length(provider_window.code) - 1)
+                    ELSE provider_window.code
+                 END = selected.code
+        )
         SELECT min(coverage_end) AS cutoff, max(coverage_start) AS lower_bound,
-               count(*) AS window_count
-        FROM stock_provider_windows
-        """
+               count(coverage_end) AS window_count
+        FROM selected_windows
+        """,
+        tuple(codes),
     )
     cutoff = rows[0]["cutoff"] if rows else None
     lower_bound = rows[0]["lower_bound"] if rows else None
     window_count = int(rows[0]["window_count"] or 0) if rows else 0
-    if cutoff is None or lower_bound is None or window_count == 0:
+    if cutoff is None or lower_bound is None or window_count != len(codes):
         raise DatasetSnapshotSelectionError(
             "Dataset provider vintage is missing; refresh provider stock windows before creation"
         )
@@ -239,6 +273,40 @@ def load_selected_price_range(
         raise DatasetSnapshotSelectionError(
             "Selected stocks do not share the pinned effective provider coverage"
         )
+    expected_rows = source.query(
+        "SELECT date FROM topix_data WHERE date BETWEEN ? AND ? ORDER BY date",
+        (date_from, date_to),
+    )
+    expected_sessions = {str(_row_dict(row)["date"]) for row in expected_rows}
+    if not expected_sessions or min(expected_sessions) != date_from or max(expected_sessions) != date_to:
+        raise DatasetSnapshotSelectionError(
+            "Pinned provider coverage does not have exact market sessions at both bounds"
+        )
+    for code in codes:
+        for table in (
+            "stock_master_daily",
+            "stock_data_raw",
+            "stock_data",
+            "daily_valuation",
+        ):
+            table_rows = source.query(
+                f"""
+                SELECT DISTINCT date FROM {table}
+                WHERE CASE
+                        WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                        THEN left(code, length(code) - 1)
+                        ELSE code
+                      END = ?
+                  AND date BETWEEN ? AND ?
+                """,
+                (code, date_from, date_to),
+            )
+            actual_sessions = {str(_row_dict(row)["date"]) for row in table_rows}
+            if actual_sessions != expected_sessions:
+                raise DatasetSnapshotSelectionError(
+                    "Selected provider coverage has an empty, gap, or bound mismatch: "
+                    f"{code} {table}"
+                )
     return (
         _canonical_date(date_from, field="Dataset selected price start"),
         _canonical_date(date_to, field="Dataset selected price end"),

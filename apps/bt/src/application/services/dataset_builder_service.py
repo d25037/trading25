@@ -40,6 +40,7 @@ from src.application.services.dataset_snapshot_selection import (
     DatasetSnapshotSelectionError,
     load_cutoff_stock_master,
     load_global_cutoff,
+    load_latest_stock_master_date,
     load_selected_price_range,
 )
 from src.application.services.dataset_resolver import DatasetResolver
@@ -462,8 +463,8 @@ async def _build_dataset_from_pinned_source(
     if job.cancelled.is_set():
         return DatasetResult(success=False, errors=["Cancelled"])
 
-    stock_date_to = await _load_market_global_cutoff(market_reader)
-    stocks_data = await _load_market_stock_master(market_reader, stock_date_to)
+    selection_date = await _load_market_latest_master_date(market_reader)
+    stocks_data = await _load_market_stock_master(market_reader, selection_date)
     filtered = _filter_stocks(stocks_data, preset)
     log_stage_elapsed("master", master_started, mode="duckdb-direct", target_count=len(filtered))
 
@@ -471,7 +472,7 @@ async def _build_dataset_from_pinned_source(
         return DatasetResult(
             success=False,
             errors=[
-                f"No cutoff-day stock_master_daily rows at {stock_date_to} "
+                f"No stock_master_daily rows at {selection_date} "
                 "matched the preset filters"
             ],
         )
@@ -483,6 +484,24 @@ async def _build_dataset_from_pinned_source(
             if normalize_stock_code(stock.get("Code", ""))
         }
     )
+    stock_date_to = await _load_market_global_cutoff(
+        market_reader, normalized_codes
+    )
+    if stock_date_to != selection_date:
+        stocks_data = await _load_market_stock_master(market_reader, stock_date_to)
+        filtered = _filter_stocks(stocks_data, preset)
+        cutoff_codes = sorted(
+            {
+                normalize_stock_code(stock.get("Code", ""))
+                for stock in filtered
+                if normalize_stock_code(stock.get("Code", ""))
+            }
+        )
+        if cutoff_codes != normalized_codes:
+            raise DatasetSnapshotError(
+                "Selected stock universe changed at pinned provider cutoff; "
+                "refresh provider windows and daily master together"
+            )
     stock_date_from, stock_date_to = await _load_market_stock_date_range(
         market_reader,
         normalized_codes,
@@ -675,9 +694,20 @@ async def _load_market_stock_master(
         raise DatasetSnapshotError(str(exc)) from exc
 
 
-async def _load_market_global_cutoff(market_reader: MarketDatasetSource) -> str:
+async def _load_market_latest_master_date(market_reader: MarketDatasetSource) -> str:
     try:
-        return await asyncio.to_thread(load_global_cutoff, market_reader)
+        return await asyncio.to_thread(load_latest_stock_master_date, market_reader)
+    except DatasetSnapshotSelectionError as exc:
+        raise DatasetSnapshotError(str(exc)) from exc
+
+
+async def _load_market_global_cutoff(
+    market_reader: MarketDatasetSource, normalized_codes: Sequence[str]
+) -> str:
+    try:
+        return await asyncio.to_thread(
+            load_global_cutoff, market_reader, normalized_codes
+        )
     except DatasetSnapshotSelectionError as exc:
         raise DatasetSnapshotError(str(exc)) from exc
 

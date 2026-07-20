@@ -11,7 +11,7 @@ import duckdb
 import pytest
 
 from src.infrastructure.db.market.time_series_store import DuckDbParquetTimeSeriesStore
-from src.application.services.provider_stock_window import (
+from src.shared.provider_stock_window import (
     provider_stock_source_fingerprint,
 )
 from tests.unit.server.db.market_writer_test_support import (

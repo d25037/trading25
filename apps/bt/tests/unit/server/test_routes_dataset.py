@@ -24,7 +24,7 @@ from src.infrastructure.db.market.dataset_snapshot_reader import (
 )
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from tests.unit.server.test_dataset_builder_service_branches import (
-    _build_v4_market_with_two_regimes as _create_v4_market_source_duckdb,
+    _build_v5_provider_market as _create_v5_market_source_duckdb,
 )
 from tests.unit.server.test_dataset_snapshot_reader import (
     _populate_provider_payload_from_convenience,
@@ -49,7 +49,7 @@ def _wait_for_dataset_job_terminal_state(job_id: str, *, timeout_seconds: float 
     pytest.fail(f"dataset job did not reach terminal state within {timeout_seconds}s: {status}")
 
 
-def _write_manifest_v3(snapshot_dir: Path, name: str) -> None:
+def _write_manifest_v4(snapshot_dir: Path, name: str) -> None:
     duckdb_path = snapshot_dir / "dataset.duckdb"
     parquet_dir = snapshot_dir / "parquet"
     inspection = inspect_dataset_snapshot_duckdb(duckdb_path)
@@ -136,15 +136,24 @@ def _build_snapshot(base_dir: Path, name: str) -> None:
             "adjustment_factor": 1.0,
         },
     ])
+    writer.upsert_topix_data([
+        {
+            "date": "2024-01-04",
+            "open": 2500,
+            "high": 2520,
+            "low": 2490,
+            "close": 2510,
+        }
+    ])
     writer.set_dataset_info("preset", "primeMarket")
     _set_v4_source_info(
-        writer, coverage_start="2024-01-04", coverage_end="2024-12-31"
+        writer, coverage_start="2024-01-04", coverage_end="2024-01-04"
     )
     writer.set_dataset_info("created_at", "2026-01-01T00:00:00+00:00")
     writer.set_dataset_info("stock_count", "2")
     writer.close()
     _populate_provider_payload_from_convenience(base_dir / name)
-    _write_manifest_v3(base_dir / name, name)
+    _write_manifest_v4(base_dir / name, name)
 
 
 def _create_market_source_duckdb(base_dir: Path) -> Path:
@@ -309,7 +318,7 @@ def dataset_template_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.fixture(scope="module")
 def market_source_template_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    path = _create_v4_market_source_duckdb(tmp_path_factory.mktemp("dataset-routes-market"))
+    path = _create_v5_market_source_duckdb(tmp_path_factory.mktemp("dataset-routes-market"))
     duckdb = importlib.import_module("duckdb")
     conn = duckdb.connect(str(path))
     try:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 from pathlib import Path
+import threading
 from typing import Any, cast
 from unittest.mock import MagicMock
 
@@ -27,7 +28,7 @@ from src.infrastructure.db.market.dataset_snapshot_reader import validate_datase
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from tests.unit.server.db.market_writer_test_support import open_market_db
 from tests.unit.server.db.test_dataset_event_time_basis_snapshot import (
-    _build_v4_market_with_two_regimes,
+    _build_v5_provider_market,
 )
 
 
@@ -83,10 +84,12 @@ def test_provider_source_preflight_accepts_only_market_v5_metadata(
 async def test_dataset_selection_uses_provider_windows_as_global_cutoff(
     tmp_path: Path,
 ) -> None:
-    source = _build_v4_market_with_two_regimes(tmp_path)
+    source = _build_v5_provider_market(tmp_path)
     reader = MarketDbReader(str(source))
     try:
-        assert await dataset_builder_service._load_market_global_cutoff(reader) == "2024-01-05"
+        assert await dataset_builder_service._load_market_global_cutoff(
+            reader, ["7203"]
+        ) == "2024-01-05"
         assert await dataset_builder_service._load_market_stock_date_range(
             reader, ["7203"], "2024-01-05"
         ) == ("2024-01-04", "2024-01-05")
@@ -98,7 +101,7 @@ async def test_dataset_selection_uses_provider_windows_as_global_cutoff(
 async def test_dataset_selection_rejects_missing_provider_window(
     tmp_path: Path,
 ) -> None:
-    source = _build_v4_market_with_two_regimes(tmp_path)
+    source = _build_v5_provider_market(tmp_path)
     conn = importlib.import_module("duckdb").connect(str(source))
     try:
         conn.execute("DELETE FROM stock_provider_windows")
@@ -107,14 +110,14 @@ async def test_dataset_selection_rejects_missing_provider_window(
     reader = MarketDbReader(str(source))
     try:
         with pytest.raises(DatasetSnapshotError, match="provider vintage is missing"):
-            await dataset_builder_service._load_market_global_cutoff(reader)
+            await dataset_builder_service._load_market_global_cutoff(reader, ["7203"])
     finally:
         reader.close()
 
 
 @pytest.mark.asyncio
 async def test_cutoff_master_requires_exact_coverage_end_rows(tmp_path: Path) -> None:
-    source = _build_v4_market_with_two_regimes(tmp_path)
+    source = _build_v5_provider_market(tmp_path)
     conn = importlib.import_module("duckdb").connect(str(source))
     try:
         conn.execute("DELETE FROM stock_master_daily WHERE date = '2024-01-05'")
@@ -130,7 +133,7 @@ async def test_cutoff_master_requires_exact_coverage_end_rows(tmp_path: Path) ->
 
 @pytest.mark.asyncio
 async def test_selected_price_range_requires_current_basis_state(tmp_path: Path) -> None:
-    source = _build_v4_market_with_two_regimes(tmp_path)
+    source = _build_v5_provider_market(tmp_path)
     conn = importlib.import_module("duckdb").connect(str(source))
     try:
         conn.execute("DELETE FROM current_basis_fundamentals_state")
@@ -201,7 +204,7 @@ async def test_build_dataset_direct_copy_generates_valid_v4_snapshot(
     )
     resolver = MagicMock()
     resolver.get_dataset_path.return_value = str(tmp_path / "direct-copy")
-    source = _build_v4_market_with_two_regimes(tmp_path)
+    source = _build_v5_provider_market(tmp_path)
     monkeypatch.setattr(
         dataset_builder_service,
         "get_preset",
@@ -253,7 +256,7 @@ async def test_overwrite_preflight_failure_preserves_existing_target(
     resolver = MagicMock()
     resolver.get_dataset_path.return_value = str(target)
     resolver.get_artifact_paths.return_value = [str(target)]
-    source = _build_v4_market_with_two_regimes(tmp_path)
+    source = _build_v5_provider_market(tmp_path)
     conn = importlib.import_module("duckdb").connect(str(source))
     try:
         conn.execute("UPDATE market_schema_version SET version = 4")
@@ -345,3 +348,89 @@ async def test_start_dataset_build_completes_when_not_cancelled(
     await job.task
     stored = isolated_dataset_manager.get_job(job.job_id)
     assert stored is not None and stored.status == JobStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_manifest_hash_cancellation_joins_worker_and_removes_staging(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    started = threading.Event()
+    release = threading.Event()
+    staged = tmp_path / ".manifest.v2.json.job.tmp"
+
+    def blocking_manifest_writer(**_kwargs: Any) -> str:
+        started.set()
+        assert release.wait(timeout=5)
+        staged.write_text("complete", encoding="utf-8")
+        return str(staged)
+
+    monkeypatch.setattr(
+        dataset_builder_service,
+        "_write_dataset_manifest",
+        blocking_manifest_writer,
+    )
+    task = asyncio.create_task(
+        dataset_builder_service._write_staged_manifest_off_thread(
+            snapshot_path=str(tmp_path / "dataset"),
+            dataset_name="sample",
+            preset_name="quickTesting",
+            staged_manifest_path=staged,
+        )
+    )
+    assert await asyncio.to_thread(started.wait, 5)
+    task.cancel()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not staged.exists()
+
+
+@pytest.mark.asyncio
+async def test_build_uses_immutable_source_when_live_market_mutates(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_dataset_manager: GenericJobManager,
+    tmp_path: Path,
+) -> None:
+    source = _build_v5_provider_market(tmp_path)
+    job = await _create_job(isolated_dataset_manager, name="immutable-source")
+
+    async def inspect_pinned(
+        _job: Any,
+        _resolver: Any,
+        pinned_reader: MarketDbReader,
+        *,
+        source_duckdb_path: str,
+    ) -> DatasetResult:
+        live = importlib.import_module("duckdb").connect(str(source))
+        try:
+            live.execute(
+                "UPDATE stock_data_raw SET adjusted_close = 999 "
+                "WHERE code = '7203' AND date = '2024-01-04'"
+            )
+        finally:
+            live.close()
+        assert Path(source_duckdb_path) != source
+        pinned = pinned_reader.query(
+            "SELECT adjusted_close FROM stock_data_raw "
+            "WHERE code = '7203' AND date = '2024-01-04'"
+        )
+        assert float(pinned[0]["adjusted_close"]) == 200.0
+        return DatasetResult(success=True)
+
+    monkeypatch.setattr(
+        dataset_builder_service,
+        "_build_dataset_from_pinned_source",
+        inspect_pinned,
+    )
+    reader = MarketDbReader(str(source))
+    try:
+        result = await _build_dataset(
+            job,
+            MagicMock(),
+            reader,
+            source_duckdb_path=str(source),
+        )
+    finally:
+        reader.close()
+    assert result.success is True

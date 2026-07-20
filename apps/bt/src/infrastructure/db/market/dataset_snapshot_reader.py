@@ -24,6 +24,7 @@ from src.infrastructure.db.dataset_io.snapshot_contract import (
     DATASET_PROVIDER_PLAN_INFO_KEY,
     DATASET_PROVIDER_SOURCE_FINGERPRINT_INFO_KEY,
     DATASET_V4_PARQUET_ARTIFACT_NAMES,
+    DATASET_V4_PHYSICAL_SCHEMAS,
     DATASET_V4_REQUIRED_TABLES,
 )
 from src.infrastructure.db.dataset_io.pit_validation import (
@@ -328,6 +329,44 @@ def _validate_provider_snapshot_integrity(
     *,
     source: DatasetSourceV4,
 ) -> None:
+    stock_count = _table_count(conn, "stocks")
+    if stock_count:
+        session_bounds = conn.execute(
+            "SELECT count(*), min(date), max(date) FROM topix_data"
+        ).fetchone()
+        if (
+            session_bounds is None
+            or int(session_bounds[0] or 0) == 0
+            or str(session_bounds[1]) != source.providerCoverageStart
+            or str(session_bounds[2]) != source.providerCoverageEnd
+        ):
+            raise DatasetManifestValidationError(
+                "Dataset provider coverage lacks exact market sessions at both bounds"
+            )
+        expected_pairs = (
+            "SELECT stocks.code, sessions.date FROM stocks "
+            "CROSS JOIN topix_data AS sessions"
+        )
+        for table in (
+            "stock_master_daily",
+            "stock_data_raw",
+            "stock_data",
+            "daily_valuation",
+        ):
+            if _query_scalar_int(
+                conn,
+                f"""
+                SELECT COUNT(*) FROM (
+                    ({expected_pairs} EXCEPT ALL SELECT code, date FROM {table})
+                    UNION ALL
+                    (SELECT code, date FROM {table} EXCEPT ALL {expected_pairs})
+                ) differences
+                """,
+            ):
+                raise DatasetManifestValidationError(
+                    "Dataset provider session coverage has an empty, gap, or bound "
+                    f"mismatch: {table}"
+                )
     audit_error = find_dataset_snapshot_audit_error(
         conn,
         coverage_start=source.providerCoverageStart,
@@ -399,19 +438,35 @@ def inspect_dataset_snapshot_duckdb(duckdb_path: str | Path) -> DatasetSnapshotI
                 "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
             ).fetchall()
         }
-        missing_tables = sorted(set(_REQUIRED_SNAPSHOT_TABLES) - existing_tables)
-        if missing_tables:
+        expected_tables = set(_REQUIRED_SNAPSHOT_TABLES)
+        if existing_tables != expected_tables:
+            missing_tables = sorted(expected_tables - existing_tables)
+            extra_tables = sorted(existing_tables - expected_tables)
             raise DatasetManifestValidationError(
-                "Dataset snapshot is missing required tables: " + ", ".join(missing_tables)
+                "Dataset v4 requires the exact table set; "
+                f"missing={missing_tables}, extra={extra_tables}"
             )
-        forbidden_tables = sorted(
-            {"stock_adjustment_bases", "stock_adjustment_basis_segments"}
-            & existing_tables
-        )
-        if forbidden_tables:
+        for table, (expected_columns, expected_pk) in DATASET_V4_PHYSICAL_SCHEMAS.items():
+            actual_columns = tuple(
+                (str(row[1]), str(row[2]), bool(row[3]))
+                for row in conn.execute(f"PRAGMA table_info('{table}')").fetchall()
+            )
+            pk_row = conn.execute(
+                "SELECT constraint_column_names FROM duckdb_constraints() "
+                "WHERE table_name = ? AND constraint_type = 'PRIMARY KEY'",
+                (table,),
+            ).fetchone()
+            actual_pk = tuple(str(value) for value in pk_row[0]) if pk_row else ()
+            if actual_columns != expected_columns or actual_pk != expected_pk:
+                raise DatasetManifestValidationError(
+                    f"Dataset v4 physical schema mismatch for {table}"
+                )
+        named_indexes = conn.execute(
+            "SELECT index_name FROM duckdb_indexes() WHERE schema_name = 'main'"
+        ).fetchall()
+        if named_indexes:
             raise DatasetManifestValidationError(
-                "Dataset v4 snapshot retains unsupported basis tables: "
-                + ", ".join(forbidden_tables)
+                "Dataset v4 physical schema has unsupported named indexes"
             )
         source = _read_source_from_dataset_info(conn)
         counts = DatasetLogicalCountsV4(
@@ -510,6 +565,11 @@ def build_dataset_artifact_fingerprint(
         raise DatasetManifestValidationError(
             "Dataset Parquet directory must not be a symlink"
         )
+    physical_parquet = {path.name for path in parquet_dir.iterdir()}
+    if physical_parquet != DATASET_V4_PARQUET_ARTIFACT_NAMES:
+        raise DatasetManifestValidationError(
+            "Dataset physical Parquet artifacts must exactly match Dataset v4"
+        )
     paths = [
         manifest_path,
         snapshot_root / manifest.dataset.duckdbFile,
@@ -565,6 +625,11 @@ def validate_dataset_snapshot(snapshot_dir: str | Path) -> DatasetManifestV4:
     parquet_dir = snapshot_root / manifest.dataset.parquetDir
     if not parquet_dir.exists():
         raise FileNotFoundError(f"Parquet directory not found: {parquet_dir}")
+    physical_parquet = {path.name for path in parquet_dir.iterdir()}
+    if physical_parquet != DATASET_V4_PARQUET_ARTIFACT_NAMES:
+        raise DatasetManifestValidationError(
+            "Dataset physical Parquet artifacts must exactly match Dataset v4"
+        )
     for file_name, expected_sha in manifest.checksums.parquet.items():
         parquet_path = parquet_dir / file_name
         if not parquet_path.exists():
@@ -675,6 +740,7 @@ class DatasetSnapshotReader:
             )
 
     def _get_thread_connection(self) -> Any:
+        self._assert_artifacts_unchanged()
         thread_id = threading.get_ident()
         conn = self._conns.get(thread_id)
         if conn is not None:

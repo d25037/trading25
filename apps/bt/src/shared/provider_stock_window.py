@@ -1,4 +1,4 @@
-"""Provider-adjusted daily stock window validation and fingerprinting."""
+"""Shared provider-adjusted daily stock validation and fingerprinting."""
 
 from __future__ import annotations
 
@@ -10,8 +10,17 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-from src.infrastructure.db.market.market_schema import METADATA_KEYS
-from src.infrastructure.db.market.query_helpers import normalize_stock_code
+_PROVIDER_PLAN_KEY = "provider_plan"
+_PROVIDER_AS_OF_KEY = "provider_as_of"
+_PROVIDER_SOURCE_FINGERPRINT_KEY = "provider_source_fingerprint"
+_PROVIDER_COVERAGE_START_KEY = "provider_coverage_start"
+_PROVIDER_COVERAGE_END_KEY = "provider_coverage_end"
+
+
+def _normalize_stock_code(code: str) -> str:
+    if len(code) in {5, 6} and code.endswith("0"):
+        return code[:-1]
+    return code
 
 PROVIDER_RAW_COLUMNS = (
     "open",
@@ -71,9 +80,9 @@ def coerce_provider_stock_coverage(
         normalized = coverage
     else:
         start = coverage.get(
-            "start", coverage.get(METADATA_KEYS["PROVIDER_COVERAGE_START"])
+            "start", coverage.get(_PROVIDER_COVERAGE_START_KEY)
         )
-        end = coverage.get("end", coverage.get(METADATA_KEYS["PROVIDER_COVERAGE_END"]))
+        end = coverage.get("end", coverage.get(_PROVIDER_COVERAGE_END_KEY))
         normalized = ProviderStockCoverage(
             start=str(start).strip() if start is not None else "",
             end=str(end).strip() if end is not None else "",
@@ -92,10 +101,10 @@ def coerce_provider_stock_metadata(
         normalized = metadata
     else:
         normalized = ProviderStockMetadata(
-            provider_plan=_required_text(metadata, METADATA_KEYS["PROVIDER_PLAN"]),
-            provider_as_of=_required_text(metadata, METADATA_KEYS["PROVIDER_AS_OF"]),
+            provider_plan=_required_text(metadata, _PROVIDER_PLAN_KEY),
+            provider_as_of=_required_text(metadata, _PROVIDER_AS_OF_KEY),
             provider_source_fingerprint=_required_text(
-                metadata, METADATA_KEYS["PROVIDER_SOURCE_FINGERPRINT"]
+                metadata, _PROVIDER_SOURCE_FINGERPRINT_KEY
             ),
         )
     _iso_date(normalized.provider_as_of, field="provider as-of")
@@ -108,7 +117,7 @@ def validate_provider_stock_window(
     coverage: ProviderStockCoverage | Mapping[str, Any],
     metadata: ProviderStockMetadata | Mapping[str, Any],
 ) -> tuple[str, list[dict[str, Any]], ProviderStockCoverage, ProviderStockMetadata]:
-    normalized_code = normalize_stock_code(code)
+    normalized_code = _normalize_stock_code(code)
     if not normalized_code:
         raise ValueError("Provider stock window requires a valid code")
     normalized_coverage = coerce_provider_stock_coverage(coverage)
@@ -118,7 +127,7 @@ def validate_provider_stock_window(
     dates: set[str] = set()
     for source in rows:
         row = dict(source)
-        row_code = normalize_stock_code(row.get("code", ""))
+        row_code = _normalize_stock_code(str(row.get("code", "")))
         if row_code != normalized_code:
             raise ValueError(
                 "Provider stock window row code does not match replacement code"

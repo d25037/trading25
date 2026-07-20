@@ -131,6 +131,23 @@ def _populate_provider_payload_from_convenience(snapshot_dir: Path) -> None:
             SELECT code, date, date, close FROM stock_data
             """
         )
+        conn.execute(
+            """
+            INSERT INTO statement_metrics_adjusted
+            (code, statement_id, disclosed_date, disclosed_at, period_end,
+             period_type, fundamentals_adjustment_basis_date,
+             adjustment_factor_cumulative, source_fingerprint)
+            SELECT statement.code, statement.statement_id,
+                   statement.disclosed_date, statement.disclosed_at,
+                   statement.period_end,
+                   coalesce(statement.type_of_current_period, 'UNKNOWN'),
+                   info.value, 1,
+                   'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+            FROM statements AS statement
+            CROSS JOIN dataset_info AS info
+            WHERE info.key = 'fundamentals_adjustment_basis_date'
+            """
+        )
     finally:
         conn.close()
     DatasetWriter(str(snapshot_dir)).close()
@@ -369,7 +386,7 @@ def test_snapshot_rejects_missing_required_table(tmp_path: Path) -> None:
     finally:
         conn.close()
     _refresh_duckdb_checksum(snapshot_dir)
-    with pytest.raises(DatasetManifestValidationError, match="missing required tables: margin_data"):
+    with pytest.raises(DatasetManifestValidationError, match="missing=.*margin_data"):
         validate_dataset_snapshot(snapshot_dir)
 
 
@@ -383,7 +400,40 @@ def test_snapshot_rejects_retained_basis_graph_table(tmp_path: Path, table: str)
     finally:
         conn.close()
     _refresh_duckdb_checksum(snapshot_dir)
-    with pytest.raises(DatasetManifestValidationError, match="unsupported basis tables"):
+    with pytest.raises(DatasetManifestValidationError, match="exact table set"):
+        validate_dataset_snapshot(snapshot_dir)
+
+
+def test_snapshot_rejects_arbitrary_extra_table(tmp_path: Path) -> None:
+    snapshot_dir = _create_snapshot(tmp_path)
+    duckdb = importlib.import_module("duckdb")
+    conn = duckdb.connect(str(snapshot_dir / "dataset.duckdb"))
+    try:
+        conn.execute("CREATE TABLE unexpected_payload (value TEXT)")
+    finally:
+        conn.close()
+    _refresh_duckdb_checksum(snapshot_dir)
+    with pytest.raises(DatasetManifestValidationError, match="exact table set"):
+        validate_dataset_snapshot(snapshot_dir)
+
+
+def test_snapshot_rejects_arbitrary_extra_column(tmp_path: Path) -> None:
+    snapshot_dir = _create_snapshot(tmp_path)
+    duckdb = importlib.import_module("duckdb")
+    conn = duckdb.connect(str(snapshot_dir / "dataset.duckdb"))
+    try:
+        conn.execute("ALTER TABLE stocks ADD COLUMN unexpected_payload TEXT")
+    finally:
+        conn.close()
+    _refresh_duckdb_checksum(snapshot_dir)
+    with pytest.raises(DatasetManifestValidationError, match="physical schema"):
+        validate_dataset_snapshot(snapshot_dir)
+
+
+def test_snapshot_rejects_unlisted_physical_parquet_file(tmp_path: Path) -> None:
+    snapshot_dir = _create_snapshot(tmp_path)
+    (snapshot_dir / "parquet" / "unexpected.parquet").write_bytes(b"tamper")
+    with pytest.raises(DatasetManifestValidationError, match="physical Parquet artifacts"):
         validate_dataset_snapshot(snapshot_dir)
 
 
@@ -460,8 +510,20 @@ def test_validate_dataset_snapshot_rejects_parquet_checksum_mismatch(tmp_path: P
             "current-basis provenance is inconsistent",
         ),
         (
+            "UPDATE daily_valuation SET source_fingerprint = 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'",
+            "no exact adjusted statement provenance",
+        ),
+        (
+            "UPDATE daily_valuation SET statement_disclosed_date = '2024-01-02'",
+            "no exact adjusted statement provenance",
+        ),
+        (
+            "DELETE FROM statement_metrics_adjusted",
+            "raw statement has no exact adjusted metric identity",
+        ),
+        (
             "UPDATE stock_data SET date = '2024-01-05'",
-            "exceeds pinned provider coverage",
+            "(exceeds pinned provider coverage|session coverage has an empty, gap, or bound mismatch)",
         ),
         (
             "UPDATE stock_master_daily SET listed_date = '1949-5-16'",
@@ -522,6 +584,21 @@ def test_reader_rechecks_artifacts_before_first_connection(
         ),
     )
     with pytest.raises(DatasetManifestValidationError, match="changed after support validation"):
+        reader.get_stocks()
+    reader.close()
+
+
+def test_reader_rechecks_proof_after_connection_is_open(tmp_path: Path) -> None:
+    snapshot_dir = _create_rich_snapshot(tmp_path)
+    reader = DatasetSnapshotReader(str(snapshot_dir))
+    assert reader.get_stocks()[0].code == "7203"
+    manifest = _load_manifest(snapshot_dir)
+    manifest["generatedAt"] = "2026-07-21T00:00:01+00:00"
+    _save_manifest(snapshot_dir, manifest)
+    with pytest.raises(
+        DatasetManifestValidationError,
+        match="changed after support validation",
+    ):
         reader.get_stocks()
     reader.close()
 

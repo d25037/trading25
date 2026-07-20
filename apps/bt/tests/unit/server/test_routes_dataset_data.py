@@ -25,7 +25,7 @@ from tests.unit.server.test_dataset_snapshot_reader import (
 )
 
 
-def _write_manifest_v3(snapshot_dir: Path, name: str) -> None:
+def _write_manifest_v4(snapshot_dir: Path, name: str) -> None:
     duckdb_path = snapshot_dir / "dataset.duckdb"
     parquet_dir = snapshot_dir / "parquet"
     inspection = inspect_dataset_snapshot_duckdb(duckdb_path)
@@ -122,6 +122,16 @@ def _build_snapshot(base_dir: Path, name: str) -> None:
             "volume": 500,
             "adjustment_factor": 1.0,
         },
+        {
+            "code": "9984",
+            "date": "2024-01-05",
+            "open": 205,
+            "high": 215,
+            "low": 195,
+            "close": 210,
+            "volume": 550,
+            "adjustment_factor": 1.0,
+        },
     ])
     writer.upsert_topix_data([
         {
@@ -130,7 +140,14 @@ def _build_snapshot(base_dir: Path, name: str) -> None:
             "high": 2520,
             "low": 2490,
             "close": 2510,
-        }
+        },
+        {
+            "date": "2024-01-05",
+            "open": 2510,
+            "high": 2530,
+            "low": 2500,
+            "close": 2520,
+        },
     ])
     writer.upsert_indices_data([
         {
@@ -260,11 +277,11 @@ def _build_snapshot(base_dir: Path, name: str) -> None:
     writer.upsert_statements(statements)
     writer.set_dataset_info("preset", "primeMarket")
     _set_v4_source_info(
-        writer, coverage_start="2024-01-04", coverage_end="2024-12-31"
+        writer, coverage_start="2024-01-04", coverage_end="2024-01-05"
     )
     writer.close()
     _populate_provider_payload_from_convenience(snapshot_dir)
-    _write_manifest_v3(snapshot_dir, name)
+    _write_manifest_v4(snapshot_dir, name)
 
 
 @pytest.fixture(scope="module")
@@ -323,7 +340,7 @@ class TestDatasetDataRoutes:
         data = resp.json()
         assert "7203" in data
         assert len(data["7203"]) == 2
-        assert len(data["9984"]) == 1
+        assert len(data["9984"]) == 2
 
     def test_ohlcv_batch_too_many(self, client: TestClient) -> None:
         codes = ",".join([f"000{i}" for i in range(101)])
@@ -334,7 +351,7 @@ class TestDatasetDataRoutes:
         resp = client.get("/api/dataset/test-market/topix")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 1
+        assert len(data) == 2
         assert "volume" not in data[0]  # TOPIX has no volume
 
     def test_indices_list(self, client: TestClient) -> None:

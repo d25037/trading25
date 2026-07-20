@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.application.services.provider_stock_window import validate_provider_stock_window
+from src.shared.provider_stock_window import validate_provider_stock_window
 
 
 def _row(

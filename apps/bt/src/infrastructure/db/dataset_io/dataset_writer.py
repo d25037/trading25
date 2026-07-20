@@ -26,6 +26,7 @@ from src.infrastructure.db.dataset_io.snapshot_contract import (
 from src.infrastructure.db.dataset_io.pit_validation import (
     find_dataset_snapshot_audit_error,
 )
+from src.shared.provider_stock_window import provider_stock_source_fingerprint
 
 _SOURCE_ALIAS = "market_source"
 _TEMP_STOCK_CODE_TABLE = "_dataset_copy_target_stock_codes"
@@ -1400,6 +1401,42 @@ class _DatasetDuckDbStore:
                 raise DatasetSnapshotError(
                     f"current-basis provider state is incomplete for {code}"
                 )
+            raw_rows = self._conn.execute(
+                f"""
+                SELECT code, date, open, high, low, close, volume, turnover_value,
+                       adjustment_factor, adjusted_open, adjusted_high, adjusted_low,
+                       adjusted_close, adjusted_volume
+                FROM (
+                    SELECT {self._normalize_stock_code_expr('code')} AS code,
+                           date, open, high, low, close, volume, turnover_value,
+                           adjustment_factor, adjusted_open, adjusted_high,
+                           adjusted_low, adjusted_close, adjusted_volume,
+                           row_number() OVER (
+                               PARTITION BY {self._normalize_stock_code_expr('code')}, date
+                               ORDER BY {self._stock_code_priority_expr('code')}, code
+                           ) AS alias_rank
+                    FROM {source_alias}.stock_data_raw
+                    WHERE {self._normalize_stock_code_expr('code')} = ?
+                      AND date BETWEEN ? AND ?
+                ) ranked
+                WHERE alias_rank = 1
+                ORDER BY date
+                """,
+                (code, coverage_start, coverage_end),
+            ).fetchall()
+            raw_columns = (
+                "code", "date", "open", "high", "low", "close", "volume",
+                "turnover_value", "adjustment_factor", "adjusted_open",
+                "adjusted_high", "adjusted_low", "adjusted_close",
+                "adjusted_volume",
+            )
+            calculated_window_fingerprint = provider_stock_source_fingerprint(
+                [dict(zip(raw_columns, raw_row, strict=True)) for raw_row in raw_rows]
+            )
+            if calculated_window_fingerprint != window_fingerprint:
+                raise DatasetSnapshotError(
+                    f"provider source fingerprint is stale or malformed for {code}"
+                )
             state_error = self._query_scalar_int(
                 f"""
                 SELECT COUNT(*) FROM (
@@ -1491,10 +1528,24 @@ class _DatasetDuckDbStore:
         date_from: str,
         date_to: str,
     ) -> None:
+        self._reject_conflicting_provider_aliases(
+            source_alias=source_alias,
+            date_from=date_from,
+            date_to=date_to,
+        )
         for stage, _target in _PROVIDER_STAGE_TABLES:
             self._conn.execute(f"DROP TABLE IF EXISTS {stage}")
+        self._conn.execute("DROP TABLE IF EXISTS _dataset_provider_expected_sessions")
         normalized = self._normalize_stock_code_expr("code")
         priority = self._stock_code_priority_expr("code")
+
+        self._conn.execute(
+            f"""
+            CREATE TEMP TABLE _dataset_provider_expected_sessions AS
+            SELECT DISTINCT date FROM {source_alias}.topix_data
+            WHERE date BETWEEN '{date_from}' AND '{date_to}'
+            """
+        )
 
         self._conn.execute(
             f"""
@@ -1584,6 +1635,58 @@ class _DatasetDuckDbStore:
             disclosed_date_to=date_to,
         )
 
+    def _reject_conflicting_provider_aliases(
+        self, *, source_alias: str, date_from: str, date_to: str
+    ) -> None:
+        normalized = self._normalize_stock_code_expr("code")
+        checks = (
+            (
+                "stock_data_raw",
+                "date",
+                "open, high, low, close, volume, turnover_value, adjustment_factor, "
+                "adjusted_open, adjusted_high, adjusted_low, adjusted_close, adjusted_volume",
+                f"date BETWEEN '{date_from}' AND '{date_to}'",
+            ),
+            (
+                "stock_master_daily",
+                "date",
+                "company_name, company_name_english, market_code, market_name, "
+                "sector_17_code, sector_17_name, sector_33_code, sector_33_name, "
+                "scale_category, listed_date",
+                f"date BETWEEN '{date_from}' AND '{date_to}'",
+            ),
+            (
+                "statement_metrics_adjusted",
+                "statement_id",
+                ", ".join(self._ADJUSTED_STATEMENT_COLUMNS[2:-1]),
+                f"disclosed_date <= '{date_to}'",
+            ),
+            (
+                "daily_valuation",
+                "date",
+                ", ".join(self._DAILY_VALUATION_COLUMNS[2:-1]),
+                f"date BETWEEN '{date_from}' AND '{date_to}'",
+            ),
+        )
+        for table, identity, payload, bounds in checks:
+            conflicts = self._query_scalar_int(
+                f"""
+                SELECT COUNT(*) FROM (
+                    SELECT {normalized} AS normalized_code, {identity}
+                    FROM {source_alias}.{table}
+                    WHERE {normalized} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+                      AND {bounds}
+                    GROUP BY normalized_code, {identity}
+                    HAVING COUNT(DISTINCT code) > 1
+                       AND COUNT(DISTINCT hash({payload})) > 1
+                ) conflicts
+                """
+            )
+            if conflicts:
+                raise DatasetSnapshotError(
+                    f"conflicting normalized stock-code aliases in {table}"
+                )
+
     def _validate_staged_provider_snapshot(
         self,
         *,
@@ -1592,6 +1695,47 @@ class _DatasetDuckDbStore:
         coverage_end: str,
         fundamentals_basis_date: str,
     ) -> None:
+        expected_session_count = self._copy_count(
+            "_dataset_provider_expected_sessions"
+        )
+        expected_bounds = self._conn.execute(
+            "SELECT min(date), max(date) FROM _dataset_provider_expected_sessions"
+        ).fetchone()
+        if (
+            expected_session_count == 0
+            or expected_bounds is None
+            or expected_bounds[0] != coverage_start
+            or expected_bounds[1] != coverage_end
+        ):
+            raise DatasetSnapshotError(
+                "provider coverage lacks exact market sessions at both bounds"
+            )
+        expected_pairs_sql = (
+            "SELECT codes.code, sessions.date "
+            "FROM _dataset_copy_target_stock_codes AS codes "
+            "CROSS JOIN _dataset_provider_expected_sessions AS sessions"
+        )
+        for table in (
+            "_dataset_provider_stock_data_raw",
+            "_dataset_provider_stock_master_daily",
+            "stock_data",
+            "_dataset_provider_daily_valuation",
+        ):
+            if self._query_scalar_int(
+                f"""
+                SELECT COUNT(*) FROM (
+                    ({expected_pairs_sql} EXCEPT ALL SELECT code, date FROM {table})
+                    UNION ALL
+                    (SELECT code, date FROM {table}
+                     WHERE code IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+                     EXCEPT ALL {expected_pairs_sql})
+                ) differences
+                """
+            ):
+                raise DatasetSnapshotError(
+                    "provider snapshot has an empty, gap, or bound mismatch: "
+                    f"{table}"
+                )
         audit_error = find_dataset_snapshot_audit_error(
             self._conn,
             coverage_start=coverage_start,

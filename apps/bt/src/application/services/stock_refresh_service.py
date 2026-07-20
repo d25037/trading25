@@ -18,7 +18,7 @@ from src.application.contracts.market_data_plane import (
     RefreshResponse,
     RefreshStockResult,
 )
-from src.application.services.provider_stock_window import (
+from src.shared.provider_stock_window import (
     provider_stock_source_fingerprint,
 )
 from src.application.services.stock_data_row_builder import build_stock_data_row

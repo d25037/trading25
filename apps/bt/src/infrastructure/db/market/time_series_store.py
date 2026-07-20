@@ -15,7 +15,7 @@ from typing import Any, Protocol, cast
 import pandas as pd
 from loguru import logger
 
-from src.application.services.provider_stock_window import (
+from src.shared.provider_stock_window import (
     PROVIDER_DRIFT_COLUMNS,
     ProviderStockCoverage,
     ProviderStockMetadata,

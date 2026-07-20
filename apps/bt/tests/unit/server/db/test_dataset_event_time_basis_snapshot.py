@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 import duckdb
 import pytest
@@ -11,12 +12,16 @@ from src.infrastructure.db.dataset_io.dataset_writer import (
     ProviderSnapshotCopyResult,
 )
 from src.infrastructure.db.market.dataset_snapshot_reader import DatasetSnapshotReader
+from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.application.services.dataset_snapshot_selection import load_global_cutoff
+from src.shared.provider_stock_window import (
+    provider_stock_source_fingerprint,
+)
 from tests.unit.server.db.market_writer_test_support import open_market_db
 from tests.unit.server.test_dataset_snapshot_reader import _write_manifest
 
 
 _DATES = ("2024-01-04", "2024-01-05")
-_WINDOW_FINGERPRINT = "1" * 64
 _FUNDAMENTALS_FINGERPRINT = "2" * 64
 
 
@@ -39,6 +44,34 @@ def test_dataset_v4_contract_has_no_retained_basis_graph() -> None:
     } <= required
 
 
+def test_dataset_v4_json_contract_matches_exact_writer_schema() -> None:
+    from src.infrastructure.db.dataset_io.snapshot_contract import (
+        DATASET_V4_PHYSICAL_SCHEMAS,
+    )
+
+    contract_path = Path(__file__).parents[6] / "contracts/dataset-db-schema-v4.json"
+    payload = json.loads(contract_path.read_text(encoding="utf-8"))
+    tables = payload["properties"]["tables"]
+    assert set(tables["required"]) == set(DATASET_V4_PHYSICAL_SCHEMAS)
+    assert set(tables["properties"]) == set(DATASET_V4_PHYSICAL_SCHEMAS)
+    type_prefix = {"VARCHAR": "text", "DOUBLE": "real", "BIGINT": "integer"}
+    for table, (columns, primary_key) in DATASET_V4_PHYSICAL_SCHEMAS.items():
+        properties = tables["properties"][table]["properties"]
+        contract_columns = properties["columns"]
+        assert contract_columns["required"] == [name for name, _, _ in columns]
+        assert contract_columns["properties"] == {
+            name: {
+                "$ref": (
+                    f"#/$defs/{type_prefix[data_type]}_"
+                    f"{'not_null' if not_null else 'nullable'}"
+                )
+            }
+            for name, data_type, not_null in columns
+        }
+        assert properties["primary_key"]["const"] == list(primary_key)
+        assert properties["indexes"]["const"] == []
+
+
 def _insert_provider_code(
     conn: duckdb.DuckDBPyConnection,
     *,
@@ -47,9 +80,10 @@ def _insert_provider_code(
     coverage_start: str = _DATES[0],
     coverage_end: str = _DATES[-1],
     provider_as_of: str = _DATES[-1],
-    window_fingerprint: str = _WINDOW_FINGERPRINT,
+    window_fingerprint: str | None = None,
     fundamentals_fingerprint: str = _FUNDAMENTALS_FINGERPRINT,
 ) -> None:
+    provider_rows: list[dict[str, object]] = []
     for index, session in enumerate(_DATES):
         raw_close = 100.0 + index
         adjusted_close = raw_close * 2
@@ -75,6 +109,24 @@ def _insert_provider_code(
                 (1000 + index) // 2,
                 None,
             ),
+        )
+        provider_rows.append(
+            {
+                "code": code,
+                "date": session,
+                "open": raw_close - 1,
+                "high": raw_close + 1,
+                "low": raw_close - 2,
+                "close": raw_close,
+                "volume": 1000 + index,
+                "turnover_value": 100000.0,
+                "adjustment_factor": 0.5,
+                "adjusted_open": (raw_close - 1) * 2,
+                "adjusted_high": (raw_close + 1) * 2,
+                "adjusted_low": (raw_close - 2) * 2,
+                "adjusted_close": adjusted_close,
+                "adjusted_volume": (1000 + index) // 2,
+            }
         )
         conn.execute(
             "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)",
@@ -107,7 +159,7 @@ def _insert_provider_code(
             coverage_start,
             coverage_end,
             provider_as_of,
-            window_fingerprint,
+            window_fingerprint or provider_stock_source_fingerprint(provider_rows),
             "2024-01-05T16:00:00+09:00",
         ),
     )
@@ -169,12 +221,7 @@ def _build_v5_provider_market(tmp_path: Path, *, two_codes: bool = False) -> Pat
     return source
 
 
-def _build_v4_market_with_two_regimes(tmp_path: Path) -> Path:
-    """Compatibility fixture name used by builder tests; payload is Market v5."""
-    return _build_v5_provider_market(tmp_path)
-
-
-def _build_readable_two_regime_snapshot(tmp_path: Path) -> Path:
+def _build_readable_provider_snapshot(tmp_path: Path) -> Path:
     source = _build_v5_provider_market(tmp_path)
     snapshot, _ = _copy_snapshot(tmp_path, source)
     return snapshot
@@ -205,6 +252,11 @@ def _copy_snapshot(
         ]
     )
     _seed_destination_prices(writer, source, codes)
+    writer.copy_topix_data_from_source(
+        source_duckdb_path=str(source),
+        date_from=_DATES[0],
+        date_to=_DATES[-1],
+    )
     result = writer.copy_provider_snapshot_from_source(
         source_duckdb_path=str(source),
         normalized_codes=list(codes),
@@ -339,11 +391,11 @@ def test_provider_copy_rejects_pending_current_basis_recompute(tmp_path: Path) -
         (
             "UPDATE stock_data_raw SET adjusted_close = adjusted_close + 1 "
             "WHERE code = '7203' AND date = '2024-01-04'",
-            "differs from provider-adjusted raw values",
+            "(differs from provider-adjusted raw values|provider source fingerprint)",
         ),
         (
             "DELETE FROM stock_master_daily WHERE code = '7203' AND date = '2024-01-04'",
-            "missing exact daily master",
+            "(missing exact daily master|empty, gap, or bound mismatch)",
         ),
         (
             "DELETE FROM statement_metrics_adjusted WHERE code = '7203'",
@@ -412,7 +464,7 @@ def test_provider_snapshot_is_immutable_on_source_correction(tmp_path: Path) -> 
     writer = DatasetWriter(str(snapshot))
     with pytest.raises(
         DatasetSnapshotError,
-        match="(immutable Dataset provider snapshot|differs from provider-adjusted raw values)",
+        match="(immutable Dataset provider snapshot|differs from provider-adjusted raw values|provider source fingerprint)",
     ):
         writer.copy_provider_snapshot_from_source(
             source_duckdb_path=str(source),
@@ -420,6 +472,31 @@ def test_provider_snapshot_is_immutable_on_source_correction(tmp_path: Path) -> 
             date_from=_DATES[0],
             date_to=_DATES[-1],
         )
+    writer.close()
+
+
+def test_provider_snapshot_stays_immutable_when_source_rows_are_deleted(
+    tmp_path: Path,
+) -> None:
+    source = _build_v5_provider_market(tmp_path)
+    snapshot, _ = _copy_snapshot(tmp_path, source)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            "DELETE FROM stock_data_raw WHERE code = '7203' AND date = '2024-01-04'"
+        )
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(snapshot))
+    before = writer.get_stock_data_count()
+    with pytest.raises(DatasetSnapshotError, match="provider source fingerprint"):
+        writer.copy_provider_snapshot_from_source(
+            source_duckdb_path=str(source),
+            normalized_codes=["7203"],
+            date_from=_DATES[0],
+            date_to=_DATES[-1],
+        )
+    assert writer.get_stock_data_count() == before
     writer.close()
 
 
@@ -434,3 +511,118 @@ def test_provider_copy_requires_exact_requested_bounds(tmp_path: Path) -> None:
             date_to="2024-01-05",
         )
     writer.close()
+
+
+def test_selected_provider_cutoff_ignores_unselected_stale_symbol(tmp_path: Path) -> None:
+    source = _build_v5_provider_market(tmp_path, two_codes=True)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            "UPDATE stock_provider_windows SET coverage_end = '2024-01-04' "
+            "WHERE code = '6758'"
+        )
+    finally:
+        conn.close()
+    reader = MarketDbReader(str(source))
+    try:
+        assert load_global_cutoff(reader, ["7203"]) == _DATES[-1]
+    finally:
+        reader.close()
+
+
+def test_provider_copy_rejects_interior_session_gap(tmp_path: Path) -> None:
+    source = _build_v5_provider_market(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            "DELETE FROM stock_data_raw WHERE code = '7203' AND date = '2024-01-04'"
+        )
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(tmp_path / "dataset"))
+    with pytest.raises(DatasetSnapshotError, match="(session|fingerprint|coverage)"):
+        writer.copy_provider_snapshot_from_source(
+            source_duckdb_path=str(source),
+            normalized_codes=["7203"],
+            date_from=_DATES[0],
+            date_to=_DATES[-1],
+        )
+    writer.close()
+
+
+def test_provider_copy_rejects_stale_declared_source_fingerprint(tmp_path: Path) -> None:
+    source = _build_v5_provider_market(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            "UPDATE stock_provider_windows SET source_fingerprint = ? WHERE code = '7203'",
+            ("0" * 64,),
+        )
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(tmp_path / "dataset"))
+    with pytest.raises(DatasetSnapshotError, match="provider source fingerprint"):
+        writer.copy_provider_snapshot_from_source(
+            source_duckdb_path=str(source),
+            normalized_codes=["7203"],
+            date_from=_DATES[0],
+            date_to=_DATES[-1],
+        )
+    writer.close()
+
+
+def test_provider_copy_rejects_conflicting_normalized_alias_atomically(
+    tmp_path: Path,
+) -> None:
+    source = _build_v5_provider_market(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            """
+            INSERT INTO stock_data_raw
+            SELECT '72030', date, open, high, low, close, volume, turnover_value,
+                   adjustment_factor, adjusted_open, adjusted_high, adjusted_low,
+                   adjusted_close + 1, adjusted_volume, created_at
+            FROM stock_data_raw WHERE code = '7203' AND date = '2024-01-04'
+            """
+        )
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(tmp_path / "dataset"))
+    with pytest.raises(DatasetSnapshotError, match="conflicting normalized stock-code aliases"):
+        writer.copy_provider_snapshot_from_source(
+            source_duckdb_path=str(source),
+            normalized_codes=["7203"],
+            date_from=_DATES[0],
+            date_to=_DATES[-1],
+        )
+    assert writer.get_stock_data_count() == 0
+    writer.close()
+
+
+def test_provider_copy_deduplicates_identical_alias_and_prefers_four_digit_code(
+    tmp_path: Path,
+) -> None:
+    source = _build_v5_provider_market(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            """
+            INSERT INTO stock_data_raw
+            SELECT '72030', date, open, high, low, close, volume, turnover_value,
+                   adjustment_factor, adjusted_open, adjusted_high, adjusted_low,
+                   adjusted_close, adjusted_volume, created_at
+            FROM stock_data_raw WHERE code = '7203'
+            """
+        )
+    finally:
+        conn.close()
+    snapshot, result = _copy_snapshot(tmp_path, source)
+    assert result.raw_price_rows == len(_DATES)
+    conn = duckdb.connect(str(snapshot / "dataset.duckdb"), read_only=True)
+    try:
+        assert conn.execute(
+            "SELECT DISTINCT code FROM stock_data_raw"
+        ).fetchall() == [("7203",)]
+    finally:
+        conn.close()

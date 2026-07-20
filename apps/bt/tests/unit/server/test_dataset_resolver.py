@@ -19,7 +19,7 @@ from src.infrastructure.db.market.dataset_snapshot_reader import (
     inspect_dataset_snapshot_duckdb,
 )
 from tests.unit.server.db.test_dataset_event_time_basis_snapshot import (
-    _build_readable_two_regime_snapshot,
+    _build_readable_provider_snapshot,
 )
 from tests.unit.server.test_dataset_snapshot_reader import _set_v4_source_info
 
@@ -476,7 +476,7 @@ class TestDatasetResolver:
     def test_discovery_rejects_invalid_provider_payload_lineage(
         self, tmp_path: Path
     ) -> None:
-        snapshot_dir = _build_readable_two_regime_snapshot(tmp_path)
+        snapshot_dir = _build_readable_provider_snapshot(tmp_path)
         duckdb_path = snapshot_dir / "dataset.duckdb"
         duckdb = importlib.import_module("duckdb")
         conn = duckdb.connect(str(duckdb_path))

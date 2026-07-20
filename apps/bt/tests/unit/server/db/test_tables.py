@@ -471,16 +471,16 @@ class TestMarketDbContractV4:
             assert set(columns_schema["required"]).issubset(columns_schema["properties"])
 
 
-class TestDatasetDbContractV3:
-    """Dataset v3 is the breaking event-time PIT snapshot contract."""
+class TestDatasetDbContractV4:
+    """Dataset v4 is the provider-adjusted immutable snapshot contract."""
 
     @pytest.fixture(autouse=True)
     def _load(self) -> None:
-        self.contract = _load_contract("dataset-db-schema-v3.json")
+        self.contract = _load_contract("dataset-db-schema-v4.json")
         self.tables = self.contract["properties"]["tables"]["properties"]
 
-    def test_requires_all_writer_tables_including_event_time_pit_graph(self, tmp_path: Path) -> None:
-        assert self.contract["properties"]["schema_version"]["const"] == "3.0.0"
+    def test_requires_exact_writer_table_set(self, tmp_path: Path) -> None:
+        assert self.contract["properties"]["schema_version"]["const"] == "4.0.0"
         from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
 
         writer = DatasetWriter(str(tmp_path / "snapshot"))
@@ -492,30 +492,11 @@ class TestDatasetDbContractV3:
         assert set(self.contract["properties"]["tables"]["required"]) == actual_tables
         assert set(self.tables) == actual_tables
 
-    def test_primary_keys_and_basis_foreign_keys_are_exact(self) -> None:
-        expected_primary_keys = {
-            "stock_data_raw": ["code", "date"],
-            "stock_master_daily": ["date", "code"],
-            "stock_adjustment_bases": ["code", "basis_id"],
-            "stock_adjustment_basis_segments": ["code", "basis_id", "source_date_from"],
-            "statement_metrics_adjusted": [
-                "code", "disclosed_date", "period_end", "period_type", "basis_version"
-            ],
-            "daily_valuation": ["code", "date", "basis_version"],
-        }
-        for table, primary_key in expected_primary_keys.items():
-            assert self.tables[table]["properties"]["primary_key"]["const"] == primary_key
-
-        basis_fk = {
-            "columns": ["code", "basis_id"],
-            "references_table": "stock_adjustment_bases",
-            "references_columns": ["code", "basis_id"],
-            "on_delete": "NO ACTION",
-        }
-        metric_fk = basis_fk | {"columns": ["code", "basis_version"]}
-        assert self.tables["stock_adjustment_basis_segments"]["properties"]["foreign_keys"]["const"] == [basis_fk]
-        assert self.tables["statement_metrics_adjusted"]["properties"]["foreign_keys"]["const"] == [metric_fk]
-        assert self.tables["daily_valuation"]["properties"]["foreign_keys"]["const"] == [metric_fk]
+    def test_contract_forbids_retained_basis_graph_and_named_indexes(self) -> None:
+        assert "stock_adjustment_bases" not in self.tables
+        assert "stock_adjustment_basis_segments" not in self.tables
+        for table in self.tables.values():
+            assert table["properties"]["indexes"]["const"] == []
 
     def test_contract_primary_keys_match_dataset_writer(self, tmp_path: Path) -> None:
         from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter

@@ -142,6 +142,16 @@ def find_dataset_current_basis_audit_error(
             """
         ).fetchone()[0]:
             return "Dataset adjusted metric has no exact raw statement identity"
+        if statements is not None and conn.execute(
+            f"""
+            SELECT COUNT(*) FROM {statements} statement
+            LEFT JOIN {metrics} metric
+              ON {_normalized_code('metric.code')} = {_normalized_code('statement.code')}
+             AND metric.statement_id = statement.statement_id
+            WHERE metric.statement_id IS NULL
+            """
+        ).fetchone()[0]:
+            return "Dataset raw statement has no exact adjusted metric identity"
 
     valuation = tables.get("daily_valuation")
     if valuation is not None:
@@ -164,10 +174,20 @@ def find_dataset_current_basis_audit_error(
             LEFT JOIN {metrics} metric
               ON {_normalized_code('valuation.code')} = {_normalized_code('metric.code')}
              AND valuation.statement_id = metric.statement_id
-            WHERE valuation.statement_id IS NOT NULL AND metric.statement_id IS NULL
+            WHERE (valuation.statement_id IS NULL AND (
+                       valuation.statement_disclosed_date IS NOT NULL
+                    OR valuation.statement_disclosed_at IS NOT NULL
+                    OR valuation.fundamentals_adjustment_basis_date IS NOT NULL
+                    OR valuation.source_fingerprint IS NOT NULL))
+               OR (valuation.statement_id IS NOT NULL AND (
+                       metric.statement_id IS NULL
+                    OR valuation.statement_disclosed_date IS DISTINCT FROM metric.disclosed_date
+                    OR valuation.statement_disclosed_at IS DISTINCT FROM metric.disclosed_at
+                    OR valuation.fundamentals_adjustment_basis_date IS DISTINCT FROM metric.fundamentals_adjustment_basis_date
+                    OR valuation.source_fingerprint IS DISTINCT FROM metric.source_fingerprint))
             """
         ).fetchone()[0]:
-            return "Dataset daily valuation has no exact adjusted statement identity"
+            return "Dataset daily valuation has no exact adjusted statement provenance"
 
     raw = tables.get("stock_data_raw")
     prices = tables.get("stock_data")
