@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import errno
 import json
 import os
@@ -16,6 +17,7 @@ from .contracts import (
     ActivationAttempt,
     ActivationJournalRecord,
     ActivationState,
+    ImmutableJsonValue,
     MarketTreeIdentity,
     SmokeConfig,
 )
@@ -39,10 +41,18 @@ def _error(message: str) -> _managed_root.CutoverSafetyError:
     return _managed_root.CutoverSafetyError(f"Activation journal {message}")
 
 
+def _mutable_json_value(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {key: _mutable_json_value(child) for key, child in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_mutable_json_value(child) for child in value]
+    return value
+
+
 def _canonical_json(value: object) -> bytes:
     try:
         encoded = json.dumps(
-            value,
+            _mutable_json_value(value),
             allow_nan=False,
             ensure_ascii=True,
             separators=(",", ":"),
@@ -88,25 +98,25 @@ def _validate_path(value: object) -> str:
     return value
 
 
-def _validate_directory(value: object) -> dict[str, int]:
-    if not isinstance(value, dict) or set(value) != {"device", "inode"}:
+def _validate_directory(value: object) -> Mapping[str, int]:
+    if not isinstance(value, Mapping) or set(value) != {"device", "inode"}:
         raise _error("directory identity is invalid")
     if any(type(value[key]) is not int or value[key] < 0 for key in value):
         raise _error("directory identity is invalid")
-    return cast(dict[str, int], value)
+    return cast(Mapping[str, int], value)
 
 
-def _validate_payload(value: object) -> dict[str, object]:
-    if not isinstance(value, dict) or not value:
+def _validate_payload(value: object) -> Mapping[str, ImmutableJsonValue]:
+    if not isinstance(value, Mapping) or not value:
         raise _error("payload identity is invalid")
     canonical = _canonical_json(value)
     try:
         round_trip = json.loads(canonical)
     except json.JSONDecodeError as exc:  # pragma: no cover - canonical encoder guards it
         raise _error("payload identity is invalid") from exc
-    if round_trip != value:
+    if _canonical_json(round_trip) != canonical:
         raise _error("payload identity is not canonical JSON")
-    return cast(dict[str, object], value)
+    return cast(Mapping[str, ImmutableJsonValue], value)
 
 
 def _validate_identity(identity: MarketTreeIdentity) -> MarketTreeIdentity:
@@ -187,7 +197,7 @@ def _require_exact_mapping(
     *,
     label: str,
 ) -> dict[str, object]:
-    if not isinstance(value, dict) or set(value) != keys:
+    if not isinstance(value, Mapping) or set(value) != keys:
         raise _error(f"{label} fields are noncanonical")
     return cast(dict[str, object], value)
 

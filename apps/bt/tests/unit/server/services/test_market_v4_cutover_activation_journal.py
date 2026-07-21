@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import FrozenInstanceError, replace
 import importlib
 import json
@@ -98,9 +99,22 @@ def _journal_dir(operations_root: Path, report_id: str) -> Path:
     return operations_root / "activation-journals" / report_id
 
 
+def _mutable_json(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {key: _mutable_json(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_mutable_json(item) for item in value]
+    return value
+
+
 def _canonical(value: object) -> bytes:
     return (
-        json.dumps(value, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+        json.dumps(
+            _mutable_json(value),
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
         + "\n"
     ).encode("ascii")
 
@@ -161,6 +175,102 @@ def test_attempt_and_identity_contracts_are_frozen() -> None:
         attempt.report_id = "different"
     with pytest.raises(FrozenInstanceError):
         attempt.source = attempt.staged
+
+
+def test_market_tree_identity_copies_nested_caller_input() -> None:
+    _, _, identity_type, _, _ = _types()
+    directory_input = {"device": 7, "inode": 107}
+    payload_input = {
+        "marketTreeSha256": "tree-7",
+        "lineage": {"windows": [{"symbol": "7203", "rows": [1, 2]}]},
+    }
+
+    identity = identity_type(
+        path="market-timeseries",
+        directory=directory_input,
+        payload=payload_input,
+    )
+    directory_input["inode"] = 999
+    payload_input["lineage"]["windows"][0]["symbol"] = "6758"
+    payload_input["lineage"]["windows"][0]["rows"].append(3)
+
+    assert identity.directory == {"device": 7, "inode": 107}
+    assert identity.payload["lineage"]["windows"][0]["symbol"] == "7203"
+    assert identity.payload["lineage"]["windows"][0]["rows"] == (1, 2)
+
+
+def test_market_tree_identity_exposes_recursive_immutable_evidence() -> None:
+    _, _, identity_type, _, _ = _types()
+    identity = identity_type(
+        path="market-timeseries",
+        directory={"device": 7, "inode": 107},
+        payload={
+            "marketTreeSha256": "tree-7",
+            "lineage": {"windows": [{"symbol": "7203", "rows": [1, 2]}]},
+        },
+    )
+    lineage = identity.payload["lineage"]
+    windows = lineage["windows"]
+    first_window = windows[0]
+
+    with pytest.raises(TypeError):
+        identity.directory["inode"] = 999
+    with pytest.raises(TypeError):
+        identity.payload["marketTreeSha256"] = "drifted"
+    with pytest.raises(TypeError):
+        lineage["extra"] = True
+    with pytest.raises(TypeError):
+        windows[0] = {"symbol": "6758"}
+    with pytest.raises(TypeError):
+        first_window["symbol"] = "6758"
+
+
+def test_append_cannot_drift_with_caller_input_during_encoding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository_type, state_type, identity_type, _, _ = _types()
+    journal = _journal_module()
+    payload_input = {
+        "marketTreeSha256": "tree-1",
+        "lineage": {"windows": [{"symbol": "7203"}]},
+    }
+    source = identity_type(
+        path="operations/market-v5-cutover/staging/cutover-20260721/source",
+        directory={"device": 1, "inode": 101},
+        payload=payload_input,
+    )
+    attempt = replace(_attempt(), source=source)
+    real_canonical_json = journal._canonical_json
+    drifted = False
+
+    def drift_then_encode(value: object) -> bytes:
+        nonlocal drifted
+        if not drifted:
+            drifted = True
+            payload_input["lineage"]["windows"][0]["symbol"] = "6758"
+        return real_canonical_json(value)
+
+    monkeypatch.setattr(journal, "_canonical_json", drift_then_encode)
+    operations_root = _operations_root(tmp_path)
+    repository = repository_type(operations_root)
+
+    record = repository.append(attempt, state_type.PREPARED)
+
+    assert record.attempt.source.payload["lineage"]["windows"][0]["symbol"] == "7203"
+    record_path = (
+        _journal_dir(operations_root, attempt.report_id)
+        / "00000001-prepared.json"
+    )
+    assert record_path.read_bytes() == _canonical(
+        _record_mapping(1, "prepared", attempt)
+    )
+    loaded = repository.load(attempt)
+    assert loaded == (record,)
+    with pytest.raises(TypeError):
+        record.attempt.source.payload["lineage"]["windows"][0]["symbol"] = "6758"
+    with pytest.raises(TypeError):
+        loaded[0].attempt.source.payload["lineage"]["windows"][0]["symbol"] = "6758"
 
 
 def test_appends_exact_canonical_sequence_and_loads_it(tmp_path: Path) -> None:
@@ -283,7 +393,9 @@ def test_load_rejects_noncanonical_json_encoding(tmp_path: Path) -> None:
     operations_root = _operations_root(tmp_path)
     attempt = _attempt()
     mapping = _record_mapping(1, "prepared", attempt)
-    raw = (json.dumps(mapping, indent=2, sort_keys=False) + "\n").encode()
+    raw = (
+        json.dumps(_mutable_json(mapping), indent=2, sort_keys=False) + "\n"
+    ).encode()
     _write_record(
         _journal_dir(operations_root, attempt.report_id),
         sequence=1,

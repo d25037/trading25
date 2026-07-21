@@ -105,3 +105,23 @@ No production file was edited before the initial binding and structure RED runs.
 ## Commit
 
 Proposed subject: `feat(bt): add durable v5 activation journal`
+
+## Review remediation: recursive identity immutability
+
+- Review base: `72e64211121eeda79d0fa2830868face8599286d`.
+- Added strict regressions proving that construction copies caller-owned directory and
+  nested payload structures, returned record/attempt evidence rejects mutation at every
+  mapping/sequence depth, and caller drift injected during canonical encoding cannot
+  change returned evidence or disk bytes.
+- RED command selected 3 of 41 journal tests; all 3 failed on the mutable implementation:
+  stored inode drifted from `107` to `999`, returned evidence allowed assignment, and
+  encoding-time source symbol drifted from `7203` to `6758`.
+- `MarketTreeIdentity` now recursively copies mappings into read-only mapping proxies
+  and JSON arrays into tuples. Journal serialization converts that immutable value tree
+  to ordinary JSON objects/arrays only at the canonical encoding boundary; load freezes
+  parsed evidence again, preserving equality and round-trip bytes.
+- Focused remediation GREEN: 3 selected, 3 passed, 38 deselected.
+- Final journal plus structure verification: 49 collected, 49 passed, 0 failed.
+- The P3 journal file-mode observation is intentionally deferred to GitHub issue #494;
+  this remediation changes no file-mode behavior or test expectation.
+- Fix-only commit subject: `fix(bt): freeze activation journal identities`.

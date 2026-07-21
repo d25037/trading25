@@ -2,13 +2,43 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 import json
 from pathlib import Path
+from types import MappingProxyType
 from typing import cast, ContextManager, Protocol
 
 from src.infrastructure.db.market import managed_root as _managed_root
+
+
+type ImmutableJsonValue = (
+    None
+    | bool
+    | int
+    | float
+    | str
+    | tuple[ImmutableJsonValue, ...]
+    | Mapping[str, ImmutableJsonValue]
+)
+
+
+def _freeze_json_value(value: object) -> ImmutableJsonValue:
+    """Copy one canonical JSON value into a recursive immutable representation."""
+
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, Mapping):
+        frozen: dict[str, ImmutableJsonValue] = {}
+        for key, child in value.items():
+            if not isinstance(key, str):
+                raise TypeError("JSON object keys must be strings")
+            frozen[key] = _freeze_json_value(child)
+        return MappingProxyType(frozen)
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_json_value(child) for child in value)
+    raise TypeError("Value is not canonical JSON")
 
 
 def _canonical_json(value: object) -> str:
@@ -34,8 +64,16 @@ class MarketTreeIdentity:
     """Exact path, directory, and payload identity for one Market tree."""
 
     path: str
-    directory: dict[str, int]
-    payload: dict[str, object]
+    directory: Mapping[str, int]
+    payload: Mapping[str, ImmutableJsonValue]
+
+    def __post_init__(self) -> None:
+        directory = MappingProxyType(dict(self.directory))
+        payload = _freeze_json_value(self.payload)
+        if not isinstance(payload, Mapping):  # pragma: no cover - field type guards it
+            raise TypeError("Market tree payload identity must be a JSON object")
+        object.__setattr__(self, "directory", directory)
+        object.__setattr__(self, "payload", payload)
 
 
 class PromotionState(StrEnum):
