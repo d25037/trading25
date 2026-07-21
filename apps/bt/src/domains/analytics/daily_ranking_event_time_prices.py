@@ -76,6 +76,23 @@ _RESEARCH_PRICE_REQUIRED_COLUMNS = {
         "adjustment_factor",
         "source_fingerprint",
     },
+    "current_basis_fundamentals_state": {
+        "code",
+        "fundamentals_adjustment_basis_date",
+        "source_fingerprint",
+        "statement_count",
+        "materialized_at",
+    },
+    "current_basis_recompute_pending": {"code"},
+    "statements": {
+        "code", "statement_id", "disclosed_date", "disclosed_at",
+        "period_end", "type_of_current_period",
+    },
+    "statement_metrics_adjusted": {
+        "code", "statement_id", "disclosed_date", "disclosed_at",
+        "period_end", "period_type", "fundamentals_adjustment_basis_date",
+        "source_fingerprint",
+    },
     "topix_data": {"date", "open", "close"},
     "indices_data": {"code", "date", "close"},
 }
@@ -1473,6 +1490,91 @@ def _validate_research_provider_vintage(
             "provider vintage lineage is missing or inconsistent for Daily Ranking; "
             f"codes={', '.join(str(row[0]) for row in issue_rows[:10])}. "
             "Run market_db_sync before retrying."
+        )
+
+    state_code = normalize_code_sql("state.code")
+    pending_code = normalize_code_sql("pending.code")
+    statement_code = normalize_code_sql("statement.code")
+    metric_code = normalize_code_sql("metric.code")
+    lineage_issues = conn.execute(
+        f"""
+        WITH requested_codes AS (
+            SELECT DISTINCT code FROM {signal_request_relation}
+        ), lineage AS (
+            SELECT requested.code,
+                   (SELECT count(*) FROM current_basis_fundamentals_state state
+                    WHERE {state_code} = requested.code) AS state_count,
+                   (SELECT count(*) FROM current_basis_recompute_pending pending
+                    WHERE {pending_code} = requested.code) AS pending_count,
+                   (SELECT max(state.fundamentals_adjustment_basis_date)
+                    FROM current_basis_fundamentals_state state
+                    WHERE {state_code} = requested.code) AS basis_date,
+                   (SELECT max(state.source_fingerprint)
+                    FROM current_basis_fundamentals_state state
+                    WHERE {state_code} = requested.code) AS state_fingerprint,
+                   (SELECT max(state.statement_count)
+                    FROM current_basis_fundamentals_state state
+                    WHERE {state_code} = requested.code) AS state_statement_count,
+                   (SELECT max(state.materialized_at)
+                    FROM current_basis_fundamentals_state state
+                    WHERE {state_code} = requested.code) AS materialized_at,
+                   (SELECT count(*) FROM statements statement
+                    WHERE {statement_code} = requested.code) AS raw_count,
+                   (SELECT count(*) FROM statement_metrics_adjusted metric
+                    WHERE {metric_code} = requested.code) AS metric_count,
+                   (SELECT max(provider.coverage_end)
+                    FROM stock_provider_windows provider
+                    WHERE {normalize_code_sql("provider.code")} = requested.code)
+                    AS coverage_end
+            FROM requested_codes requested
+        ), raw_identity AS (
+            SELECT requested.code, statement.statement_id,
+                   statement.disclosed_date, statement.disclosed_at,
+                   statement.period_end, statement.type_of_current_period AS period_type
+            FROM requested_codes requested
+            JOIN statements statement ON {statement_code} = requested.code
+        ), metric_identity AS (
+            SELECT requested.code, metric.statement_id,
+                   metric.disclosed_date, metric.disclosed_at,
+                   metric.period_end, metric.period_type
+            FROM requested_codes requested
+            JOIN statement_metrics_adjusted metric ON {metric_code} = requested.code
+            JOIN current_basis_fundamentals_state state ON {state_code} = requested.code
+            WHERE metric.fundamentals_adjustment_basis_date =
+                  state.fundamentals_adjustment_basis_date
+              AND metric.source_fingerprint = state.source_fingerprint
+        ), identity_mismatch AS (
+            (SELECT * FROM raw_identity EXCEPT SELECT * FROM metric_identity)
+            UNION ALL
+            (SELECT * FROM metric_identity EXCEPT SELECT * FROM raw_identity)
+        )
+        SELECT code FROM lineage
+        WHERE state_count <> 1 OR pending_count <> 0
+           OR CAST(basis_date AS DATE) IS DISTINCT FROM CAST(coverage_end AS DATE)
+           OR trim(coalesce(state_fingerprint, '')) = ''
+           OR trim(coalesce(materialized_at, '')) = ''
+           OR state_statement_count <> raw_count OR raw_count <> metric_count
+        UNION
+        SELECT DISTINCT code FROM identity_mismatch
+        UNION
+        SELECT signal.code
+        FROM {signal_request_relation} signal
+        WHERE (
+            SELECT count(*) FROM daily_valuation valuation
+            JOIN current_basis_fundamentals_state state
+              ON {state_code} = signal.code
+            WHERE {normalize_code_sql("valuation.code")} = signal.code
+              AND CAST(valuation.date AS DATE) = signal.date
+              AND valuation.fundamentals_adjustment_basis_date =
+                  state.fundamentals_adjustment_basis_date
+              AND valuation.source_fingerprint = state.source_fingerprint
+        ) <> 1
+        """
+    ).fetchall()
+    if lineage_issues:
+        raise RuntimeError(
+            "current fundamentals lineage is missing or inconsistent for Daily "
+            "Ranking. Run market_db_sync before retrying."
         )
 
 

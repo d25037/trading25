@@ -81,8 +81,8 @@ def test_future_append_does_not_change_earlier_features_or_candidates(
     conn = duckdb.connect(str(db_path))
     try:
         conn.execute(
-            "INSERT INTO stock_data_raw VALUES "
-            "('1111', '2025-01-06', 999, 1000, 998, 999, 10000, 1.0)"
+            "INSERT INTO stock_data VALUES "
+            "('1111', '2025-01-06', 999, 1000, 998, 999, 10000)"
         )
         conn.execute(
             "INSERT INTO stock_master_daily "
@@ -111,7 +111,7 @@ def test_future_append_does_not_change_earlier_features_or_candidates(
     )
 
 
-def test_poisoned_stock_data_cannot_change_price_pit_study(tmp_path: Path) -> None:
+def test_poisoned_stock_data_fails_closed_price_pit_study(tmp_path: Path) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
     before = _run_fixture_research(db_path)
     conn = duckdb.connect(str(db_path))
@@ -129,21 +129,17 @@ def test_poisoned_stock_data_cannot_change_price_pit_study(tmp_path: Path) -> No
     finally:
         conn.close()
 
-    after = _run_fixture_research(db_path)
-
-    pd.testing.assert_frame_equal(
-        before.observation_sample_df.reset_index(drop=True),
-        after.observation_sample_df.reset_index(drop=True),
-    )
-    assert before.price_projection == after.price_projection
+    assert not before.observation_sample_df.empty
+    with pytest.raises(RuntimeError, match="provider vintage lineage"):
+        _execute_fixture_research(db_path)
 
 
 @pytest.mark.parametrize(
     ("failure", "message"),
     [
-        ("missing", "segment cardinality must be exactly one"),
-        ("overlap", "segment cardinality must be exactly one"),
-        ("invalid", "segment factor must be finite and positive"),
+        ("missing", "provider vintage lineage"),
+        ("overlap", "provider vintage lineage"),
+        ("invalid", "provider vintage lineage"),
     ],
 )
 def test_price_pit_study_fails_closed_on_invalid_lineage(
@@ -152,34 +148,26 @@ def test_price_pit_study_fails_closed_on_invalid_lineage(
     message: str,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
-    _mark_fixture_market_v4(db_path)
+    _upgrade_fixture_market_v5(db_path)
     conn = duckdb.connect(str(db_path))
     try:
-        basis_id = conn.execute(
-            "SELECT basis_id FROM stock_adjustment_bases WHERE code = '1111'"
-        ).fetchone()[0]
         if failure == "missing":
-            conn.execute(
-                "DELETE FROM stock_adjustment_basis_segments "
-                "WHERE code = '1111' AND basis_id = ?",
-                [basis_id],
-            )
+            conn.execute("DELETE FROM stock_provider_windows WHERE code = '1111'")
         elif failure == "overlap":
             conn.execute(
-                "INSERT INTO stock_adjustment_basis_segments VALUES (?, ?, ?, ?, ?)",
-                ["1111", basis_id, "2016-01-01", None, 1.0],
+                "INSERT INTO stock_provider_windows SELECT * "
+                "FROM stock_provider_windows WHERE code = '1111'"
             )
         else:
             conn.execute(
-                "UPDATE stock_adjustment_basis_segments SET cumulative_factor = 0.0 "
-                "WHERE code = '1111' AND basis_id = ?",
-                [basis_id],
+                "UPDATE stock_provider_windows SET source_fingerprint = repeat('0', 64) "
+                "WHERE code = '1111'"
             )
     finally:
         conn.close()
 
     with pytest.raises(RuntimeError, match=message):
-        _run_fixture_research(db_path)
+        _execute_fixture_research(db_path)
 
 
 def test_binary_lift_requires_two_symbols_on_both_sides_same_day() -> None:
@@ -859,7 +847,7 @@ def test_trend_observation_bundle_preserves_sparse_session_authoritative_outcome
     tmp_path: Path,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
-    _mark_fixture_market_v4(db_path)
+    _upgrade_fixture_market_v5(db_path)
     conn = duckdb.connect(str(db_path))
     try:
         conn.execute(
@@ -988,7 +976,13 @@ def _observation(
 def _run_fixture_research(
     db_path: Path,
 ) -> RankingTrendAccelerationConditionalLiftResult:
-    _mark_fixture_market_v4(db_path)
+    _upgrade_fixture_market_v5(db_path)
+    return _execute_fixture_research(db_path)
+
+
+def _execute_fixture_research(
+    db_path: Path,
+) -> RankingTrendAccelerationConditionalLiftResult:
     return run_ranking_trend_acceleration_conditional_lift_research(
         db_path,
         start_date="2024-03-01",
@@ -1052,7 +1046,7 @@ def _build_mixed_market_db(db_path: Path) -> Path:
     return db_path
 
 
-def _mark_fixture_market_v4(db_path: Path) -> None:
+def _upgrade_fixture_market_v5(db_path: Path) -> None:
     conn = duckdb.connect(str(db_path))
     try:
         conn.execute("CREATE OR REPLACE TABLE market_schema_version(version INTEGER)")
@@ -1134,6 +1128,36 @@ def _mark_fixture_market_v4(db_path: Path) -> None:
             """
         )
         conn.execute(
+            "CREATE OR REPLACE TABLE current_basis_recompute_pending (code TEXT)"
+        )
+        conn.execute(
+            """
+            CREATE OR REPLACE TABLE current_basis_fundamentals_state AS
+            SELECT code, coverage_end AS fundamentals_adjustment_basis_date,
+                   'fixture-fundamentals-' || code AS source_fingerprint,
+                   0::BIGINT AS statement_count, 'unit-fixture' AS materialized_at
+            FROM stock_provider_windows
+            """
+        )
+        conn.execute(
+            """
+            CREATE OR REPLACE TABLE statements (
+                code TEXT, statement_id TEXT, disclosed_date DATE,
+                disclosed_at TEXT, period_end DATE, type_of_current_period TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE OR REPLACE TABLE statement_metrics_adjusted (
+                code TEXT, statement_id TEXT, disclosed_date DATE,
+                disclosed_at TEXT, period_end DATE, period_type TEXT,
+                fundamentals_adjustment_basis_date DATE,
+                source_fingerprint TEXT
+            )
+            """
+        )
+        conn.execute(
             "ALTER TABLE daily_valuation ADD COLUMN IF NOT EXISTS price_basis_date TEXT"
         )
         conn.execute(
@@ -1145,8 +1169,10 @@ def _mark_fixture_market_v4(db_path: Path) -> None:
         )
         conn.execute(
             "UPDATE daily_valuation SET price_basis_date = date, "
-            "fundamentals_adjustment_basis_date = date, "
-            "source_fingerprint = 'fixture-current'"
+            "fundamentals_adjustment_basis_date = state.fundamentals_adjustment_basis_date, "
+            "source_fingerprint = state.source_fingerprint "
+            "FROM current_basis_fundamentals_state state "
+            "WHERE daily_valuation.code = state.code"
         )
     finally:
         conn.close()

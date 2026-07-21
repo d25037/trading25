@@ -86,6 +86,22 @@ def _build_market_v5_fixture(path: Path) -> duckdb.DuckDBPyConnection:
             code TEXT, date TEXT, adjustment_factor DOUBLE,
             source_fingerprint TEXT
         );
+        CREATE TABLE current_basis_recompute_pending (code TEXT);
+        CREATE TABLE current_basis_fundamentals_state (
+            code TEXT, fundamentals_adjustment_basis_date TEXT,
+            source_fingerprint TEXT, statement_count BIGINT,
+            materialized_at TEXT
+        );
+        CREATE TABLE statements (
+            code TEXT, statement_id TEXT, disclosed_date TEXT,
+            disclosed_at TEXT, period_end TEXT, type_of_current_period TEXT
+        );
+        CREATE TABLE statement_metrics_adjusted (
+            code TEXT, statement_id TEXT, disclosed_date TEXT,
+            disclosed_at TEXT, period_end TEXT, period_type TEXT,
+            fundamentals_adjustment_basis_date TEXT,
+            source_fingerprint TEXT
+        );
         CREATE TABLE daily_valuation (
             code TEXT, date TEXT, price_basis_date TEXT,
             fundamentals_adjustment_basis_date TEXT, source_fingerprint TEXT
@@ -128,6 +144,10 @@ def _build_market_v5_fixture(path: Path) -> duckdb.DuckDBPyConnection:
         "INSERT INTO stock_adjustment_events VALUES (?, ?, ?, ?)",
         ("1111", "2024-01-08", 0.5, fingerprint),
     )
+    conn.execute(
+        "INSERT INTO current_basis_fundamentals_state VALUES "
+        "('1111', '2024-01-08', 'fundamentals-1111', 0, 'now')"
+    )
     conn.executemany(
         "INSERT INTO stock_master_daily VALUES (?, ?, ?, ?)",
         [
@@ -138,8 +158,8 @@ def _build_market_v5_fixture(path: Path) -> duckdb.DuckDBPyConnection:
     conn.executemany(
         "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?)",
         [
-            ("1111", "2024-01-04", "2024-01-04", None, None),
-            ("1111", "2024-01-08", "2024-01-08", None, None),
+            ("1111", "2024-01-04", "2024-01-04", "2024-01-08", "fundamentals-1111"),
+            ("1111", "2024-01-08", "2024-01-08", "2024-01-08", "fundamentals-1111"),
         ],
     )
     conn.executemany(
@@ -316,6 +336,56 @@ def test_research_prices_preserve_signal_universe_and_provider_lineage(
         "exact_provider_window_adjusted_prices_across_full_lookback"
     )
     assert relations.lineage.adjustment_formula == "provider_adjusted_ohlcv_direct"
+
+
+def test_research_prices_allow_coverage_lagging_provider_frontier(
+    tmp_path: Path,
+) -> None:
+    conn = _build_market_v5_fixture(tmp_path / "market.duckdb")
+    try:
+        conn.execute(
+            "UPDATE stock_provider_windows SET provider_as_of = '2024-01-31'"
+        )
+        relations = build_daily_ranking_event_time_prices(
+            conn,
+            _generic_price_request("suspended_frontier"),
+        )
+        vintage = conn.execute(
+            f"SELECT price_basis_id FROM {relations.signal_features}"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    assert vintage.startswith("provider-v1:1111:2024-01-31:")
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "DELETE FROM current_basis_fundamentals_state",
+        "UPDATE current_basis_fundamentals_state SET source_fingerprint = ''",
+        "INSERT INTO current_basis_recompute_pending VALUES ('1111')",
+        "UPDATE current_basis_fundamentals_state SET statement_count = 1",
+        "UPDATE current_basis_fundamentals_state SET materialized_at = ''",
+        "UPDATE daily_valuation SET source_fingerprint = 'mismatch'",
+        "INSERT INTO current_basis_fundamentals_state SELECT * "
+        "FROM current_basis_fundamentals_state LIMIT 1",
+    ],
+)
+def test_research_prices_fail_closed_for_current_fundamentals_lineage(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    conn = _build_market_v5_fixture(tmp_path / "market.duckdb")
+    try:
+        conn.execute(mutation)
+        with pytest.raises(RuntimeError, match="current fundamentals lineage"):
+            build_daily_ranking_event_time_prices(
+                conn,
+                _generic_price_request("bad_fundamentals_lineage"),
+            )
+    finally:
+        conn.close()
 
 
 def test_research_prices_reject_market_v4_without_dual_read(tmp_path: Path) -> None:

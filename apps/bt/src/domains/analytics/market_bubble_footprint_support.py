@@ -312,8 +312,10 @@ def run_rerating_bubble_regime_forward_response_research(
                 (
                     *_REQUIRED_TABLES,
                     "stock_data_raw",
-                    "stock_adjustment_bases",
-                    "stock_adjustment_basis_segments",
+                    "stock_provider_windows",
+                    "stock_adjustment_events",
+                    "current_basis_fundamentals_state",
+                    "current_basis_recompute_pending",
                     "indices_data",
                 )
             )

@@ -77,6 +77,22 @@ def _build_market_v5_research_fixture(
             code TEXT, date DATE, adjustment_factor DOUBLE,
             source_fingerprint TEXT
         );
+        CREATE TABLE current_basis_recompute_pending (code TEXT);
+        CREATE TABLE current_basis_fundamentals_state (
+            code TEXT, fundamentals_adjustment_basis_date DATE,
+            source_fingerprint TEXT, statement_count BIGINT,
+            materialized_at TEXT
+        );
+        CREATE TABLE statements (
+            code TEXT, statement_id TEXT, disclosed_date DATE,
+            disclosed_at TEXT, period_end DATE, type_of_current_period TEXT
+        );
+        CREATE TABLE statement_metrics_adjusted (
+            code TEXT, statement_id TEXT, disclosed_date DATE,
+            disclosed_at TEXT, period_end DATE, period_type TEXT,
+            fundamentals_adjustment_basis_date DATE,
+            source_fingerprint TEXT
+        );
         CREATE TABLE daily_valuation (
             code TEXT, date DATE, price_basis_date DATE, per DOUBLE,
             forward_per DOUBLE, pbr DOUBLE, p_op DOUBLE, forward_p_op DOUBLE,
@@ -212,6 +228,16 @@ def _build_market_v5_research_fixture(
     conn.executemany(
         "INSERT INTO stock_provider_windows VALUES (?, ?, ?, ?, ?, ?)", window_rows
     )
+    conn.executemany(
+        "INSERT INTO current_basis_fundamentals_state VALUES (?, ?, ?, 0, ?)",
+        [(code, dates[-1], f"fundamentals-{code}", "now") for code, *_ in securities],
+    )
+    for code, *_ in securities:
+        conn.execute(
+            "UPDATE daily_valuation SET fundamentals_adjustment_basis_date = ?, "
+            "source_fingerprint = ? WHERE code = ?",
+            [dates[-1], f"fundamentals-{code}", code],
+        )
     topix_rows = []
     n225_rows = []
     for index, session_date in enumerate(dates):
@@ -282,6 +308,16 @@ def _refresh_provider_window(
         "provider_as_of = COALESCE(?, provider_as_of), "
         "source_fingerprint = ? WHERE code = ?",
         [coverage_start, coverage_end, provider_as_of, fingerprint, code],
+    )
+    conn.execute(
+        "UPDATE current_basis_fundamentals_state "
+        "SET fundamentals_adjustment_basis_date = ? WHERE code = ?",
+        [coverage_end, code],
+    )
+    conn.execute(
+        "UPDATE daily_valuation SET fundamentals_adjustment_basis_date = ? "
+        "WHERE code = ?",
+        [coverage_end, code],
     )
 
 

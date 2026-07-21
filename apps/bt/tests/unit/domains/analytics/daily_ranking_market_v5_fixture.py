@@ -105,6 +105,36 @@ def upgrade_daily_ranking_fixture_to_market_v5(conn: Any) -> None:
         )
         """
     )
+    conn.execute(
+        "CREATE TABLE current_basis_recompute_pending (code VARCHAR)"
+    )
+    conn.execute(
+        """
+        CREATE TABLE current_basis_fundamentals_state (
+            code VARCHAR, fundamentals_adjustment_basis_date DATE,
+            source_fingerprint VARCHAR, statement_count BIGINT,
+            materialized_at TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE OR REPLACE TABLE statements (
+            code VARCHAR, statement_id VARCHAR, disclosed_date DATE,
+            disclosed_at TEXT, period_end DATE, type_of_current_period VARCHAR
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE OR REPLACE TABLE statement_metrics_adjusted (
+            code VARCHAR, statement_id VARCHAR, disclosed_date DATE,
+            disclosed_at TEXT, period_end DATE, period_type VARCHAR,
+            fundamentals_adjustment_basis_date DATE,
+            source_fingerprint VARCHAR
+        )
+        """
+    )
     for (code,) in conn.execute(
         "SELECT DISTINCT code FROM stock_data_raw ORDER BY code"
     ).fetchall():
@@ -124,6 +154,23 @@ def upgrade_daily_ranking_fixture_to_market_v5(conn: Any) -> None:
     }
     if "basis_version" in valuation_columns:
         conn.execute("ALTER TABLE daily_valuation DROP COLUMN basis_version")
+    conn.execute(
+        """
+        INSERT INTO current_basis_fundamentals_state
+        SELECT code, coverage_end, 'fixture-fundamentals-' || code, 0,
+               'unit-fixture'
+        FROM stock_provider_windows
+        """
+    )
+    conn.execute(
+        """
+        UPDATE daily_valuation AS valuation
+        SET fundamentals_adjustment_basis_date = state.fundamentals_adjustment_basis_date,
+            source_fingerprint = state.source_fingerprint
+        FROM current_basis_fundamentals_state AS state
+        WHERE valuation.code = state.code
+        """
+    )
     existing = {
         str(row[0])
         for row in conn.execute(
@@ -174,4 +221,19 @@ def refresh_daily_ranking_provider_window(conn: Any, *, code: str) -> str:
         "UPDATE stock_adjustment_events SET source_fingerprint = ? WHERE code = ?",
         [fingerprint, code],
     )
+    conn.execute(
+        "UPDATE current_basis_fundamentals_state "
+        "SET fundamentals_adjustment_basis_date = ? WHERE code = ?",
+        [rows[-1]["date"], code],
+    )
+    valuation_columns = {
+        str(row[1])
+        for row in conn.execute("PRAGMA table_info('daily_valuation')").fetchall()
+    }
+    if "fundamentals_adjustment_basis_date" in valuation_columns:
+        conn.execute(
+            "UPDATE daily_valuation SET fundamentals_adjustment_basis_date = ? "
+            "WHERE code = ?",
+            [rows[-1]["date"], code],
+        )
     return fingerprint

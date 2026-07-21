@@ -4,6 +4,7 @@ from pathlib import Path
 
 import duckdb
 import pandas as pd
+import pytest
 
 from src.domains.analytics.market_bubble_footprint import (
     BubbleFootprintResult,
@@ -134,7 +135,7 @@ def test_rerating_bubble_regime_forward_response_joins_footprint_regime(
     assert bundle.results_db_path.exists()
 
 
-def test_rerating_bubble_regime_ignores_poisoned_stock_data(tmp_path: Path) -> None:
+def test_rerating_bubble_regime_rejects_poisoned_stock_data(tmp_path: Path) -> None:
     db_path = _build_bubble_footprint_db(tmp_path / "market.duckdb")
     kwargs = {
         "start_date": "2024-01-31",
@@ -147,7 +148,7 @@ def test_rerating_bubble_regime_ignores_poisoned_stock_data(tmp_path: Path) -> N
         "severe_loss_threshold_pct": -10.0,
         "observation_sample_limit": 100,
     }
-    baseline = run_rerating_bubble_regime_forward_response_research(db_path, **kwargs)
+    run_rerating_bubble_regime_forward_response_research(db_path, **kwargs)
     conn = duckdb.connect(str(db_path))
     conn.execute(
         "UPDATE stock_data SET "
@@ -156,13 +157,8 @@ def test_rerating_bubble_regime_ignores_poisoned_stock_data(tmp_path: Path) -> N
     )
     conn.close()
 
-    poisoned = run_rerating_bubble_regime_forward_response_research(db_path, **kwargs)
-
-    pd.testing.assert_frame_equal(baseline.footprint_df, poisoned.footprint_df)
-    pd.testing.assert_frame_equal(
-        baseline.rerating_bubble_regime_df,
-        poisoned.rerating_bubble_regime_df,
-    )
+    with pytest.raises(RuntimeError, match="provider vintage lineage"):
+        run_rerating_bubble_regime_forward_response_research(db_path, **kwargs)
 
 
 def test_rerating_bubble_regime_keeps_equivalent_provider_split_adjustment(
