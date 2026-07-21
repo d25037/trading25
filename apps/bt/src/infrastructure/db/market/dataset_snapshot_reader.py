@@ -356,26 +356,39 @@ def _validate_provider_snapshot_integrity(
             "SELECT stocks.code, sessions.date FROM stocks "
             "CROSS JOIN topix_data AS sessions"
         )
-        for table in (
-            "stock_master_daily",
-            "stock_data_raw",
-            "stock_data",
-            "daily_valuation",
+        if _query_scalar_int(
+            conn,
+            f"""
+            SELECT COUNT(*) FROM (
+                ({expected_pairs} EXCEPT ALL
+                 SELECT code, date FROM stock_master_daily)
+                UNION ALL
+                (SELECT code, date FROM stock_master_daily EXCEPT ALL
+                 {expected_pairs})
+            ) differences
+            """,
         ):
-            if _query_scalar_int(
-                conn,
-                f"""
-                SELECT COUNT(*) FROM (
-                    ({expected_pairs} EXCEPT ALL SELECT code, date FROM {table})
-                    UNION ALL
-                    (SELECT code, date FROM {table} EXCEPT ALL {expected_pairs})
-                ) differences
-                """,
-            ):
-                raise DatasetManifestValidationError(
-                    "Dataset provider session coverage has an empty, gap, or bound "
-                    f"mismatch: {table}"
-                )
+            raise DatasetManifestValidationError(
+                "Dataset provider session coverage has an empty, gap, or bound "
+                "mismatch: stock_master_daily"
+            )
+        if _query_scalar_int(
+            conn,
+            f"""
+            SELECT COUNT(*) FROM (
+                SELECT stocks.code, NULL AS date
+                FROM stocks
+                LEFT JOIN stock_data_raw raw USING (code)
+                GROUP BY stocks.code
+                HAVING COUNT(raw.date) = 0
+                UNION ALL
+                (SELECT code, date FROM stock_data_raw EXCEPT ALL {expected_pairs})
+            ) differences
+            """,
+        ):
+            raise DatasetManifestValidationError(
+                "Dataset provider quote coverage is empty or outside pinned sessions"
+            )
     if _query_scalar_int(
         conn,
         """

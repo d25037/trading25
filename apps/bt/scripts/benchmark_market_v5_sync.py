@@ -14,14 +14,17 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 import hashlib
+import io
 import json
 import math
 import os
 from pathlib import Path
 import resource
+import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import time
 from typing import Any, TypedDict
 
@@ -49,6 +52,30 @@ _SCENARIO_NAMES = (
     "legacy_all_code_local_projection",
 )
 _PAGE_SIZE = 250
+_ACTUAL_V4_COMMIT = "1f0929f041b66b497df42ec6dd709563892c77ed"
+_ACTUAL_V4_BLOB_HASHES = {
+    "apps/bt/src/application/services/adjusted_metrics_materialization_run.py": (
+        "a2daca9153624859c914113b4335f6cf26889d2b"
+    ),
+    "apps/bt/src/application/services/adjusted_metrics_materializer.py": (
+        "6f0c9730732725e7cbaa064916e4820cf19a3cb8"
+    ),
+    "apps/bt/src/application/services/sync_service.py": (
+        "eb971f64891a8d05f842677d88cc38382eda6a53"
+    ),
+    "apps/bt/src/application/services/sync_stock_data_fetch.py": (
+        "bada33df26cf408599a84f38710693b6da625550"
+    ),
+    "apps/bt/src/application/services/sync_strategies.py": (
+        "e2445e07a45ca8ebf5c06bf743ca9750ce534375"
+    ),
+    "apps/bt/src/infrastructure/db/market/market_writer_resources.py": (
+        "bca8cb746ae2ca86342bb3c5a317a9a6791daddc"
+    ),
+    "apps/bt/src/infrastructure/db/market/time_series_store.py": (
+        "7588fb35af530835d9f17e2890f23c4bda391db0"
+    ),
+}
 
 
 def _required_non_negative_int(payload: dict[str, object], field: str) -> int:
@@ -106,7 +133,28 @@ def _validated_representative_metrics(
             raise ValueError(
                 f"representative benchmark evidence {metric_field} must be positive"
             )
+    commit = payload.get("implementationCommit")
+    if not isinstance(commit, str) or re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+        raise ValueError(
+            "representative benchmark evidence requires an exact implementationCommit"
+        )
+    implementation_path = payload.get("implementationPath")
+    if not isinstance(implementation_path, str) or not implementation_path.strip():
+        raise ValueError(
+            "representative benchmark evidence requires an exact implementationPath"
+        )
     return validated
+
+
+def _implementation_commit() -> str:
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=Path(__file__).resolve().parents[3],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout.strip()
 
 
 def _positive_metric(payload: dict[str, object], field: str) -> float:
@@ -684,6 +732,11 @@ def _run_representative_v5_child(
     return {
         "schemaVersion": 5,
         "stockPriceAdjustmentMode": "provider_adjusted_v1",
+        "implementationCommit": _implementation_commit(),
+        "implementationPath": (
+            "apps/bt/src/application/services/sync_stock_data_fetch.py:"
+            "execute_stock_data_rest_date+StockDataIngestionSession.commit"
+        ),
         "measurementPath": (
             "representative_copy_production_sync_coordinator_duckdb_parquet"
         ),
@@ -786,6 +839,79 @@ def _run_isolated_child(
     return result
 
 
+def _run_actual_v4_benchmark(
+    fixture: dict[str, object],
+    *,
+    workspace: Path,
+) -> dict[str, object]:
+    """Measure the exact merge-base v4 adjusted_metrics_pit implementation."""
+
+    workspace = workspace.resolve()
+    repository_root = Path(__file__).resolve().parents[3]
+    for path, expected_hash in _ACTUAL_V4_BLOB_HASHES.items():
+        completed = subprocess.run(
+            ["git", "rev-parse", f"{_ACTUAL_V4_COMMIT}:{path}"],
+            cwd=repository_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        if completed.stdout.strip() != expected_hash:
+            raise RuntimeError(f"actual v4 source blob mismatch: {path}")
+    archive = subprocess.run(
+        ["git", "archive", _ACTUAL_V4_COMMIT, "apps/bt/src"],
+        cwd=repository_root,
+        check=True,
+        capture_output=True,
+    )
+    source_root = workspace / "source"
+    source_root.mkdir(parents=True, exist_ok=False)
+    with tarfile.open(fileobj=io.BytesIO(archive.stdout), mode="r:") as bundle:
+        bundle.extractall(source_root, filter="data")
+    fixture_path = workspace / "fixture.json"
+    fixture_path.write_text(json.dumps(fixture, sort_keys=True), encoding="utf-8")
+    hashes_path = workspace / "source-blob-hashes.json"
+    hashes_path.write_text(
+        json.dumps(_ACTUAL_V4_BLOB_HASHES, sort_keys=True), encoding="utf-8"
+    )
+    scenario_root = workspace / "scenario"
+    helper = Path(__file__).with_name("benchmark_market_v4_actual.py")
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = str(source_root / "apps/bt")
+    common = [
+        sys.executable,
+        str(helper),
+        "--fixture",
+        str(fixture_path),
+        "--workspace",
+        str(scenario_root),
+        "--implementation-commit",
+        _ACTUAL_V4_COMMIT,
+        "--source-blob-hashes",
+        str(hashes_path),
+    ]
+    for operation in ("--seed", "--measure"):
+        completed = subprocess.run(
+            [*common, operation],
+            cwd=workspace,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(
+                f"actual v4 benchmark {operation} failed ({completed.returncode}): "
+                f"{completed.stderr.strip()}"
+            )
+        payload = json.loads(completed.stdout)
+        if not isinstance(payload, dict):
+            raise RuntimeError("actual v4 benchmark child returned a non-object")
+        if operation == "--measure":
+            return payload
+    raise AssertionError("actual v4 measurement child did not run")
+
+
 def run_benchmark_fixture(
     fixture: dict[str, object],
     *,
@@ -794,8 +920,13 @@ def run_benchmark_fixture(
     representative_inspection: dict[str, object] | None = None,
     representative_comparison: dict[str, object] | None = None,
     representative_fixture_comparison: bool = False,
+    actual_v4_metrics: dict[str, object] | None = None,
     workspace: Path,
 ) -> dict[str, Any]:
+    if representative_fixture_comparison:
+        raise ValueError(
+            "legacy all-code fixture adapter is not actual Market v4 evidence"
+        )
     if fixture.get("fixtureVersion") != 1:
         raise ValueError("fixtureVersion must be exactly 1")
     scenarios = fixture.get("scenarios")
@@ -864,31 +995,30 @@ def run_benchmark_fixture(
             )
         ),
     }
-    if representative_fixture_comparison:
+    if actual_v4_metrics is not None:
         if representative_comparison is not None:
-            raise ValueError(
-                "fixture representative comparison conflicts with explicit evidence"
-            )
+            raise ValueError("actual v4 metrics conflict with explicit comparison")
+        v5_path = "apps/bt/src/application/services/sync_stock_data_fetch.py"
+        repository_root = Path(__file__).resolve().parents[3]
+        v5_blob = subprocess.run(
+            ["git", "rev-parse", f"HEAD:{v5_path}"],
+            cwd=repository_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
         representative_comparison = _representative_comparison(
-            {
-                "schemaVersion": 4,
-                "stockPriceAdjustmentMode": "local_projection_v2_event_time",
-                "measurementPath": (
-                    "matched_fixture_legacy_all_code_adapter_"
-                    "production_sync_coordinator_duckdb_parquet"
-                ),
-                "wallSeconds": legacy["wallSeconds"],
-                "cpuSeconds": legacy["cpuSeconds"],
-                "peakRssBytes": legacy["peakRssBytes"],
-                "inputFingerprint": legacy["inputFingerprint"],
-            },
+            actual_v4_metrics,
             {
                 "schemaVersion": 5,
                 "stockPriceAdjustmentMode": "provider_adjusted_v1",
-                "measurementPath": (
-                    "matched_fixture_provider_v5_"
-                    "production_sync_coordinator_duckdb_parquet"
+                "implementationCommit": _implementation_commit(),
+                "implementationPath": (
+                    f"{v5_path}:execute_stock_data_rest_date+"
+                    "StockDataIngestionSession.commit"
                 ),
+                "implementationBlobHashes": {v5_path: v5_blob},
+                "measurementPath": normal["measurementPath"],
                 "wallSeconds": normal["wallSeconds"],
                 "cpuSeconds": normal["cpuSeconds"],
                 "peakRssBytes": normal["peakRssBytes"],
@@ -943,7 +1073,7 @@ def main() -> int:
     parser.add_argument("--representative-evidence-reason")
     parser.add_argument("--representative-market-root", type=Path)
     parser.add_argument("--representative-v4-evidence", type=Path)
-    parser.add_argument("--representative-fixture-comparison", action="store_true")
+    parser.add_argument("--actual-v4-merge-base", action="store_true")
     parser.add_argument("--child-scenario", choices=_SCENARIO_NAMES)
     parser.add_argument("--seed-scenario", choices=_SCENARIO_NAMES)
     parser.add_argument("--representative-v5-child", action="store_true")
@@ -965,7 +1095,14 @@ def main() -> int:
         return 0
     representative_inspection: dict[str, object] | None = None
     representative_comparison: dict[str, object] | None = None
+    actual_v4_metrics: dict[str, object] | None = None
     representative_reason = args.representative_evidence_reason
+    if args.actual_v4_merge_base:
+        actual_v4_metrics = _run_actual_v4_benchmark(
+            fixture,
+            workspace=args.workspace / "actual-v4",
+        )
+        representative_reason = None
     if args.representative_market_root is not None:
         import duckdb
 
@@ -1026,14 +1163,14 @@ def main() -> int:
     report = run_benchmark_fixture(
         fixture,
         evidence_source=(
-            "matched_production_fixture"
-            if args.representative_fixture_comparison
+            "matched_actual_v4_production_fixture"
+            if actual_v4_metrics is not None
             else "production_fixture"
         ),
         representative_evidence_reason=representative_reason,
         representative_inspection=representative_inspection,
         representative_comparison=representative_comparison,
-        representative_fixture_comparison=args.representative_fixture_comparison,
+        actual_v4_metrics=actual_v4_metrics,
         workspace=args.workspace,
     )
     payload = json.dumps(report, indent=2, sort_keys=True) + "\n"

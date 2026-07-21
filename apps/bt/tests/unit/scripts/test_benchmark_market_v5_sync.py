@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 
 import duckdb
+import pytest
 
 import scripts.benchmark_market_v5_sync as benchmark_module
 from scripts.benchmark_market_v5_sync import run_benchmark_fixture
@@ -175,29 +176,16 @@ def test_fixture_benchmark_report_is_json_serializable(tmp_path: Path) -> None:
     assert json.loads(json.dumps(report, sort_keys=True)) == report
 
 
-def test_fixture_benchmark_can_commit_matched_v4_v5_resource_evidence(
+def test_fixture_benchmark_rejects_legacy_adapter_as_v4_resource_evidence(
     tmp_path: Path,
 ) -> None:
-    report = run_benchmark_fixture(
-        _fixture(),
-        evidence_source="matched_production_fixture",
-        representative_fixture_comparison=True,
-        workspace=tmp_path,
-    )
-
-    assert report["representativeEvidence"] == "measured"
-    comparison = report["representativeComparison"]
-    assert comparison["v4"]["schemaVersion"] == 4
-    assert comparison["v5"]["schemaVersion"] == 5
-    assert comparison["v4"]["inputFingerprint"] == comparison["v5"][
-        "inputFingerprint"
-    ]
-    assert "legacy_all_code_adapter" in comparison["v4"]["measurementPath"]
-    assert "provider_v5" in comparison["v5"]["measurementPath"]
-    for version in ("v4", "v5"):
-        assert comparison[version]["wallSeconds"] > 0
-        assert comparison[version]["cpuSeconds"] > 0
-        assert comparison[version]["peakRssBytes"] > 0
+    with pytest.raises(ValueError, match="not actual Market v4 evidence"):
+        run_benchmark_fixture(
+            _fixture(),
+            evidence_source="matched_production_fixture",
+            representative_fixture_comparison=True,
+            workspace=tmp_path,
+        )
 
 
 def test_fixture_report_includes_measured_representative_v4_v5_comparison(
@@ -207,6 +195,8 @@ def test_fixture_report_includes_measured_representative_v4_v5_comparison(
         "v4": {
             "schemaVersion": 4,
             "stockPriceAdjustmentMode": "local_projection_v2_event_time",
+            "implementationCommit": "4" * 40,
+            "implementationPath": "apps/bt/src/application/services/sync_service.py",
             "wallSeconds": 300.0,
             "cpuSeconds": 240.0,
             "peakRssBytes": 2_000_000_000,
@@ -214,6 +204,8 @@ def test_fixture_report_includes_measured_representative_v4_v5_comparison(
         "v5": {
             "schemaVersion": 5,
             "stockPriceAdjustmentMode": "provider_adjusted_v1",
+            "implementationCommit": "5" * 40,
+            "implementationPath": "apps/bt/src/application/services/sync_stock_data_fetch.py",
             "wallSeconds": 60.0,
             "cpuSeconds": 45.0,
             "peakRssBytes": 900_000_000,
@@ -233,6 +225,57 @@ def test_fixture_report_includes_measured_representative_v4_v5_comparison(
     assert report["representativeEvidence"] == "measured"
     assert report["representativeEvidenceReason"] is None
     assert report["representativeComparison"] == comparison
+
+
+def test_representative_comparison_requires_exact_implementation_provenance() -> None:
+    base = {
+        "wallSeconds": 1.0,
+        "cpuSeconds": 1.0,
+        "peakRssBytes": 1,
+        "inputFingerprint": "a" * 64,
+        "implementationPath": "apps/bt/src/application/services/sync_service.py",
+    }
+
+    with pytest.raises(ValueError, match="implementationCommit"):
+        benchmark_module._representative_comparison(
+            {
+                **base,
+                "schemaVersion": 4,
+                "stockPriceAdjustmentMode": "local_projection_v2_event_time",
+            },
+            {
+                **base,
+                "schemaVersion": 5,
+                "stockPriceAdjustmentMode": "provider_adjusted_v1",
+                "implementationCommit": "5" * 40,
+            },
+        )
+
+
+def test_actual_merge_base_v4_runs_in_isolated_source_tree(tmp_path: Path) -> None:
+    metrics = benchmark_module._run_actual_v4_benchmark(
+        _fixture(), workspace=tmp_path / "actual-v4"
+    )
+    expected_incoming = benchmark_module._raw_stock_rows(
+        4,
+        benchmark_module._codes(4),
+        start=benchmark_module.date(2026, 1, 6),
+    )
+
+    assert metrics["schemaVersion"] == 4
+    assert metrics["implementationCommit"] == benchmark_module._ACTUAL_V4_COMMIT
+    assert metrics["implementationBlobHashes"] == (
+        benchmark_module._ACTUAL_V4_BLOB_HASHES
+    )
+    assert metrics["measurementPath"] == (
+        "isolated_merge_base_v4_production_adjusted_metrics_pit"
+    )
+    assert metrics["inputFingerprint"] == benchmark_module._canonical_fingerprint(
+        {"universe": benchmark_module._codes(12), "incoming": expected_incoming}
+    )
+    assert metrics["wallSeconds"] > 0
+    assert metrics["cpuSeconds"] > 0
+    assert metrics["peakRssBytes"] > 0
 
 
 def test_main_measures_eligible_v5_market_against_v4_evidence(
@@ -261,6 +304,8 @@ def test_main_measures_eligible_v5_market_against_v4_evidence(
             {
                 "schemaVersion": 4,
                 "stockPriceAdjustmentMode": "local_projection_v2_event_time",
+                "implementationCommit": "4" * 40,
+                "implementationPath": "apps/bt/src/application/services/sync_service.py",
                 "wallSeconds": 300.0,
                 "cpuSeconds": 240.0,
                 "peakRssBytes": 2_000_000_000,
@@ -275,6 +320,8 @@ def test_main_measures_eligible_v5_market_against_v4_evidence(
         return {
             "schemaVersion": 5,
             "stockPriceAdjustmentMode": "provider_adjusted_v1",
+            "implementationCommit": "5" * 40,
+            "implementationPath": "apps/bt/src/application/services/sync_stock_data_fetch.py",
             "wallSeconds": 60.0,
             "cpuSeconds": 45.0,
             "peakRssBytes": 900_000_000,

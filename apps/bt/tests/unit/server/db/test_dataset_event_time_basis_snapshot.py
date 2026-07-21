@@ -747,7 +747,23 @@ def test_provider_copy_accepts_shared_suspended_quote_session_subset(
     assert result.raw_price_rows == 2
     assert result.stock_master_rows == 3
     assert result.daily_valuation_rows == 2
+    writer.set_dataset_info("manifest_schema_version", "4")
+    writer.set_dataset_info("source_market_schema_version", "5")
+    writer.set_dataset_info("source_stock_price_adjustment_mode", "provider_adjusted_v1")
+    writer.set_dataset_info("preset", "quickTesting")
     writer.close()
+    snapshot = tmp_path / "dataset"
+    _write_manifest(snapshot)
+
+    reader = DatasetSnapshotReader(str(snapshot))
+    try:
+        assert [row["date"] for row in reader.get_stock_ohlcv("7203")] == [
+            "2024-01-04",
+            "2024-01-08",
+        ]
+        assert len(reader.get_daily_valuation("7203")) == 2
+    finally:
+        reader.close()
 
 
 def test_provider_copy_accepts_per_code_lag_valid_current_basis_dates(
@@ -800,7 +816,24 @@ def test_provider_copy_accepts_per_code_lag_valid_current_basis_dates(
     )
 
     assert result.statement_metric_rows == 2
+    writer.set_dataset_info("manifest_schema_version", "4")
+    writer.set_dataset_info("source_market_schema_version", "5")
+    writer.set_dataset_info("source_stock_price_adjustment_mode", "provider_adjusted_v1")
+    writer.set_dataset_info("preset", "quickTesting")
     writer.close()
+    snapshot = tmp_path / "dataset"
+    _write_manifest(snapshot)
+
+    reader = DatasetSnapshotReader(str(snapshot))
+    try:
+        metrics = {
+            row["code"]: row["fundamentals_adjustment_basis_date"]
+            for code in ("7203", "6758")
+            for row in reader.get_adjusted_statement_metrics(code)
+        }
+        assert metrics == {"7203": _DATES[-1], "6758": _DATES[0]}
+    finally:
+        reader.close()
 
 
 def test_provider_copy_rejects_stale_declared_source_fingerprint(tmp_path: Path) -> None:

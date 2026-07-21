@@ -16,7 +16,7 @@
     "normalToLegacyRowMutationRatio": 1.0,
     "normalToLegacyWorkRatio": 0.494949494949495
   },
-  "evidenceSource": "matched_production_fixture",
+  "evidenceSource": "matched_actual_v4_production_fixture",
   "measurementNotes": {
     "legacyBaseline": "explicit all-code legacy adapter over identical input",
     "materializerResults": "actual total/completed/failed result and successful normalized processed-code callbacks",
@@ -29,26 +29,48 @@
   "providerPlan": "standard",
   "representativeComparison": {
     "v4": {
-      "cpuSeconds": 3.318252,
+      "allCodeMaterializerInvocations": 1,
+      "cpuSeconds": 12.745055,
+      "implementationBlobHashes": {
+        "apps/bt/src/application/services/adjusted_metrics_materialization_run.py": "a2daca9153624859c914113b4335f6cf26889d2b",
+        "apps/bt/src/application/services/adjusted_metrics_materializer.py": "6f0c9730732725e7cbaa064916e4820cf19a3cb8",
+        "apps/bt/src/application/services/sync_service.py": "eb971f64891a8d05f842677d88cc38382eda6a53",
+        "apps/bt/src/application/services/sync_stock_data_fetch.py": "bada33df26cf408599a84f38710693b6da625550",
+        "apps/bt/src/application/services/sync_strategies.py": "e2445e07a45ca8ebf5c06bf743ca9750ce534375",
+        "apps/bt/src/infrastructure/db/market/market_writer_resources.py": "bca8cb746ae2ca86342bb3c5a317a9a6791daddc",
+        "apps/bt/src/infrastructure/db/market/time_series_store.py": "7588fb35af530835d9f17e2890f23c4bda391db0"
+      },
+      "implementationCommit": "1f0929f041b66b497df42ec6dd709563892c77ed",
+      "implementationPath": "apps/bt/src/application/services/sync_stock_data_fetch.py:execute_stock_data_rest_date -> adjusted_metrics_materialization_run.py:run_shielded_materialization -> adjusted_metrics_materializer.py:AdjustedMetricsMaterializer.reconcile",
       "inputFingerprint": "3da2e4d67a8d7aecb607b5ed4c431040ebe742910d742d3c7c4e4aa171cae12d",
-      "measurementPath": "matched_fixture_legacy_all_code_adapter_production_sync_coordinator_duckdb_parquet",
-      "peakRssBytes": 714555392,
+      "materializedCodes": 400,
+      "measurementPath": "isolated_merge_base_v4_production_adjusted_metrics_pit",
+      "newRows": 390,
+      "peakRssBytes": 491716608,
+      "processId": 81777,
+      "productionEntryReference": "apps/bt/src/application/services/sync_service.py:500-505;apps/bt/src/application/services/sync_strategies.py:1307-1314",
       "schemaVersion": 4,
       "stockPriceAdjustmentMode": "local_projection_v2_event_time",
-      "wallSeconds": 1.930406125
+      "storageGrowthBytes": 22032876,
+      "wallSeconds": 9.01208358304575
     },
     "v5": {
-      "cpuSeconds": 1.784951,
+      "cpuSeconds": 1.805909,
+      "implementationBlobHashes": {
+        "apps/bt/src/application/services/sync_stock_data_fetch.py": "b7eac4e2e890363564b183e2f59f6aa08b490b17"
+      },
+      "implementationCommit": "5c1231b320745ad188185d6aedf17ad332d8735a",
+      "implementationPath": "apps/bt/src/application/services/sync_stock_data_fetch.py:execute_stock_data_rest_date+StockDataIngestionSession.commit",
       "inputFingerprint": "3da2e4d67a8d7aecb607b5ed4c431040ebe742910d742d3c7c4e4aa171cae12d",
-      "measurementPath": "matched_fixture_provider_v5_production_sync_coordinator_duckdb_parquet",
-      "peakRssBytes": 725385216,
+      "measurementPath": "production_sync_coordinator_duckdb_parquet",
+      "peakRssBytes": 724336640,
       "schemaVersion": 5,
       "stockPriceAdjustmentMode": "provider_adjusted_v1",
-      "wallSeconds": 0.97866775
+      "wallSeconds": 0.992362583
     },
-    "v5ToV4CpuRatio": 0.5379190609995865,
-    "v5ToV4PeakRssRatio": 1.01515603145851,
-    "v5ToV4WallRatio": 0.5069750542777623
+    "v5ToV4CpuRatio": 0.14169487695423832,
+    "v5ToV4PeakRssRatio": 1.4730774356923897,
+    "v5ToV4WallRatio": 0.11011466703070881
   },
   "representativeEvidence": "measured",
   "representativeEvidenceReason": null,
@@ -57,9 +79,9 @@
     "legacy_all_code_local_projection": {
       "affectedCodes": 0,
       "allCodeMaterializerInvocations": 1,
-      "checksumSha256": "519b8b4d5e7411309af962daeea7503f6d5086050bcc717957a5827290ed9f4d",
+      "checksumSha256": "2e2477875b115b47e25f28c6c4ad9e8cc29cc31ff27a4bfc334785799d5bc249",
       "coordinator": "StockDataIngestionSession+LegacyAllCodeAdapter",
-      "cpuSeconds": 3.318252,
+      "cpuSeconds": 3.355657,
       "currentBasisCompletedCodes": 400,
       "currentBasisProcessedCodes": 400,
       "currentBasisRecomputedCodes": 400,
@@ -905,9 +927,9 @@
         "storeReplacedRows": 0
       },
       "pages": 2,
-      "peakRssBytes": 714555392,
+      "peakRssBytes": 734281728,
       "pendingCurrentBasisCodeCountAfterMeasurement": 0,
-      "processId": 59391,
+      "processId": 81927,
       "providerWindowRowsReplaced": 0,
       "publishedCodes": 390,
       "requests": 1,
@@ -918,17 +940,17 @@
         "pendingCurrentBasisCodeCount": 0,
         "readyProviderWindowCount": 400
       },
-      "seedProcessId": 59382,
-      "storageGrowthBytes": 13619272,
-      "wallSeconds": 1.930406125,
+      "seedProcessId": 81910,
+      "storageGrowthBytes": 14143506,
+      "wallSeconds": 1.941574833,
       "workUnits": 792
     },
     "provider_fundamentals_only": {
       "affectedCodes": 12,
       "allCodeMaterializerInvocations": 0,
-      "checksumSha256": "eba688c5b0f8b2f66907fc5f5fc9a1a512b2474002becb4447a29951e0657652",
+      "checksumSha256": "7a9bfb1cc49698574e060828c4b261865c18b4972e55035ea1785afd0d526640",
       "coordinator": "FundamentalsPublish+AdjustedMetricsMaterializer",
-      "cpuSeconds": 0.746168,
+      "cpuSeconds": 0.768349,
       "currentBasisCompletedCodes": 12,
       "currentBasisProcessedCodes": 12,
       "currentBasisRecomputedCodes": 12,
@@ -991,9 +1013,9 @@
         "storeReplacedRows": 0
       },
       "pages": 1,
-      "peakRssBytes": 835125248,
+      "peakRssBytes": 857538560,
       "pendingCurrentBasisCodeCountAfterMeasurement": 0,
-      "processId": 59347,
+      "processId": 81875,
       "providerWindowRowsReplaced": 0,
       "publishedCodes": 0,
       "requests": 1,
@@ -1004,17 +1026,17 @@
         "pendingCurrentBasisCodeCount": 0,
         "readyProviderWindowCount": 400
       },
-      "seedProcessId": 59325,
+      "seedProcessId": 81866,
       "storageGrowthBytes": 2871976,
-      "wallSeconds": 0.2044465,
+      "wallSeconds": 0.207054167,
       "workUnits": 25
     },
     "provider_noop": {
       "affectedCodes": 0,
       "allCodeMaterializerInvocations": 0,
-      "checksumSha256": "6d101e620c155fe8848d7b2622ea044f60d748e22360189953a70f8548d4ec31",
+      "checksumSha256": "d04dd090cdf78c9fcbcbc937221130e9273779225747add0a9b988f1865117f8",
       "coordinator": "StockDataIngestionSession",
-      "cpuSeconds": 0.489781,
+      "cpuSeconds": 0.489545,
       "currentBasisCompletedCodes": 0,
       "currentBasisProcessedCodes": 0,
       "currentBasisRecomputedCodes": 0,
@@ -1041,9 +1063,9 @@
         "storeReplacedRows": 0
       },
       "pages": 1,
-      "peakRssBytes": 700448768,
+      "peakRssBytes": 696434688,
       "pendingCurrentBasisCodeCountAfterMeasurement": 0,
-      "processId": 59289,
+      "processId": 81826,
       "providerWindowRowsReplaced": 0,
       "publishedCodes": 1,
       "requests": 1,
@@ -1054,17 +1076,17 @@
         "pendingCurrentBasisCodeCount": 0,
         "readyProviderWindowCount": 400
       },
-      "seedProcessId": 59280,
+      "seedProcessId": 81807,
       "storageGrowthBytes": 507653,
-      "wallSeconds": 0.093503167,
+      "wallSeconds": 0.093238417,
       "workUnits": 1
     },
     "provider_one_day": {
       "affectedCodes": 0,
       "allCodeMaterializerInvocations": 0,
-      "checksumSha256": "332c975b1f60ef29fb7936413fa2dfcdd59391f73480f7004a77fa0a41029896",
+      "checksumSha256": "42cb47b53af4793beb7f98f62521fc0a79e358b2565d41bfdb278b27463f8dd9",
       "coordinator": "StockDataIngestionSession",
-      "cpuSeconds": 1.784951,
+      "cpuSeconds": 1.805909,
       "currentBasisCompletedCodes": 0,
       "currentBasisProcessedCodes": 0,
       "currentBasisRecomputedCodes": 0,
@@ -1098,9 +1120,9 @@
         "storeReplacedRows": 0
       },
       "pages": 2,
-      "peakRssBytes": 725385216,
+      "peakRssBytes": 724336640,
       "pendingCurrentBasisCodeCountAfterMeasurement": 0,
-      "processId": 59316,
+      "processId": 81844,
       "providerWindowRowsReplaced": 0,
       "publishedCodes": 390,
       "requests": 1,
@@ -1111,17 +1133,17 @@
         "pendingCurrentBasisCodeCount": 0,
         "readyProviderWindowCount": 400
       },
-      "seedProcessId": 59299,
-      "storageGrowthBytes": 13357123,
-      "wallSeconds": 0.97866775,
+      "seedProcessId": 81835,
+      "storageGrowthBytes": 13094981,
+      "wallSeconds": 0.992362583,
       "workUnits": 392
     },
     "provider_split_drift": {
       "affectedCodes": 2,
       "allCodeMaterializerInvocations": 0,
-      "checksumSha256": "72f7a3600d238c9f3130b8965f9d10cd42d358b9a5c4cc104df4696706e728a5",
+      "checksumSha256": "77103ffc8df86087d284f2b8db679b3d0ee8eac7a13d4d7a2e3a7c441be78759",
       "coordinator": "StockDataIngestionSession",
-      "cpuSeconds": 1.32095,
+      "cpuSeconds": 1.398793,
       "currentBasisCompletedCodes": 2,
       "currentBasisProcessedCodes": 2,
       "currentBasisRecomputedCodes": 2,
@@ -1178,9 +1200,9 @@
         "storeReplacedRows": 1
       },
       "pages": 3,
-      "peakRssBytes": 722059264,
+      "peakRssBytes": 719912960,
       "pendingCurrentBasisCodeCountAfterMeasurement": 0,
-      "processId": 59365,
+      "processId": 81901,
       "providerWindowRowsReplaced": 1,
       "publishedCodes": 2,
       "requests": 3,
@@ -1191,9 +1213,9 @@
         "pendingCurrentBasisCodeCount": 0,
         "readyProviderWindowCount": 400
       },
-      "seedProcessId": 59356,
-      "storageGrowthBytes": 10750091,
-      "wallSeconds": 0.74541375,
+      "seedProcessId": 81884,
+      "storageGrowthBytes": 10479113,
+      "wallSeconds": 0.761445834,
       "workUnits": 6
     }
   },

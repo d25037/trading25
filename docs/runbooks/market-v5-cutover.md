@@ -233,6 +233,8 @@ at least this JSON contract:
 {
   "schemaVersion": 4,
   "stockPriceAdjustmentMode": "local_projection_v2_event_time",
+  "implementationCommit": "<40-hex commit containing the measured v4 code>",
+  "implementationPath": "apps/bt/src/application/services/sync_service.py",
   "wallSeconds": 300.0,
   "cpuSeconds": 240.0,
   "peakRssBytes": 2000000000,
@@ -253,12 +255,20 @@ The JSON records wall time, CPU time, peak RSS, request/page counts, affected
 codes, new rows, row mutations, storage growth, checksums, and
 `allCodeMaterializerInvocations` for no-op, one-day, fundamentals-only,
 split/drift, and an explicit old all-code/local-projection semantics adapter.
-The current and legacy comparison uses the exact same universe and incoming
-delta fingerprint. Scaling claims use observed calls, not timing thresholds.
+The current and legacy fixture scenarios use the exact same universe and
+incoming delta fingerprint. The legacy scenario is only an all-code scaling
+diagnostic implemented by the v5 benchmark harness: it is not Market v4 and
+must never be reported as representative v4 timing evidence. Scaling claims
+use observed calls, not timing thresholds.
 
 Recorded fixture-only evidence is
 `apps/bt/benchmarks/market-v5-sync-fixture-evidence.json`. Its
-`representativeEvidence` is `measured`. Regenerate it from a repository-local
+`representativeEvidence` is `measured`. The v4 side is not the legacy adapter:
+the harness verifies fixed Git blob hashes, extracts merge-base commit
+`1f0929f041b66b497df42ec6dd709563892c77ed`, and imports that tree's real v4
+writer, stock-ingestion coordinator, and adjusted-metrics materialization path
+in isolated seed and measurement child processes. Regenerate the evidence from
+a repository-local
 workspace (the managed Market root safety checks intentionally reject symlinked
 temporary-directory chains) with:
 
@@ -267,17 +277,16 @@ BENCH_WORKSPACE=$(mktemp -d .market-v5-sync.XXXXXX)
 uv run python scripts/benchmark_market_v5_sync.py \
   --fixture benchmarks/fixtures/market-v5-sync.json \
   --workspace "$BENCH_WORKSPACE" \
-  --representative-fixture-comparison \
+  --actual-v4-merge-base \
   --output benchmarks/market-v5-sync-fixture-evidence.json
 ```
 
-This committed comparison runs both sides in isolated child processes over the
-same 400-code, 100,000-row seeded fixture and identical one-day input
-fingerprint. The v4 side is the explicit production-coordinator all-code/local-
-projection semantics adapter; the v5 side is the bounded provider-adjusted
-production coordinator and DuckDB/Parquet path. Therefore the recorded
-wall/CPU/peak-RSS values are measured process resources, not declared fixture
-counters or fabricated live-provider timings. No live or paid requests are
-made. For a live representative Market, continue to use
+Both sides use the same 400-code, 100,000-row baseline and identical one-day
+input fingerprint. The report records each side's exact implementation commit,
+code path, source blob hashes, and child-process wall/CPU/peak-RSS. The source
+Market is fixture-only and isolated; no live database or paid request is used.
+A measured comparison is rejected unless both sides carry the identical input
+fingerprint and positive child wall/CPU/RSS values. For a live representative
+Market, continue to use
 `--representative-market-root` plus pre-cutover `--representative-v4-evidence`
 as described above.
