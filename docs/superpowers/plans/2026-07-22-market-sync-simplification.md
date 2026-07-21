@@ -226,7 +226,7 @@ Expected: OpenAPI exposes only two sync modes and daily adjusted volume as numbe
 
 - [ ] **Step 5: Align active documentation**
 
-Update `AGENTS.md`, `README.md`, architecture SoT guidance, security runbook, and repository skills to describe RESET initial/incremental only. Delete the cutover runbook; retain historical superpowers documents without active links.
+Update `AGENTS.md`, `README.md`, architecture SoT guidance, and security runbook to describe RESET initial/incremental only. Delete the cutover runbook; retain historical superpowers documents without active links. Repository skill guidance is owned by Task 4.
 
 - [ ] **Step 6: Verify Task 5**
 
