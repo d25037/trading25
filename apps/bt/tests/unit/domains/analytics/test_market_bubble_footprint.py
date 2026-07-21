@@ -16,6 +16,9 @@ from src.domains.analytics.market_bubble_footprint import (
     write_bubble_footprint_bundle,
     write_rerating_bubble_regime_bundle,
 )
+from src.domains.analytics.market_bubble_footprint_monitor import (
+    _build_market_bubble_footprint_as_of_frame,
+)
 
 from daily_ranking_market_v5_fixture import (
     refresh_daily_ranking_provider_window,
@@ -80,6 +83,40 @@ def test_market_bubble_footprint_classifies_monthly_market_regimes(
     )
     assert bundle.manifest_path.exists()
     assert bundle.results_db_path.exists()
+
+
+def test_market_bubble_footprint_rejects_poisoned_stock_data(tmp_path: Path) -> None:
+    db_path = _build_bubble_footprint_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+    conn.execute("UPDATE stock_data SET close = close * 50.0")
+    conn.close()
+
+    with pytest.raises(RuntimeError, match="provider vintage lineage"):
+        run_market_bubble_footprint_research(
+            db_path,
+            start_date="2024-01-31",
+            end_date="2024-12-31",
+            return_horizons=(20, 60),
+            market_scopes=("prime",),
+            frequency="monthly",
+        )
+
+
+def test_live_market_bubble_footprint_rejects_poisoned_stock_data(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_bubble_footprint_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+    conn.execute("UPDATE stock_data SET close = close * 50.0")
+    conn.close()
+
+    with pytest.raises(RuntimeError, match="provider vintage lineage"):
+        _build_market_bubble_footprint_as_of_frame(
+            str(db_path),
+            baseline=pd.DataFrame(),
+            markets=("prime",),
+            date="2024-12-31",
+        )
 
 
 def test_rerating_bubble_regime_forward_response_joins_footprint_regime(

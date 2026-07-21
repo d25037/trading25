@@ -15,6 +15,11 @@ from src.domains.analytics.daily_ranking_consumer_support import (
     sql_string_list,
     table_exists,
 )
+from src.domains.analytics.daily_ranking_event_time_prices import (
+    DailyRankingPriceRelations,
+    DailyRankingPriceRequest,
+    build_daily_ranking_event_time_prices,
+)
 from src.domains.analytics.daily_ranking_research_base import (
     DailyRankingPanelRequest,
     MarketScope,
@@ -507,6 +512,18 @@ def _build_footprint_table(
         raise ValueError(
             "event-time footprint requires both price history and signal basis"
         )
+    if price_history_name is None:
+        verified_prices = _build_verified_bubble_price_relations(
+            conn,
+            start_date=start_date,
+            end_date=end_date,
+            return_horizons=return_horizons,
+            market_scopes=market_scopes,
+        )
+        price_history_name = verified_prices.price_history
+        signal_basis_name = verified_prices.signal_features
+    if signal_basis_name is None:
+        raise RuntimeError("verified Market v5 bubble price basis is unavailable")
     _create_footprint_base_tables(
         conn,
         market_scopes=market_scopes,
@@ -515,16 +532,12 @@ def _build_footprint_table(
         end_date=end_date,
         price_history_name=price_history_name,
     )
-    snapshot_basis_join_sql = (
-        ""
-        if signal_basis_name is None
-        else f"""
+    snapshot_basis_join_sql = f"""
             JOIN {signal_basis_name} snapshot_basis
               ON snapshot_basis.code = l.code
              AND CAST(snapshot_basis.date AS DATE) = CAST(l.date AS DATE)
              AND CAST(snapshot_basis.price_basis_id AS VARCHAR) = l.price_basis_id
         """
-    )
     horizons_sql = ", ".join(f"({int(horizon)})" for horizon in return_horizons)
     conn.execute(
         f"""
@@ -698,6 +711,44 @@ def _build_footprint_table(
     return footprint
 
 
+def _build_verified_bubble_price_relations(
+    conn: Any,
+    *,
+    start_date: str | None,
+    end_date: str | None,
+    return_horizons: Sequence[int],
+    market_scopes: Sequence[str],
+) -> DailyRankingPriceRelations:
+    query_start = (
+        (pd.Timestamp(start_date) - pd.Timedelta(days=900)).strftime("%Y-%m-%d")
+        if start_date is not None
+        else None
+    )
+    market_codes = (
+        ()
+        if "all" in market_scopes or "unknown" in market_scopes
+        else tuple(
+            dict.fromkeys(
+                code
+                for scope in market_scopes
+                for code in MARKET_CODES_BY_SCOPE[scope]
+            )
+        )
+    )
+    return build_daily_ranking_event_time_prices(
+        conn,
+        DailyRankingPriceRequest(
+            namespace="market_bubble_footprint",
+            query_start=query_start,
+            query_end=end_date,
+            analysis_start_date=query_start,
+            analysis_end_date=end_date,
+            horizons=tuple(return_horizons),
+            market_codes=market_codes,
+        ),
+    )
+
+
 def _create_footprint_base_tables(
     conn: Any,
     *,
@@ -705,32 +756,18 @@ def _create_footprint_base_tables(
     frequency: Frequency,
     start_date: str | None,
     end_date: str | None,
-    price_history_name: str | None,
+    price_history_name: str,
 ) -> None:
     stock_code = normalize_code_sql("sd.code")
     valuation_code = normalize_code_sql("dv.code")
-    stock_source_sql = (
-        "stock_data sd" if price_history_name is None else f"{price_history_name} sd"
-    )
-    stock_basis_sql = (
-        "'__convenience__'"
-        if price_history_name is None
-        else "CAST(sd.price_basis_id AS VARCHAR)"
-    )
-    valuation_basis_sql = (
-        "'__convenience__'"
-        if price_history_name is None
-        else "CAST(price_basis.price_basis_id AS VARCHAR)"
-    )
-    valuation_basis_join_sql = (
-        ""
-        if price_history_name is None
-        else f"""
+    stock_source_sql = f"{price_history_name} sd"
+    stock_basis_sql = "CAST(sd.price_basis_id AS VARCHAR)"
+    valuation_basis_sql = "CAST(price_basis.price_basis_id AS VARCHAR)"
+    valuation_basis_join_sql = f"""
             JOIN {price_history_name} price_basis
               ON {normalize_code_sql("price_basis.code")} = {valuation_code}
              AND CAST(price_basis.date AS DATE) = CAST(dv.date AS DATE)
         """
-    )
     query_start = (
         (pd.Timestamp(start_date) - pd.Timedelta(days=900)).strftime("%Y-%m-%d")
         if start_date is not None
