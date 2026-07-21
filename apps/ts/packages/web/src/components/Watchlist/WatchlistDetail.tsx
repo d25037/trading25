@@ -54,7 +54,7 @@ const WATCHLIST_RANKING_SORT: RankingTableSortState = {
 };
 
 function normalizeStockCode(value: string): string {
-  return value.trim();
+  return value.trim().toUpperCase();
 }
 
 function resolveCompanyName(code: string, selectedStock: StockSearchResultItem | null): string {
@@ -86,7 +86,7 @@ function ManageWatchlistDialog({
   const updateItem = useUpdateWatchlistItem();
   const deleteWatchlist = useDeleteWatchlist();
   const normalizedCode = normalizeStockCode(code);
-  const isValidCode = /^\d{4}$/.test(normalizedCode);
+  const isValidCode = /^\d[0-9A-Z]\d[0-9A-Z]$/.test(normalizedCode);
   const moveTargetWatchlists = useMemo(
     () => (watchlistsQuery.data?.watchlists ?? []).filter((candidate) => candidate.id !== watchlist.id),
     [watchlist.id, watchlistsQuery.data?.watchlists]

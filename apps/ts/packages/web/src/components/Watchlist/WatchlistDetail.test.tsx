@@ -276,6 +276,21 @@ describe('WatchlistDetail', () => {
     );
   });
 
+  it('normalizes lowercase alphanumeric stock codes before adding them', async () => {
+    const user = userEvent.setup();
+
+    render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
+
+    await user.click(screen.getByRole('button', { name: 'Manage Watchlist' }));
+    await user.type(screen.getByLabelText('Stock Code'), '130a');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+
+    expect(mockAddItemMutate).toHaveBeenCalledWith(
+      { watchlistId: 1, data: { code: '130A', companyName: '130A', memo: undefined } },
+      expect.any(Object)
+    );
+  });
+
   it('supports company name search and selects stock code from suggestion', async () => {
     const user = userEvent.setup();
     mockUseStockSearch.mockImplementation((query: string) => ({
