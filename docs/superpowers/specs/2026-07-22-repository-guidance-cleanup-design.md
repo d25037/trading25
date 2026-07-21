@@ -1,7 +1,7 @@
 # Repository Guidance Cleanup Design
 
-**Date:** 2026-07-22  
-**Status:** Approved design  
+**Date:** 2026-07-22
+**Status:** Approved design
 **Scope:** `AGENTS.md`, repository/app READMEs, repository-local skills, living docs, and directly exposed P1/P2 implementation drift
 
 ## Objective
