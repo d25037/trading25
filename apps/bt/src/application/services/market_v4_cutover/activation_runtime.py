@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 import os
 from pathlib import Path
 import stat
@@ -26,8 +27,14 @@ _ALLOWED_RUNTIME_FILES = frozenset(
 )
 
 
+class ActivationRuntimePlacement(StrEnum):
+    ABSENT = "absent"
+    ACTIVE = "active"
+    RETAINED = "retained"
+
+
 class ActivationRuntimeOwnership:
-    """Validate, compare, create, and remove only an exact attempt runtime."""
+    """Validate and atomically retire one exact attempt runtime."""
 
     def __init__(
         self,
@@ -55,20 +62,51 @@ class ActivationRuntimeOwnership:
     def runtime_template(self, attempt: ActivationAttempt) -> Path:
         return self.staging_root(attempt) / f"runtime-template-{attempt.report_id}"
 
-    def exists(self, attempt: ActivationAttempt) -> bool:
-        relative = self._workspace._managed_relative(self.runtime_root(attempt))
+    def retained_root(self, attempt: ActivationAttempt) -> Path:
+        return (
+            self._workspace.operations_root
+            / "recovery-runtime-quarantine"
+            / attempt.report_id
+        )
+
+    def _exists(self, path: Path) -> bool:
+        relative = self._workspace._managed_relative(path)
         try:
             self._workspace.managed().stat(relative)
         except FileNotFoundError:
             return False
         return True
 
+    def exists(self, attempt: ActivationAttempt) -> bool:
+        return self._exists(self.runtime_root(attempt))
+
+    def placement(self, attempt: ActivationAttempt) -> ActivationRuntimePlacement:
+        active_exists = self.exists(attempt)
+        retained_exists = self._exists(self.retained_root(attempt))
+        if active_exists:
+            self.assert_exact(attempt)
+        if retained_exists:
+            self.assert_retained_exact(attempt)
+        if active_exists and retained_exists:
+            raise _managed_root.CutoverSafetyError(
+                "Activation recovery runtime ownership is ambiguous"
+            )
+        if active_exists:
+            return ActivationRuntimePlacement.ACTIVE
+        if retained_exists:
+            return ActivationRuntimePlacement.RETAINED
+        return ActivationRuntimePlacement.ABSENT
+
     def assert_exact(self, attempt: ActivationAttempt) -> None:
         """Prove path, shape, static content, and single-link runtime ownership."""
 
-        runtime_relative = self._workspace._managed_relative(
-            self.runtime_root(attempt)
-        )
+        self._assert_exact_at(attempt, self.runtime_root(attempt))
+
+    def assert_retained_exact(self, attempt: ActivationAttempt) -> None:
+        self._assert_exact_at(attempt, self.retained_root(attempt))
+
+    def _assert_exact_at(self, attempt: ActivationAttempt, root: Path) -> None:
+        runtime_relative = self._workspace._managed_relative(root)
         directories, files = self._tree_manifest(runtime_relative)
         top_directories = {path.parts[0] for path in directories if len(path.parts) == 1}
         top_files = {path.parts[0] for path in files if len(path.parts) == 1}
@@ -208,8 +246,47 @@ class ActivationRuntimeOwnership:
         )
         overlay_repository_cutover_smoke_strategy(self._workspace, runtime_root)
 
-    def remove(self, market_fd: int, attempt: ActivationAttempt) -> None:
-        self._workspace._remove_market_runtime(market_fd, self.runtime_name(attempt))
+    def activate_for_smoke(
+        self,
+        attempt: ActivationAttempt,
+        placement: ActivationRuntimePlacement,
+    ) -> None:
+        if placement is ActivationRuntimePlacement.ACTIVE:
+            self.assert_exact(attempt)
+            return
+        if placement is ActivationRuntimePlacement.RETAINED:
+            self._workspace._assert_managed_target_absent(self.runtime_root(attempt))
+            self._workspace._secure_rename(
+                self.retained_root(attempt),
+                self.runtime_root(attempt),
+            )
+            if self.placement(attempt) is not ActivationRuntimePlacement.ACTIVE:
+                raise _managed_root.CutoverSafetyError(
+                    "Retained activation runtime was not atomically reactivated"
+                )
+            return
+        self.prepare(attempt)
+        if self.placement(attempt) is not ActivationRuntimePlacement.ACTIVE:
+            raise _managed_root.CutoverSafetyError(
+                "Fresh activation runtime placement is invalid"
+            )
+
+    def retire(self, attempt: ActivationAttempt) -> None:
+        if self.placement(attempt) is not ActivationRuntimePlacement.ACTIVE:
+            raise _managed_root.CutoverSafetyError(
+                "Only one exact active runtime can be atomically retired"
+            )
+        retained_root = self.retained_root(attempt)
+        self._workspace._prepare_managed_directory(
+            retained_root.parent,
+            exist_ok=True,
+        )
+        self._workspace._assert_managed_target_absent(retained_root)
+        self._workspace._secure_rename(self.runtime_root(attempt), retained_root)
+        if self.placement(attempt) is not ActivationRuntimePlacement.RETAINED:
+            raise _managed_root.CutoverSafetyError(
+                "Activation runtime retirement did not reach exact retained state"
+            )
 
     def _tree_manifest(
         self,

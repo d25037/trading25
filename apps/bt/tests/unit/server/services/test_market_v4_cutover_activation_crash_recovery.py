@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 
 import pytest
 
@@ -29,6 +31,22 @@ _REPORT_ID = "crash-recovery-active"
 _REHEARSAL_ID = "crash-recovery-rehearsal"
 _BACKUP_ID = "crash-recovery-backup"
 _CONFIG = SmokeConfig("7203", "production/smoke", "primeMarket")
+
+
+def _retained_runtime(data_root: Path) -> Path:
+    return (
+        data_root
+        / "operations/market-v5-cutover/recovery-runtime-quarantine"
+        / _REPORT_ID
+    )
+
+
+def _runtime_tree_evidence(root: Path) -> dict[str, tuple[int, str | None]]:
+    evidence = {".": (root.stat().st_ino, None)}
+    for path in sorted(root.rglob("*")):
+        digest = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+        evidence[path.relative_to(root).as_posix()] = (path.stat().st_ino, digest)
+    return evidence
 
 
 class _CrashAtomicExchange(_TestAtomicExchange):
@@ -195,9 +213,14 @@ def test_fresh_service_recovers_exact_same_cutover_after_process_death(
         "00000003-activated.json",
         "00000004-reported.json",
     ]
+    retained_runtime = _retained_runtime(data_root)
+    active_runtime = active_market / f".cutover-runtime-{_REPORT_ID}"
+    assert retained_runtime.is_dir()
+    assert not active_runtime.exists()
 
     report_bytes = report_path.read_bytes()
     active_identity = active_market.stat().st_ino
+    retained_identity = retained_runtime.stat().st_ino
     reported = _service(
         data_root,
         duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
@@ -212,6 +235,8 @@ def test_fresh_service_recovers_exact_same_cutover_after_process_death(
     assert reported == result
     assert report_path.read_bytes() == report_bytes
     assert active_market.stat().st_ino == active_identity
+    assert retained_runtime.stat().st_ino == retained_identity
+    assert not active_runtime.exists()
 
 
 def test_recovery_rejects_mismatched_attempt_arguments_without_mutation(
@@ -402,7 +427,7 @@ def test_recovery_never_adopts_or_overwrites_mismatched_published_report(
     assert report_path.read_bytes() == mismatched
 
 
-def test_joined_smoke_and_runtime_cleanup_failure_remains_recoverable(
+def test_joined_smoke_failure_never_uses_partial_recursive_runtime_cleanup(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -435,15 +460,28 @@ def test_joined_smoke_and_runtime_cleanup_failure_remains_recoverable(
         runtime=FakeRuntime(apis=[FailingApi()]),
     )
 
-    def fail_runtime_cleanup(_market_fd: int, _runtime_name: str) -> None:
-        raise OSError("injected recovery runtime cleanup failure")
+    recursive_cleanup_called = False
+
+    def partially_remove_runtime(market_fd: int, runtime_name: str) -> None:
+        nonlocal recursive_cleanup_called
+        recursive_cleanup_called = True
+        runtime_fd = os.open(runtime_name, os.O_RDONLY, dir_fd=market_fd)
+        try:
+            config_fd = os.open("config", os.O_RDONLY, dir_fd=runtime_fd)
+            try:
+                os.unlink("default.yaml", dir_fd=config_fd)
+            finally:
+                os.close(config_fd)
+        finally:
+            os.close(runtime_fd)
+        raise OSError("injected failure after partial recursive mutation")
 
     monkeypatch.setattr(
         failed._workspace,
         "_remove_market_runtime",
-        fail_runtime_cleanup,
+        partially_remove_runtime,
     )
-    with pytest.raises(CutoverSafetyError, match="runtime cleanup failure") as caught:
+    with pytest.raises(RecoverySmokeFailure, match="joined recovery smoke"):
         failed.cutover(
             _REPORT_ID,
             rehearsal_report_id=_REHEARSAL_ID,
@@ -451,14 +489,14 @@ def test_joined_smoke_and_runtime_cleanup_failure_remains_recoverable(
             config=_CONFIG,
             inherited_environment={},
         )
-    assert isinstance(caught.value.__cause__, OSError)
-    assert "injected recovery runtime cleanup failure" in str(caught.value.__cause__)
+    assert recursive_cleanup_called is False
 
     runtime_root = (
         data_root / f"market-timeseries/.cutover-runtime-{_REPORT_ID}"
     )
-    assert runtime_root.is_dir()
-    assert (runtime_root / "config/default.yaml").is_file()
+    retained_runtime = _retained_runtime(data_root)
+    assert not runtime_root.exists()
+    assert (retained_runtime / "config/default.yaml").is_file()
     journal_dir = (
         data_root
         / f"operations/market-v5-cutover/activation-journals/{_REPORT_ID}"
@@ -482,6 +520,7 @@ def test_joined_smoke_and_runtime_cleanup_failure_remains_recoverable(
 
     assert result.report_id == _REPORT_ID
     assert not runtime_root.exists()
+    assert (retained_runtime / "config/default.yaml").is_file()
     assert [path.name for path in sorted(journal_dir.iterdir())][-1] == (
         "00000004-reported.json"
     )
@@ -521,3 +560,147 @@ def test_recovery_rejects_tampered_runtime_without_deleting_it(
         )
 
     assert runtime_config.read_bytes() == tampered
+
+
+def test_runtime_retirement_rename_failure_leaves_active_for_fresh_retry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    setup = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi(), FakeApi()]),
+    )
+    setup.backup(_BACKUP_ID)
+    setup.rehearse(_REHEARSAL_ID, _CONFIG, inherited_environment={})
+    _run_crashing_cutover(data_root, "after_activated")
+
+    failed = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi()]),
+    )
+    real_rename = failed._workspace._secure_rename
+
+    def fail_retirement_rename(source: Path, target: Path) -> None:
+        if target == _retained_runtime(data_root):
+            raise OSError("injected atomic runtime retirement failure")
+        real_rename(source, target)
+
+    monkeypatch.setattr(
+        failed._workspace,
+        "_secure_rename",
+        fail_retirement_rename,
+    )
+    with pytest.raises(CutoverSafetyError, match="retirement failure") as caught:
+        failed.cutover(
+            _REPORT_ID,
+            rehearsal_report_id=_REHEARSAL_ID,
+            backup_id=_BACKUP_ID,
+            config=_CONFIG,
+            inherited_environment={},
+        )
+    assert isinstance(caught.value.__cause__, OSError)
+
+    active_runtime = (
+        data_root / f"market-timeseries/.cutover-runtime-{_REPORT_ID}"
+    )
+    retained_runtime = _retained_runtime(data_root)
+    assert (active_runtime / "config/default.yaml").is_file()
+    assert not retained_runtime.exists()
+
+    fresh = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi()]),
+    )
+    result = fresh.cutover(
+        _REPORT_ID,
+        rehearsal_report_id=_REHEARSAL_ID,
+        backup_id=_BACKUP_ID,
+        config=_CONFIG,
+        inherited_environment={},
+    )
+    assert result.report_id == _REPORT_ID
+    assert not active_runtime.exists()
+    assert (retained_runtime / "config/default.yaml").is_file()
+
+
+def test_recovery_rejects_tampered_retained_runtime_without_mutation(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    setup = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi(), FakeApi()]),
+    )
+    setup.backup(_BACKUP_ID)
+    setup.rehearse(_REHEARSAL_ID, _CONFIG, inherited_environment={})
+    _run_crashing_cutover(data_root, "after_runtime_rename")
+    active_runtime = (
+        data_root / f"market-timeseries/.cutover-runtime-{_REPORT_ID}"
+    )
+    retained_runtime = _retained_runtime(data_root)
+    retained_runtime.parent.mkdir()
+    os.rename(active_runtime, retained_runtime)
+    retained_config = retained_runtime / "config/default.yaml"
+    retained_config.write_text("tampered: retained\n")
+    tampered = retained_config.read_bytes()
+
+    fresh = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi()]),
+    )
+    with pytest.raises(CutoverSafetyError, match="runtime.*exact"):
+        fresh.cutover(
+            _REPORT_ID,
+            rehearsal_report_id=_REHEARSAL_ID,
+            backup_id=_BACKUP_ID,
+            config=_CONFIG,
+            inherited_environment={},
+        )
+
+    assert not active_runtime.exists()
+    assert retained_config.read_bytes() == tampered
+
+
+def test_recovery_rejects_active_and_retained_runtime_without_mutation(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    setup = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi(), FakeApi()]),
+    )
+    setup.backup(_BACKUP_ID)
+    setup.rehearse(_REHEARSAL_ID, _CONFIG, inherited_environment={})
+    _run_crashing_cutover(data_root, "after_runtime_rename")
+    active_runtime = (
+        data_root / f"market-timeseries/.cutover-runtime-{_REPORT_ID}"
+    )
+    retained_runtime = _retained_runtime(data_root)
+    retained_runtime.parent.mkdir()
+    shutil.copytree(active_runtime, retained_runtime)
+    active_before = _runtime_tree_evidence(active_runtime)
+    retained_before = _runtime_tree_evidence(retained_runtime)
+
+    fresh = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi()]),
+    )
+    with pytest.raises(CutoverSafetyError, match="ownership is ambiguous"):
+        fresh.cutover(
+            _REPORT_ID,
+            rehearsal_report_id=_REHEARSAL_ID,
+            backup_id=_BACKUP_ID,
+            config=_CONFIG,
+            inherited_environment={},
+        )
+
+    assert _runtime_tree_evidence(active_runtime) == active_before
+    assert _runtime_tree_evidence(retained_runtime) == retained_before

@@ -153,8 +153,9 @@ Intended commit subject: `fix(bt): recover interrupted cutover by exact same id`
 ## P1 remediation: recover an exact journal-owned residual runtime
 
 - Review base: `ad8cbcf2b75dbfd4bfb863a6eafe974110397d8b`.
-- Scope is limited to the P1 residual-runtime ownership and joined cleanup-failure
-  paths. The general crash-boundary matrix remains deferred to GitHub issue #496.
+- Scope is limited to the P1 residual-runtime ownership and joined retirement-failure
+  paths. The general crash-boundary matrix remains deferred to GitHub issue #496;
+  retained-runtime garbage collection remains deferred to GitHub issue #497.
 - `activation_runtime.py` is an approved plan file-list omission. It isolates the
   runtime ownership manifest and active-core comparison from the 612-line state
   orchestrator, preserves package structure caps, and contains no journal, API, sync,
@@ -193,12 +194,19 @@ ownership gate.
   that one runtime. Other active files and sibling paths remain part of the exact
   journaled active identity.
 - A legal quarantined `exchange_started` or `activated` layout may therefore retain
-  one exact owned runtime. Recovery validates and removes it, creates a fresh isolated
-  runtime, and reruns active smoke before advancing the journal.
-- Joined smoke cleanup failure raises `CutoverSafetyError` with the exact cleanup
-  exception as its cause and leaves the runtime intact. A fresh same-ID retry validates
-  that residual runtime, cleans/recreates it, and reaches `reported`. A tampered runtime
-  is rejected without mutation or deletion.
+  one exact owned runtime. Recovery reuses the exact active runtime or atomically
+  reactivates the exact retained runtime, then reruns active smoke before advancing
+  the journal.
+- Joined smoke success and joined smoke failure both atomically retire the complete
+  active runtime to
+  `operations/market-v5-cutover/recovery-runtime-quarantine/<REPORT_ID>` after the
+  exact ownership and joined-process gates. Recovery never calls recursive deletion
+  and never deletes retained evidence.
+- Retirement requires an absent destination. A rename failure leaves the original
+  active runtime intact and retryable; if retirement fails while handling the joined
+  smoke failure, recovery raises a chained `CutoverSafetyError` preserving the
+  retirement cause. Exact retained plus absent active is retryable. Active plus
+  retained, or any tampered runtime, is rejected without mutation.
 
 ### GREEN and final verification
 
@@ -211,5 +219,41 @@ Scoped Ruff: All checks passed!
 Scoped Pyright: 0 errors, 0 warnings, 0 informations
 ```
 
-No repository-wide suite was run. Intended fix commit subject:
+No repository-wide suite was run. The initial P1 fix commit subject was
 `fix(bt): recover journal-owned cutover runtime`.
+
+## Final P1 remediation: exact atomic runtime retirement
+
+Review base: `0e01dcc57f4da916d19d53e395aedce074503fc1`.
+
+The final review identified recursive cleanup as unsafe because a mid-walk failure
+could leave a partially mutated tree that no longer passed the exact ownership gate.
+The strict focused RED monkeypatched the old recursive remover to unlink the actual
+runtime config before raising. The other two RED cases covered retirement rename
+failure and tampered retained evidence:
+
+```text
+3 selected, 3 failed
+```
+
+The replacement has only whole-tree atomic state transitions. Active exact plus
+retained absent may be renamed to retained. Retained exact plus active absent may be
+renamed back for smoke and then retired again. Both present, any tamper, or any other
+unexpected placement fails before mutation. The active-plus-retained regression
+captures every entry inode and every file SHA-256 for both trees and proves all remain
+unchanged. Reported idempotency validates retained evidence and does not move it.
+
+Final verification:
+
+```text
+Focused final P1 regressions: 3 passed, 13 deselected
+Active-plus-retained no-mutation regression: 1 passed, 16 deselected
+Complete crash recovery file: 17 passed, 18 warnings
+Crash recovery plus package structure guard: 25 passed, 18 warnings
+Full cutover glob plus CLI: 271 passed, 18 warnings
+Scoped Ruff: All checks passed!
+Scoped Pyright: 0 errors, 0 warnings, 0 informations
+```
+
+No repository-wide suite was run. Final fix commit subject:
+`fix(bt): atomically retire recovery runtime`.

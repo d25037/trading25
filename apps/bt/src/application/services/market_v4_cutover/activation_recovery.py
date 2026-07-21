@@ -21,7 +21,10 @@ from .activation_contract import (
     market_tree_identity_evidence,
 )
 from .activation_journal import ActivationJournalRepository
-from .activation_runtime import ActivationRuntimeOwnership
+from .activation_runtime import (
+    ActivationRuntimeOwnership,
+    ActivationRuntimePlacement,
+)
 from .backup import MarketBackupService
 from .contracts import (
     ActivationAttempt,
@@ -121,15 +124,18 @@ class ActivationRecoveryService:
         )
         quarantine = self._quarantine_identity(attempt)
         latest_state = records[-1].state
-        runtime_exists = self._runtime.exists(attempt)
-        if runtime_exists:
-            self._runtime.assert_exact(attempt)
+        runtime_placement = self._runtime.placement(attempt)
         layout = self._resolve_layout(
             attempt,
             quarantine,
-            exact_runtime_exists=runtime_exists,
+            exact_runtime_exists=(
+                runtime_placement is ActivationRuntimePlacement.ACTIVE
+            ),
         )
-        if runtime_exists and layout is not _ActivationLayout.QUARANTINED:
+        if (
+            runtime_placement is ActivationRuntimePlacement.ACTIVE
+            and layout is not _ActivationLayout.QUARANTINED
+        ):
             raise _managed_root.CutoverSafetyError(
                 "Exact activation runtime is incompatible with filesystem layout"
             )
@@ -137,7 +143,7 @@ class ActivationRecoveryService:
 
         if latest_state is ActivationState.REPORTED:
             self._require_layout(layout, _ActivationLayout.QUARANTINED)
-            if runtime_exists:
+            if runtime_placement is ActivationRuntimePlacement.ACTIVE:
                 raise _managed_root.CutoverSafetyError(
                     "Reported activation unexpectedly retains a runtime"
                 )
@@ -414,14 +420,16 @@ class ActivationRecoveryService:
             )
             return
         self._require_layout(layout, _ActivationLayout.QUARANTINED)
-        runtime_exists = self._runtime.exists(attempt)
+        runtime_placement = self._runtime.placement(attempt)
         template_exists = self._path_exists(runtime_template)
-        if runtime_exists:
-            self._runtime.assert_exact(attempt)
+        if runtime_placement is ActivationRuntimePlacement.ACTIVE:
             self._runtime.assert_activation_identities(attempt, quarantine)
         else:
             self._backups._assert_activation_identities(attempt, quarantine)
-        if template_exists and runtime_exists:
+        if (
+            template_exists
+            and runtime_placement is not ActivationRuntimePlacement.ABSENT
+        ):
             raise _managed_root.CutoverSafetyError(
                 "Activation recovery found duplicate exact runtime ownership"
             )
@@ -429,7 +437,7 @@ class ActivationRecoveryService:
             self._workspace._secure_rename(
                 runtime_template, self._workspace.market_root / runtime_name
             )
-        elif not runtime_exists:
+        elif runtime_placement is ActivationRuntimePlacement.ABSENT:
             self._runtime.prepare(attempt)
 
     def _run_recovery_smoke(
@@ -444,16 +452,12 @@ class ActivationRecoveryService:
     ) -> SmokeResult:
         assert self._workspace._active_lease is not None
         runtime_name = self._runtime.runtime_name(attempt)
+        self._activate_runtime_for_smoke(attempt, quarantine)
         market_fd = os.open(
             "market-timeseries",
             _DIR_OPEN_FLAGS,
             dir_fd=self._workspace._active_lease.root_fd,
         )
-        try:
-            self._reset_runtime_for_smoke(market_fd, attempt, quarantine)
-        except BaseException:
-            os.close(market_fd)
-            raise
         report_dir = (
             self._workspace.operations_root / "reports" / attempt.report_id
         )
@@ -494,16 +498,13 @@ class ActivationRecoveryService:
             ):
                 raise _managed_root.CutoverSafetyError(
                     "Recovered Market provider vintage differs from journal evidence"
-                )
+            )
             self._workspace.runtime.stop(api)
             api = None
-            self._runtime.assert_exact(attempt)
-            self._runtime.remove(market_fd, attempt)
         except BaseException as exc:
             self._handle_recovery_smoke_failure(
                 exc,
                 api=api,
-                market_fd=market_fd,
                 attempt=attempt,
             )
             raise AssertionError("recovery smoke failure handler must raise")
@@ -511,6 +512,7 @@ class ActivationRecoveryService:
             if log_fd >= 0:
                 os.close(log_fd)
             os.close(market_fd)
+        self._retire_runtime(attempt, quarantine)
         if self._evidence.root_fingerprint(self._workspace.data_root) != (
             expected_root_fingerprint
         ):
@@ -522,28 +524,24 @@ class ActivationRecoveryService:
         self._backups._assert_activation_identities(attempt, quarantine)
         return smoke
 
-    def _reset_runtime_for_smoke(
+    def _activate_runtime_for_smoke(
         self,
-        market_fd: int,
         attempt: ActivationAttempt,
         quarantine: MarketTreeIdentity,
     ) -> None:
-        if self._runtime.exists(attempt):
-            self._runtime.assert_exact(attempt)
+        placement = self._runtime.placement(attempt)
+        if placement is ActivationRuntimePlacement.ACTIVE:
             self._runtime.assert_activation_identities(attempt, quarantine)
-            try:
-                self._runtime.remove(market_fd, attempt)
-            except BaseException as cleanup_error:
-                self._raise_runtime_cleanup_failure(cleanup_error)
-        self._runtime.prepare(attempt)
-        self._runtime.assert_exact(attempt)
+        else:
+            self._backups._assert_activation_identities(attempt, quarantine)
+        self._runtime.activate_for_smoke(attempt, placement)
+        self._runtime.assert_activation_identities(attempt, quarantine)
 
     def _handle_recovery_smoke_failure(
         self,
         exc: BaseException,
         *,
         api: ApiAdapter | None,
-        market_fd: int,
         attempt: ActivationAttempt,
     ) -> None:
         assert self._workspace._active_lease is not None
@@ -576,16 +574,32 @@ class ActivationRecoveryService:
             ) from (stop_error or exc)
         try:
             self._runtime.assert_exact(attempt)
-            self._runtime.remove(market_fd, attempt)
-        except BaseException as cleanup_error:
-            self._raise_runtime_cleanup_failure(cleanup_error)
+            self._runtime.assert_activation_identities(
+                attempt,
+                self._quarantine_identity(attempt),
+            )
+            self._runtime.retire(attempt)
+        except BaseException as retirement_error:
+            self._raise_runtime_retirement_failure(retirement_error)
         raise exc
 
     @staticmethod
-    def _raise_runtime_cleanup_failure(cleanup_error: BaseException) -> None:
+    def _raise_runtime_retirement_failure(retirement_error: BaseException) -> None:
         raise _managed_root.CutoverSafetyError(
-            f"Recovery runtime cleanup failure: {cleanup_error}"
-        ) from cleanup_error
+            f"Recovery runtime retirement failure: {retirement_error}"
+        ) from retirement_error
+
+    def _retire_runtime(
+        self,
+        attempt: ActivationAttempt,
+        quarantine: MarketTreeIdentity,
+    ) -> None:
+        try:
+            self._runtime.assert_exact(attempt)
+            self._runtime.assert_activation_identities(attempt, quarantine)
+            self._runtime.retire(attempt)
+        except BaseException as retirement_error:
+            self._raise_runtime_retirement_failure(retirement_error)
 
     def _report_exists(self, report_id: str) -> bool:
         report_path = (
