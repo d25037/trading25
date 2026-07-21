@@ -125,3 +125,23 @@ Proposed subject: `feat(bt): add durable v5 activation journal`
 - The P3 journal file-mode observation is intentionally deferred to GitHub issue #494;
   this remediation changes no file-mode behavior or test expectation.
 - Fix-only commit subject: `fix(bt): freeze activation journal identities`.
+
+## Second review remediation: type-exact nested identity matching
+
+- Review base: `2b1a48634ea0fa6713375563480bfc95f80dfa59`.
+- Added fresh-load regressions for stored/expected nested identity scalars `1` versus
+  `1.0`, `0` versus `false`, and `-0.0` versus `0.0`. Each test first proves the
+  canonical stored and expected record bytes differ, then requires attempt mismatch.
+- RED command collected 45 journal tests, selected 3, deselected 42, and failed all 3
+  because Python mapping/dataclass equality coerced the distinct scalar values equal.
+- Load now compares exact canonical attempt-mapping bytes using the existing journal
+  encoder with `allow_nan=False`, rather than Python's type-coercing nested equality.
+- An explicit JSON array regression preserves the intentional input-list to immutable
+  tuple representation and fresh-load equality because both encode to the same JSON
+  array.
+- Focused GREEN: 4 selected, 4 passed, 41 deselected (three scalar mismatch cases plus
+  the array round-trip case).
+- Final journal plus structure verification: 53 collected, 53 passed, 0 failed.
+- Scoped Ruff passed; scoped production Pyright reported zero errors and warnings.
+- P3 journal file mode remains unchanged and deferred to GitHub issue #494.
+- Fix-only commit subject: `fix(bt): compare journal identities canonically`.

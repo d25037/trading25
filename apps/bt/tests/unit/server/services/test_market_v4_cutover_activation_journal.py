@@ -273,6 +273,77 @@ def test_append_cannot_drift_with_caller_input_during_encoding(
         loaded[0].attempt.source.payload["lineage"]["windows"][0]["symbol"] = "6758"
 
 
+@pytest.mark.parametrize(
+    ("stored_scalar", "expected_scalar"),
+    (
+        (1, 1.0),
+        (0, False),
+        (-0.0, 0.0),
+    ),
+    ids=("int-vs-float", "int-vs-bool", "negative-zero-vs-zero"),
+)
+def test_fresh_load_rejects_type_coerced_nested_identity_scalar(
+    tmp_path: Path,
+    stored_scalar: object,
+    expected_scalar: object,
+) -> None:
+    repository_type, state_type, identity_type, _, _ = _types()
+    operations_root = _operations_root(tmp_path)
+    source_path = "operations/market-v5-cutover/staging/cutover-20260721/source"
+    stored_attempt = replace(
+        _attempt(),
+        source=identity_type(
+            path=source_path,
+            directory={"device": 1, "inode": 101},
+            payload={"marketTreeSha256": "tree-1", "scalar": stored_scalar},
+        ),
+    )
+    expected_attempt = replace(
+        stored_attempt,
+        source=identity_type(
+            path=source_path,
+            directory={"device": 1, "inode": 101},
+            payload={"marketTreeSha256": "tree-1", "scalar": expected_scalar},
+        ),
+    )
+    repository_type(operations_root).append(stored_attempt, state_type.PREPARED)
+    record_path = (
+        _journal_dir(operations_root, stored_attempt.report_id)
+        / "00000001-prepared.json"
+    )
+
+    assert record_path.read_bytes() == _canonical(
+        _record_mapping(1, "prepared", stored_attempt)
+    )
+    assert record_path.read_bytes() != _canonical(
+        _record_mapping(1, "prepared", expected_attempt)
+    )
+    with pytest.raises(Exception, match="attempt|identity|mismatch"):
+        repository_type(operations_root).load(expected_attempt)
+
+
+def test_fresh_load_preserves_json_array_to_tuple_roundtrip(tmp_path: Path) -> None:
+    repository_type, state_type, identity_type, _, _ = _types()
+    operations_root = _operations_root(tmp_path)
+    attempt = replace(
+        _attempt(),
+        source=identity_type(
+            path="operations/market-v5-cutover/staging/cutover-20260721/source",
+            directory={"device": 1, "inode": 101},
+            payload={"marketTreeSha256": "tree-1", "values": [1, 2]},
+        ),
+    )
+    record = repository_type(operations_root).append(
+        attempt,
+        state_type.PREPARED,
+    )
+
+    loaded = repository_type(operations_root).load(attempt)
+
+    assert loaded == (record,)
+    assert loaded[0].attempt.source.payload["values"] == (1, 2)
+
+
 def test_appends_exact_canonical_sequence_and_loads_it(tmp_path: Path) -> None:
     repository_type, state_type, _, _, _ = _types()
     operations_root = _operations_root(tmp_path)

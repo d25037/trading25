@@ -389,6 +389,7 @@ class ActivationJournalRepository:
             if len(names) > len(_STATE_ORDER):
                 raise _error("contains duplicate or excess records")
             records: list[ActivationJournalRecord] = []
+            expected_attempt = _canonical_json(_attempt_mapping(attempt))
             for sequence, state in enumerate(_STATE_ORDER[: len(names)], start=1):
                 expected_name = f"{sequence:08d}-{state.value}.json"
                 name = names[sequence - 1]
@@ -397,7 +398,7 @@ class ActivationJournalRepository:
                 record = self._read_record(directory_fd, name)
                 if record.sequence != sequence or record.state is not state:
                     raise _error("record name, sequence, and state do not match")
-                if record.attempt != attempt:
+                if _canonical_json(_attempt_mapping(record.attempt)) != expected_attempt:
                     raise _error("attempt ID or identity mismatch")
                 records.append(record)
             return tuple(records)
