@@ -3,6 +3,32 @@
 from pathlib import Path
 
 
+def test_removed_daily_ranking_compatibility_surface_has_no_active_code() -> None:
+    repo_root = Path(__file__).resolve().parents[5]
+    analytics_root = repo_root / "apps" / "bt" / "src" / "domains" / "analytics"
+    forbidden_tokens = (
+        "DAILY_RANKING_RESEARCH_RANKED_TABLE",
+        "DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE",
+        "create_daily_ranking_research_panel",
+        "daily_ranking_query_start_date",
+        "daily_ranking_query_end_date",
+        "event_time_basis_only=",
+        "price_feature_relation=",
+        "price_outcome_relation=",
+        "ranking_technical_fit_price_projection",
+        "_create_rerating_bubble_observation_table",
+    )
+
+    matches: list[str] = []
+    for path in analytics_root.glob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        for token in forbidden_tokens:
+            if token in path.name or token in text:
+                matches.append(f"{path.name}: {token}")
+
+    assert matches == []
+
+
 def test_removed_future_leaking_research_has_no_active_surface() -> None:
     repo_root = Path(__file__).resolve().parents[5]
     forbidden_tokens = (

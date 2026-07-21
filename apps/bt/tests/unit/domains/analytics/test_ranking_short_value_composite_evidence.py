@@ -120,7 +120,9 @@ def _build_short_value_composite_db(db_path: Path) -> Path:
         )
         """
     )
-    code_rows = conn.execute("SELECT DISTINCT code FROM stock_data ORDER BY code").fetchall()
+    code_rows = conn.execute(
+        "SELECT DISTINCT code FROM stock_data ORDER BY code"
+    ).fetchall()
     statement_rows = []
     for index, (code,) in enumerate(code_rows):
         sales = 60_000_000.0 + index * 2_000_000.0
@@ -130,5 +132,6 @@ def _build_short_value_composite_db(db_path: Path) -> Path:
             (str(code), "2023-05-15", sales, "FY", "FinancialStatements")
         )
     conn.executemany("INSERT INTO statements VALUES (?, ?, ?, ?, ?)", statement_rows)
+    assert conn.execute("SELECT version FROM market_schema_version").fetchone() == (4,)
     conn.close()
     return db_path

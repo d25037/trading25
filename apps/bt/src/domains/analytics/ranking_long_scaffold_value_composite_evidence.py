@@ -3,42 +3,45 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
-from src.domains.analytics.atr_expansion_forward_response import (
-    _create_observation_panel as _create_atr_observation_panel,
+from src.domains.analytics.daily_ranking_consumer_support import (
+    aggregate_lateral_conditions,
+    aggregate_metric_columns,
+    compose_daily_ranking_signal_features,
+    condition_values_sql,
+    concat_sorted,
+    deep_dive_metric_columns,
+    deep_dive_metric_sql,
+    table_exists,
+)
+from src.domains.analytics.daily_ranking_feature_builders import (
+    AtrFeaturesRequest,
+    LongLeadershipFeaturesRequest,
+    LongScaffoldFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    ShortScaffoldFeaturesRequest,
+    build_atr_features,
+    build_long_leadership_features,
+    build_long_scaffold_features,
+    build_sector_strength_features,
+    build_short_scaffold_features,
+    publish_legacy_long_scaffold_features,
 )
 from src.domains.analytics.daily_ranking_research_base import (
-    DAILY_RANKING_RESEARCH_RANKED_TABLE,
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    MarketScope,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
     normalize_daily_ranking_market_scopes,
 )
-from src.domains.analytics.earnings_holdthrough_expectancy import _table_exists
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
-)
-from src.domains.analytics.ranking_forecast_operating_profit_growth_evidence import (
-    _aggregate_lateral_conditions,
-    _aggregate_metric_columns,
-    _condition_values_sql,
-    _concat_sorted,
-    _deep_dive_metric_columns,
-    _deep_dive_metric_sql,
-)
-from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition import (
-    _create_long_sector_leadership_tables,
-    _create_long_signal_tables,
-)
-from src.domains.analytics.ranking_sector_strength_evidence import (
-    _create_sector_strength_tables,
-)
-from src.domains.analytics.ranking_short_red_evidence import (
-    _create_feature_panel as _create_short_red_feature_panel,
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
@@ -55,9 +58,6 @@ DEFAULT_MIN_OBSERVATIONS = 100
 DEFAULT_SEVERE_LOSS_THRESHOLD_PCT = -10.0
 DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
 _LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
-_REQUIRED_ATR_WINDOWS: tuple[int, ...] = (20, 60)
-_REQUIRED_RETURN_WINDOWS: tuple[int, ...] = (20, 60)
-_LONG_WARMUP_CALENDAR_DAYS = 820
 _REQUIRED_TABLES: tuple[str, ...] = (
     "stock_data",
     "topix_data",
@@ -181,55 +181,90 @@ def run_ranking_long_scaffold_value_composite_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = daily_ranking_query_start_date(
-        start_date,
-        warmup_calendar_days=_LONG_WARMUP_CALENDAR_DAYS,
-    )
-    query_end = daily_ranking_query_end_date(
-        end_date,
-        max_horizon=max(resolved_horizons),
-    )
-
     with open_readonly_analysis_connection(
         str(db_path_obj),
         snapshot_prefix="ranking-long-scaffold-value-composite-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
         market_source = "stock_master_daily_exact_date"
-        create_daily_ranking_research_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_scopes=resolved_market_scopes,
-            market_source=market_source,
-            include_liquidity_ranked=True,
+            DailyRankingPanelRequest(
+                namespace="long_scaffold_value",
+                analysis_start_date=_parse_optional_date(start_date),
+                analysis_end_date=_parse_optional_date(end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(
+                    tuple[MarketScope, ...],
+                    resolved_market_scopes,
+                ),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
         )
-        _create_atr_observation_panel(
+        signal_source = relations.liquidity_ranked_signals
+        if signal_source is None:
+            raise RuntimeError("long scaffold research requires liquidity-ranked signals")
+        atr_features = build_atr_features(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=_REQUIRED_ATR_WINDOWS,
-            return_windows=_REQUIRED_RETURN_WINDOWS,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            AtrFeaturesRequest(source=signal_source, namespace="long_scaffold_value_atr"),
         )
-        _create_short_red_feature_panel(ctx.connection)
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
-        _create_long_sector_leadership_tables(
+        short_features = build_short_scaffold_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            ShortScaffoldFeaturesRequest(
+                source=signal_source,
+                atr_features=atr_features,
+                namespace="long_scaffold_value_short",
+            ),
         )
-        _create_long_signal_tables(
+        sector_features = build_sector_strength_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="long_scaffold_value_sector",
+            ),
         )
-        _create_value_composite_panel(ctx.connection)
+        leadership_features = build_long_leadership_features(
+            ctx.connection,
+            LongLeadershipFeaturesRequest(
+                source=signal_source,
+                sector_features=sector_features,
+                namespace="long_scaffold_value_leadership",
+                leadership_windows=_LEADERSHIP_WINDOWS,
+            ),
+        )
+        long_features = build_long_scaffold_features(
+            ctx.connection,
+            LongScaffoldFeaturesRequest(
+                source=signal_source,
+                leadership_features=leadership_features,
+                short_scaffold_features=short_features,
+                namespace="long_scaffold_value_features",
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(long_features,),
+            namespace="long_scaffold_value",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="long_scaffold_value_signals",
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="long_scaffold_value_outcomes",
+        )
+        _create_evaluated_value_composite_panel(
+            ctx.connection,
+            source_name=evaluated.name,
+        )
         observation_count = int(
             ctx.connection.execute(
                 "SELECT count(*) FROM ranking_long_scaffold_value_composite_panel"
@@ -385,68 +420,36 @@ def build_summary_markdown(
 
 
 def _assert_required_tables(conn: Any) -> None:
-    missing = [table for table in _REQUIRED_TABLES if not _table_exists(conn, table)]
+    missing = [table for table in _REQUIRED_TABLES if not table_exists(conn, table)]
     if missing:
         raise ValueError(f"market.duckdb is missing required tables: {', '.join(missing)}")
 
 
-def _create_value_composite_panel(conn: Any) -> None:
+def _create_value_composite_panel(  # pyright: ignore[reportUnusedFunction]
+    conn: Any,
+) -> None:
+    """Compatibility bridge for remaining Task 9 consumers."""
+
+    publish_legacy_long_scaffold_features(conn)
+
+
+PUBLIC_FEATURE_BUILDER = build_long_scaffold_features
+
+
+def _create_evaluated_value_composite_panel(
+    conn: Any,
+    *,
+    source_name: str,
+) -> None:
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE ranking_long_scaffold_value_composite_panel AS
         SELECT
-            base.*,
-            CASE
-                WHEN base.low_forward_per_score IS NOT NULL
-                 AND base.low_pbr_score IS NOT NULL
-                    THEN (base.low_forward_per_score + base.low_pbr_score) / 2.0
-            END AS value_composite_equal_score
-        FROM (
-            SELECT
-                r.*,
-                l.sector_33_code,
-                l.sector_33_name,
-                l.sector_strength_bucket,
-                l.sector_strength_score,
-                l.sector_index_strength_score,
-                l.sector_constituent_strength_score,
-                l.long_index_leadership_score,
-                l.long_constituent_breadth_leadership_score,
-                l.long_hybrid_leadership_score,
-                l.balanced_sector_strength_bucket_label,
-                l.long_hybrid_bucket_label,
-                coalesce(l.momentum_20_60_top20_flag, FALSE)
-                    AS momentum_20_60_top20_flag,
-                s.atr20_pct,
-                s.atr60_pct,
-                s.atr20_to_atr60,
-                s.atr20_change_20d_pct,
-                coalesce(s.atr20_acceleration, FALSE) AS atr20_acceleration_flag,
-                coalesce(
-                    s.atr20_acceleration
-                    AND coalesce(r.recent_return_20d_pct, 0.0) < 30.0,
-                    FALSE
-                ) AS atr20_acceleration_ex_overheat_flag,
-                coalesce(s.atr20_to_atr60_overheat, FALSE)
-                    AS atr20_to_atr60_overheat,
-                coalesce(s.weak_trend, FALSE) AS weak_trend,
-                CASE
-                    WHEN r.forward_per_percentile IS NOT NULL
-                        THEN 1.0 - r.forward_per_percentile
-                END AS low_forward_per_score,
-                CASE
-                    WHEN r.pbr_percentile IS NOT NULL THEN 1.0 - r.pbr_percentile
-                END AS low_pbr_score
-            FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE} r
-            LEFT JOIN long_sector_leadership_base_panel l
-              ON l.code = r.code
-             AND l.date = r.date
-             AND l.market_scope = r.market_scope
-            LEFT JOIN ranking_short_red_feature_panel s
-              ON s.code = r.code
-             AND s.date = r.date
-             AND s.market_scope = r.market_scope
-        ) base
+            source.*,
+            source.forecast_per AS forward_per,
+            source.forecast_per_percentile AS forward_per_percentile,
+            source.low_forecast_per_score AS low_forward_per_score
+        FROM {source_name} source
         """
     )
 
@@ -459,7 +462,7 @@ def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
             count(*) AS observation_count,
             count(DISTINCT code) AS code_count,
             count(DISTINCT date) AS date_count,
-            avg(CASE WHEN forward_per_percentile IS NOT NULL THEN 1.0 ELSE 0.0 END)
+            avg(CASE WHEN forecast_per_percentile IS NOT NULL THEN 1.0 ELSE 0.0 END)
                 * 100.0 AS forward_per_percentile_coverage_pct,
             avg(CASE WHEN pbr_percentile IS NOT NULL THEN 1.0 ELSE 0.0 END)
                 * 100.0 AS pbr_percentile_coverage_pct,
@@ -469,7 +472,7 @@ def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
                 * 100.0 AS value_composite_ge_0_8_rate_pct,
             avg(CASE WHEN value_composite_equal_score >= 0.9 THEN 1.0 ELSE 0.0 END)
                 * 100.0 AS value_composite_ge_0_9_rate_pct,
-            median(forward_per_percentile) AS median_forward_per_percentile,
+            median(forecast_per_percentile) AS median_forward_per_percentile,
             median(pbr_percentile) AS median_pbr_percentile,
             median(value_composite_equal_score) AS median_value_composite_equal_score
         FROM ranking_long_scaffold_value_composite_panel
@@ -488,7 +491,7 @@ def _build_value_composite_bucket_evidence_df(
 ) -> pd.DataFrame:
     bucket_lateral_sql = f"""
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_VALUE_COMPOSITE_BUCKETS)}
+            VALUES {condition_values_sql(_VALUE_COMPOSITE_BUCKETS)}
         ) AS value_bucket(
             value_bucket,
             value_bucket_order,
@@ -498,7 +501,7 @@ def _build_value_composite_bucket_evidence_df(
     frames: list[pd.DataFrame] = []
     for horizon in horizons:
         frames.append(
-            _aggregate_lateral_conditions(
+            aggregate_lateral_conditions(
                 conn,
                 source_name="ranking_long_scaffold_value_composite_panel",
                 lateral_sql=bucket_lateral_sql,
@@ -521,7 +524,7 @@ def _build_value_composite_bucket_evidence_df(
                 extra_metric_sql=_value_composite_metric_sql(),
             )
         )
-    return _concat_sorted(frames, columns=_value_composite_bucket_columns())
+    return concat_sorted(frames, columns=_value_composite_bucket_columns())
 
 
 def _build_long_scaffold_evidence_df(
@@ -533,7 +536,7 @@ def _build_long_scaffold_evidence_df(
 ) -> pd.DataFrame:
     scaffold_lateral_sql = f"""
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_LONG_SCAFFOLDS)}
+            VALUES {condition_values_sql(_LONG_SCAFFOLDS)}
         ) AS long_scaffold(
             long_scaffold,
             long_scaffold_order,
@@ -543,7 +546,7 @@ def _build_long_scaffold_evidence_df(
     frames: list[pd.DataFrame] = []
     for horizon in horizons:
         frames.append(
-            _aggregate_lateral_conditions(
+            aggregate_lateral_conditions(
                 conn,
                 source_name="ranking_long_scaffold_value_composite_panel",
                 lateral_sql=scaffold_lateral_sql,
@@ -564,7 +567,7 @@ def _build_long_scaffold_evidence_df(
                 extra_metric_sql=_value_composite_metric_sql(),
             )
         )
-    return _concat_sorted(frames, columns=_long_scaffold_columns())
+    return concat_sorted(frames, columns=_long_scaffold_columns())
 
 
 def _build_long_scaffold_value_composite_bucket_evidence_df(
@@ -576,14 +579,14 @@ def _build_long_scaffold_value_composite_bucket_evidence_df(
 ) -> pd.DataFrame:
     lateral_sql = f"""
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_LONG_SCAFFOLDS)}
+            VALUES {condition_values_sql(_LONG_SCAFFOLDS)}
         ) AS long_scaffold(
             long_scaffold,
             long_scaffold_order,
             long_scaffold_matches
         )
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_VALUE_COMPOSITE_BUCKETS)}
+            VALUES {condition_values_sql(_VALUE_COMPOSITE_BUCKETS)}
         ) AS value_bucket(
             value_bucket,
             value_bucket_order,
@@ -593,7 +596,7 @@ def _build_long_scaffold_value_composite_bucket_evidence_df(
     frames: list[pd.DataFrame] = []
     for horizon in horizons:
         frames.append(
-            _aggregate_lateral_conditions(
+            aggregate_lateral_conditions(
                 conn,
                 source_name="ranking_long_scaffold_value_composite_panel",
                 lateral_sql=lateral_sql,
@@ -623,7 +626,10 @@ def _build_long_scaffold_value_composite_bucket_evidence_df(
                 extra_metric_sql=_value_composite_metric_sql(),
             )
         )
-    return _concat_sorted(frames, columns=_long_scaffold_value_composite_bucket_columns())
+    return concat_sorted(
+        frames,
+        columns=_long_scaffold_value_composite_bucket_columns(),
+    )
 
 
 def _build_value_composite_bucket_correlation_df(bucket_df: pd.DataFrame) -> pd.DataFrame:
@@ -698,7 +704,7 @@ def _build_date_basket_evidence_df(
                 avg({return_column}) AS basket_mean_excess_return_pct
             FROM ranking_long_scaffold_value_composite_panel p
             CROSS JOIN LATERAL (
-                VALUES {_condition_values_sql(_LONG_SCAFFOLDS)}
+                VALUES {condition_values_sql(_LONG_SCAFFOLDS)}
             ) AS long_scaffold(
                 long_scaffold,
                 long_scaffold_order,
@@ -762,7 +768,7 @@ def _build_date_basket_evidence_df(
 
 def _value_composite_metric_sql() -> str:
     return (
-        _deep_dive_metric_sql()
+        deep_dive_metric_sql()
         + """,
             median(low_forward_per_score) AS median_low_forward_per_score,
             median(low_pbr_score) AS median_low_pbr_score"""
@@ -826,6 +832,10 @@ def _validate_params(
         raise ValueError("observation_sample_limit must be positive")
 
 
+def _parse_optional_date(value: str | None) -> date | None:
+    return None if value is None else date.fromisoformat(value)
+
+
 def _value_composite_bucket_columns() -> list[str]:
     return [
         "condition_family",
@@ -834,8 +844,8 @@ def _value_composite_bucket_columns() -> list[str]:
         "market_scope",
         "horizon",
         "median_value_composite_equal_score",
-        *_aggregate_metric_columns(),
-        *_deep_dive_metric_columns(),
+        *aggregate_metric_columns(),
+        *deep_dive_metric_columns(),
         "median_low_forward_per_score",
         "median_low_pbr_score",
     ]
@@ -848,8 +858,8 @@ def _long_scaffold_columns() -> list[str]:
         "long_scaffold_order",
         "market_scope",
         "horizon",
-        *_aggregate_metric_columns(),
-        *_deep_dive_metric_columns(),
+        *aggregate_metric_columns(),
+        *deep_dive_metric_columns(),
         "median_low_forward_per_score",
         "median_low_pbr_score",
     ]
@@ -865,8 +875,8 @@ def _long_scaffold_value_composite_bucket_columns() -> list[str]:
         "market_scope",
         "horizon",
         "median_value_composite_equal_score",
-        *_aggregate_metric_columns(),
-        *_deep_dive_metric_columns(),
+        *aggregate_metric_columns(),
+        *deep_dive_metric_columns(),
         "median_low_forward_per_score",
         "median_low_pbr_score",
     ]

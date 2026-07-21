@@ -1,0 +1,77 @@
+{
+  "market-behavior/ranking-trend-acceleration-conditional-lift": {
+    "canonicalRunId": "20260719_prime_price_pit_conditional_lift_v9",
+    "canonicalDecision": "reject_introduction",
+    "sourceCommit": "e33f76f1a8fecb1f8c3c731b3692c1e10dd123d4",
+    "bundlePath": "~/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v9",
+    "digestPath": "apps/bt/tests/fixtures/research/ranking_trend_acceleration_conditional_lift_v9_published_digest.json",
+    "readmePath": "apps/bt/docs/experiments/market-behavior/ranking-trend-acceleration-conditional-lift/README.md",
+    "artifactHashes": {
+      "manifest": "650f0d57b26b3040268245bd19d068ef68cd50f7372dd9b4edc82a36d610285f",
+      "results": "8ee5d37bb506057850e5e31ec4e4bf19be21a56fd3e316b89012956c4769b599",
+      "summary": "a11c14bc044d91cacf860a0dec97c6b02329408bc73043fa642e5270edd95ebd"
+    },
+    "supersededRunIds": [
+      "20260718_prime_pit_conditional_lift_v2",
+      "20260719_prime_price_pit_conditional_lift_v3",
+      "20260719_prime_price_pit_conditional_lift_v4",
+      "20260719_prime_price_pit_conditional_lift_v5",
+      "20260719_prime_price_pit_conditional_lift_v6",
+      "20260719_prime_price_pit_conditional_lift_v7",
+      "20260719_prime_price_pit_conditional_lift_v8"
+    ]
+  },
+  "market-behavior/ranking-fixed-return-priority-evidence": {
+    "canonicalRunId": "20260719_prime_price_pit_fixed_return_priority_v12",
+    "canonicalDecision": "insufficient_evidence",
+    "sourceCommit": "e33f76f1a8fecb1f8c3c731b3692c1e10dd123d4",
+    "bundlePath": "~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v12",
+    "digestPath": "apps/bt/tests/fixtures/research/ranking_fixed_return_priority_evidence_v12_published_digest.json",
+    "readmePath": "apps/bt/docs/experiments/market-behavior/ranking-fixed-return-priority-evidence/README.md",
+    "artifactHashes": {
+      "manifest": "8b2fe2271cef30f1460b62da03bc63f69d3338c6d30ec1fd4e158a05fb05445d",
+      "results": "73690cf5759fa38e2c17aa3a3ba9c730da11740c472d0a43b42d2051e4b553b4",
+      "summary": "f2b9cc3c1b2fcafb01834dd810ddcbe24d40dda624d7e438edb8fb9a75cf590d"
+    },
+    "supersededRunIds": [
+      "20260718_prime_pit_fixed_return_priority_v1",
+      "20260718_prime_pit_fixed_return_priority_v2",
+      "20260718_prime_pit_fixed_return_priority_v3",
+      "20260718_prime_pit_fixed_return_priority_v4",
+      "20260718_prime_pit_fixed_return_priority_v5",
+      "20260718_prime_pit_fixed_return_priority_v6",
+      "20260718_prime_pit_fixed_return_priority_v7",
+      "20260719_prime_price_pit_fixed_return_priority_v8",
+      "20260719_prime_price_pit_fixed_return_priority_v9",
+      "20260719_prime_price_pit_fixed_return_priority_v10",
+      "20260719_prime_price_pit_fixed_return_priority_v11"
+    ]
+  },
+  "market-behavior/ranking-technical-fit-score-shape-evidence": {
+    "canonicalRunId": "20260719_prime_pit_technical_fit_shape_v13",
+    "canonicalDecision": "neither",
+    "sourceCommit": "e33f76f1a8fecb1f8c3c731b3692c1e10dd123d4",
+    "bundlePath": "~/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260719_prime_pit_technical_fit_shape_v13",
+    "digestPath": "apps/bt/tests/fixtures/research/ranking_technical_fit_score_shape_evidence_v13_published_digest.json",
+    "readmePath": "apps/bt/docs/experiments/market-behavior/ranking-technical-fit-score-shape-evidence/README.md",
+    "artifactHashes": {
+      "manifest": "66a9c0e6fd49118b8be9e62a31824aeb0a6589446c77ffd3c2fdc58db78e2183",
+      "results": "28eef384322cbc819e960964292095355419faf7c20eb4e97d4e3af9257b37fd",
+      "summary": "3315050da12e4ca67d78981cf16a224de4f2e800cb17f4e8353241b2e2c97d59"
+    },
+    "supersededRunIds": [
+      "20260718_prime_pit_technical_fit_shape_v1",
+      "20260718_prime_pit_technical_fit_shape_v2",
+      "20260718_prime_pit_technical_fit_shape_v3",
+      "20260718_prime_pit_technical_fit_shape_v4",
+      "20260718_prime_pit_technical_fit_shape_v5",
+      "20260718_prime_pit_technical_fit_shape_v6",
+      "20260719_prime_pit_technical_fit_shape_v7",
+      "20260719_prime_pit_technical_fit_shape_v8",
+      "20260719_prime_pit_technical_fit_shape_v9",
+      "20260719_prime_pit_technical_fit_shape_v10",
+      "20260719_prime_pit_technical_fit_shape_v11",
+      "20260719_prime_pit_technical_fit_shape_v12"
+    ]
+  }
+}

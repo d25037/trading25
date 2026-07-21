@@ -3,27 +3,40 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+import re
+from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
-from src.domains.analytics.earnings_holdthrough_expectancy import (
-    _table_exists,
+from src.domains.analytics.daily_ranking_consumer_support import (
+    RERATING_VALUE_CONDITIONS,
+)
+from src.domains.analytics.daily_ranking_research_base import (
+    DailyRankingPanelRequest,
+    DailyRankingResearchRelations,
+    MarketScope,
+    RelationRef,
+    SignalDerivedColumn,
+    SignalExpression,
+    assert_daily_ranking_research_tables,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
+    normalize_daily_ranking_market_scopes,
 )
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
-    normalize_code_sql,
     open_readonly_analysis_connection,
 )
 from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
     write_research_bundle,
 )
-from src.shared.utils.market_code_alias import MARKET_CODES_BY_SCOPE, normalize_market_scope
 
 RANKING_COLOR_EVIDENCE_EXPERIMENT_ID = "market-behavior/ranking-color-evidence"
 DEFAULT_HORIZONS: tuple[int, ...] = (20,)
@@ -33,8 +46,12 @@ DEFAULT_SEVERE_LOSS_THRESHOLD_PCT = -10.0
 DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
 PANEL_FEATURE_WARMUP_CALENDAR_DAYS = 365
 _REQUIRED_TABLES: tuple[str, ...] = (
-    "stock_data",
+    "stock_data_raw",
+    "stock_adjustment_bases",
+    "stock_adjustment_basis_segments",
+    "stock_master_daily",
     "topix_data",
+    "indices_data",
     "daily_valuation",
 )
 _NIKKEI_SYNTHETIC_INDEX_CODE = "N225_UNDERPX"
@@ -101,34 +118,6 @@ _TOPIX_REGIMES: tuple[tuple[str, str], ...] = (
         "topix_recent_return_60d_pct < 0",
     ),
 )
-_RERATING_VALUE_CONDITIONS: tuple[tuple[str, str], ...] = (
-    ("all_value", "TRUE"),
-    (
-        "no_value_confirmation",
-        "NOT (pbr_percentile <= 0.2 OR "
-        "(per_percentile <= 0.2 AND forward_per_to_per_ratio <= 1.0))",
-    ),
-    ("low_pbr20", "pbr_percentile <= 0.2"),
-    ("low_fwd_per20", "forward_per_percentile <= 0.2"),
-    (
-        "low_pbr20_low_fwd_per20",
-        "pbr_percentile <= 0.2 AND forward_per_percentile <= 0.2",
-    ),
-    (
-        "low_per20_fwdper_per_lte_0_8",
-        "per_percentile <= 0.2 AND forward_per_to_per_ratio <= 0.8",
-    ),
-    (
-        "medium_value_confirmation",
-        "pbr_percentile <= 0.2 OR "
-        "(per_percentile <= 0.2 AND forward_per_to_per_ratio <= 1.0)",
-    ),
-    (
-        "strong_value_confirmation",
-        "(pbr_percentile <= 0.2 AND forward_per_percentile <= 0.2) OR "
-        "(per_percentile <= 0.2 AND forward_per_to_per_ratio <= 0.8)",
-    ),
-)
 _OVERVALUED_CONDITIONS: tuple[tuple[str, str], ...] = (
     (
         "all_positive_per_pbr",
@@ -183,6 +172,38 @@ _ADV60_ABS_BUCKETS: tuple[tuple[str, str], ...] = (
         "med_adv60_sessions >= 60 AND med_adv60_jpy >= 1000000000",
     ),
 )
+_RANKING_COLOR_OUTPUT_STRING_COLUMNS = frozenset(
+    {
+        "code",
+        "company_name",
+        "market",
+        "market_code",
+        "scale_category",
+        "liquidity_regime",
+        "market_scope",
+        "condition_family",
+        "valuation_feature",
+        "ranking_color_bucket",
+        "evidence_tier",
+        "relation_feature",
+        "relation_bucket",
+        "per_scope",
+        "relation_level_bucket",
+        "interaction_bucket",
+        "topix_regime",
+        "value_condition",
+        "good_scope",
+        "chain_condition",
+        "ui_color",
+        "trend_condition",
+        "valuation_condition",
+        "market_cap_abs_bucket",
+        "adv60_abs_bucket",
+    }
+)
+_RANKING_COLOR_OUTPUT_INTEGER_COLUMNS = frozenset(
+    {"horizon", "observation_count", "code_count", "date_count", "trend_window"}
+)
 
 
 @dataclass(frozen=True)
@@ -225,7 +246,7 @@ def run_ranking_color_evidence_research(
     observation_sample_limit: int = DEFAULT_OBSERVATION_SAMPLE_LIMIT,
 ) -> RankingColorEvidenceResult:
     resolved_horizons = tuple(sorted({int(horizon) for horizon in horizons}))
-    resolved_market_scopes = _normalize_market_scopes(market_scopes)
+    resolved_market_scopes = normalize_daily_ranking_market_scopes(market_scopes)
     _validate_params(
         horizons=resolved_horizons,
         min_observations=min_observations,
@@ -236,28 +257,94 @@ def run_ranking_color_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = _offset_calendar_date(start_date, days=-150)
-    query_end = _offset_calendar_date(end_date, days=max(resolved_horizons) * 4 + 30)
-
     with open_readonly_analysis_connection(
         str(db_path_obj),
         snapshot_prefix="ranking-color-evidence-",
     ) as ctx:
-        _assert_required_tables(ctx.connection)
+        assert_daily_ranking_research_tables(ctx.connection)
         market_source = "stock_master_daily_exact_date"
-        _create_observation_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            DailyRankingPanelRequest(
+                namespace="ranking_color",
+                analysis_start_date=(
+                    None if start_date is None else date.fromisoformat(start_date)
+                ),
+                analysis_end_date=(
+                    None if end_date is None else date.fromisoformat(end_date)
+                ),
+                horizons=resolved_horizons,
+                market_scopes=cast(tuple[MarketScope, ...], resolved_market_scopes),
+                include_liquidity=True,
+                percentile_features=(
+                    "forecast_per_to_per_ratio",
+                    "forecast_p_op_to_per_ratio",
+                    "forecast_operating_profit_growth_ratio",
+                    "per_to_fop_growth_ratio",
+                    "forecast_per_to_fop_growth_ratio",
+                ),
+            ),
         )
-        observation_count = int(
-            ctx.connection.execute("SELECT count(*) FROM ranking_color_panel").fetchone()[0]
+        panel_cohort = _freeze_full_signal_relation(
+            ctx.connection,
+            relations,
+            source=relations.signal_panel,
+            name="panel",
         )
+        evaluated_panel = attach_daily_ranking_outcomes(
+            ctx.connection,
+            panel_cohort,
+            relations,
+            name="panel",
+        )
+        ranked_cohort = _freeze_full_signal_relation(
+            ctx.connection,
+            relations,
+            source=relations.ranked_signals,
+            name="ranked",
+        )
+        evaluated_ranked = attach_daily_ranking_outcomes(
+            ctx.connection,
+            ranked_cohort,
+            relations,
+            name="ranked",
+        )
+        valuation_bucket_sources = _freeze_valuation_bucket_sources(
+            ctx.connection,
+            relations,
+        )
+        if relations.liquidity_ranked_signals is None:
+            raise RuntimeError(
+                "Ranking Color requires the liquidity-ranked signal relation"
+            )
+        liquidity_cohort = _freeze_full_signal_relation(
+            ctx.connection,
+            relations,
+            source=relations.liquidity_ranked_signals,
+            name="liquidity_ranked",
+        )
+        evaluated_liquidity = attach_daily_ranking_outcomes(
+            ctx.connection,
+            liquidity_cohort,
+            relations,
+            name="liquidity_ranked",
+        )
+        panel_source = _create_ranking_color_evaluated_view(
+            ctx.connection,
+            evaluated_panel,
+            name="ranking_color_evaluated_panel",
+        )
+        ranked_source = _create_ranking_color_evaluated_view(
+            ctx.connection,
+            evaluated_ranked,
+            name="ranking_color_evaluated_ranked",
+        )
+        liquidity_source = _create_ranking_color_evaluated_view(
+            ctx.connection,
+            evaluated_liquidity,
+            name="ranking_color_evaluated_liquidity_ranked",
+        )
+        observation_count = evaluated_panel.row_count
         result = RankingColorEvidenceResult(
             db_path=str(db_path_obj),
             source_mode=ctx.source_mode,
@@ -273,23 +360,31 @@ def run_ranking_color_evidence_research(
             observation_count=observation_count,
             observation_sample_df=_query_observation_sample_df(
                 ctx.connection,
+                source_name=ranked_source,
                 limit=observation_sample_limit,
             ),
-            coverage_diagnostics_df=_build_coverage_diagnostics_df(ctx.connection),
+            coverage_diagnostics_df=_build_coverage_diagnostics_df(
+                ctx.connection,
+                source_name=panel_source,
+            ),
             ranking_color_evidence_df=_build_ranking_color_evidence_df(
                 ctx.connection,
+                source_name=ranked_source,
+                bucket_sources=valuation_bucket_sources,
                 horizons=resolved_horizons,
                 min_observations=min_observations,
                 severe_loss_threshold_pct=severe_loss_threshold_pct,
             ),
             per_relation_evidence_df=_build_per_relation_evidence_df(
                 ctx.connection,
+                source_name=ranked_source,
                 horizons=resolved_horizons,
                 min_observations=min_observations,
                 severe_loss_threshold_pct=severe_loss_threshold_pct,
             ),
             low_per_relation_evidence_df=_build_low_per_relation_evidence_df(
                 ctx.connection,
+                source_name=ranked_source,
                 horizons=resolved_horizons,
                 min_observations=min_observations,
                 severe_loss_threshold_pct=severe_loss_threshold_pct,
@@ -297,6 +392,7 @@ def run_ranking_color_evidence_research(
             low_per_relation_level_evidence_df=(
                 _build_low_per_relation_level_evidence_df(
                     ctx.connection,
+                    source_name=ranked_source,
                     horizons=resolved_horizons,
                     min_observations=min_observations,
                     severe_loss_threshold_pct=severe_loss_threshold_pct,
@@ -304,12 +400,14 @@ def run_ranking_color_evidence_research(
             ),
             forward_per_pop_interaction_df=_build_forward_per_pop_interaction_df(
                 ctx.connection,
+                source_name=ranked_source,
                 horizons=resolved_horizons,
                 min_observations=min_observations,
                 severe_loss_threshold_pct=severe_loss_threshold_pct,
             ),
             liquidity_regime_evidence_df=_build_liquidity_regime_evidence_df(
                 ctx.connection,
+                source_name=liquidity_source,
                 horizons=resolved_horizons,
                 min_observations=min_observations,
                 severe_loss_threshold_pct=severe_loss_threshold_pct,
@@ -317,6 +415,7 @@ def run_ranking_color_evidence_research(
             topix_regime_liquidity_value_evidence_df=(
                 _build_topix_regime_liquidity_value_evidence_df(
                     ctx.connection,
+                    source_name=liquidity_source,
                     horizons=resolved_horizons,
                     min_observations=min_observations,
                     severe_loss_threshold_pct=severe_loss_threshold_pct,
@@ -325,6 +424,7 @@ def run_ranking_color_evidence_research(
             rerating_good_valuation_chain_df=(
                 _build_rerating_good_valuation_chain_df(
                     ctx.connection,
+                    source_name=ranked_source,
                     horizons=resolved_horizons,
                     min_observations=min_observations,
                     severe_loss_threshold_pct=severe_loss_threshold_pct,
@@ -333,6 +433,7 @@ def run_ranking_color_evidence_research(
             liquidity_color_long_trend_evidence_df=(
                 _build_liquidity_color_long_trend_evidence_df(
                     ctx.connection,
+                    source_name=liquidity_source,
                     horizons=resolved_horizons,
                     min_observations=min_observations,
                     severe_loss_threshold_pct=severe_loss_threshold_pct,
@@ -341,6 +442,7 @@ def run_ranking_color_evidence_research(
             overvalued_size_liquidity_interaction_df=(
                 _build_overvalued_size_liquidity_interaction_df(
                     ctx.connection,
+                    source_name=ranked_source,
                     horizons=resolved_horizons,
                     min_observations=min_observations,
                     severe_loss_threshold_pct=severe_loss_threshold_pct,
@@ -350,6 +452,128 @@ def run_ranking_color_evidence_research(
     return result
 
 
+def _freeze_full_signal_relation(
+    conn: Any,
+    relations: DailyRankingResearchRelations,
+    *,
+    source: RelationRef,
+    name: str,
+) -> RelationRef:
+    """Freeze Ranking Color's complete signal-time population before evaluation."""
+
+    return materialize_daily_ranking_signal_cohort(
+        conn,
+        relations,
+        source=source,
+        name=f"ranking_color_{name}",
+    )
+
+
+def _freeze_valuation_bucket_sources(
+    conn: Any,
+    relations: DailyRankingResearchRelations,
+) -> dict[tuple[str, str], str]:
+    """Freeze each valuation membership before attaching any forward outcome."""
+
+    sources: dict[tuple[str, str], str] = {}
+    for feature in _VALUATION_FEATURES:
+        canonical_feature = {
+            "forward_per": "forecast_per",
+            "forward_p_op": "forecast_p_op",
+        }.get(feature, feature)
+        percentile_column = f"{canonical_feature}_percentile"
+        for bucket in _VALUATION_BUCKETS:
+            cohort = materialize_daily_ranking_signal_cohort(
+                conn,
+                relations,
+                source=relations.ranked_signals,
+                name=f"ranking_color_valuation_{feature}_{bucket}",
+                predicate=SignalExpression(
+                    _valuation_bucket_condition(percentile_column, bucket),
+                    referenced_columns=(percentile_column,),
+                ),
+                derived_columns=(
+                    SignalDerivedColumn(
+                        "valuation_feature",
+                        SignalExpression(f"'{feature}'"),
+                        "VARCHAR",
+                    ),
+                    SignalDerivedColumn(
+                        "ranking_color_bucket",
+                        SignalExpression(f"'{bucket}'"),
+                        "VARCHAR",
+                    ),
+                ),
+            )
+            evaluated = attach_daily_ranking_outcomes(
+                conn,
+                cohort,
+                relations,
+                name=f"ranking_color_valuation_{feature}_{bucket}",
+            )
+            sources[(feature, bucket)] = _create_ranking_color_evaluated_view(
+                conn,
+                evaluated,
+                name=f"ranking_color_evaluated_valuation_{feature}_{bucket}",
+            )
+    return sources
+
+
+_RANKING_COLOR_LEGACY_NAMES: dict[str, str] = {
+    "forecast_per": "forward_per",
+    "forecast_p_op": "forward_p_op",
+    "forecast_per_to_per_ratio": "forward_per_to_per_ratio",
+    "forecast_p_op_to_per_ratio": "forward_p_op_to_per_ratio",
+    "forecast_per_to_fop_growth_ratio": "forward_per_to_fop_growth_ratio",
+    "forecast_per_percentile": "forward_per_percentile",
+    "forecast_p_op_percentile": "forward_p_op_percentile",
+    "forecast_per_to_per_ratio_percentile": "forward_per_to_per_ratio_percentile",
+    "forecast_p_op_to_per_ratio_percentile": "forward_p_op_to_per_ratio_percentile",
+    "forecast_per_to_fop_growth_ratio_percentile": (
+        "forward_per_to_fop_growth_ratio_percentile"
+    ),
+}
+
+
+def _create_ranking_color_evaluated_view(
+    conn: Any,
+    relation: RelationRef,
+    *,
+    name: str,
+) -> str:
+    """Expose Ranking Color's existing internal aliases after outcomes attach."""
+
+    select_columns = [
+        f"{column} AS {_RANKING_COLOR_LEGACY_NAMES[column]}"
+        if column in _RANKING_COLOR_LEGACY_NAMES
+        else column
+        for column in relation.columns
+    ]
+    horizons = sorted(
+        {
+            int(match.group(1))
+            for column in relation.columns
+            if (match := re.fullmatch(r"forward_close_return_(\d+)d_pct", column))
+        }
+    )
+    for horizon in horizons:
+        select_columns.extend(
+            (
+                f"forward_close_return_{horizon}d_pct "
+                f"- forward_close_excess_return_{horizon}d_pct "
+                f"AS topix_close_return_{horizon}d_pct",
+                f"forward_close_return_{horizon}d_pct "
+                f"- forward_close_n225_excess_return_{horizon}d_pct "
+                f"AS n225_close_return_{horizon}d_pct",
+            )
+        )
+    conn.execute(
+        f"CREATE OR REPLACE TEMP VIEW {name} AS "
+        f"SELECT {', '.join(select_columns)} FROM {relation.name}"
+    )
+    return name
+
+
 def write_ranking_color_evidence_bundle(
     result: RankingColorEvidenceResult,
     *,
@@ -357,6 +581,28 @@ def write_ranking_color_evidence_bundle(
     run_id: str | None = None,
     notes: str | None = None,
 ) -> ResearchBundleInfo:
+    result_tables = {
+        "observation_sample_df": result.observation_sample_df,
+        "coverage_diagnostics_df": result.coverage_diagnostics_df,
+        "ranking_color_evidence_df": result.ranking_color_evidence_df,
+        "per_relation_evidence_df": result.per_relation_evidence_df,
+        "low_per_relation_evidence_df": result.low_per_relation_evidence_df,
+        "low_per_relation_level_evidence_df": (
+            result.low_per_relation_level_evidence_df
+        ),
+        "forward_per_pop_interaction_df": result.forward_per_pop_interaction_df,
+        "liquidity_regime_evidence_df": result.liquidity_regime_evidence_df,
+        "topix_regime_liquidity_value_evidence_df": (
+            result.topix_regime_liquidity_value_evidence_df
+        ),
+        "rerating_good_valuation_chain_df": result.rerating_good_valuation_chain_df,
+        "liquidity_color_long_trend_evidence_df": (
+            result.liquidity_color_long_trend_evidence_df
+        ),
+        "overvalued_size_liquidity_interaction_df": (
+            result.overvalued_size_liquidity_interaction_df
+        ),
+    }
     return write_research_bundle(
         experiment_id=RANKING_COLOR_EVIDENCE_EXPERIMENT_ID,
         module="src.domains.analytics.ranking_color_evidence",
@@ -378,32 +624,49 @@ def write_ranking_color_evidence_bundle(
             "observation_count": result.observation_count,
         },
         result_tables={
-            "observation_sample_df": result.observation_sample_df,
-            "coverage_diagnostics_df": result.coverage_diagnostics_df,
-            "ranking_color_evidence_df": result.ranking_color_evidence_df,
-            "per_relation_evidence_df": result.per_relation_evidence_df,
-            "low_per_relation_evidence_df": result.low_per_relation_evidence_df,
-            "low_per_relation_level_evidence_df": (
-                result.low_per_relation_level_evidence_df
-            ),
-            "forward_per_pop_interaction_df": result.forward_per_pop_interaction_df,
-            "liquidity_regime_evidence_df": result.liquidity_regime_evidence_df,
-            "topix_regime_liquidity_value_evidence_df": (
-                result.topix_regime_liquidity_value_evidence_df
-            ),
-            "rerating_good_valuation_chain_df": result.rerating_good_valuation_chain_df,
-            "liquidity_color_long_trend_evidence_df": (
-                result.liquidity_color_long_trend_evidence_df
-            ),
-            "overvalued_size_liquidity_interaction_df": (
-                result.overvalued_size_liquidity_interaction_df
-            ),
+            name: _ranking_color_bundle_frame(frame)
+            for name, frame in result_tables.items()
         },
         summary_markdown=build_summary_markdown(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
     )
+
+
+def _ranking_color_output_schema(frame: pd.DataFrame) -> tuple[tuple[str, str], ...]:
+    """Return the exact DuckDB bundle schema for a Ranking Color frame."""
+
+    return tuple(
+        (
+            column,
+            "DATE"
+            if column == "date"
+            else "VARCHAR"
+            if column in _RANKING_COLOR_OUTPUT_STRING_COLUMNS
+            else "BIGINT"
+            if column in _RANKING_COLOR_OUTPUT_INTEGER_COLUMNS
+            or column.endswith("_order")
+            else "DOUBLE",
+        )
+        for column in frame.columns
+    )
+
+
+def _ranking_color_bundle_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Cast even empty/all-null columns to the declared bundle SQL types."""
+
+    typed = frame.copy()
+    for column, sql_type in _ranking_color_output_schema(frame):
+        if sql_type == "DATE":
+            typed[column] = pd.to_datetime(typed[column]).dt.date
+        elif sql_type == "VARCHAR":
+            typed[column] = typed[column].astype("string")
+        elif sql_type == "BIGINT":
+            typed[column] = pd.to_numeric(typed[column]).astype("Int64")
+        else:
+            typed[column] = pd.to_numeric(typed[column]).astype("float64")
+    return typed
 
 
 def build_summary_markdown(result: RankingColorEvidenceResult) -> str:
@@ -484,720 +747,11 @@ def build_summary_markdown(result: RankingColorEvidenceResult) -> str:
     return "\n".join(parts).rstrip() + "\n"
 
 
-def _assert_required_tables(conn: Any) -> None:
-    missing = [table for table in _REQUIRED_TABLES if not _table_exists(conn, table)]
-    if not _table_exists(conn, "stock_master_daily"):
-        missing.append("stock_master_daily")
-    if missing:
-        raise ValueError(f"market.duckdb is missing required tables: {', '.join(missing)}")
-
-
-def _panel_feature_query_start_date(
-    query_start: str | None,
-    analysis_start_date: str | None,
-) -> str | None:
-    if analysis_start_date is None:
-        return query_start
-    feature_start = _offset_calendar_date(
-        analysis_start_date,
-        days=-PANEL_FEATURE_WARMUP_CALENDAR_DAYS,
-    )
-    if query_start is None:
-        return feature_start
-    return max(query_start, feature_start) if feature_start is not None else query_start
-
-
-def _create_observation_panel(
-    conn: Any,
-    *,
-    query_start: str | None,
-    query_end: str | None,
-    analysis_start_date: str | None,
-    analysis_end_date: str | None,
-    horizons: Sequence[int],
-    market_source: str,
-    market_scopes: Sequence[str],
-    include_liquidity_ranked: bool = True,
-    include_relation_percentiles: bool = True,
-) -> None:
-    feature_query_start = _panel_feature_query_start_date(
-        query_start,
-        analysis_start_date,
-    )
-    _create_daily_valuation_view(
-        conn,
-        query_start=feature_query_start,
-        query_end=query_end,
-    )
-    price_code = normalize_code_sql("sd.code")
-    master_code = (
-        normalize_code_sql("smd.code")
-        if market_source == "stock_master_daily_exact_date"
-        else normalize_code_sql("s.code")
-    )
-    forward_exprs = ",\n                ".join(
-        f"lead(close, {horizon}) over (partition by code order by date) as future_close_{horizon}d"
-        for horizon in horizons
-    )
-    return_exprs = ",\n            ".join(
-        f"case when close > 0 and future_close_{horizon}d > 0 then "
-        f"(future_close_{horizon}d / close - 1.0) * 100.0 end "
-        f"as forward_close_return_{horizon}d_pct"
-        for horizon in horizons
-    )
-    topix_forward_exprs = ",\n                ".join(
-        f"lead(close, {horizon}) over (order by date) as topix_future_close_{horizon}d"
-        for horizon in horizons
-    )
-    topix_lag_exprs = ",\n                ".join(
-        f"lag(close, {lookback}) over (order by date) as topix_close_lag_{lookback}d"
-        for lookback in (20, 60)
-    )
-    topix_return_exprs = ",\n            ".join(
-        f"case when topix_close > 0 and topix_future_close_{horizon}d > 0 then "
-        f"(topix_future_close_{horizon}d / topix_close - 1.0) * 100.0 end "
-        f"as topix_close_return_{horizon}d_pct"
-        for horizon in horizons
-    )
-    _create_n225_feature_view(
-        conn,
-        query_start=feature_query_start,
-        query_end=query_end,
-        horizons=horizons,
-    )
-    n225_select_exprs = ",\n                ".join(
-        [
-            "nf.n225_close",
-            "nf.n225_recent_return_20d_pct",
-            "nf.n225_recent_return_60d_pct",
-            *[
-                f"nf.n225_close_return_{horizon}d_pct"
-                for horizon in horizons
-            ],
-        ]
-    )
-    excess_exprs = ",\n            ".join(
-        [
-            f"forward_close_return_{horizon}d_pct - topix_close_return_{horizon}d_pct "
-            f"as forward_close_excess_return_{horizon}d_pct"
-            for horizon in horizons
-        ]
-        + [
-            f"forward_close_return_{horizon}d_pct - n225_close_return_{horizon}d_pct "
-            f"as forward_close_n225_excess_return_{horizon}d_pct"
-            for horizon in horizons
-        ]
-    )
-    raw_conditions: list[str] = []
-    raw_params: list[str] = []
-    if feature_query_start is not None:
-        raw_conditions.append("sd.date >= ?")
-        raw_params.append(feature_query_start)
-    if query_end is not None:
-        raw_conditions.append("sd.date <= ?")
-        raw_params.append(query_end)
-    raw_where = "" if not raw_conditions else "WHERE " + " AND ".join(raw_conditions)
-    master_conditions: list[str] = []
-    master_params: list[str] = []
-    if feature_query_start is not None:
-        master_conditions.append("smd.date >= ?")
-        master_params.append(feature_query_start)
-    if query_end is not None:
-        master_conditions.append("smd.date <= ?")
-        master_params.append(query_end)
-    master_where = (
-        "" if not master_conditions else "WHERE " + " AND ".join(master_conditions)
-    )
-    topix_conditions = ["td.close > 0"]
-    topix_params: list[str] = []
-    if feature_query_start is not None:
-        topix_conditions.append("td.date >= ?")
-        topix_params.append(feature_query_start)
-    if query_end is not None:
-        topix_conditions.append("td.date <= ?")
-        topix_params.append(query_end)
-    topix_where = "WHERE " + " AND ".join(topix_conditions)
-    final_conditions: list[str] = []
-    final_params: list[str] = []
-    if analysis_start_date is not None:
-        final_conditions.append("date >= ?")
-        final_params.append(analysis_start_date)
-    if analysis_end_date is not None:
-        final_conditions.append("date <= ?")
-        final_params.append(analysis_end_date)
-    final_where = "" if not final_conditions else "WHERE " + " AND ".join(final_conditions)
-    market_filter = (
-        "TRUE"
-        if "all" in market_scopes
-        else f"m.market IN ({_sql_string_list(market_scopes)})"
-    )
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE ranking_color_panel AS
-        WITH raw_prices AS (
-            SELECT
-                {price_code} AS code,
-                sd.date,
-                arg_min(
-                    sd.open,
-                    CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code
-                ) AS open,
-                arg_min(
-                    sd.close,
-                    CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code
-                ) AS close,
-                arg_min(
-                    sd.volume,
-                    CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code
-                ) AS volume
-            FROM stock_data sd
-            {raw_where}
-            GROUP BY {price_code}, sd.date
-        ),
-        prices AS (
-            SELECT code, date, open, close, volume
-            FROM raw_prices
-            WHERE open > 0
-              AND close > 0
-        ),
-        {_market_master_cte(
-            market_source=market_source,
-            master_code=master_code,
-            master_where=master_where,
-        )},
-        scoped AS (
-            SELECT
-                p.*,
-                m.company_name,
-                m.market,
-                m.market_code,
-                m.scale_category,
-                dv.per,
-                dv.forward_per,
-                dv.pbr,
-                dv.p_op,
-                dv.forward_p_op,
-                dv.market_cap / 1000000000.0 AS market_cap_bil_jpy,
-                coalesce(dv.free_float_market_cap, dv.market_cap) AS free_float_market_cap_jpy
-            FROM prices p
-            JOIN market_master m ON m.code = p.code AND m.date = p.date
-            LEFT JOIN ranking_color_daily_valuation dv
-              ON dv.code = p.code
-             AND dv.date = p.date
-            WHERE {market_filter}
-        ),
-        featured AS (
-            SELECT
-                *,
-                median(close * volume) OVER (
-                    PARTITION BY code ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
-                ) AS med_adv60_jpy,
-                count(close * volume) OVER (
-                    PARTITION BY code ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
-                ) AS med_adv60_sessions,
-                lag(close, 20) over (partition by code order by date) as close_lag_20d,
-                lag(close, 60) over (partition by code order by date) as close_lag_60d,
-                lag(close, 120) over (partition by code order by date) as close_lag_120d,
-                lag(close, 150) over (partition by code order by date) as close_lag_150d,
-                {forward_exprs}
-            FROM scoped
-        ),
-        topix_featured AS (
-            SELECT
-                td.date,
-                td.close AS topix_close,
-                {topix_lag_exprs},
-                {topix_forward_exprs}
-            FROM topix_data td
-            {topix_where}
-        ),
-        computed AS (
-            SELECT
-                f.*,
-                tf.topix_close,
-                case when close_lag_20d > 0 then (close / close_lag_20d - 1.0) * 100.0 end
-                    as recent_return_20d_pct,
-                case when close_lag_60d > 0 then (close / close_lag_60d - 1.0) * 100.0 end
-                    as recent_return_60d_pct,
-                case when close_lag_120d > 0 then (close / close_lag_120d - 1.0) * 100.0 end
-                    as recent_return_120d_pct,
-                case when close_lag_150d > 0 then (close / close_lag_150d - 1.0) * 100.0 end
-                    as recent_return_150d_pct,
-                case when topix_close_lag_20d > 0 then (topix_close / topix_close_lag_20d - 1.0) * 100.0 end
-                    as topix_recent_return_20d_pct,
-                case when topix_close_lag_60d > 0 then (topix_close / topix_close_lag_60d - 1.0) * 100.0 end
-                    as topix_recent_return_60d_pct,
-                {n225_select_exprs},
-                {return_exprs},
-                {topix_return_exprs}
-            FROM featured f
-            LEFT JOIN topix_featured tf USING (date)
-            LEFT JOIN ranking_color_n225_featured nf USING (date)
-        ),
-        excess AS (
-            SELECT
-                *,
-                {excess_exprs}
-            FROM computed
-        ),
-        analysis_panel AS (
-            SELECT *
-            FROM excess
-            {final_where}
-        ),
-        residual_source AS (
-            SELECT
-                *,
-                CASE
-                    WHEN med_adv60_sessions >= 60
-                     AND med_adv60_jpy > 0
-                     AND free_float_market_cap_jpy > 0
-                        THEN ln(med_adv60_jpy)
-                END AS log_adv60,
-                CASE
-                    WHEN med_adv60_sessions >= 60
-                     AND med_adv60_jpy > 0
-                     AND free_float_market_cap_jpy > 0
-                        THEN ln(free_float_market_cap_jpy)
-                END AS log_free_float_market_cap
-            FROM analysis_panel
-        ),
-        residual_group_stats AS (
-            SELECT
-                date,
-                market,
-                count(*) AS residual_observations,
-                avg(log_adv60) AS avg_log_adv60,
-                avg(log_free_float_market_cap) AS avg_log_free_float_market_cap,
-                var_samp(log_free_float_market_cap) AS var_log_free_float_market_cap,
-                covar_samp(log_free_float_market_cap, log_adv60) AS covar_log_cap_adv
-            FROM residual_source
-            WHERE log_adv60 IS NOT NULL
-              AND log_free_float_market_cap IS NOT NULL
-            GROUP BY date, market
-        ),
-        residual_stats AS (
-            SELECT
-                rs.*,
-                rgs.residual_observations,
-                CASE
-                    WHEN rgs.var_log_free_float_market_cap > 0
-                        THEN rgs.covar_log_cap_adv / rgs.var_log_free_float_market_cap
-                END AS residual_beta,
-                CASE
-                    WHEN rgs.var_log_free_float_market_cap > 0
-                        THEN rgs.avg_log_adv60
-                            - (rgs.covar_log_cap_adv / rgs.var_log_free_float_market_cap)
-                            * rgs.avg_log_free_float_market_cap
-                END AS residual_intercept
-            FROM residual_source rs
-            LEFT JOIN residual_group_stats rgs
-              ON rgs.date = rs.date
-             AND rgs.market = rs.market
-        ),
-        residual_values AS (
-            SELECT
-                *,
-                CASE
-                    WHEN residual_observations >= 50
-                     AND residual_intercept IS NOT NULL
-                     AND residual_beta IS NOT NULL
-                        THEN log_adv60 - (residual_intercept + residual_beta * log_free_float_market_cap)
-                END AS liquidity_residual
-            FROM residual_stats
-        ),
-        residual_z_source AS (
-            SELECT
-                *,
-                stddev_samp(liquidity_residual) OVER (PARTITION BY date, market)
-                    AS liquidity_residual_std
-            FROM residual_values
-        ),
-        final_panel AS (
-            SELECT
-                *,
-                CASE
-                    WHEN liquidity_residual_std > 0
-                        THEN liquidity_residual / liquidity_residual_std
-                END AS liquidity_residual_z
-            FROM residual_z_source
-        )
-        SELECT
-            *,
-            CASE
-                WHEN liquidity_residual_std IS NULL OR liquidity_residual_std <= 0 THEN 'missing'
-                WHEN liquidity_residual_z >= 1
-                  AND recent_return_20d_pct >= 0
-                  AND recent_return_60d_pct >= 0 THEN 'crowded_rerating'
-                WHEN liquidity_residual_z >= 1 THEN 'distribution_stress'
-                WHEN liquidity_residual_z <= -1 THEN 'stale_liquidity'
-                WHEN liquidity_residual_z > -1
-                  AND liquidity_residual_z < 1
-                  AND recent_return_20d_pct >= 0
-                  AND recent_return_60d_pct >= 0 THEN 'neutral_rerating'
-                ELSE 'neutral'
-            END AS liquidity_regime
-        FROM final_panel
-        """,
-        [*raw_params, *master_params, *topix_params, *final_params],
-    )
-    _create_percentile_view(
-        conn,
-        include_all_scope="all" in market_scopes,
-        include_liquidity_ranked=include_liquidity_ranked,
-        include_relation_percentiles=include_relation_percentiles,
-    )
-
-
-def _create_n225_feature_view(
-    conn: Any,
-    *,
-    query_start: str | None,
-    query_end: str | None,
-    horizons: Sequence[int],
-) -> None:
-    n225_forward_exprs = ",\n                ".join(
-        f"lead(close, {horizon}) over (order by date) as n225_future_close_{horizon}d"
-        for horizon in horizons
-    )
-    n225_lag_exprs = ",\n                ".join(
-        f"lag(close, {lookback}) over (order by date) as n225_close_lag_{lookback}d"
-        for lookback in (20, 60)
-    )
-    n225_return_exprs = ",\n            ".join(
-        f"case when n225_close > 0 and n225_future_close_{horizon}d > 0 then "
-        f"(n225_future_close_{horizon}d / n225_close - 1.0) * 100.0 end "
-        f"as n225_close_return_{horizon}d_pct"
-        for horizon in horizons
-    )
-    null_horizon_exprs = ",\n            ".join(
-        f"CAST(NULL AS DOUBLE) AS n225_close_return_{horizon}d_pct"
-        for horizon in horizons
-    )
-    if not _table_exists(conn, "indices_data"):
-        conditions: list[str] = []
-        params: list[str] = []
-        if query_start is not None:
-            conditions.append("td.date >= ?")
-            params.append(query_start)
-        if query_end is not None:
-            conditions.append("td.date <= ?")
-            params.append(query_end)
-        where_sql = "" if not conditions else "WHERE " + " AND ".join(conditions)
-        conn.execute(
-            f"""
-            CREATE OR REPLACE TEMP TABLE ranking_color_n225_featured AS
-            SELECT
-                td.date,
-                CAST(NULL AS DOUBLE) AS n225_close,
-                CAST(NULL AS DOUBLE) AS n225_recent_return_20d_pct,
-                CAST(NULL AS DOUBLE) AS n225_recent_return_60d_pct,
-                {null_horizon_exprs}
-            FROM topix_data td
-            {where_sql}
-            """,
-            params,
-        )
-        return
-
-    conditions = [
-        f"upper(id.code) = '{_NIKKEI_SYNTHETIC_INDEX_CODE}'",
-        "id.close > 0",
-    ]
-    params = []
-    if query_start is not None:
-        conditions.append("id.date >= ?")
-        params.append(query_start)
-    if query_end is not None:
-        conditions.append("id.date <= ?")
-        params.append(query_end)
-    where_sql = "WHERE " + " AND ".join(conditions)
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE ranking_color_n225_featured AS
-        WITH raw_n225 AS (
-            SELECT
-                id.date,
-                arg_min(
-                    CAST(id.close AS DOUBLE),
-                    CASE
-                        WHEN upper(id.code) = '{_NIKKEI_SYNTHETIC_INDEX_CODE}' THEN '0'
-                        ELSE '1'
-                    END || id.code
-                ) AS close
-            FROM indices_data id
-            {where_sql}
-            GROUP BY id.date
-        ),
-        featured AS (
-            SELECT
-                date,
-                close AS n225_close,
-                {n225_lag_exprs},
-                {n225_forward_exprs}
-            FROM raw_n225
-        )
-        SELECT
-            date,
-            n225_close,
-            case when n225_close_lag_20d > 0 then (n225_close / n225_close_lag_20d - 1.0) * 100.0 end
-                as n225_recent_return_20d_pct,
-            case when n225_close_lag_60d > 0 then (n225_close / n225_close_lag_60d - 1.0) * 100.0 end
-                as n225_recent_return_60d_pct,
-            {n225_return_exprs}
-        FROM featured
-        """,
-        params,
-    )
-
-
-def _create_percentile_view(
-    conn: Any,
-    *,
-    include_all_scope: bool,
-    include_liquidity_ranked: bool = True,
-    include_relation_percentiles: bool = True,
-) -> None:
-    conn.execute(
-        """
-        CREATE OR REPLACE TEMP TABLE ranking_color_panel_relations AS
-        SELECT
-            *,
-            CASE
-                WHEN per > 0 AND forward_per > 0 THEN forward_per / per
-            END AS forward_per_to_per_ratio,
-            CASE
-                WHEN per > 0 AND forward_p_op > 0 THEN forward_p_op / per
-            END AS forward_p_op_to_per_ratio,
-            CASE
-                WHEN p_op > 0 AND forward_p_op > 0 THEN p_op / forward_p_op
-            END AS forecast_operating_profit_growth_ratio,
-            CASE
-                WHEN p_op > 0 AND forward_p_op > 0
-                    THEN (p_op / forward_p_op - 1.0) * 100.0
-            END AS forecast_operating_profit_growth_pct,
-            CASE
-                WHEN per > 0 AND p_op > 0 AND forward_p_op > 0
-                    THEN per / (p_op / forward_p_op)
-            END AS per_to_fop_growth_ratio,
-            CASE
-                WHEN forward_per > 0 AND p_op > 0 AND forward_p_op > 0
-                    THEN forward_per / (p_op / forward_p_op)
-            END AS forward_per_to_fop_growth_ratio
-        FROM ranking_color_panel
-        """
-    )
-    all_scope_union = (
-        """
-        UNION ALL
-        SELECT *, 'all' AS market_scope, 'all_liquidity' AS liquidity_scope
-        FROM ranking_color_panel_relations
-        """
-        if include_all_scope
-        else ""
-    )
-    liquidity_scope_union = (
-        """
-        UNION ALL
-        SELECT *, market AS market_scope, liquidity_regime AS liquidity_scope
-        FROM ranking_color_panel_relations
-        """
-        if include_liquidity_ranked
-        else ""
-    )
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP VIEW ranking_color_scoped AS
-        SELECT *, market AS market_scope, 'all_liquidity' AS liquidity_scope
-        FROM ranking_color_panel_relations
-        {liquidity_scope_union}
-        {all_scope_union}
-        """
-    )
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE ranking_color_ranked AS
-        SELECT
-            * EXCLUDE (
-                per_percent_rank,
-                forward_per_percent_rank,
-                forward_p_op_percent_rank,
-                pbr_percent_rank
-            ),
-            CASE WHEN per > 0 THEN per_percent_rank END AS per_percentile,
-            CASE WHEN forward_per > 0 THEN forward_per_percent_rank END
-                AS forward_per_percentile,
-            CASE WHEN forward_p_op > 0 THEN forward_p_op_percent_rank END
-                AS forward_p_op_percentile,
-            CASE WHEN pbr > 0 THEN pbr_percent_rank END AS pbr_percentile
-        FROM (
-            SELECT
-                *,
-                percent_rank() OVER (
-                    PARTITION BY market_scope, date, per > 0
-                    ORDER BY CASE WHEN per > 0 THEN per END NULLS LAST
-                ) AS per_percent_rank,
-                percent_rank() OVER (
-                    PARTITION BY market_scope, date, forward_per > 0
-                    ORDER BY CASE WHEN forward_per > 0 THEN forward_per END NULLS LAST
-                ) AS forward_per_percent_rank,
-                percent_rank() OVER (
-                    PARTITION BY market_scope, date, forward_p_op > 0
-                    ORDER BY CASE WHEN forward_p_op > 0 THEN forward_p_op END NULLS LAST
-                ) AS forward_p_op_percent_rank,
-                percent_rank() OVER (
-                    PARTITION BY market_scope, date, pbr > 0
-                    ORDER BY CASE WHEN pbr > 0 THEN pbr END NULLS LAST
-                ) AS pbr_percent_rank
-            FROM (
-                SELECT *, market AS market_scope, 'all_liquidity' AS liquidity_scope
-                FROM ranking_color_panel_relations
-                {all_scope_union}
-            )
-        )
-        """
-    )
-    if include_relation_percentiles:
-        _add_per_relation_percentiles(conn, table_name="ranking_color_ranked")
-    if include_liquidity_ranked:
-        conn.execute(
-            """
-            CREATE OR REPLACE TEMP TABLE ranking_color_liquidity_ranked AS
-            SELECT
-                * EXCLUDE (liquidity_scope),
-                liquidity_regime AS liquidity_scope
-            FROM ranking_color_ranked
-            WHERE market_scope != 'all'
-            """
-        )
-
-
-def _add_per_relation_percentiles(conn: Any, *, table_name: str) -> None:
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE {table_name} AS
-        SELECT
-            * EXCLUDE (
-                forward_per_to_per_ratio_percent_rank,
-                forward_p_op_to_per_ratio_percent_rank,
-                forecast_operating_profit_growth_ratio_percent_rank,
-                per_to_fop_growth_ratio_percent_rank,
-                forward_per_to_fop_growth_ratio_percent_rank
-            ),
-            CASE
-                WHEN forward_per_to_per_ratio IS NOT NULL THEN
-                    forward_per_to_per_ratio_percent_rank
-            END AS forward_per_to_per_ratio_percentile,
-            CASE
-                WHEN forward_p_op_to_per_ratio IS NOT NULL THEN
-                    forward_p_op_to_per_ratio_percent_rank
-            END AS forward_p_op_to_per_ratio_percentile,
-            CASE
-                WHEN forecast_operating_profit_growth_ratio IS NOT NULL THEN
-                    forecast_operating_profit_growth_ratio_percent_rank
-            END AS forecast_operating_profit_growth_ratio_percentile,
-            CASE
-                WHEN per_to_fop_growth_ratio IS NOT NULL THEN
-                    per_to_fop_growth_ratio_percent_rank
-            END AS per_to_fop_growth_ratio_percentile,
-            CASE
-                WHEN forward_per_to_fop_growth_ratio IS NOT NULL THEN
-                    forward_per_to_fop_growth_ratio_percent_rank
-            END AS forward_per_to_fop_growth_ratio_percentile
-        FROM (
-            SELECT
-                *,
-                percent_rank() OVER (
-                    PARTITION BY market_scope, date,
-                        forward_per_to_per_ratio IS NOT NULL
-                    ORDER BY forward_per_to_per_ratio NULLS LAST
-                ) AS forward_per_to_per_ratio_percent_rank,
-                percent_rank() OVER (
-                    PARTITION BY market_scope, date,
-                        forward_p_op_to_per_ratio IS NOT NULL
-                    ORDER BY forward_p_op_to_per_ratio NULLS LAST
-                ) AS forward_p_op_to_per_ratio_percent_rank,
-                percent_rank() OVER (
-                    PARTITION BY market_scope, date,
-                        forecast_operating_profit_growth_ratio IS NOT NULL
-                    ORDER BY forecast_operating_profit_growth_ratio NULLS LAST
-                ) AS forecast_operating_profit_growth_ratio_percent_rank,
-                percent_rank() OVER (
-                    PARTITION BY market_scope, date,
-                        per_to_fop_growth_ratio IS NOT NULL
-                    ORDER BY per_to_fop_growth_ratio NULLS LAST
-                ) AS per_to_fop_growth_ratio_percent_rank,
-                percent_rank() OVER (
-                    PARTITION BY market_scope, date,
-                        forward_per_to_fop_growth_ratio IS NOT NULL
-                    ORDER BY forward_per_to_fop_growth_ratio NULLS LAST
-                ) AS forward_per_to_fop_growth_ratio_percent_rank
-            FROM {table_name}
-        )
-        """
-    )
-
-
-def _create_daily_valuation_view(
-    conn: Any,
-    *,
-    query_start: str | None = None,
-    query_end: str | None = None,
-) -> None:
-    valuation_code = normalize_code_sql("dv.code")
-    conditions: list[str] = []
-    params: list[str] = []
-    if query_start is not None:
-        conditions.append("dv.date >= ?")
-        params.append(query_start)
-    if query_end is not None:
-        conditions.append("dv.date <= ?")
-        params.append(query_end)
-    where_sql = "" if not conditions else "WHERE " + " AND ".join(conditions)
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE ranking_color_daily_valuation AS
-        SELECT
-            code,
-            date,
-            per,
-            forward_per,
-            pbr,
-            p_op,
-            forward_p_op,
-            market_cap,
-            free_float_market_cap
-        FROM (
-            SELECT
-                {valuation_code} AS code,
-                dv.date,
-                CAST(dv.per AS DOUBLE) AS per,
-                CAST(dv.forward_per AS DOUBLE) AS forward_per,
-                {_optional_daily_valuation_double_expr(conn, "pbr")} AS pbr,
-                {_optional_daily_valuation_double_expr(conn, "p_op")} AS p_op,
-                {_optional_daily_valuation_double_expr(conn, "forward_p_op")} AS forward_p_op,
-                CAST(dv.market_cap AS DOUBLE) AS market_cap,
-                {_optional_daily_valuation_double_expr(conn, "free_float_market_cap")}
-                    AS free_float_market_cap,
-                row_number() OVER (
-                    PARTITION BY {valuation_code}, dv.date
-                    ORDER BY dv.price_basis_date DESC NULLS LAST,
-                             dv.basis_version DESC NULLS LAST,
-                             CASE WHEN length(dv.code) = 4 THEN 0 ELSE 1 END,
-                             dv.code
-                ) AS row_rank
-            FROM daily_valuation dv
-            {where_sql}
-        )
-        WHERE row_rank = 1
-        """,
-        params,
-    )
-
-
 def _build_ranking_color_evidence_df(
     conn: Any,
     *,
+    source_name: str,
+    bucket_sources: dict[tuple[str, str], str] | None = None,
     horizons: Sequence[int],
     min_observations: int,
     severe_loss_threshold_pct: float,
@@ -1206,17 +760,29 @@ def _build_ranking_color_evidence_df(
     for feature in _VALUATION_FEATURES:
         percentile_column = f"{feature}_percentile"
         for bucket in _VALUATION_BUCKETS:
+            bucket_source = (
+                source_name
+                if bucket_sources is None
+                else bucket_sources[(feature, bucket)]
+            )
+            condition = (
+                _valuation_bucket_condition(percentile_column, bucket)
+                if bucket_sources is None
+                else "TRUE"
+            )
             for horizon in horizons:
                 frames.append(
                     _aggregate_condition(
                         conn,
-                        source_name="ranking_color_ranked",
-                        condition=_valuation_bucket_condition(percentile_column, bucket),
+                        source_name=bucket_source,
+                        condition=condition,
                         condition_fields={
                             "condition_family": "ranking_color_percentile_evidence",
                             "valuation_feature": feature,
                             "ranking_color_bucket": bucket,
-                            "ranking_color_bucket_order": _VALUATION_BUCKETS.index(bucket),
+                            "ranking_color_bucket_order": _VALUATION_BUCKETS.index(
+                                bucket
+                            ),
                             "evidence_tier": _evidence_tier(bucket),
                             "horizon": int(horizon),
                         },
@@ -1231,6 +797,7 @@ def _build_ranking_color_evidence_df(
 def _build_forward_per_pop_interaction_df(
     conn: Any,
     *,
+    source_name: str,
     horizons: Sequence[int],
     min_observations: int,
     severe_loss_threshold_pct: float,
@@ -1241,12 +808,14 @@ def _build_forward_per_pop_interaction_df(
             frames.append(
                 _aggregate_condition(
                     conn,
-                    source_name="ranking_color_ranked",
+                    source_name=source_name,
                     condition=_forward_per_pop_condition(bucket),
                     condition_fields={
                         "condition_family": "forward_per_forward_p_op_relative",
                         "interaction_bucket": bucket,
-                        "interaction_bucket_order": _FORWARD_PER_POP_BUCKETS.index(bucket),
+                        "interaction_bucket_order": _FORWARD_PER_POP_BUCKETS.index(
+                            bucket
+                        ),
                         "horizon": int(horizon),
                     },
                     return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
@@ -1260,6 +829,7 @@ def _build_forward_per_pop_interaction_df(
 def _build_per_relation_evidence_df(
     conn: Any,
     *,
+    source_name: str,
     horizons: Sequence[int],
     min_observations: int,
     severe_loss_threshold_pct: float,
@@ -1272,8 +842,10 @@ def _build_per_relation_evidence_df(
                 frames.append(
                     _aggregate_condition(
                         conn,
-                        source_name="ranking_color_ranked",
-                        condition=_valuation_bucket_condition(percentile_column, bucket),
+                        source_name=source_name,
+                        condition=_valuation_bucket_condition(
+                            percentile_column, bucket
+                        ),
                         condition_fields={
                             "condition_family": "forward_valuation_per_relation",
                             "relation_feature": feature,
@@ -1293,6 +865,7 @@ def _build_per_relation_evidence_df(
 def _build_low_per_relation_evidence_df(
     conn: Any,
     *,
+    source_name: str,
     horizons: Sequence[int],
     min_observations: int,
     severe_loss_threshold_pct: float,
@@ -1310,7 +883,7 @@ def _build_low_per_relation_evidence_df(
                     frames.append(
                         _aggregate_condition(
                             conn,
-                            source_name="ranking_color_ranked",
+                            source_name=source_name,
                             condition=(
                                 f"per_percentile <= {per_threshold} "
                                 f"AND {relation_condition}"
@@ -1320,7 +893,9 @@ def _build_low_per_relation_evidence_df(
                                 "per_scope": per_scope,
                                 "relation_feature": feature,
                                 "relation_bucket": bucket,
-                                "relation_bucket_order": _VALUATION_BUCKETS.index(bucket),
+                                "relation_bucket_order": _VALUATION_BUCKETS.index(
+                                    bucket
+                                ),
                                 "evidence_tier": _evidence_tier(bucket),
                                 "horizon": int(horizon),
                             },
@@ -1337,6 +912,7 @@ def _build_low_per_relation_evidence_df(
 def _build_low_per_relation_level_evidence_df(
     conn: Any,
     *,
+    source_name: str,
     horizons: Sequence[int],
     min_observations: int,
     severe_loss_threshold_pct: float,
@@ -1352,7 +928,7 @@ def _build_low_per_relation_level_evidence_df(
                     frames.append(
                         _aggregate_condition(
                             conn,
-                            source_name="ranking_color_ranked",
+                            source_name=source_name,
                             condition=(
                                 f"per_percentile <= {per_threshold} "
                                 f"AND {relation_condition}"
@@ -1378,6 +954,7 @@ def _build_low_per_relation_level_evidence_df(
 def _build_liquidity_regime_evidence_df(
     conn: Any,
     *,
+    source_name: str,
     horizons: Sequence[int],
     min_observations: int,
     severe_loss_threshold_pct: float,
@@ -1388,7 +965,7 @@ def _build_liquidity_regime_evidence_df(
             frames.append(
                 _aggregate_condition(
                     conn,
-                    source_name="ranking_color_liquidity_ranked",
+                    source_name=source_name,
                     condition=f"liquidity_scope = '{regime}'",
                     condition_fields={
                         "condition_family": "liquidity_regime",
@@ -1406,6 +983,7 @@ def _build_liquidity_regime_evidence_df(
 def _build_topix_regime_liquidity_value_evidence_df(
     conn: Any,
     *,
+    source_name: str,
     horizons: Sequence[int],
     min_observations: int,
     severe_loss_threshold_pct: float,
@@ -1414,13 +992,13 @@ def _build_topix_regime_liquidity_value_evidence_df(
     for topix_order, (topix_regime, topix_condition) in enumerate(_TOPIX_REGIMES):
         for regime in _LIQUIDITY_REGIMES:
             for value_order, (value_condition, value_sql) in enumerate(
-                _RERATING_VALUE_CONDITIONS
+                RERATING_VALUE_CONDITIONS
             ):
                 for horizon in horizons:
                     frames.append(
                         _aggregate_condition(
                             conn,
-                            source_name="ranking_color_liquidity_ranked",
+                            source_name=source_name,
                             condition=(
                                 f"({topix_condition}) "
                                 f"AND liquidity_scope = '{regime}' "
@@ -1438,14 +1016,15 @@ def _build_topix_regime_liquidity_value_evidence_df(
                             return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
                             min_observations=min_observations,
                             severe_loss_threshold_pct=severe_loss_threshold_pct,
-                )
-            )
+                        )
+                    )
     return _concat_sorted(frames, columns=_topix_regime_liquidity_value_columns())
 
 
 def _build_liquidity_color_long_trend_evidence_df(
     conn: Any,
     *,
+    source_name: str,
     horizons: Sequence[int],
     min_observations: int,
     severe_loss_threshold_pct: float,
@@ -1466,7 +1045,7 @@ def _build_liquidity_color_long_trend_evidence_df(
                     frames.append(
                         _aggregate_condition(
                             conn,
-                            source_name="ranking_color_liquidity_ranked",
+                            source_name=source_name,
                             condition=(
                                 f"liquidity_scope = '{regime}' "
                                 f"AND ({color_sql}) "
@@ -1494,6 +1073,7 @@ def _build_liquidity_color_long_trend_evidence_df(
 def _build_rerating_good_valuation_chain_df(
     conn: Any,
     *,
+    source_name: str,
     horizons: Sequence[int],
     min_observations: int,
     severe_loss_threshold_pct: float,
@@ -1519,7 +1099,7 @@ def _build_rerating_good_valuation_chain_df(
                 frames.append(
                     _aggregate_condition(
                         conn,
-                        source_name="ranking_color_ranked",
+                        source_name=source_name,
                         condition=f"({good_condition}) AND ({chain_sql})",
                         condition_fields={
                             "condition_family": "rerating_good_forward_valuation_chain",
@@ -1540,6 +1120,7 @@ def _build_rerating_good_valuation_chain_df(
 def _build_overvalued_size_liquidity_interaction_df(
     conn: Any,
     *,
+    source_name: str,
     horizons: Sequence[int],
     min_observations: int,
     severe_loss_threshold_pct: float,
@@ -1556,7 +1137,7 @@ def _build_overvalued_size_liquidity_interaction_df(
                     frames.append(
                         _aggregate_condition(
                             conn,
-                            source_name="ranking_color_ranked",
+                            source_name=source_name,
                             condition=(
                                 f"({valuation_sql}) "
                                 f"AND ({market_cap_sql}) "
@@ -1655,9 +1236,13 @@ def _aggregate_condition(
     return frame.reindex(columns=ordered)
 
 
-def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
+def _build_coverage_diagnostics_df(
+    conn: Any,
+    *,
+    source_name: str,
+) -> pd.DataFrame:
     return conn.execute(
-        """
+        f"""
         SELECT
             market,
             count(*) AS observation_count,
@@ -1671,16 +1256,21 @@ def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
             avg(CASE WHEN pbr > 0 THEN 1.0 ELSE 0.0 END) * 100.0 AS pbr_coverage_pct,
             avg(CASE WHEN liquidity_residual_z IS NOT NULL THEN 1.0 ELSE 0.0 END) * 100.0
                 AS liquidity_residual_z_coverage_pct
-        FROM ranking_color_panel
+        FROM {source_name}
         GROUP BY market
         ORDER BY market
         """
     ).fetchdf()
 
 
-def _query_observation_sample_df(conn: Any, *, limit: int) -> pd.DataFrame:
+def _query_observation_sample_df(
+    conn: Any,
+    *,
+    source_name: str,
+    limit: int,
+) -> pd.DataFrame:
     return conn.execute(
-        """
+        f"""
         SELECT
             date,
             code,
@@ -1725,92 +1315,12 @@ def _query_observation_sample_df(conn: Any, *, limit: int) -> pd.DataFrame:
             market_cap_bil_jpy,
             forward_close_excess_return_20d_pct,
             forward_close_n225_excess_return_20d_pct
-        FROM ranking_color_ranked
+        FROM {source_name}
         ORDER BY date, code
         LIMIT ?
         """,
         [int(limit)],
     ).fetchdf()
-
-
-def _market_master_cte(
-    *,
-    market_source: str,
-    master_code: str,
-    master_where: str = "",
-) -> str:
-    if market_source != "stock_master_daily_exact_date":
-        raise ValueError(f"Unsupported market_source for PIT research: {market_source}")
-    market_scope_case = _market_scope_case_sql("market_code", "market_name")
-    return f"""
-    raw_market_master AS (
-        SELECT
-            {master_code} AS code,
-            smd.date,
-            arg_min(
-                smd.company_name,
-                CASE WHEN length(smd.code) = 4 THEN '0:' ELSE '1:' END || smd.code
-            ) AS company_name,
-            arg_min(
-                smd.market_code,
-                CASE WHEN length(smd.code) = 4 THEN '0:' ELSE '1:' END || smd.code
-            ) AS market_code,
-            arg_min(
-                smd.market_name,
-                CASE WHEN length(smd.code) = 4 THEN '0:' ELSE '1:' END || smd.code
-            ) AS market_name,
-            arg_min(
-                smd.scale_category,
-                CASE WHEN length(smd.code) = 4 THEN '0:' ELSE '1:' END || smd.code
-            ) AS scale_category
-        FROM stock_master_daily smd
-        {master_where}
-        GROUP BY {master_code}, smd.date
-    ),
-    market_master AS (
-        SELECT
-            code,
-            date,
-            company_name,
-            {market_scope_case} AS market,
-            market_code,
-            scale_category
-        FROM raw_market_master
-    )
-    """
-
-
-def _market_scope_case_sql(market_code_column: str, market_name_column: str) -> str:
-    code_clauses = " ".join(
-        f"WHEN lower(trim({market_code_column})) IN ({_sql_string_list(aliases)}) THEN '{scope}'"
-        for scope, aliases in MARKET_CODES_BY_SCOPE.items()
-    )
-    name_clauses = " ".join(
-        f"WHEN lower(trim({market_name_column})) IN ({_sql_string_list(aliases)}) THEN '{scope}'"
-        for scope, aliases in MARKET_CODES_BY_SCOPE.items()
-    )
-    return f"""
-            CASE
-                {code_clauses}
-                {name_clauses}
-                ELSE 'unknown'
-            END
-            """
-
-
-def _optional_daily_valuation_double_expr(conn: Any, column: str) -> str:
-    if _daily_valuation_column_exists(conn, column):
-        return f"CAST(dv.{column} AS DOUBLE)"
-    return "CAST(NULL AS DOUBLE)"
-
-
-def _daily_valuation_column_exists(conn: Any, column: str) -> bool:
-    return bool(
-        conn.execute(
-            "SELECT count(*) FROM pragma_table_info('daily_valuation') WHERE name = ?",
-            [column],
-        ).fetchone()[0]
-    )
 
 
 def _valuation_bucket_condition(percentile_column: str, bucket: str) -> str:
@@ -1926,35 +1436,9 @@ def _validate_params(
         raise ValueError("observation_sample_limit must be positive")
 
 
-def _normalize_market_scopes(scopes: Sequence[str]) -> tuple[str, ...]:
-    normalized = tuple(
-        dict.fromkeys(
-            _normalize_market_scope_token(scope)
-            for scope in scopes
-        )
-    )
-    allowed = {"all", "prime", "standard", "growth", "unknown"}
-    if not normalized or any(scope not in allowed for scope in normalized):
-        raise ValueError("market_scopes must contain prime, standard, growth, unknown, or all")
-    return normalized
-
-
-def _normalize_market_scope_token(scope: str) -> str:
-    fallback = scope.strip().lower()
-    return normalize_market_scope(scope, default=fallback) or fallback
-
-
-def _offset_calendar_date(date: str | None, *, days: int) -> str | None:
-    if date is None:
-        return None
-    return (pd.Timestamp(date) + pd.Timedelta(days=days)).strftime("%Y-%m-%d")
-
-
-def _sql_string_list(values: Sequence[str]) -> str:
-    return ", ".join("'" + value.replace("'", "''") + "'" for value in values)
-
-
-def _concat_sorted(frames: Sequence[pd.DataFrame], *, columns: Sequence[str]) -> pd.DataFrame:
+def _concat_sorted(
+    frames: Sequence[pd.DataFrame], *, columns: Sequence[str]
+) -> pd.DataFrame:
     non_empty = [frame for frame in frames if not frame.empty]
     if not non_empty:
         return pd.DataFrame(columns=list(columns))

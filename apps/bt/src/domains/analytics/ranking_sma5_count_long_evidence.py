@@ -3,45 +3,49 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
-from src.domains.analytics.atr_expansion_forward_response import (
-    _create_observation_panel as _create_atr_observation_panel,
+from src.domains.analytics.daily_ranking_consumer_support import (
+    aggregate_lateral_conditions as _aggregate_lateral_conditions,
+    aggregate_metric_columns as _aggregate_metric_columns,
+    compose_daily_ranking_signal_features,
+    condition_values_sql as _condition_values_sql,
+    deep_dive_metric_columns as _deep_dive_metric_columns,
+    deep_dive_metric_sql as _deep_dive_metric_sql,
+    table_exists,
+)
+from src.domains.analytics.daily_ranking_feature_builders import (
+    AtrFeaturesRequest,
+    LongLeadershipFeaturesRequest,
+    LongScaffoldFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    ShortScaffoldFeaturesRequest,
+    SmaFeaturesRequest,
+    build_atr_features,
+    build_long_leadership_features,
+    build_long_scaffold_features,
+    build_sector_strength_features,
+    build_short_scaffold_features,
+    build_sma_features,
 )
 from src.domains.analytics.daily_ranking_research_base import (
-    DAILY_RANKING_RESEARCH_RANKED_TABLE,
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    MarketScope,
+    SignalExpression,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
     normalize_daily_ranking_market_scopes,
 )
-from src.domains.analytics.earnings_holdthrough_expectancy import _table_exists
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
-from src.domains.analytics.ranking_forecast_operating_profit_growth_evidence import (
-    _aggregate_lateral_conditions,
-    _aggregate_metric_columns,
-    _condition_values_sql,
-    _deep_dive_metric_columns,
-    _deep_dive_metric_sql,
-)
-from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition import (
-    _create_long_sector_leadership_tables,
-    _create_long_signal_tables,
-)
-from src.domains.analytics.ranking_sector_strength_evidence import (
-    _create_sector_strength_tables,
-)
-from src.domains.analytics.ranking_short_red_evidence import (
-    _create_feature_panel as _create_short_red_feature_panel,
-)
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
-    normalize_code_sql,
     open_readonly_analysis_connection,
 )
 from src.domains.analytics.research_bundle import (
@@ -49,6 +53,7 @@ from src.domains.analytics.research_bundle import (
     write_research_bundle,
 )
 
+PUBLIC_FEATURE_BUILDER = build_sma_features
 RANKING_SMA5_COUNT_LONG_EVIDENCE_EXPERIMENT_ID = (
     "market-behavior/ranking-sma5-count-long-evidence"
 )
@@ -58,11 +63,10 @@ DEFAULT_MIN_OBSERVATIONS = 300
 DEFAULT_SEVERE_LOSS_THRESHOLD_PCT = -10.0
 DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
 _LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
-_REQUIRED_ATR_WINDOWS: tuple[int, ...] = (20, 60)
-_REQUIRED_RETURN_WINDOWS: tuple[int, ...] = (20, 60)
-_LONG_WARMUP_CALENDAR_DAYS = 820
 _REQUIRED_TABLES: tuple[str, ...] = (
-    "stock_data",
+    "stock_data_raw",
+    "stock_adjustment_bases",
+    "stock_adjustment_basis_segments",
     "topix_data",
     "daily_valuation",
     "stock_master_daily",
@@ -124,14 +128,14 @@ _LONG_SCAFFOLDS: tuple[tuple[str, str], ...] = (
         "liquidity_regime = 'crowded_rerating' "
         "AND long_hybrid_leadership_score >= 0.799999 "
         "AND pbr_percentile <= 0.1 "
-        "AND forward_per_percentile <= 0.1",
+        "AND forecast_per_percentile <= 0.1",
     ),
     (
         "crowded_low10_pbr_forward_per_atr20_accel",
         "liquidity_regime = 'crowded_rerating' "
         "AND long_hybrid_leadership_score >= 0.799999 "
         "AND pbr_percentile <= 0.1 "
-        "AND forward_per_percentile <= 0.1 "
+        "AND forecast_per_percentile <= 0.1 "
         "AND atr20_acceleration_ex_overheat_flag",
     ),
 )
@@ -183,56 +187,94 @@ def run_ranking_sma5_count_long_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = daily_ranking_query_start_date(
-        start_date,
-        warmup_calendar_days=max(_LONG_WARMUP_CALENDAR_DAYS, max(_LEADERSHIP_WINDOWS) * 3),
-    )
-    query_end = daily_ranking_query_end_date(
-        end_date,
-        max_horizon=max(resolved_horizons),
-    )
-
     with open_readonly_analysis_connection(
         str(db_path_obj),
         snapshot_prefix="ranking-sma5-count-long-evidence-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
         market_source = "stock_master_daily_exact_date"
-        create_daily_ranking_research_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_scopes=resolved_market_scopes,
-            market_source=market_source,
-            include_liquidity_ranked=True,
-            include_relation_percentiles=False,
+            DailyRankingPanelRequest(
+                namespace="sma5_count_long",
+                analysis_start_date=_parse_optional_date(start_date),
+                analysis_end_date=_parse_optional_date(end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(tuple[MarketScope, ...], resolved_market_scopes),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
         )
-        _create_atr_observation_panel(
+        signal_source = relations.ranked_signals
+        atr_features = build_atr_features(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=_REQUIRED_ATR_WINDOWS,
-            return_windows=_REQUIRED_RETURN_WINDOWS,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            AtrFeaturesRequest(source=signal_source, namespace="sma5_count_long_atr"),
         )
-        _create_short_red_feature_panel(ctx.connection)
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
-        _create_long_sector_leadership_tables(
+        short_features = build_short_scaffold_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            ShortScaffoldFeaturesRequest(
+                source=signal_source,
+                atr_features=atr_features,
+                namespace="sma5_count_long_short",
+            ),
         )
-        _create_long_signal_tables(
+        sector_features = build_sector_strength_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="sma5_count_long_sector",
+            ),
         )
-        _create_sma5_count_long_panel(ctx.connection)
+        leadership_features = build_long_leadership_features(
+            ctx.connection,
+            LongLeadershipFeaturesRequest(
+                source=signal_source,
+                sector_features=sector_features,
+                namespace="sma5_count_long_leadership",
+                leadership_windows=_LEADERSHIP_WINDOWS,
+            ),
+        )
+        long_features = build_long_scaffold_features(
+            ctx.connection,
+            LongScaffoldFeaturesRequest(
+                source=signal_source,
+                leadership_features=leadership_features,
+                short_scaffold_features=short_features,
+                namespace="sma5_count_long_scaffold",
+            ),
+        )
+        sma_features = build_sma_features(
+            ctx.connection,
+            SmaFeaturesRequest(
+                source=signal_source,
+                price_history=relations.price_history,
+                namespace="sma5_count_long_sma",
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(long_features, sma_features),
+            namespace="sma5_count_long",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="sma5_count_long_signals",
+            predicate=SignalExpression(
+                sql="sma5_above_count_5d IS NOT NULL",
+                referenced_columns=("sma5_above_count_5d",),
+            ),
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="sma5_count_long_outcomes",
+        )
+        _create_sma5_count_long_panel(ctx.connection, source_name=evaluated.name)
         observation_count = int(
             ctx.connection.execute(
                 "SELECT count(*) FROM ranking_sma5_count_long_panel"
@@ -394,116 +436,22 @@ def build_summary_markdown(result: RankingSma5CountLongEvidenceResult) -> str:
 
 
 def _assert_required_tables(conn: Any) -> None:
-    missing = [table for table in _REQUIRED_TABLES if not _table_exists(conn, table)]
+    missing = [table for table in _REQUIRED_TABLES if not table_exists(conn, table)]
     if missing:
-        raise ValueError(f"market.duckdb is missing required tables: {', '.join(missing)}")
+        raise ValueError(
+            f"market.duckdb is missing required tables: {', '.join(missing)}"
+        )
 
 
-def _create_sma5_count_long_panel(conn: Any) -> None:
-    stock_code = normalize_code_sql("sd.code")
+def _create_sma5_count_long_panel(conn: Any, *, source_name: str) -> None:
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE ranking_sma5_count_long_panel AS
-        WITH normalized_prices AS (
-            SELECT
-                {stock_code} AS code,
-                sd.date,
-                arg_min(
-                    sd.close,
-                    CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code
-                ) AS close
-            FROM stock_data sd
-            WHERE EXISTS (
-                SELECT 1
-                FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE} p
-                WHERE p.code = {stock_code}
-            )
-            GROUP BY {stock_code}, sd.date
-        ),
-        sma5_base AS (
-            SELECT
-                code,
-                date,
-                close,
-                avg(close) OVER (
-                    PARTITION BY code ORDER BY date ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
-                ) AS sma5,
-                count(close) OVER (
-                    PARTITION BY code ORDER BY date ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
-                ) AS sma5_sessions
-            FROM normalized_prices
-            WHERE close > 0
-        ),
-        sma5_flags AS (
-            SELECT
-                code,
-                date,
-                CASE
-                    WHEN sma5_sessions = 5 AND close > sma5 THEN 1
-                    WHEN sma5_sessions = 5 THEN 0
-                END AS close_above_sma5_flag
-            FROM sma5_base
-        ),
-        sma5_counts AS (
-            SELECT
-                code,
-                date,
-                sum(close_above_sma5_flag) OVER (
-                    PARTITION BY code ORDER BY date ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
-                ) AS sma5_above_count_5d,
-                count(close_above_sma5_flag) OVER (
-                    PARTITION BY code ORDER BY date ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
-                ) AS sma5_above_count_sessions
-            FROM sma5_flags
-        )
         SELECT
-            g.*,
-            l.sector_33_code,
-            l.sector_33_name,
-            l.sector_strength_bucket,
-            l.sector_strength_score,
-            l.sector_index_strength_score,
-            l.sector_constituent_strength_score,
-            l.long_index_leadership_score,
-            l.long_constituent_breadth_leadership_score,
-            l.long_hybrid_leadership_score,
-            l.balanced_sector_strength_bucket_label,
-            l.long_hybrid_bucket_label,
-            coalesce(l.momentum_20_60_top20_flag, FALSE)
-                AS momentum_20_60_top20_flag,
-            s.atr20_pct,
-            s.atr60_pct,
-            s.atr20_to_atr60,
-            s.atr20_change_20d_pct,
-            coalesce(s.atr20_acceleration, FALSE) AS atr20_acceleration_flag,
-            coalesce(
-                s.atr20_acceleration
-                AND coalesce(g.recent_return_20d_pct, 0.0) < 30.0,
-                FALSE
-            ) AS atr20_acceleration_ex_overheat_flag,
-            coalesce(s.atr20_to_atr60_overheat, FALSE)
-                AS atr20_to_atr60_overheat,
-            coalesce(s.weak_trend, FALSE) AS weak_trend,
-            CAST(sc.sma5_above_count_5d AS INTEGER) AS sma5_above_count_5d,
-            CASE
-                WHEN sc.sma5_above_count_5d IN (0, 1) THEN 'sma5_above_count_0_1'
-                WHEN sc.sma5_above_count_5d IN (2, 3) THEN 'sma5_above_count_2_3'
-                WHEN sc.sma5_above_count_5d IN (4, 5) THEN 'sma5_above_count_4_5'
-            END AS sma5_count_group
-        FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE} g
-        LEFT JOIN long_sector_leadership_base_panel l
-          ON l.code = g.code
-         AND l.date = g.date
-         AND l.market_scope = g.market_scope
-        LEFT JOIN ranking_short_red_feature_panel s
-          ON s.code = g.code
-         AND s.date = g.date
-         AND s.market_scope = g.market_scope
-        LEFT JOIN sma5_counts sc
-          ON sc.code = g.code
-         AND sc.date = g.date
-         AND sc.sma5_above_count_sessions = 5
-        WHERE sc.sma5_above_count_5d IS NOT NULL
+            source.*,
+            source.forecast_per AS forward_per,
+            source.forecast_per_percentile AS forward_per_percentile
+        FROM {source_name} source
         """
     )
 
@@ -742,8 +690,7 @@ def _build_long_scaffold_same_day_sma5_group_spread_df(
                 scaffold_select_sql="long_scaffold.long_scaffold,\n"
                 "            long_scaffold.long_scaffold_order,",
                 scaffold_group_sql=(
-                    "long_scaffold.long_scaffold, "
-                    "long_scaffold.long_scaffold_order, "
+                    "long_scaffold.long_scaffold, long_scaffold.long_scaffold_order, "
                 ),
                 scaffold_join_sql=(
                     "AND comparison.long_scaffold = base.long_scaffold "
@@ -886,8 +833,7 @@ def _query_observation_sample_df(
     limit: int,
 ) -> pd.DataFrame:
     horizon_columns = ",\n            ".join(
-        f"forward_close_excess_return_{int(horizon)}d_pct"
-        for horizon in horizons
+        f"forward_close_excess_return_{int(horizon)}d_pct" for horizon in horizons
     )
     return conn.execute(
         f"""
@@ -1018,7 +964,9 @@ def _same_day_spread_metric_columns() -> list[str]:
     ]
 
 
-def _concat_sorted(frames: Sequence[pd.DataFrame], *, columns: Sequence[str]) -> pd.DataFrame:
+def _concat_sorted(
+    frames: Sequence[pd.DataFrame], *, columns: Sequence[str]
+) -> pd.DataFrame:
     non_empty = [frame for frame in frames if not frame.empty]
     if not non_empty:
         return pd.DataFrame(columns=list(columns))
@@ -1040,3 +988,7 @@ def _concat_sorted(frames: Sequence[pd.DataFrame], *, columns: Sequence[str]) ->
         order_columns,
         kind="stable",
     )
+
+
+def _parse_optional_date(value: str | None) -> date | None:
+    return None if value is None else date.fromisoformat(value)

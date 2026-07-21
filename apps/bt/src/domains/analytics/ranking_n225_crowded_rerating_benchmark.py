@@ -11,16 +11,14 @@ import pandas as pd
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
-from src.domains.analytics.ranking_color_evidence import (
+from src.domains.analytics.ranking_n225_rerating_benchmark_support import (
+    DEFAULT_HORIZONS,
     DEFAULT_MARKET_SCOPES,
+    DEFAULT_MIN_OBSERVATIONS_N225,
     DEFAULT_OBSERVATION_SAMPLE_LIMIT,
     DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
-)
-from src.domains.analytics.ranking_n225_neutral_rerating_benchmark import (
-    DEFAULT_HORIZONS,
-    DEFAULT_MIN_OBSERVATIONS_N225,
     RankingN225NeutralReratingBenchmarkResult,
-    run_ranking_n225_neutral_rerating_benchmark_research,
+    run_ranking_n225_rerating_benchmark_research,
 )
 from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
 
@@ -42,7 +40,7 @@ def run_ranking_n225_crowded_rerating_benchmark_research(
     severe_loss_threshold_pct: float = DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
     observation_sample_limit: int = DEFAULT_OBSERVATION_SAMPLE_LIMIT,
 ) -> RankingN225NeutralReratingBenchmarkResult:
-    result = run_ranking_n225_neutral_rerating_benchmark_research(
+    result = run_ranking_n225_rerating_benchmark_research(
         db_path,
         start_date=start_date,
         end_date=end_date,

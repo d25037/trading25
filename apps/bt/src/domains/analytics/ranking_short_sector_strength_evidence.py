@@ -3,27 +3,34 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
-from src.domains.analytics.atr_expansion_forward_response import (
-    _create_observation_panel as _create_atr_observation_panel,
+from src.domains.analytics.daily_ranking_consumer_support import (
+    compose_daily_ranking_signal_features,
+    table_exists,
 )
-from src.domains.analytics.earnings_holdthrough_expectancy import _table_exists
+from src.domains.analytics.daily_ranking_feature_builders import (
+    AtrFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    ShortScaffoldFeaturesRequest,
+    build_atr_features,
+    build_sector_strength_features,
+    build_short_scaffold_features,
+)
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
 from src.domains.analytics.daily_ranking_research_base import (
-    assert_daily_ranking_research_tables,
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    MarketScope,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
     normalize_daily_ranking_market_scopes,
-)
-from src.domains.analytics.ranking_sector_strength_evidence import (
-    _create_sector_strength_tables,
 )
 from src.domains.analytics.ranking_short_red_evidence import (
     DEFAULT_HORIZONS,
@@ -31,19 +38,15 @@ from src.domains.analytics.ranking_short_red_evidence import (
     DEFAULT_MIN_OBSERVATIONS,
     DEFAULT_OBSERVATION_SAMPLE_LIMIT,
     DEFAULT_TAIL_RETURN_THRESHOLD_PCT,
-    _CANDIDATE_BUCKETS,
-    _REQUIRED_ATR_WINDOWS,
-    _REQUIRED_RETURN_WINDOWS,
-    _STALE_OVERVALUED_TREND_SPLITS,
-    _TECHNICAL_STATES,
-    _VALUATION_STATES,
-    _create_feature_panel,
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
     open_readonly_analysis_connection,
 )
-from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    write_research_bundle,
+)
 
 RANKING_SHORT_SECTOR_STRENGTH_EVIDENCE_EXPERIMENT_ID = (
     "market-behavior/ranking-short-sector-strength-evidence"
@@ -98,11 +101,79 @@ _PRIORITY_SHORT_SECTOR_CONDITIONS: tuple[tuple[str, str], ...] = (
     ),
     (
         "strong_low_value_sector_strong_short_prohibit",
-        "strong_value_confirmation "
-        "AND sector_strength_bucket = 'sector_strong'",
+        "strong_value_confirmation AND sector_strength_bucket = 'sector_strong'",
     ),
 )
 _SECTOR_BUCKETS: tuple[str, ...] = ("sector_weak", "sector_neutral", "sector_strong")
+_CANDIDATE_BUCKETS: tuple[tuple[str, str], ...] = (
+    (
+        "crowded_no_value",
+        "liquidity_regime = 'crowded_rerating' AND no_value_confirmation",
+    ),
+    (
+        "crowded_overvalued",
+        "liquidity_regime = 'crowded_rerating' AND overvalued_or_no_earnings_warning",
+    ),
+    (
+        "crowded_overvalued_weak_trend",
+        "liquidity_regime = 'crowded_rerating' "
+        "AND overvalued_or_no_earnings_warning AND weak_trend",
+    ),
+    (
+        "distribution_stress_weak_trend",
+        "liquidity_regime = 'distribution_stress' AND weak_trend",
+    ),
+    (
+        "distribution_stress_overvalued",
+        "liquidity_regime = 'distribution_stress' AND overvalued_or_no_earnings_warning",
+    ),
+    (
+        "stale_overvalued_weak_trend",
+        "liquidity_regime = 'stale_liquidity' "
+        "AND overvalued_or_no_earnings_warning AND weak_trend",
+    ),
+)
+_TECHNICAL_STATES: tuple[tuple[str, str], ...] = (
+    ("all_technical", "TRUE"),
+    ("recent_20d_negative", "recent_return_20d_pct <= 0"),
+    ("recent_60d_negative", "recent_return_60d_pct <= 0"),
+    (
+        "recent_20d_60d_negative",
+        "recent_return_20d_pct <= 0 AND recent_return_60d_pct <= 0",
+    ),
+    (
+        "atr20_acceleration",
+        "atr20_change_20d_pct >= 25.0 AND atr20_to_atr60 < 1.25",
+    ),
+    (
+        "atr20_to_atr60_overheat",
+        "atr20_change_20d_pct >= 25.0 AND atr20_to_atr60 >= 1.25",
+    ),
+)
+_VALUATION_STATES: tuple[tuple[str, str], ...] = (
+    ("all_valuation", "TRUE"),
+    ("overvalued_or_no_earnings", "overvalued_or_no_earnings_warning"),
+    ("missing_earnings", "missing_earnings_warning"),
+    ("no_value_confirmation", "no_value_confirmation"),
+    ("strong_low_value", "strong_value_confirmation"),
+)
+_STALE_OVERVALUED_TREND_SPLITS: tuple[tuple[str, str], ...] = (
+    ("all_stale_overvalued", "TRUE"),
+    ("recent_20d_nonpositive", "recent_return_20d_pct <= 0"),
+    ("recent_60d_nonpositive", "recent_return_60d_pct <= 0"),
+    (
+        "recent_20d_or_60d_nonpositive",
+        "recent_return_20d_pct <= 0 OR recent_return_60d_pct <= 0",
+    ),
+    (
+        "recent_20d_and_60d_nonpositive",
+        "recent_return_20d_pct <= 0 AND recent_return_60d_pct <= 0",
+    ),
+    (
+        "recent_20d_and_60d_positive",
+        "recent_return_20d_pct > 0 AND recent_return_60d_pct > 0",
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -151,46 +222,72 @@ def run_ranking_short_sector_strength_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = daily_ranking_query_start_date(start_date, warmup_calendar_days=720)
-    query_end = daily_ranking_query_end_date(
-        end_date,
-        max_horizon=max(resolved_horizons),
-    )
-
     with open_readonly_analysis_connection(
         str(db_path_obj),
         snapshot_prefix="ranking-short-sector-strength-evidence-",
     ) as ctx:
         _assert_sector_tables(ctx.connection)
         market_source = "stock_master_daily_exact_date"
-        create_daily_ranking_research_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_scopes=resolved_market_scopes,
-            market_source=market_source,
-            include_liquidity_ranked=True,
-            include_relation_percentiles=False,
+            DailyRankingPanelRequest(
+                namespace="short_sector_strength",
+                analysis_start_date=_parse_optional_date(start_date),
+                analysis_end_date=_parse_optional_date(end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(tuple[MarketScope, ...], resolved_market_scopes),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
         )
-        assert_daily_ranking_research_tables(ctx.connection)
-        _create_atr_observation_panel(
+        signal_source = relations.liquidity_ranked_signals
+        if signal_source is None:
+            raise RuntimeError(
+                "short sector research requires liquidity-ranked signals"
+            )
+        atr_features = build_atr_features(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=_REQUIRED_ATR_WINDOWS,
-            return_windows=_REQUIRED_RETURN_WINDOWS,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            AtrFeaturesRequest(source=signal_source, namespace="short_sector_atr"),
         )
-        _create_feature_panel(ctx.connection)
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
-        _create_short_sector_feature_panel(ctx.connection)
+        short_features = build_short_scaffold_features(
+            ctx.connection,
+            ShortScaffoldFeaturesRequest(
+                source=signal_source,
+                atr_features=atr_features,
+                namespace="short_sector_scaffold",
+            ),
+        )
+        sector_features = build_sector_strength_features(
+            ctx.connection,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="short_sector_features",
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(short_features, sector_features),
+            namespace="short_sector_strength",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="short_sector_signals",
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="short_sector_outcomes",
+        )
+        _create_short_sector_feature_panel(
+            ctx.connection,
+            source_name=evaluated.name,
+            horizons=resolved_horizons,
+        )
         _create_short_sector_candidate_work(ctx.connection)
         observation_count = int(
             ctx.connection.execute(
@@ -413,45 +510,42 @@ def _validate_params(
 
 
 def _assert_sector_tables(conn: Any) -> None:
-    missing = [table for table in _REQUIRED_SECTOR_TABLES if not _table_exists(conn, table)]
+    missing = [
+        table for table in _REQUIRED_SECTOR_TABLES if not table_exists(conn, table)
+    ]
     if missing:
-        raise ValueError(f"market.duckdb is missing required tables: {', '.join(missing)}")
+        raise ValueError(
+            f"market.duckdb is missing required tables: {', '.join(missing)}"
+        )
 
 
-def _create_short_sector_feature_panel(conn: Any) -> None:
+def _create_short_sector_feature_panel(
+    conn: Any,
+    *,
+    source_name: str,
+    horizons: Sequence[int],
+) -> None:
+    topix_aliases = ",\n            ".join(
+        f"f.forward_close_return_{int(horizon)}d_pct "
+        f"- f.forward_close_excess_return_{int(horizon)}d_pct "
+        f"AS topix_close_return_{int(horizon)}d_pct"
+        for horizon in horizons
+    )
     conn.execute(
-        """
+        f"""
         CREATE OR REPLACE TEMP TABLE ranking_short_sector_feature_panel AS
         SELECT
             f.*,
-            sm.sector_33_code,
-            sm.sector_33_name,
-            s.sector_observation_count,
-            s.sector_code_count,
-            s.sector_20d_topix_excess_pct,
-            s.sector_60d_topix_excess_pct,
-            s.sector_breadth_20d_pct,
-            s.sector_20d_strength_rank,
-            s.sector_60d_strength_rank,
-            s.sector_breadth_strength_rank,
-            s.sector_strength_score,
-            s.sector_strength_bucket,
+            f.forecast_per_percentile AS forward_per_percentile,
+            f.forecast_p_op_percentile AS forward_p_op_percentile,
+            {topix_aliases},
             CASE
-                WHEN s.sector_strength_bucket = 'sector_weak' THEN 0
-                WHEN s.sector_strength_bucket = 'sector_neutral' THEN 1
-                WHEN s.sector_strength_bucket = 'sector_strong' THEN 2
+                WHEN f.sector_strength_bucket = 'sector_weak' THEN 0
+                WHEN f.sector_strength_bucket = 'sector_neutral' THEN 1
+                WHEN f.sector_strength_bucket = 'sector_strong' THEN 2
                 ELSE 99
-            END AS sector_strength_bucket_order,
-            s.sector_consistency_bucket
-        FROM ranking_short_red_feature_panel f
-        JOIN ranking_sector_master sm
-          ON sm.code = f.code
-         AND sm.date = f.date
-        JOIN ranking_sector_daily_state s
-          ON s.market_scope = f.market_scope
-         AND s.date = f.date
-         AND s.sector_33_code = sm.sector_33_code
-         AND s.sector_33_name = sm.sector_33_name
+            END AS sector_strength_bucket_order
+        FROM {source_name} f
         """
     )
 
@@ -541,7 +635,9 @@ def _build_short_value_sector_interaction_df(
     for regime_order, regime in enumerate(
         ("crowded_rerating", "distribution_stress", "stale_liquidity", "neutral")
     ):
-        for valuation_order, (valuation_state, condition) in enumerate(_VALUATION_STATES):
+        for valuation_order, (valuation_state, condition) in enumerate(
+            _VALUATION_STATES
+        ):
             for sector_order, sector_bucket in enumerate(_SECTOR_BUCKETS):
                 for horizon in horizons:
                     frames.append(
@@ -582,8 +678,7 @@ def _build_stale_rally_sector_interaction_df(
 ) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     base_condition = (
-        "liquidity_regime = 'stale_liquidity' "
-        "AND overvalued_or_no_earnings_warning"
+        "liquidity_regime = 'stale_liquidity' AND overvalued_or_no_earnings_warning"
     )
     for trend_order, (trend_split, condition) in enumerate(
         _STALE_OVERVALUED_TREND_SPLITS
@@ -942,9 +1037,15 @@ def _priority_columns() -> list[str]:
     ]
 
 
-def _concat_sorted(frames: Sequence[pd.DataFrame], *, columns: Sequence[str]) -> pd.DataFrame:
+def _concat_sorted(
+    frames: Sequence[pd.DataFrame], *, columns: Sequence[str]
+) -> pd.DataFrame:
     non_empty = [frame for frame in frames if not frame.empty]
     if not non_empty:
         return pd.DataFrame(columns=list(columns))
     frame = pd.concat(non_empty, ignore_index=True)
     return frame.reindex(columns=list(columns))
+
+
+def _parse_optional_date(value: str | None) -> date | None:
+    return None if value is None else date.fromisoformat(value)

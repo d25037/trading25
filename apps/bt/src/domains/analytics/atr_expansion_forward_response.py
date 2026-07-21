@@ -3,34 +3,35 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, cast, Iterable, Sequence
 
 import numpy as np
 import pandas as pd
 
-from src.domains.analytics.earnings_holdthrough_expectancy import (
-    _sort_summary_df,
-    _str_or_none,
-    _table_exists,
+from src.domains.analytics.daily_ranking_feature_builders import (
+    build_atr_features,
 )
-from src.domains.analytics.earnings_holdthrough_expectancy_report import (
-    _top_rows_for_markdown,
+from src.domains.analytics.daily_ranking_research_base import (
+    DAILY_RANKING_BASE_REQUIRED_VALID_SESSIONS,
+    DailyRankingPanelRequest,
+    MarketScope,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
+    normalize_daily_ranking_market_scopes,
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
-    normalize_code_sql,
     open_readonly_analysis_connection,
 )
-from src.domains.analytics.ranking_color_evidence import (
-    _create_observation_panel as _create_ranking_color_observation_panel,
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    write_research_bundle,
 )
-from src.domains.analytics.recent_return_threshold_forward_response import (
-    _market_master_cte,
-    _sql_string_list,
-)
-from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
 
+PUBLIC_FEATURE_BUILDER = build_atr_features
 ATR_EXPANSION_FORWARD_RESPONSE_EXPERIMENT_ID = (
     "market-behavior/atr-expansion-forward-response"
 )
@@ -42,6 +43,7 @@ DEFAULT_MIN_OBSERVATIONS = 500
 DEFAULT_SEVERE_LOSS_THRESHOLD_PCT = -10.0
 DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
 OVERHEAT_RETURN_20D_THRESHOLD_PCT = 30.0
+OUTCOME_COVERAGE_POLICY = "complete_selected_membership_required_per_entry_mode"
 _MARKET_SCOPE_ORDER: tuple[str, ...] = ("all", "prime", "standard", "growth", "unknown")
 _ENTRY_MODES: tuple[str, ...] = ("close_to_close", "next_open_to_close")
 _EXPANSION_BUCKET_ORDER: tuple[str, ...] = (
@@ -87,6 +89,7 @@ class AtrExpansionForwardResponseResult:
     market_scopes: tuple[str, ...]
     min_observations: int
     severe_loss_threshold_pct: float
+    outcome_coverage_policy: str
     observation_count: int
     observation_sample_df: pd.DataFrame
     coverage_diagnostics_df: pd.DataFrame
@@ -112,7 +115,7 @@ def run_atr_expansion_forward_response_research(
     resolved_atr_windows = tuple(sorted({int(window) for window in atr_windows}))
     resolved_return_windows = tuple(sorted({int(window) for window in return_windows}))
     resolved_horizons = tuple(sorted({int(horizon) for horizon in horizons}))
-    resolved_market_scopes = _normalize_market_scopes(market_scopes)
+    resolved_market_scopes = normalize_daily_ranking_market_scopes(market_scopes)
     _validate_params(
         atr_windows=resolved_atr_windows,
         return_windows=resolved_return_windows,
@@ -126,45 +129,58 @@ def run_atr_expansion_forward_response_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = _offset_calendar_date(
-        start_date,
-        days=-(max(max(resolved_atr_windows), max(resolved_return_windows)) * 4 + 30),
-    )
-    query_end = _offset_calendar_date(end_date, days=max(resolved_horizons) * 4 + 30)
-
     with open_readonly_analysis_connection(
         str(db_path_obj),
         snapshot_prefix="atr-expansion-forward-response-",
     ) as ctx:
-        _assert_required_tables(ctx.connection)
         market_source = "stock_master_daily_exact_date"
+        request = DailyRankingPanelRequest(
+            namespace="atr_expansion",
+            analysis_start_date=_parse_optional_date(start_date),
+            analysis_end_date=_parse_optional_date(end_date),
+            horizons=resolved_horizons,
+            market_scopes=cast(tuple[MarketScope, ...], resolved_market_scopes),
+            include_liquidity=True,
+            percentile_features=(),
+            required_valid_sessions=max(
+                DAILY_RANKING_BASE_REQUIRED_VALID_SESSIONS,
+                max(resolved_atr_windows) + 20,
+                max(resolved_return_windows) + 1,
+            ),
+        )
+        relations = build_daily_ranking_research_base(ctx.connection, request)
+        signal_cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=relations.ranked_signals,
+            name="atr_expansion_signals",
+        )
+        _create_signal_observation_panel(
+            ctx.connection,
+            signal_name=signal_cohort.name,
+            include_all="all" in resolved_market_scopes,
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            signal_cohort,
+            relations,
+            name="atr_expansion_outcomes",
+        )
         _create_observation_panel(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=resolved_atr_windows,
-            return_windows=resolved_return_windows,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
-        )
-        _create_ranking_color_observation_panel(
-            ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            evaluated_name=evaluated.name,
+            include_all="all" in resolved_market_scopes,
         )
         _create_liquidity_color_atr_work(ctx.connection)
         observation_count = int(
-            ctx.connection.execute("SELECT count(*) FROM atr_expansion_panel").fetchone()[0]
+            ctx.connection.execute(
+                "SELECT count(*) FROM atr_expansion_panel"
+            ).fetchone()[0]
         )
-        coverage_diagnostics_df = _build_coverage_diagnostics_df(ctx.connection)
+        coverage_diagnostics_df = _build_coverage_diagnostics_df(
+            ctx.connection,
+            horizons=resolved_horizons,
+        )
         atr_expansion_response_df = _build_atr_expansion_response_df(
             ctx.connection,
             horizons=resolved_horizons,
@@ -212,6 +228,7 @@ def run_atr_expansion_forward_response_research(
         market_scopes=resolved_market_scopes,
         min_observations=min_observations,
         severe_loss_threshold_pct=severe_loss_threshold_pct,
+        outcome_coverage_policy=OUTCOME_COVERAGE_POLICY,
         observation_count=observation_count,
         observation_sample_df=observation_sample_df,
         coverage_diagnostics_df=coverage_diagnostics_df,
@@ -240,6 +257,7 @@ def write_atr_expansion_forward_response_bundle(
             "market_scopes": list(result.market_scopes),
             "min_observations": result.min_observations,
             "severe_loss_threshold_pct": result.severe_loss_threshold_pct,
+            "outcome_coverage_policy": result.outcome_coverage_policy,
         },
         db_path=result.db_path,
         analysis_start_date=result.analysis_start_date,
@@ -250,6 +268,7 @@ def write_atr_expansion_forward_response_bundle(
             "market_source": result.market_source,
             "observation_count": result.observation_count,
             "observation_sample_count": int(len(result.observation_sample_df)),
+            "outcome_coverage_policy": result.outcome_coverage_policy,
         },
         result_tables={
             "coverage_diagnostics_df": result.coverage_diagnostics_df,
@@ -381,278 +400,68 @@ def _validate_params(
         raise ValueError("observation_sample_limit must be positive")
 
 
-def _normalize_market_scopes(values: Sequence[str]) -> tuple[str, ...]:
-    allowed = set(_MARKET_SCOPE_ORDER)
-    normalized = tuple(
-        dict.fromkeys(
-            str(value).strip().lower() for value in values if str(value).strip()
-        )
+def _create_signal_observation_panel(
+    conn: Any,
+    *,
+    signal_name: str,
+    include_all: bool,
+) -> None:
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE atr_expansion_signal_panel AS
+        SELECT
+            signal.*,
+            signal.forecast_per AS forward_per,
+            signal.forecast_per_percentile AS forward_per_percentile,
+            signal.forecast_per_to_per_ratio AS forward_per_to_per_ratio
+        FROM {signal_name} AS signal
+        """
     )
-    if not normalized:
-        raise ValueError("market_scopes must not be empty")
-    invalid = [value for value in normalized if value not in allowed]
-    if invalid:
-        raise ValueError(f"unsupported market_scopes: {', '.join(invalid)}")
-    return normalized
-
-
-def _assert_required_tables(conn: Any) -> None:
-    required = ("stock_data", "topix_data", "daily_valuation")
-    missing = [table for table in required if not _table_exists(conn, table)]
-    if missing:
-        raise RuntimeError(
-            f"market.duckdb missing required tables: {', '.join(missing)}"
-        )
-    if not _table_exists(conn, "stock_master_daily"):
-        raise RuntimeError("market.duckdb requires stock_master_daily for PIT universe scope")
+    _create_scoped_view(
+        conn,
+        panel_name="atr_expansion_signal_panel",
+        view_name="atr_expansion_signal_scoped",
+        include_all=include_all,
+    )
 
 
 def _create_observation_panel(
     conn: Any,
     *,
-    query_start: str | None,
-    query_end: str | None,
-    analysis_start_date: str | None,
-    analysis_end_date: str | None,
-    atr_windows: Sequence[int],
-    return_windows: Sequence[int],
-    horizons: Sequence[int],
-    market_source: str,
-    market_scopes: Sequence[str],
+    evaluated_name: str,
+    include_all: bool,
 ) -> None:
-    price_code = normalize_code_sql("sd.code")
-    master_code = (
-        normalize_code_sql("smd.code")
-        if market_source == "stock_master_daily_exact_date"
-        else normalize_code_sql("s.code")
-    )
-    atr_exprs = ",\n                ".join(
-        f"avg(true_range) over (partition by code order by date "
-        f"rows between {window - 1} preceding and current row) as atr{window}"
-        for window in atr_windows
-    )
-    atr_count_exprs = ",\n                ".join(
-        f"count(true_range) over (partition by code order by date "
-        f"rows between {window - 1} preceding and current row) as atr{window}_sessions"
-        for window in atr_windows
-    )
-    lag_exprs = ",\n                ".join(
-        f"lag(close, {window}) over (partition by code order by date) as close_lag_{window}d"
-        for window in return_windows
-    )
-    forward_exprs = ",\n                ".join(
-        [
-            "lead(open, 1) over (partition by code order by date) as next_open",
-            *[
-                f"lead(close, {horizon}) over (partition by code order by date) "
-                f"as future_close_{horizon}d"
-                for horizon in horizons
-            ],
-        ]
-    )
-    recent_exprs = ",\n            ".join(
-        f"case when close_lag_{window}d > 0 then (close / close_lag_{window}d - 1.0) * 100.0 end "
-        f"as recent_return_{window}d_pct"
-        for window in return_windows
-    )
-    return_exprs = ",\n            ".join(
-        [
-            *[
-                f"case when close > 0 and future_close_{horizon}d > 0 then "
-                f"(future_close_{horizon}d / close - 1.0) * 100.0 end "
-                f"as forward_close_return_{horizon}d_pct"
-                for horizon in horizons
-            ],
-            *[
-                f"case when next_open > 0 and future_close_{horizon}d > 0 then "
-                f"(future_close_{horizon}d / next_open - 1.0) * 100.0 end "
-                f"as forward_next_open_return_{horizon}d_pct"
-                for horizon in horizons
-            ],
-        ]
-    )
-    topix_forward_exprs = ",\n                ".join(
-        [
-            "lead(open, 1) over (order by date) as topix_next_open",
-            *[
-                f"lead(close, {horizon}) over (order by date) as topix_future_close_{horizon}d"
-                for horizon in horizons
-            ],
-        ]
-    )
-    topix_return_exprs = ",\n            ".join(
-        [
-            *[
-                f"case when topix_close > 0 and topix_future_close_{horizon}d > 0 then "
-                f"(topix_future_close_{horizon}d / topix_close - 1.0) * 100.0 end "
-                f"as topix_close_return_{horizon}d_pct"
-                for horizon in horizons
-            ],
-            *[
-                f"case when topix_next_open > 0 and topix_future_close_{horizon}d > 0 then "
-                f"(topix_future_close_{horizon}d / topix_next_open - 1.0) * 100.0 end "
-                f"as topix_next_open_return_{horizon}d_pct"
-                for horizon in horizons
-            ],
-        ]
-    )
-    excess_exprs = ",\n            ".join(
-        [
-            *[
-                f"forward_close_return_{horizon}d_pct - topix_close_return_{horizon}d_pct "
-                f"as forward_close_excess_return_{horizon}d_pct"
-                for horizon in horizons
-            ],
-            *[
-                f"forward_next_open_return_{horizon}d_pct - topix_next_open_return_{horizon}d_pct "
-                f"as forward_next_open_excess_return_{horizon}d_pct"
-                for horizon in horizons
-            ],
-        ]
-    )
-    raw_conditions: list[str] = []
-    raw_params: list[str] = []
-    if query_start is not None:
-        raw_conditions.append("sd.date >= ?")
-        raw_params.append(query_start)
-    if query_end is not None:
-        raw_conditions.append("sd.date <= ?")
-        raw_params.append(query_end)
-    raw_where = "" if not raw_conditions else "WHERE " + " AND ".join(raw_conditions)
-    final_conditions: list[str] = []
-    final_params: list[str] = []
-    if analysis_start_date is not None:
-        final_conditions.append("date >= ?")
-        final_params.append(analysis_start_date)
-    if analysis_end_date is not None:
-        final_conditions.append("date <= ?")
-        final_params.append(analysis_end_date)
-    final_where = (
-        "" if not final_conditions else "WHERE " + " AND ".join(final_conditions)
-    )
-    market_filter = (
-        "TRUE"
-        if "all" in market_scopes
-        else f"m.market IN ({_sql_string_list(market_scopes)})"
-    )
-    master_cte = _market_master_cte(
-        market_source=market_source,
-        master_code=master_code,
-    )
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE atr_expansion_panel AS
-        WITH raw_prices AS (
-            SELECT
-                {price_code} AS code,
-                sd.date,
-                sd.open,
-                sd.high,
-                sd.low,
-                sd.close,
-                sd.volume,
-                row_number() OVER (
-                    PARTITION BY {price_code}, sd.date
-                    ORDER BY CASE WHEN length(sd.code) = 4 THEN 0 ELSE 1 END, sd.code
-                ) AS row_rank
-            FROM stock_data sd
-            {raw_where}
-        ),
-        prices AS (
-            SELECT code, date, open, high, low, close, volume
-            FROM raw_prices
-            WHERE row_rank = 1
-              AND open > 0
-              AND high > 0
-              AND low > 0
-              AND close > 0
-        ),
-        {master_cte},
-        scoped AS (
-            SELECT
-                p.*,
-                m.company_name,
-                m.market,
-                m.market_code,
-                m.scale_category
-            FROM prices p
-            JOIN market_master m ON m.code = p.code AND m.date = p.date
-            WHERE {market_filter}
-        ),
-        true_range_base AS (
-            SELECT
-                *,
-                lag(close) OVER (PARTITION BY code ORDER BY date) AS prev_close
-            FROM scoped
-        ),
-        true_range AS (
-            SELECT
-                *,
-                greatest(
-                    high - low,
-                    coalesce(abs(high - prev_close), 0.0),
-                    coalesce(abs(low - prev_close), 0.0)
-                ) AS true_range
-            FROM true_range_base
-        ),
-        featured AS (
-            SELECT
-                *,
-                median(close * volume) OVER (
-                    PARTITION BY code ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
-                ) AS med_adv60_jpy,
-                {atr_exprs},
-                {atr_count_exprs},
-                {lag_exprs},
-                {forward_exprs}
-            FROM true_range
-        ),
-        featured_with_lag AS (
-            SELECT
-                *,
-                lag(atr20, 20) over (partition by code order by date) as atr20_lag_20d
-            FROM featured
-        ),
-        topix_featured AS (
-            SELECT
-                date,
-                close AS topix_close,
-                {topix_forward_exprs}
-            FROM topix_data
-            WHERE close > 0
-        ),
-        computed AS (
-            SELECT
-                f.*,
-                tf.topix_close,
-                case when close > 0 then atr20 / close * 100.0 end as atr20_pct,
-                case when close > 0 then atr60 / close * 100.0 end as atr60_pct,
-                case when atr60 > 0 then atr20 / atr60 end as atr20_to_atr60,
-                case
-                    when atr20_lag_20d > 0 then (atr20 / atr20_lag_20d - 1.0) * 100.0
-                end as atr20_change_20d_pct,
-                {recent_exprs},
-                {return_exprs},
-                {topix_return_exprs}
-            FROM featured_with_lag f
-            LEFT JOIN topix_featured tf USING (date)
-        )
         SELECT
-            *,
-            {excess_exprs}
-        FROM computed
-        {final_where}
-        """,
-        [*raw_params, *final_params],
+            evaluated.*,
+            evaluated.forecast_per AS forward_per,
+            evaluated.forecast_per_percentile AS forward_per_percentile,
+            evaluated.forecast_per_to_per_ratio AS forward_per_to_per_ratio
+        FROM {evaluated_name}
+        AS evaluated
+        """
     )
-    _create_scoped_view(conn, include_all="all" in market_scopes)
+    _create_scoped_view(
+        conn,
+        panel_name="atr_expansion_panel",
+        view_name="atr_expansion_scoped",
+        include_all=include_all,
+    )
 
 
-def _create_scoped_view(conn: Any, *, include_all: bool) -> None:
+def _create_scoped_view(
+    conn: Any,
+    *,
+    panel_name: str,
+    view_name: str,
+    include_all: bool,
+) -> None:
     all_union = (
         """
         UNION ALL
-        SELECT *, 'all' AS market_scope
+        SELECT * REPLACE ('all' AS market_scope)
         FROM base
         """
         if include_all
@@ -660,15 +469,15 @@ def _create_scoped_view(conn: Any, *, include_all: bool) -> None:
     )
     conn.execute(
         f"""
-        CREATE OR REPLACE TEMP VIEW atr_expansion_scoped AS
+        CREATE OR REPLACE TEMP VIEW {view_name} AS
         WITH base AS (
             SELECT
                 p.*,
                 strftime(CAST(p.date AS DATE), '%Y') AS anchor_year,
                 strftime(CAST(p.date AS DATE), '%Y-%m') AS anchor_month
-            FROM atr_expansion_panel p
+            FROM {panel_name} p
         )
-        SELECT *, market AS market_scope
+        SELECT *
         FROM base
         {all_union}
         """
@@ -679,6 +488,7 @@ def _create_liquidity_color_atr_work(conn: Any) -> None:
     color_selects: list[str] = []
     for regime_order, (regime, ui_colors) in enumerate(_liquidity_color_sql().items()):
         for color_order, (ui_color, color_sql) in enumerate(ui_colors.items()):
+            local_color_sql = color_sql.replace("r.", "a.")
             color_selects.append(
                 f"""
                 SELECT
@@ -687,13 +497,9 @@ def _create_liquidity_color_atr_work(conn: Any) -> None:
                     {regime_order} AS liquidity_regime_order,
                     '{ui_color}' AS ui_color,
                     {color_order} AS ui_color_order
-                FROM atr_expansion_scoped a
-                JOIN ranking_color_liquidity_ranked r
-                  ON r.code = a.code
-                 AND r.date = a.date
-                 AND r.market_scope = a.market_scope
-                 AND r.liquidity_scope = '{regime}'
-                WHERE {color_sql}
+                FROM atr_expansion_signal_scoped a
+                WHERE a.liquidity_regime = '{regime}'
+                  AND {local_color_sql}
                 """
             )
     conn.execute(
@@ -702,11 +508,23 @@ def _create_liquidity_color_atr_work(conn: Any) -> None:
     )
 
 
-def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
-    frame = conn.execute(
-        """
+def _build_coverage_diagnostics_df(
+    conn: Any,
+    *,
+    horizons: Sequence[int],
+) -> pd.DataFrame:
+    queries = [
+        f"""
         SELECT
             market AS market_scope,
+            '{entry_mode}' AS entry_mode,
+            {int(horizon)} AS horizon,
+            count(*) AS selected_observation_count,
+            count({return_column}) AS complete_outcome_count,
+            count(*) - count({return_column}) AS incomplete_outcome_count,
+            CASE WHEN count(*) = count({return_column})
+                 THEN 'complete' ELSE 'incomplete' END AS outcome_coverage_status,
+            '{OUTCOME_COVERAGE_POLICY}' AS outcome_coverage_policy,
             count(*) AS observation_count,
             count(DISTINCT code) AS code_count,
             count(DISTINCT date) AS date_count,
@@ -723,11 +541,27 @@ def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
         FROM atr_expansion_panel
         GROUP BY market
         """
-    ).fetchdf()
+        for horizon in horizons
+        for entry_mode, return_column in (
+            ("close_to_close", f"forward_close_excess_return_{int(horizon)}d_pct"),
+            (
+                "next_open_to_close",
+                f"forward_next_open_excess_return_{int(horizon)}d_pct",
+            ),
+        )
+    ]
+    frame = conn.execute("\nUNION ALL\n".join(queries)).fetchdf()
     return _sort_summary_df(
         frame,
         columns=[
             "market_scope",
+            "entry_mode",
+            "horizon",
+            "selected_observation_count",
+            "complete_outcome_count",
+            "incomplete_outcome_count",
+            "outcome_coverage_status",
+            "outcome_coverage_policy",
             "observation_count",
             "code_count",
             "date_count",
@@ -759,7 +593,7 @@ def _build_atr_expansion_response_df(
                     PARTITION BY market_scope, anchor_year
                     ORDER BY {feature}
                 ) AS atr_feature_rank_pct
-            FROM atr_expansion_scoped
+            FROM atr_expansion_signal_scoped
             WHERE {feature} IS NOT NULL
             """
         )
@@ -849,7 +683,7 @@ def _build_atr_pair_interaction_df(
                 PARTITION BY market_scope, anchor_year
                 ORDER BY atr60_pct
             ) AS atr60_rank_pct
-        FROM atr_expansion_scoped
+        FROM atr_expansion_signal_scoped
         WHERE atr20_pct IS NOT NULL
           AND atr60_pct IS NOT NULL
         """
@@ -937,42 +771,117 @@ def _aggregate_condition(
     return_column: str,
     min_observations: int,
     severe_loss_threshold_pct: float,
-    source_name: str = "atr_expansion_scoped",
+    source_name: str = "atr_expansion_signal_scoped",
     group_columns: Sequence[str] = ("market_scope",),
 ) -> pd.DataFrame:
-    group_select = ",\n            ".join(group_columns)
-    group_by = ", ".join(group_columns)
+    group_select = ",\n                ".join(
+        f"selected.{column} AS {column}" for column in group_columns
+    )
+    group_by = ", ".join(f"selected.{column}" for column in group_columns)
+    coverage_gate = (
+        "selected_observation_count = complete_outcome_count "
+        "AND selected_observation_count >= ?"
+    )
     frame = conn.execute(
         f"""
+        WITH selected_membership AS (
+            SELECT *
+            FROM {source_name}
+            WHERE {condition}
+        ),
+        aggregated AS (
+            SELECT
+                {group_select},
+                count(*) AS selected_observation_count,
+                count(evaluated.{return_column}) AS complete_outcome_count,
+                count(*) - count(evaluated.{return_column})
+                    AS incomplete_outcome_count,
+                count(evaluated.{return_column}) AS observation_count,
+                count(DISTINCT CASE WHEN evaluated.{return_column} IS NOT NULL
+                                    THEN selected.code END) AS code_count,
+                count(DISTINCT CASE WHEN evaluated.{return_column} IS NOT NULL
+                                    THEN selected.date END) AS date_count,
+                avg(evaluated.{return_column}) AS raw_mean_forward_excess_return_pct,
+                median(evaluated.{return_column})
+                    AS raw_median_forward_excess_return_pct,
+                quantile_cont(evaluated.{return_column}, 0.10)
+                    AS raw_p10_forward_excess_return_pct,
+                quantile_cont(evaluated.{return_column}, 0.25)
+                    AS raw_p25_forward_excess_return_pct,
+                quantile_cont(evaluated.{return_column}, 0.75)
+                    AS raw_p75_forward_excess_return_pct,
+                quantile_cont(evaluated.{return_column}, 0.90)
+                    AS raw_p90_forward_excess_return_pct,
+                avg(CASE WHEN evaluated.{return_column} > 0 THEN 1.0
+                         WHEN evaluated.{return_column} IS NOT NULL THEN 0.0 END) * 100.0
+                    AS raw_win_rate_pct,
+                avg(CASE WHEN evaluated.{return_column} <= ? THEN 1.0
+                         WHEN evaluated.{return_column} IS NOT NULL THEN 0.0 END) * 100.0
+                    AS raw_severe_loss_rate_pct,
+                median(selected.recent_return_20d_pct)
+                    AS median_recent_return_20d_pct,
+                median(selected.recent_return_60d_pct)
+                    AS median_recent_return_60d_pct,
+                median(selected.atr20_pct) AS median_atr20_pct,
+                median(selected.atr60_pct) AS median_atr60_pct,
+                median(selected.atr20_to_atr60) AS median_atr20_to_atr60,
+                median(selected.atr20_change_20d_pct)
+                    AS median_atr20_change_20d_pct,
+                median(selected.med_adv60_jpy) / 1000000.0
+                    AS median_med_adv60_mil_jpy
+            FROM selected_membership selected
+            LEFT JOIN atr_expansion_scoped evaluated
+              ON evaluated.code = selected.code
+             AND evaluated.date = selected.date
+             AND evaluated.market_scope = selected.market_scope
+            GROUP BY {group_by}
+        )
         SELECT
-            {group_select},
-            count(*) AS observation_count,
-            count(DISTINCT code) AS code_count,
-            count(DISTINCT date) AS date_count,
-            avg({return_column}) AS mean_forward_excess_return_pct,
-            median({return_column}) AS median_forward_excess_return_pct,
-            quantile_cont({return_column}, 0.10) AS p10_forward_excess_return_pct,
-            quantile_cont({return_column}, 0.25) AS p25_forward_excess_return_pct,
-            quantile_cont({return_column}, 0.75) AS p75_forward_excess_return_pct,
-            quantile_cont({return_column}, 0.90) AS p90_forward_excess_return_pct,
-            avg(CASE WHEN {return_column} > 0 THEN 1.0 ELSE 0.0 END) * 100.0
-                AS win_rate_pct,
-            avg(CASE WHEN {return_column} <= ? THEN 1.0 ELSE 0.0 END) * 100.0
-                AS severe_loss_rate_pct,
-            median(recent_return_20d_pct) AS median_recent_return_20d_pct,
-            median(recent_return_60d_pct) AS median_recent_return_60d_pct,
-            median(atr20_pct) AS median_atr20_pct,
-            median(atr60_pct) AS median_atr60_pct,
-            median(atr20_to_atr60) AS median_atr20_to_atr60,
-            median(atr20_change_20d_pct) AS median_atr20_change_20d_pct,
-            median(med_adv60_jpy) / 1000000.0 AS median_med_adv60_mil_jpy
-        FROM {source_name}
-        WHERE {condition}
-          AND {return_column} IS NOT NULL
-        GROUP BY {group_by}
-        HAVING count(*) >= ?
+            * EXCLUDE (
+                raw_mean_forward_excess_return_pct,
+                raw_median_forward_excess_return_pct,
+                raw_p10_forward_excess_return_pct,
+                raw_p25_forward_excess_return_pct,
+                raw_p75_forward_excess_return_pct,
+                raw_p90_forward_excess_return_pct,
+                raw_win_rate_pct,
+                raw_severe_loss_rate_pct
+            ),
+            CASE
+                WHEN selected_observation_count <> complete_outcome_count
+                    THEN 'incomplete'
+                WHEN selected_observation_count < ? THEN 'insufficient_observations'
+                ELSE 'complete'
+            END AS outcome_coverage_status,
+            '{OUTCOME_COVERAGE_POLICY}' AS outcome_coverage_policy,
+            CASE WHEN {coverage_gate}
+                 THEN raw_mean_forward_excess_return_pct END
+                AS mean_forward_excess_return_pct,
+            CASE WHEN {coverage_gate}
+                 THEN raw_median_forward_excess_return_pct END
+                AS median_forward_excess_return_pct,
+            CASE WHEN {coverage_gate}
+                 THEN raw_p10_forward_excess_return_pct END
+                AS p10_forward_excess_return_pct,
+            CASE WHEN {coverage_gate}
+                 THEN raw_p25_forward_excess_return_pct END
+                AS p25_forward_excess_return_pct,
+            CASE WHEN {coverage_gate}
+                 THEN raw_p75_forward_excess_return_pct END
+                AS p75_forward_excess_return_pct,
+            CASE WHEN {coverage_gate}
+                 THEN raw_p90_forward_excess_return_pct END
+                AS p90_forward_excess_return_pct,
+            CASE WHEN {coverage_gate} THEN raw_win_rate_pct END AS win_rate_pct,
+            CASE WHEN {coverage_gate}
+                 THEN raw_severe_loss_rate_pct END AS severe_loss_rate_pct
+        FROM aggregated
         """,
-        [float(severe_loss_threshold_pct), int(min_observations)],
+        [
+            float(severe_loss_threshold_pct),
+            int(min_observations),
+            *[int(min_observations)] * 8,
+        ],
     ).fetchdf()
     if frame.empty:
         return frame
@@ -993,10 +902,7 @@ def _query_observation_sample_df(
 ) -> pd.DataFrame:
     return_columns = ",\n            ".join(
         [
-            *[
-                f"forward_close_excess_return_{horizon}d_pct"
-                for horizon in horizons
-            ],
+            *[f"forward_close_excess_return_{horizon}d_pct" for horizon in horizons],
             *[
                 f"forward_next_open_excess_return_{horizon}d_pct"
                 for horizon in horizons
@@ -1089,9 +995,7 @@ def _liquidity_color_sql() -> dict[str, dict[str, str]]:
         "(r.pbr_percentile <= 0.2 AND r.forward_per_percentile <= 0.2) "
         "OR (r.per_percentile <= 0.2 AND r.forward_per_to_per_ratio <= 0.8)"
     )
-    neutral_green = (
-        "r.per_percentile <= 0.2 AND r.forward_per_to_per_ratio <= 0.8"
-    )
+    neutral_green = "r.per_percentile <= 0.2 AND r.forward_per_to_per_ratio <= 0.8"
     medium_value = (
         "r.pbr_percentile <= 0.2 "
         "OR (r.per_percentile <= 0.2 AND r.forward_per_to_per_ratio <= 1.0)"
@@ -1127,10 +1031,37 @@ def _return_column(entry_mode: str, horizon: int) -> str:
     raise ValueError(f"unsupported entry_mode: {entry_mode}")
 
 
-def _offset_calendar_date(date: str | None, *, days: int) -> str | None:
-    if date is None:
-        return None
-    return (pd.Timestamp(date) + pd.Timedelta(days=days)).strftime("%Y-%m-%d")
+def _parse_optional_date(value: str | None) -> date | None:
+    return None if value is None else date.fromisoformat(value)
+
+
+def _str_or_none(value: Any) -> str | None:
+    return None if value is None or pd.isna(value) else str(value)
+
+
+def _sort_summary_df(frame: pd.DataFrame, *, columns: Sequence[str]) -> pd.DataFrame:
+    if frame.empty:
+        return pd.DataFrame(columns=list(columns))
+    sort_columns = [
+        column
+        for column in ("market_scope", "min_date", "atr_feature", "horizon")
+        if column in frame.columns
+    ]
+    result = frame.reindex(columns=list(columns))
+    return result.sort_values(sort_columns, kind="stable") if sort_columns else result
+
+
+def _top_rows_for_markdown(
+    frame: pd.DataFrame,
+    *,
+    limit: int,
+    sort_columns: Sequence[str] = (),
+) -> str:
+    if frame.empty:
+        return "_No rows._"
+    available = [column for column in sort_columns if column in frame.columns]
+    ordered = frame.sort_values(available, kind="stable") if available else frame
+    return "```text\n" + ordered.head(int(limit)).to_string(index=False) + "\n```"
 
 
 def _concat_sorted(
@@ -1151,6 +1082,11 @@ def _concat_sorted(
 def _base_response_columns() -> list[str]:
     return [
         "market_scope",
+        "selected_observation_count",
+        "complete_outcome_count",
+        "incomplete_outcome_count",
+        "outcome_coverage_status",
+        "outcome_coverage_policy",
         "observation_count",
         "code_count",
         "date_count",

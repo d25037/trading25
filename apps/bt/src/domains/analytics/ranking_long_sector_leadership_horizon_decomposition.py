@@ -3,11 +3,29 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
+from src.domains.analytics.daily_ranking_consumer_support import (
+    compose_daily_ranking_signal_features,
+)
+from src.domains.analytics.daily_ranking_feature_builders import (
+    LongLeadershipFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    build_long_leadership_features,
+    build_sector_strength_features,
+)
+from src.domains.analytics.daily_ranking_research_base import (
+    DailyRankingPanelRequest,
+    MarketScope,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
+    normalize_daily_ranking_market_scopes,
+)
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
@@ -16,14 +34,9 @@ from src.domains.analytics.ranking_color_evidence import (
     DEFAULT_MIN_OBSERVATIONS,
     DEFAULT_OBSERVATION_SAMPLE_LIMIT,
     DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
-    _assert_required_tables as _assert_ranking_required_tables,
-    _create_observation_panel as _create_ranking_observation_panel,
-    _normalize_market_scopes,
-    _offset_calendar_date,
 )
 from src.domains.analytics.ranking_sector_strength_evidence import (
     DEFAULT_HORIZONS,
-    _create_sector_strength_tables,
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
@@ -39,6 +52,7 @@ RANKING_LONG_SECTOR_LEADERSHIP_HORIZON_DECOMPOSITION_EXPERIMENT_ID = (
     "market-behavior/ranking-long-sector-leadership-horizon-decomposition"
 )
 DEFAULT_LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
+PUBLIC_FEATURE_BUILDER = build_long_leadership_features
 SECTOR_STRENGTH_FAMILY_OPTIONS: tuple[str, ...] = (
     "balanced_sector_strength",
     "long_hybrid_leadership",
@@ -110,7 +124,7 @@ def run_ranking_long_sector_leadership_horizon_decomposition_research(
     resolved_sector_strength_family = _normalize_sector_strength_family(
         sector_strength_family
     )
-    resolved_market_scopes = _normalize_market_scopes(market_scopes)
+    resolved_market_scopes = normalize_daily_ranking_market_scopes(market_scopes)
     _validate_params(
         horizons=resolved_horizons,
         leadership_windows=resolved_leadership_windows,
@@ -123,34 +137,63 @@ def run_ranking_long_sector_leadership_horizon_decomposition_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    max_warmup_days = max(max(resolved_leadership_windows) * 3, 252)
-    query_start = _offset_calendar_date(start_date, days=-max_warmup_days)
-    query_end = _offset_calendar_date(end_date, days=max(resolved_horizons) * 4 + 30)
     market_source = "stock_master_daily_exact_date"
 
     with open_readonly_analysis_connection(
         str(db_path_obj),
         snapshot_prefix="ranking-long-sector-leadership-horizon-decomposition-",
     ) as ctx:
-        _assert_ranking_required_tables(ctx.connection)
-        _create_ranking_observation_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            DailyRankingPanelRequest(
+                namespace="long_sector_leadership",
+                analysis_start_date=_parse_optional_date(start_date),
+                analysis_end_date=_parse_optional_date(end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(tuple[MarketScope, ...], resolved_market_scopes),
+                include_liquidity=False,
+                percentile_features=(),
+            ),
         )
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
-        _create_long_sector_leadership_tables(
+        signal_source = relations.ranked_signals
+        sector_features = build_sector_strength_features(
             ctx.connection,
-            leadership_windows=resolved_leadership_windows,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="long_sector_leadership_sector",
+            ),
+        )
+        leadership_features = build_long_leadership_features(
+            ctx.connection,
+            LongLeadershipFeaturesRequest(
+                source=signal_source,
+                sector_features=sector_features,
+                namespace="long_sector_leadership_features",
+                leadership_windows=resolved_leadership_windows,
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(leadership_features,),
+            namespace="long_sector_leadership",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="long_sector_leadership_signals",
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="long_sector_leadership_outcomes",
         )
         _create_long_signal_tables(
             ctx.connection,
-            leadership_windows=resolved_leadership_windows,
+            source_name=evaluated.name,
         )
         observation_count = int(
             ctx.connection.execute(
@@ -371,253 +414,11 @@ def build_summary_markdown(
     return "\n".join(parts).rstrip() + "\n"
 
 
-def _create_long_sector_leadership_tables(
-    conn: Any,
-    *,
-    leadership_windows: Sequence[int],
-) -> None:
-    _create_sector_index_map(conn)
-    window_selects = ",\n                ".join(
-        f"lag(close, {int(window)}) OVER (PARTITION BY code ORDER BY date) AS close_lag_{int(window)}d"
-        for window in leadership_windows
-    )
-    stock_return_selects = ",\n                ".join(
-        f"100.0 * (close / NULLIF(close_lag_{int(window)}d, 0.0) - 1.0) AS stock_return_{int(window)}d_pct"
-        for window in leadership_windows
-    )
-    topix_lag_selects = ",\n                ".join(
-        f"lag(close, {int(window)}) OVER (ORDER BY date) AS topix_close_lag_{int(window)}d"
-        for window in leadership_windows
-    )
-    topix_return_selects = ",\n                ".join(
-        f"100.0 * (close / NULLIF(topix_close_lag_{int(window)}d, 0.0) - 1.0) AS topix_return_{int(window)}d_pct"
-        for window in leadership_windows
-    )
-    sector_aggregate_selects = ",\n                ".join(
-        [
-            f"avg(sr.stock_return_{int(window)}d_pct - tr.topix_return_{int(window)}d_pct) AS sector_constituent_{int(window)}d_topix_excess_pct,\n"
-            f"                avg(CASE WHEN sr.stock_return_{int(window)}d_pct - tr.topix_return_{int(window)}d_pct > 0 THEN 1.0 ELSE 0.0 END) * 100.0 AS sector_breadth_{int(window)}d_pct"
-            for window in leadership_windows
-        ]
-    )
-    index_lag_selects = ",\n                ".join(
-        f"lag(close, {int(window)}) OVER (PARTITION BY sector_33_code ORDER BY date) AS close_lag_{int(window)}d"
-        for window in leadership_windows
-    )
-    index_return_selects = ",\n                ".join(
-        f"100.0 * (close / NULLIF(close_lag_{int(window)}d, 0.0) - 1.0) AS sector_index_return_{int(window)}d_pct"
-        for window in leadership_windows
-    )
-    index_excess_selects = ",\n                ".join(
-        f"i.sector_index_return_{int(window)}d_pct - tr.topix_return_{int(window)}d_pct AS sector_index_{int(window)}d_topix_excess_pct"
-        for window in leadership_windows
-    )
-    rank_selects: list[str] = []
-    for window in leadership_windows:
-        window_int = int(window)
-        rank_selects.extend(
-            [
-                f"percent_rank() OVER (PARTITION BY sr.market_scope, sr.date ORDER BY si.sector_index_{window_int}d_topix_excess_pct) AS sector_index_{window_int}d_rank",
-                f"percent_rank() OVER (PARTITION BY sr.market_scope, sr.date ORDER BY sr.sector_constituent_{window_int}d_topix_excess_pct) AS sector_constituent_{window_int}d_rank",
-                f"percent_rank() OVER (PARTITION BY sr.market_scope, sr.date ORDER BY sr.sector_breadth_{window_int}d_pct) AS sector_breadth_{window_int}d_rank",
-            ]
-        )
-    rank_select_sql = ",\n                ".join(rank_selects)
-    index_rank_columns = [
-        f"sector_index_{int(window)}d_rank" for window in leadership_windows
-    ]
-    constituent_rank_columns = [
-        f"sector_constituent_{int(window)}d_rank" for window in leadership_windows
-    ]
-    breadth_rank_columns = [
-        f"sector_breadth_{int(window)}d_rank" for window in leadership_windows
-    ]
-    index_score_expr = (
-        f"(({' + '.join(index_rank_columns)}) / {len(index_rank_columns)})"
-    )
-    constituent_score_expr = (
-        f"(({' + '.join([*constituent_rank_columns, *breadth_rank_columns])}) / "
-        f"{len([*constituent_rank_columns, *breadth_rank_columns])})"
-    )
-    hybrid_score_expr = f"(({index_score_expr} + {constituent_score_expr}) / 2.0)"
-
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE long_stock_returns AS
-        WITH prices AS (
-            SELECT
-                code,
-                CAST(date AS VARCHAR) AS date,
-                close,
-                {window_selects}
-            FROM stock_data
-            WHERE close > 0
-        )
-        SELECT
-            code,
-            date,
-            {stock_return_selects}
-        FROM prices
-        """
-    )
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE long_topix_returns AS
-        WITH prices AS (
-            SELECT
-                CAST(date AS VARCHAR) AS date,
-                close,
-                {topix_lag_selects}
-            FROM topix_data
-            WHERE close > 0
-        )
-        SELECT
-            date,
-            {topix_return_selects}
-        FROM prices
-        """
-    )
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE long_sector_constituent_state AS
-        SELECT
-            r.market_scope,
-            r.date,
-            sm.sector_33_code,
-            sm.sector_33_name,
-            count(*) AS sector_observation_count,
-            count(DISTINCT r.code) AS sector_code_count,
-            {sector_aggregate_selects}
-        FROM ranking_color_ranked r
-        JOIN ranking_sector_master sm
-          ON sm.code = r.code
-         AND sm.date = r.date
-        JOIN long_stock_returns sr
-          ON sr.code = r.code
-         AND sr.date = r.date
-        JOIN long_topix_returns tr
-          ON tr.date = r.date
-        GROUP BY
-            r.market_scope,
-            r.date,
-            sm.sector_33_code,
-            sm.sector_33_name
-        """
-    )
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE long_sector_index_returns AS
-        WITH index_prices AS (
-            SELECT
-                m.sector_33_code,
-                m.sector_index_code,
-                CAST(i.date AS VARCHAR) AS date,
-                i.close,
-                {index_lag_selects}
-            FROM ranking_long_sector_index_map m
-            JOIN indices_data i
-              ON i.code = m.sector_index_code
-            WHERE i.close > 0
-        ),
-        index_returns AS (
-            SELECT
-                sector_33_code,
-                sector_index_code,
-                date,
-                {index_return_selects}
-            FROM index_prices
-        )
-        SELECT
-            i.sector_33_code,
-            i.sector_index_code,
-            i.date,
-            {index_excess_selects}
-        FROM index_returns i
-        JOIN long_topix_returns tr
-          ON tr.date = i.date
-        """
-    )
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE long_sector_leadership_state AS
-        WITH ranked AS (
-            SELECT
-                sr.*,
-                si.sector_index_code,
-                {", ".join(f"si.sector_index_{int(window)}d_topix_excess_pct" for window in leadership_windows)},
-                {rank_select_sql}
-            FROM long_sector_constituent_state sr
-            JOIN long_sector_index_returns si
-              ON si.sector_33_code = sr.sector_33_code
-             AND si.date = sr.date
-        )
-        SELECT
-            *,
-            {index_score_expr} AS long_index_leadership_score,
-            {constituent_score_expr} AS long_constituent_breadth_leadership_score,
-            {hybrid_score_expr} AS long_hybrid_leadership_score
-        FROM ranked
-        """
-    )
-
-
-def _create_sector_index_map(conn: Any) -> None:
-    conn.execute(
-        """
-        CREATE OR REPLACE TEMP TABLE ranking_long_sector_index_map AS
-        SELECT * FROM (
-            VALUES
-                ('0050', '0040'),
-                ('1050', '0041'),
-                ('2050', '0042'),
-                ('3050', '0043'),
-                ('3100', '0044'),
-                ('3150', '0045'),
-                ('3200', '0046'),
-                ('3250', '0047'),
-                ('3300', '0048'),
-                ('3350', '0049'),
-                ('3400', '004A'),
-                ('3450', '004B'),
-                ('3500', '004C'),
-                ('3550', '004D'),
-                ('3600', '004E'),
-                ('3650', '004F'),
-                ('3700', '0050'),
-                ('3750', '0051'),
-                ('3800', '0052'),
-                ('4050', '0053'),
-                ('5050', '0054'),
-                ('5100', '0055'),
-                ('5150', '0056'),
-                ('5200', '0057'),
-                ('5250', '0058'),
-                ('6050', '0059'),
-                ('6100', '005A'),
-                ('7050', '005B'),
-                ('7100', '005C'),
-                ('7150', '005D'),
-                ('7200', '005E'),
-                ('8050', '005F'),
-                ('9050', '0060')
-        ) AS t(sector_33_code, sector_index_code)
-        """
-    )
-
-
 def _create_long_signal_tables(
     conn: Any,
     *,
-    leadership_windows: Sequence[int],
+    source_name: str,
 ) -> None:
-    leadership_rank_selects = ",\n                ".join(
-        [
-            f"l.sector_index_{int(window)}d_rank,"
-            f"\n                l.sector_constituent_{int(window)}d_rank,"
-            f"\n                l.sector_breadth_{int(window)}d_rank"
-            for window in leadership_windows
-        ]
-    )
     conn.execute(
         """
         CREATE OR REPLACE TEMP TABLE long_sector_overlay_terms (
@@ -679,69 +480,18 @@ def _create_long_signal_tables(
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE long_sector_leadership_base_panel AS
-        WITH ranked AS (
-            SELECT
-                r.*,
-                sm.sector_33_code,
-                sm.sector_33_name,
-                s.sector_strength_bucket,
-                s.sector_strength_score,
-                s.sector_index_strength_score,
-                s.sector_constituent_strength_score,
-                l.long_index_leadership_score,
-                l.long_constituent_breadth_leadership_score,
-                l.long_hybrid_leadership_score,
-                {leadership_rank_selects},
-                l.sector_observation_count AS long_sector_observation_count,
-                l.sector_code_count AS long_sector_code_count,
-                percent_rank() OVER (
-                    PARTITION BY r.market_scope, r.date
-                    ORDER BY r.recent_return_20d_pct NULLS LAST
-                ) AS momentum_20d_percentile,
-                percent_rank() OVER (
-                    PARTITION BY r.market_scope, r.date
-                    ORDER BY r.recent_return_60d_pct NULLS LAST
-                ) AS momentum_60d_percentile
-            FROM ranking_color_ranked r
-            JOIN ranking_sector_master sm
-              ON sm.code = r.code
-             AND sm.date = r.date
-            LEFT JOIN ranking_sector_daily_state s
-              ON s.market_scope = r.market_scope
-             AND s.date = r.date
-             AND s.sector_33_code = sm.sector_33_code
-             AND s.sector_33_name = sm.sector_33_name
-            LEFT JOIN long_sector_leadership_state l
-              ON l.market_scope = r.market_scope
-             AND l.date = r.date
-             AND l.sector_33_code = sm.sector_33_code
-             AND l.sector_33_name = sm.sector_33_name
-        )
         SELECT
-            *,
-            substr(CAST(date AS VARCHAR), 1, 4) AS year,
-            pbr_percentile <= 0.2
-                AND forward_per_percentile <= 0.2 AS undervalued_flag,
-            momentum_20d_percentile >= 0.8
-                AND momentum_60d_percentile >= 0.8 AS momentum_20_60_top20_flag,
-            sector_33_name = '銀行業' AS bank_sector_flag,
-            sector_33_name IN ('非鉄金属', '海運業', '卸売業', '電気機器', '保険業')
+            r.*,
+            r.forecast_per_percentile AS forward_per_percentile,
+            substr(CAST(r.date AS VARCHAR), 1, 4) AS year,
+            r.pbr_percentile <= 0.2
+                AND r.forecast_per_percentile <= 0.2 AS undervalued_flag,
+            r.sector_33_name = '銀行業' AS bank_sector_flag,
+            r.sector_33_name IN ('非鉄金属', '海運業', '卸売業', '電気機器', '保険業')
                 AS future_top5_sector_flag,
-            sector_33_name IN ('空運業', '陸運業', 'パルプ・紙', '繊維製品', '医薬品')
-                AS future_bottom5_sector_flag,
-            CASE
-                WHEN sector_strength_bucket = 'sector_strong' THEN 'Balanced Strong'
-                WHEN sector_strength_bucket = 'sector_weak' THEN 'Balanced Weak'
-                WHEN sector_strength_bucket IS NULL THEN 'Balanced Unknown'
-                ELSE 'Balanced Neutral'
-            END AS balanced_sector_strength_bucket_label,
-            CASE
-                WHEN long_hybrid_leadership_score >= 0.799999 THEN 'Long Strong'
-                WHEN long_hybrid_leadership_score <= 0.200001 THEN 'Long Weak'
-                WHEN long_hybrid_leadership_score IS NULL THEN 'Long Unknown'
-                ELSE 'Long Neutral'
-            END AS long_hybrid_bucket_label
-        FROM ranked
+            r.sector_33_name IN ('空運業', '陸運業', 'パルプ・紙', '繊維製品', '医薬品')
+                AS future_bottom5_sector_flag
+        FROM {source_name} r
         """
     )
     conn.execute(
@@ -1826,6 +1576,10 @@ def _validate_params(
         raise ValueError("severe_loss_threshold_pct must be negative")
     if int(observation_sample_limit) < 0:
         raise ValueError("observation_sample_limit must be >= 0")
+
+
+def _parse_optional_date(value: str | None) -> date | None:
+    return None if value is None else date.fromisoformat(value)
 
 
 def _normalize_sector_strength_family(value: str) -> str:

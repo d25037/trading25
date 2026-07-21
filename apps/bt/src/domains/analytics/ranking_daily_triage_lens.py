@@ -3,20 +3,27 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
-from src.domains.analytics.atr_expansion_forward_response import (
-    _create_observation_panel as _create_atr_observation_panel,
+from src.domains.analytics.daily_ranking_consumer_support import (
+    compose_daily_ranking_signal_features,
+)
+from src.domains.analytics.daily_ranking_feature_builders import (
+    LongLeadershipFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    build_long_leadership_features,
+    build_sector_strength_features,
 )
 from src.domains.analytics.daily_ranking_research_base import (
-    DAILY_RANKING_RESEARCH_RANKED_TABLE,
-    assert_daily_ranking_research_tables,
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    MarketScope,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
     normalize_daily_ranking_market_scopes,
 )
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
@@ -27,13 +34,11 @@ from src.domains.analytics.ranking_color_evidence import (
     DEFAULT_OBSERVATION_SAMPLE_LIMIT,
     DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
 )
-from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition import (
-    _create_long_sector_leadership_tables,
+from src.domains.analytics.ranking_research_selection_contract import (
+    evaluate_frozen_selection,
+    freeze_signal_topk,
 )
-from src.domains.analytics.ranking_sector_strength_evidence import (
-    DEFAULT_HORIZONS,
-    _create_sector_strength_tables,
-)
+from src.domains.analytics.ranking_sector_strength_evidence import DEFAULT_HORIZONS
 from src.domains.analytics.readonly_duckdb_support import open_readonly_analysis_connection
 from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
 
@@ -41,7 +46,6 @@ RANKING_DAILY_TRIAGE_LENS_EXPERIMENT_ID = "market-behavior/ranking-daily-triage-
 DEFAULT_TOP_KS: tuple[int, ...] = (5, 10, 15)
 DEFAULT_START_DATE = "2023-01-01"
 DEFAULT_STRONG_GAIN_THRESHOLD_PCT = 10.0
-_LONG_WARMUP_CALENDAR_DAYS = 820
 _LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
 
 
@@ -94,48 +98,70 @@ def run_ranking_daily_triage_lens_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = daily_ranking_query_start_date(
-        start_date,
-        warmup_calendar_days=_LONG_WARMUP_CALENDAR_DAYS,
-    )
-    query_end = daily_ranking_query_end_date(end_date, max_horizon=max(resolved_horizons))
     market_source = "stock_master_daily_exact_date"
 
     with open_readonly_analysis_connection(
         str(db_path_obj),
         snapshot_prefix="ranking-daily-triage-lens-",
     ) as ctx:
-        assert_daily_ranking_research_tables(ctx.connection)
-        create_daily_ranking_research_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
+            DailyRankingPanelRequest(
+                namespace="daily_triage",
+                analysis_start_date=_parse_optional_date(start_date),
+                analysis_end_date=_parse_optional_date(end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(
+                    tuple[MarketScope, ...],
+                    resolved_market_scopes,
+                ),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
+        )
+        signal_source = relations.liquidity_ranked_signals
+        if signal_source is None:
+            raise RuntimeError("daily triage requires liquidity-ranked signals")
+        sector_features = build_sector_strength_features(
+            ctx.connection,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="daily_triage_sector",
+            ),
+        )
+        leadership_features = build_long_leadership_features(
+            ctx.connection,
+            LongLeadershipFeaturesRequest(
+                source=signal_source,
+                sector_features=sector_features,
+                namespace="daily_triage_leadership",
+                leadership_windows=_LEADERSHIP_WINDOWS,
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(leadership_features,),
+            namespace="daily_triage",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="daily_triage_signals",
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="daily_triage_outcomes",
+        )
+        panel_df = _query_triage_panel(
+            ctx.connection,
+            source_name=evaluated.name,
             horizons=resolved_horizons,
-            market_scopes=resolved_market_scopes,
-            market_source=market_source,
-            include_liquidity_ranked=True,
-            include_relation_percentiles=False,
         )
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
-        _create_atr_observation_panel(
-            ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=(20, 60),
-            return_windows=(20, 60),
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
-        )
-        _create_long_sector_leadership_tables(
-            ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
-        )
-        panel_df = _query_triage_panel(ctx.connection, horizons=resolved_horizons)
         return run_ranking_daily_triage_lens_from_panel(
             panel_df,
             db_path=str(db_path_obj),
@@ -171,6 +197,7 @@ def run_ranking_daily_triage_lens_from_panel(
 ) -> RankingDailyTriageLensResult:
     resolved_horizons = tuple(sorted({int(horizon) for horizon in horizons}))
     resolved_top_ks = tuple(sorted({int(top_k) for top_k in top_ks}))
+    resolved_market_scopes = normalize_daily_ranking_market_scopes(market_scopes)
     _validate_params(
         horizons=resolved_horizons,
         top_ks=resolved_top_ks,
@@ -180,6 +207,9 @@ def run_ranking_daily_triage_lens_from_panel(
     )
     panel_df = _with_optional_panel_columns(panel_df)
     _assert_required_panel_columns(panel_df, horizons=resolved_horizons)
+    panel_df = panel_df.loc[
+        panel_df["market_scope"].astype("string").isin(resolved_market_scopes)
+    ].copy()
 
     candidates = _build_triage_candidates_df(panel_df)
     return RankingDailyTriageLensResult(
@@ -190,7 +220,7 @@ def run_ranking_daily_triage_lens_from_panel(
         analysis_start_date=analysis_start_date,
         analysis_end_date=analysis_end_date,
         horizons=resolved_horizons,
-        market_scopes=tuple(market_scopes),
+        market_scopes=resolved_market_scopes,
         top_ks=resolved_top_ks,
         severe_loss_threshold_pct=float(severe_loss_threshold_pct),
         strong_gain_threshold_pct=float(strong_gain_threshold_pct),
@@ -299,34 +329,24 @@ def build_summary_markdown(result: RankingDailyTriageLensResult) -> str:
     return "\n".join(parts).rstrip() + "\n"
 
 
-def _query_triage_panel(conn: Any, *, horizons: Sequence[int]) -> pd.DataFrame:
+def _query_triage_panel(
+    conn: Any,
+    *,
+    source_name: str,
+    horizons: Sequence[int],
+) -> pd.DataFrame:
     return_columns = ",\n                ".join(
         [f"r.forward_close_excess_return_{int(horizon)}d_pct" for horizon in horizons]
     )
-    psr_percentile_expr = (
-        "r.psr_percentile"
-        if _table_column_exists(conn, DAILY_RANKING_RESEARCH_RANKED_TABLE, "psr_percentile")
-        else "CAST(NULL AS DOUBLE)"
-    )
-    forward_psr_percentile_expr = (
-        "r.forward_psr_percentile"
-        if _table_column_exists(
-            conn,
-            DAILY_RANKING_RESEARCH_RANKED_TABLE,
-            "forward_psr_percentile",
-        )
-        else "CAST(NULL AS DOUBLE)"
-    )
-    conn.execute(
+    return conn.execute(
         f"""
-        CREATE OR REPLACE TEMP TABLE ranking_daily_triage_panel AS
         SELECT
             r.market_scope,
             r.date,
             r.code,
             r.company_name,
-            sm.sector_33_code,
-            sm.sector_33_name,
+            r.sector_33_code,
+            r.sector_33_name,
             r.liquidity_regime,
             r.valuation_signal,
             r.strong_value_confirmation,
@@ -335,49 +355,27 @@ def _query_triage_panel(conn: Any, *, horizons: Sequence[int]) -> pd.DataFrame:
             r.very_overvalued_warning,
             r.no_value_confirmation,
             r.pbr_percentile,
-            r.forward_per_percentile,
-            {psr_percentile_expr} AS psr_percentile,
-            {forward_psr_percentile_expr} AS forward_psr_percentile,
+            r.forecast_per_percentile AS forward_per_percentile,
+            CAST(NULL AS DOUBLE) AS psr_percentile,
+            CAST(NULL AS DOUBLE) AS forward_psr_percentile,
             r.recent_return_20d_pct,
             r.recent_return_60d_pct,
-            s.sector_strength_bucket,
-            s.sector_strength_score,
-            l.long_hybrid_leadership_score,
+            r.sector_strength_bucket,
+            r.sector_strength_score,
+            r.long_hybrid_leadership_score,
             coalesce(
-                a.atr20_change_20d_pct >= 25.0
-                AND a.atr20_to_atr60 < 1.25
+                r.atr20_change_20d_pct >= 25.0
+                AND r.atr20_to_atr60 < 1.25
                 AND coalesce(r.recent_return_20d_pct, 0.0) < 30.0,
                 FALSE
             ) AS atr20_acceleration_ex_overheat_flag,
             coalesce(
-                a.atr20_change_20d_pct >= 25.0
-                AND a.atr20_to_atr60 >= 1.25,
+                r.atr20_change_20d_pct >= 25.0
+                AND r.atr20_to_atr60 >= 1.25,
                 FALSE
             ) AS atr20_to_atr60_overheat_flag,
             {return_columns}
-        FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE} r
-        LEFT JOIN ranking_sector_master sm
-          ON sm.code = r.code
-         AND sm.date = r.date
-        LEFT JOIN ranking_sector_daily_state s
-          ON s.market_scope = r.market_scope
-         AND s.date = r.date
-         AND s.sector_33_code = sm.sector_33_code
-         AND s.sector_33_name = sm.sector_33_name
-        LEFT JOIN long_sector_leadership_state l
-          ON l.date = r.date
-         AND l.sector_33_code = sm.sector_33_code
-         AND l.sector_33_name = sm.sector_33_name
-        LEFT JOIN atr_expansion_panel a
-          ON a.code = r.code
-         AND a.date = r.date
-         AND a.market = r.market_scope
-        """
-    )
-    return conn.execute(
-        """
-        SELECT *
-        FROM ranking_daily_triage_panel
+        FROM {source_name} r
         ORDER BY date, market_scope, code
         """
     ).fetchdf()
@@ -410,8 +408,8 @@ def _build_triage_candidates_df(panel_df: pd.DataFrame) -> pd.DataFrame:
     if result.empty:
         return result
     return result.sort_values(
-        ["date", "triage_score", "code"],
-        ascending=[True, False, True],
+        ["date", "market_scope", "triage_score", "code"],
+        ascending=[True, True, False, True],
         kind="mergesort",
     ).reset_index(drop=True)
 
@@ -529,53 +527,169 @@ def _build_attention_efficiency_df(
     rows: list[dict[str, object]] = []
     for horizon in horizons:
         return_col = f"forward_close_excess_return_{int(horizon)}d_pct"
-        horizon_df = df[df[return_col].notna()].copy()
-        if horizon_df.empty:
+        if df.empty:
             continue
-        strong_total = int((horizon_df[return_col] >= strong_gain_threshold_pct).sum())
         for top_k in top_ks:
-            selected = (
-                horizon_df[horizon_df["triage_bucket"] != "kill"]
-                .sort_values(["date", "triage_score", "code"], ascending=[True, False, True])
-                .groupby("date", group_keys=False)
-                .head(int(top_k))
+            evaluated_dates = []
+            for _, date_frame in df.groupby("date", dropna=False, sort=True):
+                signal_candidates = date_frame.loc[
+                    date_frame["triage_bucket"].ne("kill"),
+                    ["market_scope", "date", "code", "triage_score"],
+                ].copy()
+                if signal_candidates.empty:
+                    continue
+                frozen = freeze_signal_topk(
+                    signal_candidates,
+                    group_columns=("market_scope", "date"),
+                    score_columns=("triage_score",),
+                    k=int(top_k),
+                    ascending=(False,),
+                )
+                evaluated = evaluate_frozen_selection(
+                    frozen,
+                    date_frame.loc[
+                        :, ["market_scope", "date", "code", return_col]
+                    ],
+                    outcome_column=return_col,
+                )
+                evaluated_dates.append(evaluated)
+
+            evaluated_date_count = len(evaluated_dates)
+            complete_date_count = sum(
+                item.outcome_status == "complete" for item in evaluated_dates
             )
-            selected_count = int(len(selected))
-            future_winner_capture_pct = _future_winner_capture_pct(
+            incomplete_date_count = evaluated_date_count - complete_date_count
+            outcome_complete = bool(
+                evaluated_date_count and incomplete_date_count == 0
+            )
+            candidate_count = sum(item.candidate_count for item in evaluated_dates)
+            candidate_outcome_count = sum(
+                item.candidate_outcome_count for item in evaluated_dates
+            )
+            selected_count = sum(len(item.selected) for item in evaluated_dates)
+            selected_outcome_count = sum(
+                item.selected_outcome_count for item in evaluated_dates
+            )
+            selected = (
+                pd.concat(
+                    [item.selected for item in evaluated_dates],
+                    ignore_index=True,
+                )
+                if outcome_complete
+                else pd.DataFrame(
+                    columns=["market_scope", "date", "code", return_col]
+                )
+            )
+            horizon_df = (
+                df.loc[df[return_col].notna()].copy()
+                if outcome_complete
+                else df.iloc[0:0].copy()
+            )
+            effect_metrics = _attention_effect_metrics(
                 horizon_df,
                 selected,
                 return_col=return_col,
                 top_k=int(top_k),
+                severe_loss_threshold_pct=severe_loss_threshold_pct,
+                strong_gain_threshold_pct=strong_gain_threshold_pct,
+                outcome_complete=outcome_complete,
             )
+            universe_count = len(df)
+            universe_outcome_count = int(df[return_col].notna().sum())
             rows.append(
                 {
                     "horizon": int(horizon),
                     "top_k": int(top_k),
-                    "date_count": int(horizon_df["date"].nunique()),
-                    "candidate_count": int(len(horizon_df)),
+                    "date_count": int(df["date"].nunique()),
+                    "evaluated_date_count": evaluated_date_count,
+                    "complete_date_count": complete_date_count,
+                    "incomplete_date_count": incomplete_date_count,
+                    "effect_date_count": (
+                        evaluated_date_count if outcome_complete else 0
+                    ),
+                    "universe_count": universe_count,
+                    "universe_outcome_count": universe_outcome_count,
+                    "universe_outcome_coverage_pct": _pct(
+                        universe_outcome_count / universe_count
+                    ),
+                    "candidate_count": candidate_count,
+                    "candidate_outcome_count": candidate_outcome_count,
+                    "candidate_outcome_coverage_pct": _pct(
+                        candidate_outcome_count / candidate_count
+                    )
+                    if candidate_count
+                    else float("nan"),
                     "selected_count": selected_count,
-                    "attention_reduction_pct": _pct(1.0 - selected_count / len(horizon_df)),
-                    "mean_forward_excess_return_pct": _mean(selected[return_col]),
-                    "median_forward_excess_return_pct": _median(selected[return_col]),
-                    "precision_positive_pct": _pct((selected[return_col] > 0.0).mean()),
-                    "precision_strong_gain_pct": _pct(
-                        (selected[return_col] >= strong_gain_threshold_pct).mean()
+                    "selected_outcome_count": int(selected_outcome_count),
+                    "selected_outcome_coverage_pct": _pct(
+                        selected_outcome_count / selected_count
+                    )
+                    if selected_count
+                    else float("nan"),
+                    "outcome_status": "complete" if outcome_complete else "incomplete",
+                    "attention_reduction_pct": _pct(
+                        1.0 - selected_count / universe_count
                     ),
-                    "severe_loss_rate_pct": _pct(
-                        (selected[return_col] <= severe_loss_threshold_pct).mean()
-                    ),
-                    "right_tail_capture_pct": _pct(
-                        (
-                            int((selected[return_col] >= strong_gain_threshold_pct).sum())
-                            / strong_total
-                        )
-                        if strong_total
-                        else 0.0
-                    ),
-                    "future_winner_capture_pct": future_winner_capture_pct,
+                    **effect_metrics,
                 }
             )
     return pd.DataFrame(rows)
+
+
+def _attention_effect_metrics(
+    horizon_df: pd.DataFrame,
+    selected_df: pd.DataFrame,
+    *,
+    return_col: str,
+    top_k: int,
+    severe_loss_threshold_pct: float,
+    strong_gain_threshold_pct: float,
+    outcome_complete: bool,
+) -> dict[str, float]:
+    columns = (
+        "mean_forward_excess_return_pct",
+        "median_forward_excess_return_pct",
+        "precision_positive_pct",
+        "precision_strong_gain_pct",
+        "severe_loss_rate_pct",
+        "right_tail_capture_pct",
+        "future_winner_capture_pct",
+    )
+    if not outcome_complete:
+        return dict.fromkeys(columns, float("nan"))
+
+    strong_total = int(
+        (horizon_df[return_col] >= strong_gain_threshold_pct).sum()
+    )
+    return {
+        "mean_forward_excess_return_pct": _mean(selected_df[return_col]),
+        "median_forward_excess_return_pct": _median(selected_df[return_col]),
+        "precision_positive_pct": _pct((selected_df[return_col] > 0.0).mean()),
+        "precision_strong_gain_pct": _pct(
+            (selected_df[return_col] >= strong_gain_threshold_pct).mean()
+        ),
+        "severe_loss_rate_pct": _pct(
+            (selected_df[return_col] <= severe_loss_threshold_pct).mean()
+        ),
+        "right_tail_capture_pct": _pct(
+            (
+                int(
+                    (
+                        selected_df[return_col] >= strong_gain_threshold_pct
+                    ).sum()
+                )
+                / strong_total
+            )
+            if strong_total
+            else float("nan")
+        ),
+        "future_winner_capture_pct": _future_winner_capture_pct(
+            horizon_df,
+            selected_df,
+            return_col=return_col,
+            top_k=top_k,
+        ),
+    }
 
 
 def _future_winner_capture_pct(
@@ -585,12 +699,13 @@ def _future_winner_capture_pct(
     return_col: str,
     top_k: int,
 ) -> float:
-    selected_by_date = {
-        date: set(group["code"].astype(str))
-        for date, group in selected_df.groupby("date", dropna=False)
+    group_columns = ["market_scope", "date"]
+    selected_by_scope_date = {
+        scope_date: set(group["code"].astype(str))
+        for scope_date, group in selected_df.groupby(group_columns, dropna=False)
     }
     captures: list[float] = []
-    for date, group in horizon_df.groupby("date", dropna=False):
+    for scope_date, group in horizon_df.groupby(group_columns, dropna=False):
         future_winners = group.sort_values(
             [return_col, "code"],
             ascending=[False, True],
@@ -598,7 +713,7 @@ def _future_winner_capture_pct(
         denominator = len(future_winners)
         if denominator == 0:
             continue
-        selected_codes = selected_by_date.get(date, set())
+        selected_codes = selected_by_scope_date.get(scope_date, set())
         winner_codes = set(future_winners["code"].astype(str))
         captures.append(len(selected_codes.intersection(winner_codes)) / denominator)
     if not captures:
@@ -721,11 +836,8 @@ def _assert_required_panel_columns(df: pd.DataFrame, *, horizons: Sequence[int])
         raise ValueError(f"triage panel is missing required columns: {', '.join(missing)}")
 
 
-def _table_column_exists(conn: Any, table_name: str, column_name: str) -> bool:
-    return any(
-        str(row[1]) == column_name
-        for row in conn.execute(f"PRAGMA table_info('{table_name}')").fetchall()
-    )
+def _parse_optional_date(value: str | None) -> date | None:
+    return None if value is None else date.fromisoformat(value)
 
 
 def _float_or_none(value: object) -> float | None:

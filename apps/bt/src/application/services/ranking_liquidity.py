@@ -22,10 +22,12 @@ from src.application.services.ranking_query_helpers import (
     prefer_4digit_order_sql,
 )
 from src.application.services.ranking_response_items import finite_or_none
-from src.application.services.ranking_state_flags import (
-    OVERHEAT_RISK_FLAG,
-    SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT,
-    STALE_RALLY_FADE_RISK_FLAG,
+from src.application.services.ranking_state_flags import STALE_RALLY_FADE_RISK_FLAG
+from src.domains.analytics.daily_ranking_core import (
+    LIQUIDITY_MIN_OBSERVATIONS,
+    DailyRankingLiquidityInputs,
+    classify_liquidity_state,
+    classify_risk_flags as classify_core_risk_flags,
 )
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.shared.utils.market_code_alias import resolve_market_codes
@@ -111,33 +113,21 @@ def classify_prime_liquidity_regime(
     recent_return_20d_pct: float | None,
     recent_return_60d_pct: float | None,
 ) -> ranking_contracts.LiquidityRegime:
-    valid_returns = [
-        value
-        for value in (recent_return_20d_pct, recent_return_60d_pct)
-        if value is not None
-    ]
-    has_persistent_runup = len(valid_returns) == 2 and all(
-        value > 0 for value in valid_returns
+    state = classify_liquidity_state(
+        DailyRankingLiquidityInputs(
+            residual_z=residual_z,
+            recent_return_20d_pct=recent_return_20d_pct,
+            recent_return_60d_pct=recent_return_60d_pct,
+        )
     )
-    if residual_z >= 1.0 and len(valid_returns) == 2:
-        if has_persistent_runup:
-            return "crowded_rerating"
-        if any(value <= 0 for value in valid_returns):
-            return "distribution_stress"
-    if residual_z <= -1.0:
-        return "stale_liquidity"
-    if -1.0 < residual_z < 1.0 and has_persistent_runup:
-        return "neutral_rerating"
-    return "neutral"
+    return "neutral" if state.regime == "missing" else state.regime
 
 
 def classify_risk_flags(recent_return_20d_pct: float | None) -> tuple[ranking_contracts.RankingRiskFlag, ...]:
-    if (
-        recent_return_20d_pct is not None
-        and recent_return_20d_pct >= SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT
-    ):
-        return (OVERHEAT_RISK_FLAG,)
-    return ()
+    return tuple(
+        cast(ranking_contracts.RankingRiskFlag, flag)
+        for flag in classify_core_risk_flags(recent_return_20d_pct)
+    )
 
 
 def _classify_stale_overvalued_or_no_earnings_flags(
@@ -302,7 +292,7 @@ def load_prime_liquidity_metrics(
             }
         )
 
-    if len(samples) < 100:
+    if len(samples) < LIQUIDITY_MIN_OBSERVATIONS:
         return {}
 
     regression = fit_log_liquidity_regression(samples)

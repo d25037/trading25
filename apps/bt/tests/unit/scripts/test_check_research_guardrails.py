@@ -36,6 +36,54 @@ def _write_empty_catalog(repo_root: Path) -> None:
     catalog.write_text("[experiments]\n", encoding="utf-8")
 
 
+def test_daily_ranking_guardrail_rejects_legacy_bridge_and_stock_data() -> None:
+    module = _load_module()
+    path = Path(
+        "apps/bt/src/domains/analytics/ranking_example_evidence.py"
+    )
+    findings = module.find_research_code_guardrail_findings_in_text(
+        path,
+        """
+from src.domains.analytics.daily_ranking_research_base import DailyRankingPanelRequest
+
+create_daily_ranking_research_panel(conn, event_time_basis_only=True)
+conn.execute("SELECT * FROM stock_data")
+""".strip(),
+    )
+
+    assert {finding.rule_name for finding in findings} == {
+        "removed-daily-ranking-compatibility-surface",
+        "daily-ranking-stock-data-read",
+    }
+
+
+def test_daily_ranking_guardrail_requires_issued_footprint_basis_pair() -> None:
+    module = _load_module()
+    path = Path(
+        "apps/bt/src/domains/analytics/market_bubble_footprint_support.py"
+    )
+    findings = module.find_research_code_guardrail_findings_in_text(
+        path,
+        """
+from src.domains.analytics.daily_ranking_research_base import DailyRankingPanelRequest
+
+def run_rerating_bubble_regime_forward_response_research(conn):
+    ranking_relations = build_daily_ranking_research_base(
+        conn,
+        DailyRankingPanelRequest(),
+    )
+    return _build_footprint_table(
+        conn,
+        price_history_name=ranking_relations.price_history.name,
+    )
+""".strip(),
+    )
+
+    assert {finding.rule_name for finding in findings} == {
+        "daily-ranking-stock-data-read",
+    }
+
+
 def test_scan_research_files_detects_legacy_playground_file(tmp_path: Path) -> None:
     module = _load_module()
     notebook = (

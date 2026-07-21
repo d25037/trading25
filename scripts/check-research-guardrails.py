@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import ast
+import re
 import sys
 import tomllib
 from dataclasses import dataclass
@@ -54,6 +56,18 @@ STATUS_PROMOTED_SURFACE = {
     "ranking_surface": "Ranking",
     "strategy_draft": "Strategy",
 }
+REMOVED_DAILY_RANKING_CODE_TOKENS = (
+    "DAILY_RANKING_RESEARCH_RANKED_TABLE",
+    "DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE",
+    "create_daily_ranking_research_panel",
+    "daily_ranking_query_start_date",
+    "daily_ranking_query_end_date",
+    "event_time_basis_only=",
+    "price_feature_relation=",
+    "price_outcome_relation=",
+    "ranking_technical_fit_price_projection",
+    "_create_rerating_bubble_observation_table",
+)
 
 
 @dataclass(frozen=True)
@@ -236,6 +250,94 @@ def find_research_code_guardrail_findings_in_text(
                 message=(
                     "Published Readout is the only publication SoT. Do not generate "
                     "bundle `summary.json` via `published_summary=`."
+                ),
+            )
+        )
+    removed = next(
+        (token for token in REMOVED_DAILY_RANKING_CODE_TOKENS if token in text),
+        None,
+    )
+    if removed is not None:
+        findings.append(
+            ResearchGuardrailFinding(
+                relative_path=relative_path,
+                line_number=_line_number_for_offset(text, text.index(removed)),
+                rule_name="removed-daily-ranking-compatibility-surface",
+                message=f"Removed Daily Ranking compatibility surface: {removed}",
+            )
+        )
+
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return findings
+    imports_typed_request = any(
+        isinstance(node, ast.ImportFrom)
+        and node.module == "src.domains.analytics.daily_ranking_research_base"
+        and any(alias.name == "DailyRankingPanelRequest" for alias in node.names)
+        for node in ast.walk(tree)
+    )
+    is_daily_ranking_consumer = (
+        relative_path.stem.startswith("ranking_")
+        or relative_path.stem == "atr_expansion_forward_response"
+        or relative_path.stem == "market_bubble_footprint_support"
+    )
+    stock_scan_root: ast.AST = tree
+    if relative_path.stem == "market_bubble_footprint_support":
+        stock_scan_root = next(
+            (
+                node
+                for node in tree.body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name
+                == "run_rerating_bubble_regime_forward_response_research"
+            ),
+            tree,
+        )
+    stock_data_literal = next(
+        (
+            node
+            for node in ast.walk(stock_scan_root)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and re.search(
+                r"\b(?:from|join)\s+stock_data\b",
+                node.value,
+                re.IGNORECASE,
+            )
+        ),
+        None,
+    )
+    if imports_typed_request and is_daily_ranking_consumer and stock_data_literal:
+        findings.append(
+            ResearchGuardrailFinding(
+                relative_path=relative_path,
+                line_number=stock_data_literal.lineno,
+                rule_name="daily-ranking-stock-data-read",
+                message=(
+                    "Cutoff-aware Daily Ranking consumers must read the Market v4 "
+                    "event-time projection, not stock_data."
+                ),
+            )
+        )
+    if (
+        relative_path.stem == "market_bubble_footprint_support"
+        and not all(
+            marker in text
+            for marker in (
+                "price_history_name=ranking_relations.price_history.name",
+                "signal_basis_name=ranking_relations.signal_prices.name",
+            )
+        )
+    ):
+        findings.append(
+            ResearchGuardrailFinding(
+                relative_path=relative_path,
+                line_number=1,
+                rule_name="daily-ranking-stock-data-read",
+                message=(
+                    "Rerating footprint grouping must consume the issued event-time "
+                    "price history and exact signal basis relations."
                 ),
             )
         )

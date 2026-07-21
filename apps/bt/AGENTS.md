@@ -80,7 +80,7 @@
 - **vectorbt** (`vectorbt>=1.1.0`, lock: `1.1.0`): 高速ベクトル化バックテストフレームワーク
 - **pydantic** (`pydantic>=2.13.4`, lock: `2.13.4`): データバリデーション
 - **pandas/numpy**: データ処理・数値計算
-- **fastapi** (`fastapi>=0.139.0`, lock: `0.139.0`): バックテストAPI サーバー
+- **fastapi** (`fastapi>=0.139.2`, lock: `0.139.2`): バックテストAPI サーバー
 - **uvicorn[standard]** (`uvicorn[standard]>=0.51.0`, lock: `0.51.0`): ASGIサーバー
 - **typer/rich**: CLIフレームワーク・美化
 

@@ -598,6 +598,23 @@ def service(ranking_db):
 
 def _rebuild_test_adjusted_metrics(db_path: str) -> None:
     conn = duckdb.connect(db_path)
+    stock_columns = {
+        str(row[1]) for row in conn.execute("PRAGMA table_info('stocks')").fetchall()
+    }
+    if "scale_category" not in stock_columns:
+        conn.close()
+        return
+    master_columns = {
+        str(row[1])
+        for row in conn.execute("PRAGMA table_info('stock_master_daily')").fetchall()
+    }
+    if master_columns and "scale_category" not in master_columns:
+        conn.close()
+        return
+    saved_technical_rows = conn.execute(
+        "SELECT * FROM daily_technical_metrics"
+    ).fetchall()
+    saved_technical_columns = [str(column[0]) for column in conn.description or []]
     conn.execute("ALTER TABLE statements ADD COLUMN IF NOT EXISTS statement_id TEXT")
     conn.execute("ALTER TABLE statements ADD COLUMN IF NOT EXISTS disclosed_at TEXT")
     conn.execute("ALTER TABLE statements ADD COLUMN IF NOT EXISTS period_end TEXT")
@@ -843,6 +860,13 @@ def _rebuild_test_adjusted_metrics(db_path: str) -> None:
                    THEN left(price.code, 4) ELSE price.code END) = share_metric.code
          AND price.date || 'T23:59:59+09:00' >= share_metric.disclosed_at
         """)
+    if saved_technical_rows:
+        placeholders = ", ".join("?" for _ in saved_technical_columns)
+        columns = ", ".join(saved_technical_columns)
+        conn.executemany(
+            f"INSERT OR REPLACE INTO daily_technical_metrics ({columns}) VALUES ({placeholders})",
+            saved_technical_rows,
+        )
     conn.close()
 
 

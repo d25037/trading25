@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import duckdb
+import pandas as pd
 
 from src.domains.analytics.ranking_sma5_position_state_evidence import (
     RankingSma5PositionStateEvidenceResult,
@@ -101,6 +102,54 @@ def test_sma5_position_state_evidence_writes_bundle(tmp_path: Path) -> None:
     assert bundle.results_db_path.exists()
 
 
+def test_missing_middle_topix_outcome_preserves_position_timeline(
+    tmp_path: Path,
+) -> None:
+    baseline_db = _build_sma5_position_state_db(tmp_path / "baseline.duckdb")
+    missing_db = _build_sma5_position_state_db(tmp_path / "missing.duckdb")
+    conn = duckdb.connect(str(missing_db))
+    conn.execute("DELETE FROM topix_data WHERE CAST(date AS DATE) = DATE '2024-03-20'")
+    conn.close()
+
+    baseline = _run_three_session_research(baseline_db)
+    missing = _run_three_session_research(missing_db)
+
+    timeline_columns = [
+        "date",
+        "code",
+        "trade_id",
+        "held_state",
+        "entry_signal",
+        "exit_signal",
+        "exit_reason",
+    ]
+    pd.testing.assert_frame_equal(
+        baseline.observation_sample_df[timeline_columns].reset_index(drop=True),
+        missing.observation_sample_df[timeline_columns].reset_index(drop=True),
+    )
+    trade_timeline_columns = [
+        "long_scaffold",
+        "entry_rule",
+        "exit_rule",
+        "market_scope",
+        "trade_count",
+        "closed_trade_count",
+        "median_holding_days",
+    ]
+    pd.testing.assert_frame_equal(
+        baseline.position_state_trade_evidence_df[trade_timeline_columns].reset_index(
+            drop=True
+        ),
+        missing.position_state_trade_evidence_df[trade_timeline_columns].reset_index(
+            drop=True
+        ),
+    )
+    coverage = missing.coverage_diagnostics_df.iloc[0]
+    assert int(coverage["incomplete_outcome_count"]) > 0
+    assert int(coverage["complete_outcome_count"]) < int(coverage["observation_count"])
+    assert coverage["outcome_coverage_status"] == "incomplete"
+
+
 def _run_test_research(db_path: Path) -> RankingSma5PositionStateEvidenceResult:
     return run_ranking_sma5_position_state_evidence_research(
         db_path,
@@ -114,13 +163,30 @@ def _run_test_research(db_path: Path) -> RankingSma5PositionStateEvidenceResult:
     )
 
 
+def _run_three_session_research(
+    db_path: Path,
+) -> RankingSma5PositionStateEvidenceResult:
+    return run_ranking_sma5_position_state_evidence_research(
+        db_path,
+        start_date="2024-03-18",
+        end_date="2024-03-20",
+        market_scopes=("prime",),
+        long_scaffolds=("all_market",),
+        entry_rules=("no_entry_filter",),
+        exit_rules=("count_0_1",),
+        min_position_days=1,
+        min_trades=1,
+        observation_sample_limit=10_000,
+    )
+
+
 def _build_sma5_position_state_db(db_path: Path) -> Path:
     _build_sma5_count_long_db(db_path)
     conn = duckdb.connect(str(db_path))
     dates = [
         str(row[0])
         for row in conn.execute(
-            "SELECT DISTINCT date FROM stock_data ORDER BY date"
+            "SELECT DISTINCT date FROM stock_data_raw ORDER BY date"
         ).fetchall()
     ]
     target_codes = ("1111", "2222", "3333", "4444", "5555", "6666")
@@ -135,11 +201,14 @@ def _build_sma5_position_state_db(db_path: Path) -> Path:
             open_price = close - 0.4
             conn.execute(
                 """
-                UPDATE stock_data
+                UPDATE stock_data_raw
                 SET open = ?, high = ?, low = ?, close = ?
                 WHERE code = ? AND date = ?
                 """,
                 [open_price, high, low, close, code, date],
             )
+    conn.execute(
+        "UPDATE stock_data SET open = 1, high = 1, low = 1, close = 1, volume = 0"
+    )
     conn.close()
     return db_path

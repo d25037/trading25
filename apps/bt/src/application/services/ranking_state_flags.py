@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 from src.application.contracts import ranking as ranking_contracts
+from src.domains.analytics.daily_ranking_core import (
+    ATR20_ACCELERATION_API_FLAG,
+    MOMENTUM_20_60_TOP20_API_FLAG,
+    OVERHEAT_RISK_FLAG as CORE_OVERHEAT_RISK_FLAG,
+)
 
-SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT = 30.0
-ATR20_ACCELERATION_CHANGE_20D_THRESHOLD_PCT = 25.0
-ATR20_ACCELERATION_MAX_ATR20_TO_ATR60 = 1.25
-MOMENTUM_TOP20_PERCENTILE_THRESHOLD = 0.8
-OVERHEAT_RISK_FLAG: ranking_contracts.RankingRiskFlag = "overheat"
+OVERHEAT_RISK_FLAG: ranking_contracts.RankingRiskFlag = CORE_OVERHEAT_RISK_FLAG
 STALE_RALLY_FADE_RISK_FLAG: ranking_contracts.RankingRiskFlag = "stale_rally_fade"
-ATR20_ACCELERATION_TECHNICAL_FLAG: ranking_contracts.RankingTechnicalFlag = "atr20_acceleration"
-MOMENTUM_20_60_TOP20_TECHNICAL_FLAG: ranking_contracts.RankingTechnicalFlag = "momentum_20_60_top20"
+ATR20_ACCELERATION_TECHNICAL_FLAG: ranking_contracts.RankingTechnicalFlag = (
+    ATR20_ACCELERATION_API_FLAG
+)
+MOMENTUM_20_60_TOP20_TECHNICAL_FLAG: ranking_contracts.RankingTechnicalFlag = (
+    MOMENTUM_20_60_TOP20_API_FLAG
+)
 RISK_FLAG_STATE_FILTERS: frozenset[ranking_contracts.RankingRiskFlag] = frozenset(
     (OVERHEAT_RISK_FLAG, STALE_RALLY_FADE_RISK_FLAG)
 )

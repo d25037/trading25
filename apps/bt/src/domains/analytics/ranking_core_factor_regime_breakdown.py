@@ -3,16 +3,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
-from src.domains.analytics.atr_expansion_forward_response import (
-    DEFAULT_ATR_WINDOWS,
-    DEFAULT_RETURN_WINDOWS,
-    _assert_required_tables as _assert_atr_required_tables,
-    _create_observation_panel as _create_atr_observation_panel,
+from src.domains.analytics.daily_ranking_consumer_support import (
+    compose_daily_ranking_signal_features,
+)
+from src.domains.analytics.daily_ranking_feature_builders import (
+    SectorStrengthFeaturesRequest,
+    build_sector_strength_features,
+)
+from src.domains.analytics.daily_ranking_research_base import (
+    DailyRankingPanelRequest,
+    MarketScope,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
+    normalize_daily_ranking_market_scopes,
 )
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
@@ -22,24 +32,20 @@ from src.domains.analytics.ranking_color_evidence import (
     DEFAULT_MIN_OBSERVATIONS,
     DEFAULT_OBSERVATION_SAMPLE_LIMIT,
     DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
-    _assert_required_tables as _assert_ranking_required_tables,
-    _create_observation_panel as _create_ranking_observation_panel,
-    _normalize_market_scopes,
-    _offset_calendar_date,
-)
-from src.domains.analytics.ranking_core_sector_relative_value_evidence import (
-    DEFAULT_MIN_SECTOR_OBSERVATIONS,
-    _create_core_sector_relative_tables,
 )
 from src.domains.analytics.ranking_sector_strength_evidence import (
     DEFAULT_HORIZONS,
-    _create_sector_strength_tables,
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
     open_readonly_analysis_connection,
 )
-from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    write_research_bundle,
+)
+
+DEFAULT_MIN_SECTOR_OBSERVATIONS = 5
 
 RANKING_CORE_FACTOR_REGIME_BREAKDOWN_EXPERIMENT_ID = (
     "market-behavior/ranking-core-factor-regime-breakdown"
@@ -88,7 +94,7 @@ def run_ranking_core_factor_regime_breakdown_research(
     observation_sample_limit: int = DEFAULT_OBSERVATION_SAMPLE_LIMIT,
 ) -> RankingCoreFactorRegimeBreakdownResult:
     resolved_horizons = tuple(sorted({int(horizon) for horizon in horizons}))
-    resolved_market_scopes = _normalize_market_scopes(market_scopes)
+    resolved_market_scopes = normalize_daily_ranking_market_scopes(market_scopes)
     _validate_params(
         horizons=resolved_horizons,
         min_observations=min_observations,
@@ -101,44 +107,61 @@ def run_ranking_core_factor_regime_breakdown_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = _offset_calendar_date(start_date, days=-220)
-    query_end = _offset_calendar_date(end_date, days=max(resolved_horizons) * 4 + 30)
     market_source = "stock_master_daily_exact_date"
 
     with open_readonly_analysis_connection(
         str(db_path_obj),
         snapshot_prefix="ranking-core-factor-regime-breakdown-",
     ) as ctx:
-        _assert_ranking_required_tables(ctx.connection)
-        _assert_atr_required_tables(ctx.connection)
-        _create_ranking_observation_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            DailyRankingPanelRequest(
+                namespace="core_factor_regime",
+                analysis_start_date=_parse_optional_date(start_date),
+                analysis_end_date=_parse_optional_date(end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(tuple[MarketScope, ...], resolved_market_scopes),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
         )
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
+        signal_source = relations.liquidity_ranked_signals
+        if signal_source is None:
+            raise RuntimeError(
+                "factor regime research requires liquidity-ranked signals"
+            )
+        sector_features = build_sector_strength_features(
+            ctx.connection,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="core_factor_regime_sector",
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(sector_features,),
+            namespace="core_factor_regime",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="core_factor_regime_signals",
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="core_factor_regime_outcomes",
+        )
         _create_core_sector_relative_tables(
             ctx.connection,
+            source_name=evaluated.name,
             min_sector_observations=min_sector_observations,
         )
-        _create_atr_observation_panel(
-            ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=DEFAULT_ATR_WINDOWS,
-            return_windows=DEFAULT_RETURN_WINDOWS,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
-        )
-        _create_factor_regime_tables(ctx.connection)
+        _create_factor_regime_tables(ctx.connection, source_name=evaluated.name)
         _create_nt_ratio_regime_tables(ctx.connection)
         observation_count = int(
             ctx.connection.execute(
@@ -342,7 +365,149 @@ def build_summary_markdown(result: RankingCoreFactorRegimeBreakdownResult) -> st
     return "\n".join(parts).rstrip() + "\n"
 
 
-def _create_factor_regime_tables(conn: Any) -> None:
+def _create_core_sector_relative_tables(
+    conn: Any,
+    *,
+    source_name: str,
+    min_sector_observations: int,
+) -> None:
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE ranking_core_sector_relative_universe AS
+        WITH sector_universe AS (
+            SELECT
+                r.market_scope,
+                r.date,
+                r.code,
+                r.sector_33_code,
+                r.sector_33_name,
+                r.pbr,
+                r.forecast_per AS forward_per,
+                r.pbr_percentile AS raw_pbr_percentile,
+                r.forecast_per_percentile AS raw_forward_per_percentile,
+                count(*) FILTER (WHERE r.pbr > 0) OVER (
+                    PARTITION BY r.market_scope, r.date, r.sector_33_name
+                ) AS sector_pbr_valid_count,
+                rank() OVER (
+                    PARTITION BY r.market_scope, r.date, r.sector_33_name
+                    ORDER BY CASE WHEN r.pbr > 0 THEN r.pbr END NULLS LAST
+                ) AS sector_pbr_rank,
+                count(*) FILTER (WHERE r.forecast_per > 0) OVER (
+                    PARTITION BY r.market_scope, r.date, r.sector_33_name
+                ) AS sector_forward_per_valid_count,
+                rank() OVER (
+                    PARTITION BY r.market_scope, r.date, r.sector_33_name
+                    ORDER BY CASE WHEN r.forecast_per > 0
+                                  THEN r.forecast_per END NULLS LAST
+                ) AS sector_forward_per_rank
+            FROM {source_name} r
+        )
+        SELECT
+            *,
+            CASE
+                WHEN pbr > 0 AND sector_pbr_valid_count >= ?
+                    THEN (sector_pbr_rank - 1.0) / (sector_pbr_valid_count - 1.0)
+            END AS sector_pbr_percentile,
+            CASE
+                WHEN forward_per > 0 AND sector_forward_per_valid_count >= ?
+                    THEN (sector_forward_per_rank - 1.0)
+                        / (sector_forward_per_valid_count - 1.0)
+            END AS sector_forward_per_percentile
+        FROM sector_universe
+        """,
+        [int(min_sector_observations), int(min_sector_observations)],
+    )
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE ranking_core_sector_relative_panel AS
+        WITH joined AS (
+            SELECT
+                source.*,
+                source.forecast_per AS forward_per,
+                source.forecast_per_percentile AS forward_per_percentile,
+                source.forecast_per_to_per_ratio AS forward_per_to_per_ratio,
+                u.sector_pbr_valid_count,
+                u.sector_forward_per_valid_count,
+                u.sector_pbr_percentile,
+                u.sector_forward_per_percentile,
+                CASE
+                    WHEN source.pbr_percentile IS NOT NULL
+                     AND source.forecast_per_percentile IS NOT NULL
+                     AND u.sector_pbr_percentile IS NOT NULL
+                     AND u.sector_forward_per_percentile IS NOT NULL
+                        THEN (
+                            source.pbr_percentile
+                            + source.forecast_per_percentile
+                            + u.sector_pbr_percentile
+                            + u.sector_forward_per_percentile
+                        ) / 4.0
+                END AS hybrid_value_score
+            FROM {source_name} source
+            LEFT JOIN ranking_core_sector_relative_universe u
+              ON u.market_scope = source.market_scope
+             AND u.date = source.date
+             AND u.code = source.code
+             AND u.sector_33_name = source.sector_33_name
+        ),
+        ranked AS (
+            SELECT
+                *,
+                CASE
+                    WHEN hybrid_value_score IS NOT NULL
+                        THEN percent_rank() OVER (
+                            PARTITION BY market_scope, date
+                            ORDER BY hybrid_value_score NULLS LAST
+                        )
+                END AS hybrid_value_percentile
+            FROM joined
+        )
+        SELECT
+            *,
+            liquidity_scope = 'neutral_rerating'
+                AND pbr_percentile <= 0.2
+                AND forward_per_percentile <= 0.2
+                AND sector_strength_bucket = 'sector_strong' AS raw_core_flag,
+            liquidity_scope = 'neutral_rerating'
+                AND sector_pbr_percentile <= 0.2
+                AND sector_forward_per_percentile <= 0.2
+                AND sector_strength_bucket = 'sector_strong' AS sector_relative_core_flag,
+            liquidity_scope = 'neutral_rerating'
+                AND hybrid_value_percentile <= 0.2
+                AND sector_strength_bucket = 'sector_strong' AS hybrid_core_flag
+        FROM ranked
+        """
+    )
+    conn.execute(
+        """
+        CREATE OR REPLACE TEMP TABLE ranking_core_rule_observations AS
+        SELECT 'raw_core' AS core_rule, *
+        FROM ranking_core_sector_relative_panel
+        WHERE raw_core_flag
+        UNION ALL
+        SELECT 'sector_relative_core' AS core_rule, *
+        FROM ranking_core_sector_relative_panel
+        WHERE sector_relative_core_flag
+        UNION ALL
+        SELECT 'raw_and_sector_relative_core' AS core_rule, *
+        FROM ranking_core_sector_relative_panel
+        WHERE raw_core_flag AND sector_relative_core_flag
+        UNION ALL
+        SELECT 'raw_only_core' AS core_rule, *
+        FROM ranking_core_sector_relative_panel
+        WHERE raw_core_flag AND NOT sector_relative_core_flag
+        UNION ALL
+        SELECT 'sector_relative_only_core' AS core_rule, *
+        FROM ranking_core_sector_relative_panel
+        WHERE sector_relative_core_flag AND NOT raw_core_flag
+        UNION ALL
+        SELECT 'hybrid_core' AS core_rule, *
+        FROM ranking_core_sector_relative_panel
+        WHERE hybrid_core_flag
+        """
+    )
+
+
+def _create_factor_regime_tables(conn: Any, *, source_name: str) -> None:
     conn.execute(
         """
         CREATE OR REPLACE TEMP TABLE factor_signal_terms (
@@ -429,7 +594,7 @@ def _create_factor_regime_tables(conn: Any) -> None:
         ],
     )
     conn.execute(
-        """
+        f"""
         CREATE OR REPLACE TEMP TABLE ranking_factor_regime_panel AS
         WITH base AS (
             SELECT
@@ -445,35 +610,24 @@ def _create_factor_regime_tables(conn: Any) -> None:
                 END AS year_group,
                 r.code,
                 r.company_name,
-                sm.sector_33_name,
-                s.sector_strength_bucket,
-                s.sector_strength_score,
+                r.sector_33_name,
+                r.sector_strength_bucket,
+                r.sector_strength_score,
                 r.liquidity_regime,
                 r.recent_return_20d_pct,
                 r.recent_return_60d_pct,
                 r.pbr_percentile,
-                r.forward_per_percentile,
+                r.forecast_per_percentile AS forward_per_percentile,
                 r.per_percentile,
-                r.forward_per_to_per_ratio,
+                r.forecast_per_to_per_ratio AS forward_per_to_per_ratio,
                 r.forward_close_excess_return_5d_pct,
                 r.forward_close_excess_return_10d_pct,
                 r.forward_close_excess_return_20d_pct,
                 r.forward_close_excess_return_60d_pct,
-                a.atr20_change_20d_pct,
-                a.atr20_to_atr60,
-                a.recent_return_20d_pct AS atr_recent_return_20d_pct
-            FROM ranking_color_ranked r
-            JOIN ranking_sector_master sm
-              ON sm.code = r.code
-             AND sm.date = r.date
-            LEFT JOIN ranking_sector_daily_state s
-              ON s.market_scope = r.market_scope
-             AND s.date = r.date
-             AND s.sector_33_name = sm.sector_33_name
-            LEFT JOIN atr_expansion_panel a
-              ON a.market = r.market_scope
-             AND a.date = r.date
-             AND a.code = r.code
+                r.atr20_change_20d_pct,
+                r.atr20_to_atr60,
+                r.recent_return_20d_pct AS atr_recent_return_20d_pct
+            FROM {source_name} r
         ),
         ranked AS (
             SELECT
@@ -1373,9 +1527,14 @@ def _build_factor_resilience_df(annual_factor_breadth_df: pd.DataFrame) -> pd.Da
         "factor_family",
         "factor_display_name",
     ]
-    for key, group in annual_factor_breadth_df.groupby(group_columns, dropna=False, sort=True):
+    for key, group in annual_factor_breadth_df.groupby(
+        group_columns, dropna=False, sort=True
+    ):
         by_bucket = group.set_index("breadth_bucket")
-        if "breadth_high_ge_60pct" not in by_bucket.index or "breadth_low_lt_30pct" not in by_bucket.index:
+        if (
+            "breadth_high_ge_60pct" not in by_bucket.index
+            or "breadth_low_lt_30pct" not in by_bucket.index
+        ):
             continue
         high = by_bucket.loc["breadth_high_ge_60pct"]
         low = by_bucket.loc["breadth_low_lt_30pct"]
@@ -1402,7 +1561,9 @@ def _build_factor_resilience_df(annual_factor_breadth_df: pd.DataFrame) -> pd.Da
                 "high_breadth_median_forward_topix_excess_return_pct": high_median,
                 "low_breadth_median_forward_topix_excess_return_pct": low_median,
                 "low_minus_high_median_forward_topix_excess_return_pct": (
-                    None if low_median is None or high_median is None else low_median - high_median
+                    None
+                    if low_median is None or high_median is None
+                    else low_median - high_median
                 ),
                 "high_breadth_win_rate_pct": high_win,
                 "low_breadth_win_rate_pct": low_win,
@@ -1412,7 +1573,9 @@ def _build_factor_resilience_df(annual_factor_breadth_df: pd.DataFrame) -> pd.Da
                 "high_breadth_severe_loss_rate_pct": high_severe,
                 "low_breadth_severe_loss_rate_pct": low_severe,
                 "low_minus_high_severe_loss_rate_pct": (
-                    None if low_severe is None or high_severe is None else low_severe - high_severe
+                    None
+                    if low_severe is None or high_severe is None
+                    else low_severe - high_severe
                 ),
             }
         )
@@ -1420,7 +1583,12 @@ def _build_factor_resilience_df(annual_factor_breadth_df: pd.DataFrame) -> pd.Da
         return pd.DataFrame(columns=columns)
     frame = pd.DataFrame(rows)
     return frame.reindex(columns=columns).sort_values(
-        ["horizon", "year", "breadth_lookback", "low_minus_high_median_forward_topix_excess_return_pct"],
+        [
+            "horizon",
+            "year",
+            "breadth_lookback",
+            "low_minus_high_median_forward_topix_excess_return_pct",
+        ],
         ascending=[True, True, True, False],
         na_position="last",
     )
@@ -1506,16 +1674,20 @@ def _build_core_failure_decomposition_df(
     )
     if frame.empty:
         return pd.DataFrame(columns=_core_failure_decomposition_columns())
-    frame["atr_state"] = frame["core_slice"].map(
-        {
-            "core_atr20_acceleration_ex_overheat": (
-                "atr20_acceleration_ex_overheat"
-            ),
-            "core_without_atr20_acceleration_ex_overheat": (
-                "not_atr20_acceleration_ex_overheat"
-            ),
-        }
-    ).fillna("all_or_mixed_atr_states")
+    frame["atr_state"] = (
+        frame["core_slice"]
+        .map(
+            {
+                "core_atr20_acceleration_ex_overheat": (
+                    "atr20_acceleration_ex_overheat"
+                ),
+                "core_without_atr20_acceleration_ex_overheat": (
+                    "not_atr20_acceleration_ex_overheat"
+                ),
+            }
+        )
+        .fillna("all_or_mixed_atr_states")
+    )
     return frame.reindex(columns=_core_failure_decomposition_columns())
 
 
@@ -1700,7 +1872,13 @@ def _validate_params(
         raise ValueError("observation_sample_limit must be positive")
 
 
-def _concat_sorted(frames: Sequence[pd.DataFrame], *, columns: Sequence[str]) -> pd.DataFrame:
+def _parse_optional_date(value: str | None) -> date | None:
+    return date.fromisoformat(value) if value is not None else None
+
+
+def _concat_sorted(
+    frames: Sequence[pd.DataFrame], *, columns: Sequence[str]
+) -> pd.DataFrame:
     non_empty = [frame for frame in frames if not frame.empty]
     if not non_empty:
         return pd.DataFrame(columns=list(columns))

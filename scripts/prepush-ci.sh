@@ -19,7 +19,7 @@ By default, changed files are compared against PREPUSH_BASE_REF or origin/main.
 
 Options:
   --full         Force all tiers, and include research, security audits, and web E2E smoke.
-  --research     Include the slower research guardrails and analytics research tests.
+  --research     Force research checks even when changed-file scope is not research.
   --security     Include dependency audit and secret scan.
   --web-e2e      Include Playwright smoke with bt server startup.
   --skip-install Assume deps are already prepared and skip shared install.
@@ -129,7 +129,7 @@ install_deps_for_scope() {
   if ${product_ci} || ${contracts_ci} || ${security_ci} || ${include_security} || ${include_web_e2e}; then
     install_ts_deps
   fi
-  if ${product_ci} || ${research_ci} || ${contracts_ci} || ${security_ci} || ${include_security} || ${include_web_e2e}; then
+  if ${product_ci} || ${research_ci} || ${include_research} || ${contracts_ci} || ${security_ci} || ${include_security} || ${include_web_e2e}; then
     install_bt_deps
   fi
 }
@@ -188,7 +188,7 @@ ensure_commands_for_scope() {
   if ${product_ci} || ${contracts_ci} || ${security_ci} || ${include_security} || ${include_web_e2e}; then
     ensure_command bun "apps/ts checks"
   fi
-  if ${product_ci} || ${research_ci} || ${contracts_ci} || ${security_ci} || ${include_security} || ${include_web_e2e}; then
+  if ${product_ci} || ${research_ci} || ${include_research} || ${contracts_ci} || ${security_ci} || ${include_security} || ${include_web_e2e}; then
     ensure_command uv "apps/bt checks"
   fi
 }
@@ -240,23 +240,38 @@ collect_fast_research_tests() {
   python3 "${repo_root}/scripts/ci/test_targets.py" --group bt-fast-research
 }
 
+collect_mapped_research_tests() {
+  python3 "${repo_root}/scripts/ci/research-test-targets.py" <"${changed_files_path}"
+}
+
 run_research_suite() {
   local -a fast_research_tests=()
+  local -a mapped_research_tests=()
   local test_path
 
   while IFS= read -r test_path; do
     fast_research_tests+=("${test_path}")
   done < <(collect_fast_research_tests)
+  while IFS= read -r test_path; do
+    mapped_research_tests+=("${test_path}")
+  done < <(collect_mapped_research_tests)
 
-  run_step "quality:research-guardrails" python3 "${repo_root}/scripts/check-research-guardrails.py"
+  run_step "quality:research-guardrails" uv run --project "${repo_root}/apps/bt" python "${repo_root}/scripts/check-research-guardrails.py"
   run_step \
     "bt-research-tests:fast" \
     env \
     BT_PYTEST_FAST=1 \
     "${repo_root}/scripts/bt-pytest.sh" "${fast_research_tests[@]}"
 
-  echo "[prepush-ci] experiment-level research pytest is excluded from prepush fast mode."
-  echo "[prepush-ci] Run affected experiments explicitly, or run the full suite with: env BT_PYTEST_FAST=0 scripts/bt-pytest.sh tests/unit/domains/analytics tests/unit/scripts"
+  if [[ "${#mapped_research_tests[@]}" -gt 0 ]]; then
+    run_step \
+      "bt-research-tests:mapped-local" \
+      env \
+      BT_PYTEST_FAST=1 \
+      "${repo_root}/scripts/bt-pytest.sh" "${mapped_research_tests[@]}"
+  else
+    echo "[prepush-ci] no changed experiment-level research pytest targets."
+  fi
 }
 
 run_security_suite() {
@@ -311,7 +326,7 @@ main() {
   ensure_commands_for_scope
   run_maintainability_guardrail
 
-  if ${docs_only} && ! ${include_security} && ! ${include_web_e2e}; then
+  if ${docs_only} && ! ${include_research} && ! ${include_security} && ! ${include_web_e2e}; then
     echo "[prepush-ci] docs-only change; no local CI tiers selected."
     echo
     echo "[prepush-ci] PASS"
@@ -331,12 +346,8 @@ main() {
     run_contract_suite
   fi
 
-  if ${research_ci} && ${include_research}; then
+  if ${research_ci} || ${include_research}; then
     run_research_suite
-  elif ${research_ci}; then
-    echo
-    echo "==> [research-tests]"
-    echo "[prepush-ci] research scope detected; skipped by default. Run scripts/prepush-ci.sh --research to include it."
   fi
 
   if ${security_ci} || ${include_security}; then

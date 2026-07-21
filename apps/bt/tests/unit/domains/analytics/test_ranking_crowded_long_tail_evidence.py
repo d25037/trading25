@@ -97,5 +97,142 @@ def _build_crowded_long_tail_db(db_path: Path) -> Path:
             END
         """
     )
+    _extend_long_history(conn)
     conn.close()
     return db_path
+
+
+def _extend_long_history(conn: duckdb.DuckDBPyConnection) -> None:
+    conn.execute(
+        """
+        INSERT INTO stock_data_raw
+        WITH dates AS (
+            SELECT CAST(day AS DATE) AS date
+            FROM generate_series(
+                DATE '2022-01-03', DATE '2023-06-30', INTERVAL 1 DAY
+            ) calendar(day)
+            WHERE dayofweek(day) BETWEEN 1 AND 5
+        ),
+        seed AS (
+            SELECT * EXCLUDE (row_number)
+            FROM (
+                SELECT *, row_number() OVER (PARTITION BY code ORDER BY date) AS row_number
+                FROM stock_data_raw
+            )
+            WHERE row_number = 1
+        )
+        SELECT seed.code, dates.date, seed.open, seed.high, seed.low, seed.close,
+               seed.volume, seed.adjustment_factor
+        FROM seed CROSS JOIN dates
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO stock_master_daily
+        WITH dates AS (
+            SELECT CAST(day AS DATE) AS date
+            FROM generate_series(
+                DATE '2022-01-03', DATE '2023-06-30', INTERVAL 1 DAY
+            ) calendar(day)
+            WHERE dayofweek(day) BETWEEN 1 AND 5
+        ),
+        seed AS (
+            SELECT * EXCLUDE (row_number)
+            FROM (
+                SELECT *, row_number() OVER (PARTITION BY code ORDER BY date) AS row_number
+                FROM stock_master_daily
+            )
+            WHERE row_number = 1
+        )
+        SELECT CAST(dates.date AS VARCHAR), seed.code, seed.company_name,
+               seed.market_code, seed.market_name, seed.scale_category,
+               seed.sector_33_code, seed.sector_33_name
+        FROM seed CROSS JOIN dates
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO daily_valuation
+        WITH dates AS (
+            SELECT CAST(day AS DATE) AS date
+            FROM generate_series(
+                DATE '2022-01-03', DATE '2023-06-30', INTERVAL 1 DAY
+            ) calendar(day)
+            WHERE dayofweek(day) BETWEEN 1 AND 5
+        ),
+        seed AS (
+            SELECT * EXCLUDE (row_number)
+            FROM (
+                SELECT *, row_number() OVER (PARTITION BY code ORDER BY date) AS row_number
+                FROM daily_valuation
+            )
+            WHERE row_number = 1
+        )
+        SELECT seed.code, CAST(dates.date AS VARCHAR), CAST(dates.date AS VARCHAR),
+               seed.per, seed.forward_per, seed.pbr, seed.p_op, seed.forward_p_op,
+               seed.market_cap, seed.free_float_market_cap, seed.basis_version,
+               seed.psr, seed.forward_psr
+        FROM seed CROSS JOIN dates
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO topix_data
+        WITH dates AS (
+            SELECT CAST(day AS DATE) AS date
+            FROM generate_series(
+                DATE '2022-01-03', DATE '2023-06-30', INTERVAL 1 DAY
+            ) calendar(day)
+            WHERE dayofweek(day) BETWEEN 1 AND 5
+        ),
+        seed AS (
+            SELECT * FROM topix_data ORDER BY CAST(date AS DATE) LIMIT 1
+        )
+        SELECT dates.date, seed.open, seed.high, seed.low, seed.close
+        FROM seed CROSS JOIN dates
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO indices_data
+        WITH dates AS (
+            SELECT CAST(day AS DATE) AS date
+            FROM generate_series(
+                DATE '2022-01-03', DATE '2023-06-30', INTERVAL 1 DAY
+            ) calendar(day)
+            WHERE dayofweek(day) BETWEEN 1 AND 5
+        ),
+        seed AS (
+            SELECT * EXCLUDE (row_number)
+            FROM (
+                SELECT *, row_number() OVER (PARTITION BY code ORDER BY date) AS row_number
+                FROM indices_data
+            )
+            WHERE row_number = 1
+        )
+        SELECT seed.code, dates.date, seed.open, seed.high, seed.low, seed.close,
+               seed.sector_name
+        FROM seed CROSS JOIN dates
+        """
+    )
+    conn.execute(
+        """
+        UPDATE daily_valuation
+        SET basis_version = 'event-pit-v1:' || code || ':2022-01-03'
+        """
+    )
+    conn.execute(
+        """
+        UPDATE stock_adjustment_basis_segments
+        SET basis_id = 'event-pit-v1:' || code || ':2022-01-03',
+            source_date_from = DATE '2022-01-03'
+        """
+    )
+    conn.execute(
+        """
+        UPDATE stock_adjustment_bases
+        SET basis_id = 'event-pit-v1:' || code || ':2022-01-03',
+            valid_from = DATE '2022-01-03',
+            adjustment_through_date = DATE '2022-01-03'
+        """
+    )

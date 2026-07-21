@@ -1,0 +1,768 @@
+{
+  "artifacts": {
+    "manifest_sha256": "2b7e8434b7f39c230b891f5b583741017dff77c24ed2a09cf11461846f1b7386",
+    "results_file_sha256": "e0efe3fb055d91caecdb3924c201950d01b7ed03e2e56d0157bc3eecc1e64b1e",
+    "results_semantic_sha256": "eee10d11ce1b8598f968223dc4ada8f9c192a877767d5173668b41464e342255",
+    "summary_sha256": "f2b9cc3c1b2fcafb01834dd810ddcbe24d40dda624d7e438edb8fb9a75cf590d"
+  },
+  "database_fingerprint": {
+    "exists": true,
+    "mtime_ns": 1784156788626266842,
+    "size_bytes": 6987198464
+  },
+  "decision": "insufficient_evidence",
+  "decision_metrics": {
+    "observation_count": 4785,
+    "strict_value_observation_count": 3640,
+    "value_extension_observation_count": 1145
+  },
+  "experiment_id": "market-behavior/ranking-fixed-return-priority-evidence",
+  "projection_audit": {
+    "canonical_raw_row_count": 9748001,
+    "completed_outcome_row_count": 13375258,
+    "completion_basis_row_count": 3583,
+    "completion_basis_sha256": "fa3cc08e7348137c743436fa855fa5345b5bba5aac38742a73b904d3ece8bd24",
+    "completion_segment_row_count": 4742,
+    "completion_segment_sha256": "b68490f299c75207bb4764b1a23b671584d7cfb5f4e597c541f38e472bcad7c1",
+    "forward_outcome_sha256": "e157b83f88ff75bff5ee86a3a9b61259ae853c5a6c0f8e7cb240c7283e0c25c5",
+    "next_open_outcome_sha256": "bee31f0b3a3634071a4f017d6bfce4b4509f46e5ec6abe06fc50d12dbd6a7b06",
+    "observation_count": 4785,
+    "outcome_request_row_count": 13534242,
+    "price_projection": {
+      "canonical_raw_row_count": 9748001,
+      "completed_outcome_row_count": 13375258,
+      "completion_basis_row_count": 3583,
+      "completion_basis_sha256": "fa3cc08e7348137c743436fa855fa5345b5bba5aac38742a73b904d3ece8bd24",
+      "completion_segment_row_count": 4742,
+      "completion_segment_sha256": "b68490f299c75207bb4764b1a23b671584d7cfb5f4e597c541f38e472bcad7c1",
+      "forward_outcome_sha256": "e157b83f88ff75bff5ee86a3a9b61259ae853c5a6c0f8e7cb240c7283e0c25c5",
+      "next_open_outcome_sha256": "bee31f0b3a3634071a4f017d6bfce4b4509f46e5ec6abe06fc50d12dbd6a7b06",
+      "outcome_request_row_count": 13534242,
+      "price_projection_sha256": "7bd911d7964d924cd21b46cdbf13b349b41b7230ede70304bcc442df80b4235f",
+      "signal_basis_row_count": 3582,
+      "signal_basis_sha256": "cf3375da87a858d1e033c327040a11bf7775dfef9c7b21e3c6c03dbd49eedc76",
+      "signal_feature_row_count": 4511414,
+      "signal_segment_row_count": 5542,
+      "signal_segment_sha256": "ccd1c4df2ecd330b52a79a02d8bd82a7fd76b4031752d2056c8085bff75c6ab5"
+    },
+    "price_projection_sha256": "7bd911d7964d924cd21b46cdbf13b349b41b7230ede70304bcc442df80b4235f",
+    "signal_basis_row_count": 3582,
+    "signal_basis_sha256": "cf3375da87a858d1e033c327040a11bf7775dfef9c7b21e3c6c03dbd49eedc76",
+    "signal_feature_row_count": 4511414,
+    "signal_segment_row_count": 5542,
+    "signal_segment_sha256": "ccd1c4df2ecd330b52a79a02d8bd82a7fd76b4031752d2056c8085bff75c6ab5"
+  },
+  "published_run_id": "20260719_prime_price_pit_fixed_return_priority_v11",
+  "readme": {
+    "decision": "insufficient_evidence",
+    "experiment_id": "market-behavior/ranking-fixed-return-priority-evidence",
+    "path": "apps/bt/docs/experiments/market-behavior/ranking-fixed-return-priority-evidence/README.md",
+    "run_id": "20260719_prime_price_pit_fixed_return_priority_v11",
+    "sha256": "3f2b84573a327152f0908150704e10ea53a95d6f55a6b19d5b3fe154e0900a3d",
+    "source_commit": "85140932d6b785b41069db3ef7afe1d066cb0d5e"
+  },
+  "schema_version": 2,
+  "selection_cohort": {
+    "observation_sample": {
+      "content_sha256": "8a1667e2b4411e5e20b5335e738549149a7d15735fb6d9d21c7f217fe68269ae",
+      "row_count": 4785,
+      "schema_sha256": "20f7f1195d0a1715b8c12108ff14189abf9d5ae52ec39777d9d74b32f7a83912"
+    },
+    "scaffold_registry": {
+      "content_sha256": "7ef5d0560cfa9ad3d9abfb46684ad38395a309a8e159f168ed80a59f94aa130f",
+      "row_count": 2,
+      "schema_sha256": "3567f9ecab1a07bcba6741132b0f3bf4381ed5f48e694bf1cc86f16dd8869d31"
+    }
+  },
+  "source": {
+    "git_commit": "85140932d6b785b41069db3ef7afe1d066cb0d5e",
+    "git_dirty": false
+  },
+  "tables": [
+    {
+      "content_sha256": "748ada885ed798558941c88397369cd2fd0b404852ac11ab7110944a2bb36680",
+      "name": "bootstrap_effect_ci",
+      "row_count": 105,
+      "schema": [
+        {
+          "name": "scaffold_family",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "priority_variant",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "analysis",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "date_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "point_estimate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ci_lower_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ci_upper_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "contrast",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "scope",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "k",
+          "type": "DOUBLE"
+        }
+      ]
+    },
+    {
+      "content_sha256": "9331f4856b4a9a46f381a1a17817fd61b1c33301e311bb8727db47e3c8e36e5d",
+      "name": "continuous_priority_lift",
+      "row_count": 1107,
+      "schema": [
+        {
+          "name": "scaffold_family",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "date",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "priority_variant",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "observation_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "candidate_outcome_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "candidate_outcome_coverage_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "focus_candidate_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "selected_outcome_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "selected_outcome_coverage_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "outcome_status",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "bottom_mean_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "top_mean_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "mean_lift_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bottom_median_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "top_median_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "median_lift_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bottom_severe_loss_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "top_severe_loss_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "severe_loss_rate_difference_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "spearman_ic",
+          "type": "DOUBLE"
+        }
+      ]
+    },
+    {
+      "content_sha256": "eca1d4ed7ebe5ca5cd3ae45d5b5e3e8a39c32ba8deae0532cc8428861661cc9a",
+      "name": "coverage_attrition",
+      "row_count": 2,
+      "schema": [
+        {
+          "name": "scaffold_family",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "observation_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "symbol_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "date_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "first_date",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "last_date",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "median_candidates_per_date",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "fixed20_coverage_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "fixed60_coverage_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "market_codes",
+          "type": "VARCHAR"
+        }
+      ]
+    },
+    {
+      "content_sha256": "673fc1657cabfd42a88e71efc8242c7c7f9e88525787234b0f349c1d4cbd9869",
+      "name": "decision_gate",
+      "row_count": 5,
+      "schema": [
+        {
+          "name": "decision_key",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "passed",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "reason",
+          "type": "VARCHAR"
+        }
+      ]
+    },
+    {
+      "content_sha256": "88af5fe0f55c5729aee63c54d5f2bb1f5ba9c450c795be05813f7ca92a655bc6",
+      "name": "fixed_2x2_daily",
+      "row_count": 5673,
+      "schema": [
+        {
+          "name": "scaffold_family",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "date",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "quadrant",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "observation_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "mean_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "median_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "win_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "severe_loss_rate_pct",
+          "type": "DOUBLE"
+        }
+      ]
+    },
+    {
+      "content_sha256": "c5c2a7741dc932ada2f3052a5a0e887821dd4805ae715f492c370d53d310a5a9",
+      "name": "fixed_incremental_contrast",
+      "row_count": 539,
+      "schema": [
+        {
+          "name": "scaffold_family",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "date",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "contrast",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "focus_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "control_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "mean_lift_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "median_lift_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "positive",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "severe_loss_rate_difference_pct",
+          "type": "DOUBLE"
+        }
+      ]
+    },
+    {
+      "content_sha256": "8a1667e2b4411e5e20b5335e738549149a7d15735fb6d9d21c7f217fe68269ae",
+      "name": "observation_sample",
+      "row_count": 4785,
+      "schema": [
+        {
+          "name": "scaffold_family",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "date",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "code",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "market_code",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "sector_33_code",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "sector_33_name",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "valuation_signal",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "value_composite_equal_score",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "long_hybrid_leadership_score",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "atr20_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "atr20_change_20d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "liquidity_residual_z",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "recent_return_20d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "recent_return_60d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "fixed20_priority",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "fixed60_priority",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "fixed_equal_priority",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_outcome_completion_date_5d",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "forward_close_return_5d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_close_excess_return_5d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_close_n225_excess_return_5d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_outcome_completion_date_20d",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "forward_close_return_20d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_close_excess_return_20d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_close_n225_excess_return_20d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_outcome_completion_date_60d",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "forward_close_return_60d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_close_excess_return_60d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_close_n225_excess_return_60d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "fixed_quadrant",
+          "type": "VARCHAR"
+        }
+      ]
+    },
+    {
+      "content_sha256": "1cea07359de7738f67cec601732e36c794ece52bb8aae495be602f83b3289ace",
+      "name": "regression_sensitivity",
+      "row_count": 168,
+      "schema": [
+        {
+          "name": "sensitivity_type",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "sensitivity_bucket",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "scaffold_family",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "priority_variant",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "observation_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "date_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "date_fixed_effect_priority_coefficient",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "mean_priority_lift_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "controls",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "role",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "candidate_outcome_count",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "candidate_outcome_coverage_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "selected_count",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "selected_outcome_count",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "selected_outcome_coverage_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "evaluated_date_count",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "incomplete_date_count",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "outcome_status",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "mean_excess_return_pct",
+          "type": "DOUBLE"
+        }
+      ]
+    },
+    {
+      "content_sha256": "7ef5d0560cfa9ad3d9abfb46684ad38395a309a8e159f168ed80a59f94aa130f",
+      "name": "scaffold_registry",
+      "row_count": 2,
+      "schema": [
+        {
+          "name": "scaffold_family",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "predicate",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "candidate_timing",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "market_scope",
+          "type": "VARCHAR"
+        }
+      ]
+    },
+    {
+      "content_sha256": "bc53b57d05ad398457467ef1f80e6a40e2663f1cfe247b68fcad8ad942d3e4e0",
+      "name": "segment_stability",
+      "row_count": 589,
+      "schema": [
+        {
+          "name": "scaffold_family",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "priority_variant",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "segment",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "analysis",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "period_type",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "period_label",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "date_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "mean_effect_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "median_effect_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "positive_date_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "year",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "contrast",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "scope",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "k",
+          "type": "DOUBLE"
+        }
+      ]
+    },
+    {
+      "content_sha256": "be6bdb206dfaf453807bf451dc2bdc009acb2f029195a8728bdf164ae17b4861",
+      "name": "topk_priority_lift",
+      "row_count": 4266,
+      "schema": [
+        {
+          "name": "scope",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "date",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "priority_variant",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "k",
+          "type": "BIGINT"
+        },
+        {
+          "name": "candidate_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "candidate_outcome_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "candidate_outcome_coverage_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "selected_outcome_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "selected_outcome_coverage_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "outcome_status",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "basket_mean_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "priority_mean_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "priority_lift_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "basket_severe_loss_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "priority_severe_loss_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "severe_loss_rate_difference_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "basket_sector_hhi",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "priority_sector_hhi",
+          "type": "DOUBLE"
+        }
+      ]
+    }
+  ]
+}

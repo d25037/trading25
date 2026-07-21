@@ -27,11 +27,13 @@ from src.entrypoints.http.routes.job_response_utils import (
 from src.entrypoints.http.schemas.error import ErrorResponse
 from src.entrypoints.http.schemas import screening_job as screening_job_schema
 from src.application.services.job_manager import JobInfo
+from src.application.services.market_data_errors import MarketDataError
 from src.application.services.screening_job_service import (
     screening_job_manager,
     screening_job_service,
 )
 from src.application.services.strategy_dataset_metadata import format_market_scope_label
+from src.entrypoints.http.error_utils import market_data_http_exception
 
 router = APIRouter(tags=["Analytics"])
 _SCREENING_JOB_TYPE = "screening"
@@ -62,6 +64,7 @@ def _normalize_factor_regression_symbol(symbol: str) -> str:
 @router.get(
     "/api/analytics/ranking/symbol/{code}",
     response_model=ranking_contracts.MarketRankingSymbolResponse,
+    responses={409: {"model": ErrorResponse, "description": "Ranking PIT lineage unavailable"}},
     summary="Get latest Daily Ranking snapshot for a symbol",
 )
 async def get_ranking_symbol_snapshot(
@@ -76,6 +79,8 @@ async def get_ranking_symbol_snapshot(
         raise HTTPException(status_code=422, detail="Database not initialized")
     try:
         return RankingService(reader).get_symbol_ranking_snapshot(code)
+    except MarketDataError as error:
+        raise market_data_http_exception(error) from error
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     except Exception as error:
@@ -89,6 +94,7 @@ async def get_ranking_symbol_snapshot(
 @router.get(
     "/api/analytics/ranking",
     response_model=ranking_contracts.MarketRankingResponse,
+    responses={409: {"model": ErrorResponse, "description": "Ranking PIT lineage unavailable"}},
     summary="Get market rankings",
     description="Get market rankings including top stocks by trading value, price gainers, and price losers.",
 )
@@ -178,6 +184,8 @@ async def get_ranking(
             risk_state=riskState,
             technical_state=technicalState,
         )
+    except MarketDataError as e:
+        raise market_data_http_exception(e) from e
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:

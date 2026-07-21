@@ -39,6 +39,49 @@ def test_experiment_analytics_modules_are_research_not_product() -> None:
     assert not module.is_product_path(path)
 
 
+def test_research_fixture_is_research_not_product() -> None:
+    module = _load_module()
+    path = (
+        "apps/bt/tests/fixtures/research/"
+        "ranking_technical_fit_score_shape_evidence_published_digest.json"
+    )
+
+    assert module.is_research_path(path)
+    assert not module.is_product_path(path)
+
+
+def test_research_analytics_test_is_research_not_product() -> None:
+    module = _load_module()
+    path = (
+        "apps/bt/tests/unit/domains/analytics/"
+        "test_ranking_research_selection_contract.py"
+    )
+
+    assert module.is_research_path(path)
+    assert not module.is_product_path(path)
+
+
+def test_production_analytics_test_retains_product_semantics() -> None:
+    module = _load_module()
+    path = "apps/bt/tests/unit/domains/analytics/test_screening_evaluator.py"
+
+    assert module.is_product_path(path)
+    assert not module.is_research_path(path)
+
+
+def test_explicit_production_analytics_tests_do_not_inherit_source_taxonomy() -> None:
+    module = _load_module()
+
+    for module_name in (
+        "annual_value_composite_selection",
+        "readonly_duckdb_support",
+    ):
+        path = f"apps/bt/tests/unit/domains/analytics/test_{module_name}.py"
+
+        assert module.is_product_path(path)
+        assert not module.is_research_path(path)
+
+
 def test_research_docs_are_research_not_docs_only() -> None:
     module = _load_module()
 
