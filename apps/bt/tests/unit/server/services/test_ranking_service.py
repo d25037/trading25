@@ -619,13 +619,6 @@ def _rebuild_test_adjusted_metrics(db_path: str) -> None:
     if "scale_category" not in stock_columns:
         conn.close()
         return
-    master_columns = {
-        str(row[1])
-        for row in conn.execute("PRAGMA table_info('stock_master_daily')").fetchall()
-    }
-    if master_columns and "scale_category" not in master_columns:
-        conn.close()
-        return
     saved_technical_rows = conn.execute(
         "SELECT * FROM daily_technical_metrics"
     ).fetchall()
@@ -686,6 +679,15 @@ def _rebuild_test_adjusted_metrics(db_path: str) -> None:
                COALESCE(adjustment_factor, 1.0),
                open, high, low, close, volume, created_at
         FROM stock_data
+        QUALIFY row_number() OVER (
+            PARTITION BY CASE
+                WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                THEN left(code, length(code) - 1) ELSE code END,
+                date
+            ORDER BY CASE
+                WHEN length(code) = 4 THEN 0 ELSE 1 END,
+                length(code), code
+        ) = 1
     """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS stock_provider_windows (
@@ -1297,11 +1299,11 @@ def _insert_daily_valuation(
     *,
     code: str,
     eps: float,
-    bps: float,
-    forward_eps: float,
+    bps: float | None,
+    forward_eps: float | None,
     per: float,
-    forward_per: float,
-    pbr: float,
+    forward_per: float | None,
+    pbr: float | None,
     market_cap: float,
     p_op: float = 2.8,
     forward_p_op: float = 2.0,
@@ -1309,6 +1311,8 @@ def _insert_daily_valuation(
     forward_psr: float | None = None,
     source: str = "fy",
     forward_date: str = "2024-01-19",
+    valuation_date: str = "2024-01-19",
+    current_price: float = 520.0,
 ) -> None:
     normalized_code = normalize_equity_code(code)
     conn.execute(
@@ -1322,14 +1326,17 @@ def _insert_daily_valuation(
             forward_sales_source, fundamentals_adjustment_basis_date,
             source_fingerprint, created_at
         ) VALUES (
-            ?, '2024-01-19', '2024-01-19', 520.0, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?, ?, ?,
             NULL, NULL, ?, ?, ?, ?, ?, ?, NULL,
             '2024-01-10', ?, ?, NULL, NULL,
-            '2024-01-19', ?, NULL
+            ?, ?, NULL
         )
         """,
         (
             code,
+            valuation_date,
+            valuation_date,
+            current_price,
             eps,
             bps,
             forward_eps,
@@ -1343,6 +1350,7 @@ def _insert_daily_valuation(
             market_cap,
             forward_date,
             source,
+            valuation_date,
             f"current-fixture-{normalized_code}",
         ),
     )
@@ -2249,6 +2257,26 @@ class TestGetRankings:
                         None,
                     ),
                 )
+            _insert_daily_valuation(
+                conn,
+                code=code,
+                eps=10.0,
+                bps=100.0,
+                forward_eps=12.0,
+                per=price / 10.0,
+                forward_per=price / 12.0,
+                pbr=price / 100.0,
+                p_op=price / 10.0,
+                forward_p_op=price / 12.0,
+                market_cap=price * shares_outstanding,
+                forward_date="2023-12-31",
+                valuation_date=target_date,
+            )
+            conn.execute(
+                "UPDATE daily_valuation SET free_float_market_cap = ? "
+                "WHERE code = ? AND date = ?",
+                [price * shares_outstanding, code, target_date],
+            )
         conn.close()
 
         reader = MarketDbReader(ranking_db)
@@ -2389,6 +2417,49 @@ class TestGetRankings:
                 )
         _create_stock_master_views(conn)
         _create_provider_adjusted_raw_view(conn)
+        conn.execute(
+            """
+            CREATE TABLE stock_provider_windows AS
+            WITH provider_rows AS (
+                SELECT CASE
+                           WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                           THEN left(code, length(code) - 1) ELSE code
+                       END AS normalized_code,
+                       code, date, open, high, low, close, volume,
+                       turnover_value, adjustment_factor,
+                       adjusted_open, adjusted_high, adjusted_low,
+                       adjusted_close, adjusted_volume
+                FROM stock_data_raw
+            ), row_hashes AS (
+                SELECT normalized_code, date,
+                       from_hex(sha256(to_json(struct_pack(
+                           adjusted_close := adjusted_close,
+                           adjusted_high := adjusted_high,
+                           adjusted_low := adjusted_low,
+                           adjusted_open := adjusted_open,
+                           adjusted_volume := adjusted_volume,
+                           adjustment_factor := adjustment_factor,
+                           close := close, code := code, date := date,
+                           high := high, low := low, open := open,
+                           turnover_value := turnover_value, volume := volume
+                       ))))::BIT AS row_hash
+                FROM provider_rows
+            )
+            SELECT normalized_code AS code, min(date) AS coverage_start,
+                   max(date) AS coverage_end, max(date) AS provider_as_of,
+                   lower(hex(bit_xor(row_hash)::BLOB)) AS source_fingerprint,
+                   max(date) AS updated_at
+            FROM row_hashes GROUP BY normalized_code
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE stock_adjustment_events (
+                code TEXT, date TEXT, adjustment_factor DOUBLE,
+                source_fingerprint TEXT
+            )
+            """
+        )
         conn.close()
 
         reader = MarketDbReader(db_path)
@@ -3056,6 +3127,21 @@ class TestGetValueCompositeRanking:
                     """,
                     (code, "2024-01-10", eps, "FY", forecast, bps, shares),
                 )
+                price = {"99840": 520.0, "77770": 1000.0, "88880": 800.0}[code]
+                _insert_daily_valuation(
+                    conn,
+                    code=code,
+                    eps=eps,
+                    bps=bps,
+                    forward_eps=forecast,
+                    per=price / eps,
+                    forward_per=price / forecast,
+                    pbr=price / bps,
+                    p_op=price / eps,
+                    forward_p_op=price / forecast,
+                    market_cap=price * shares,
+                    forward_date="2024-01-10",
+                )
             _create_current_basis_relation_tables(conn)
         finally:
             conn.close()
@@ -3187,6 +3273,21 @@ class TestGetValueCompositeRanking:
                 """,
                 ("99840", "2024-01-18", "1Q", 130.0, 10_000_000.0),
             )
+            _insert_daily_valuation(
+                conn,
+                code="99840",
+                eps=50.0,
+                bps=1000.0,
+                forward_eps=130.0,
+                per=10.4,
+                forward_per=4.0,
+                pbr=0.52,
+                p_op=10.4,
+                forward_p_op=4.0,
+                market_cap=5_200_000_000.0,
+                source="revised",
+                forward_date="2024-01-18",
+            )
         finally:
             conn.close()
 
@@ -3231,6 +3332,20 @@ class TestGetValueCompositeRanking:
                 VALUES (?,?,?,?,?,?,?)
                 """,
                 ("99840", "2024-12-31", 50.0, "FY", 999.0, 10.0, 10_000_000.0),
+            )
+            _insert_daily_valuation(
+                conn,
+                code="99840",
+                eps=50.0,
+                bps=1000.0,
+                forward_eps=104.0,
+                per=10.4,
+                forward_per=5.0,
+                pbr=0.52,
+                p_op=10.4,
+                forward_p_op=5.0,
+                market_cap=5_200_000_000.0,
+                forward_date="2024-01-10",
             )
         finally:
             conn.close()
@@ -3278,6 +3393,20 @@ class TestGetValueCompositeRanking:
                 VALUES (?,?,?,?,?,?,?)
                 """,
                 ("99840", "2024-01-10", 50.0, "FY", 104.0, 1000.0, 10_000_000.0),
+            )
+            _insert_daily_valuation(
+                conn,
+                code="99840",
+                eps=50.0,
+                bps=1000.0,
+                forward_eps=104.0,
+                per=10.4,
+                forward_per=5.0,
+                pbr=0.52,
+                p_op=10.4,
+                forward_p_op=5.0,
+                market_cap=5_200_000_000.0,
+                forward_date="2024-01-10",
             )
         finally:
             conn.close()
@@ -3455,6 +3584,21 @@ class TestGetValueCompositeRanking:
                     """,
                     (code, "2024-01-10", 50.0, "FY", forecast, bps, shares),
                 )
+                price = {"99840": 520.0, "66660": 100.0, "77770": 1000.0}[code]
+                _insert_daily_valuation(
+                    conn,
+                    code=code,
+                    eps=50.0,
+                    bps=bps,
+                    forward_eps=forecast,
+                    per=price / 50.0,
+                    forward_per=price / forecast,
+                    pbr=price / bps,
+                    p_op=price / 50.0,
+                    forward_p_op=price / forecast,
+                    market_cap=price * shares,
+                    forward_date="2024-01-10",
+                )
         finally:
             conn.close()
 
@@ -3539,6 +3683,20 @@ class TestGetValueCompositeRanking:
                 VALUES (?,?,?,?,?,?,?)
                 """,
                 ("99840", "2024-01-10", 50.0, "FY", 104.0, 1000.0, 10_000_000.0),
+            )
+            _insert_daily_valuation(
+                conn,
+                code="99840",
+                eps=50.0,
+                bps=1000.0,
+                forward_eps=104.0,
+                per=10.4,
+                forward_per=5.0,
+                pbr=0.52,
+                p_op=10.4,
+                forward_p_op=5.0,
+                market_cap=5_200_000_000.0,
+                forward_date="2024-01-10",
             )
             start = calendar_date(2023, 9, 1)
             for i in range(140):
@@ -3648,6 +3806,20 @@ class TestGetValueCompositeRanking:
                             None,
                         ),
                     )
+                _insert_daily_valuation(
+                    conn,
+                    code=code,
+                    eps=50.0,
+                    bps=1000.0,
+                    forward_eps=100.0,
+                    per=close / 50.0,
+                    forward_per=close / 100.0,
+                    pbr=close / 1000.0,
+                    p_op=close / 50.0,
+                    forward_p_op=close / 100.0,
+                    market_cap=close * 10_000_000.0,
+                    forward_date="2024-01-10",
+                )
         finally:
             conn.close()
 
@@ -3724,6 +3896,21 @@ class TestGetValueCompositeRanking:
                     VALUES (?,?,?,?,?,?,?)
                     """,
                     (code, "2024-01-10", 100.0, "FY", forecast, bps, shares),
+                )
+                price = 2540.0 if code == "72030" else 13200.0
+                _insert_daily_valuation(
+                    conn,
+                    code=code,
+                    eps=100.0,
+                    bps=bps,
+                    forward_eps=forecast,
+                    per=price / 100.0,
+                    forward_per=price / forecast,
+                    pbr=price / bps,
+                    p_op=price / 100.0,
+                    forward_p_op=price / forecast,
+                    market_cap=price * shares,
+                    forward_date="2024-01-10",
                 )
         finally:
             conn.close()
@@ -3832,6 +4019,20 @@ class TestGetValueCompositeRanking:
                 VALUES (?,?,?,?,?,?,?,?)
                 """,
                 ("285A", "2024-01-10", 10.0, "FY", None, None, 100.0, 1_000_000.0),
+            )
+            _insert_daily_valuation(
+                conn,
+                code="285A",
+                eps=10.0,
+                bps=100.0,
+                forward_eps=None,
+                per=10.0,
+                forward_per=None,
+                pbr=1.0,
+                p_op=10.0,
+                forward_p_op=10.0,
+                market_cap=100_000_000.0,
+                forward_date="2024-01-10",
             )
         finally:
             conn.close()
@@ -3950,6 +4151,24 @@ class TestGetValueCompositeRanking:
                     """,
                     row,
                 )
+            for code, price, eps, forecast in [
+                ("68090", 120.0, 9.0, 10.0),
+                ("68100", 100.0, 10.0, 12.0),
+            ]:
+                _insert_daily_valuation(
+                    conn,
+                    code=code,
+                    eps=eps,
+                    bps=100.0,
+                    forward_eps=forecast,
+                    per=price / eps,
+                    forward_per=price / forecast,
+                    pbr=price / 100.0,
+                    p_op=price / eps,
+                    forward_p_op=price / forecast,
+                    market_cap=price * 1_000_000.0,
+                    forward_date="2024-01-10",
+                )
         finally:
             conn.close()
 
@@ -3999,6 +4218,22 @@ class TestGetValueCompositeRanking:
                 VALUES (?,?,?,?,?,?,?)
                 """,
                 ("39470", "2024-01-10", 320.0, "FY", 256.0, 4800.0, 10_000_000.0),
+            )
+            _insert_daily_valuation(
+                conn,
+                code="39470",
+                eps=320.0,
+                bps=4800.0,
+                forward_eps=256.0,
+                per=2370.0 / 320.0,
+                forward_per=2370.0 / 256.0,
+                pbr=2370.0 / 4800.0,
+                p_op=2370.0 / 320.0,
+                forward_p_op=2370.0 / 256.0,
+                market_cap=23_700_000_000.0,
+                forward_date="2024-01-10",
+                valuation_date="2024-01-18",
+                current_price=2370.0,
             )
         finally:
             conn.close()
@@ -4050,6 +4285,20 @@ class TestGetValueCompositeRanking:
                 VALUES (?,?,?,?,?,?,?)
                 """,
                 ("68200", "2024-01-10", 10.0, "FY", 12.0, None, 1_000_000.0),
+            )
+            _insert_daily_valuation(
+                conn,
+                code="68200",
+                eps=10.0,
+                bps=None,
+                forward_eps=12.0,
+                per=10.0,
+                forward_per=100.0 / 12.0,
+                pbr=None,
+                p_op=10.0,
+                forward_p_op=100.0 / 12.0,
+                market_cap=100_000_000.0,
+                forward_date="2024-01-10",
             )
         finally:
             conn.close()

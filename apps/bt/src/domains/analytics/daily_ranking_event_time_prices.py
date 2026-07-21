@@ -569,11 +569,26 @@ def build_event_time_signal_sql(request: EventTimeSignalRequest) -> EventTimeSig
              AND raw.date = event.date
             GROUP BY provider_window.normalized_code
         ),
+        event_time_signal_projection_ranked AS (
+            SELECT {projection_code} AS normalized_code,
+                   projection.date, projection.open, projection.high,
+                   projection.low, projection.close, projection.volume,
+                   row_number() OVER (
+                       PARTITION BY {projection_code}, projection.date
+                       ORDER BY CASE
+                           WHEN projection.code = {projection_code} THEN 0 ELSE 1
+                       END, length(projection.code), projection.code
+                   ) AS alias_rank
+            FROM stock_data AS projection
+        ),
+        event_time_signal_projection AS (
+            SELECT * FROM event_time_signal_projection_ranked WHERE alias_rank = 1
+        ),
         event_time_signal_projection_evidence AS (
             SELECT raw.normalized_code,
                    count(*) AS raw_count,
-                   count(projection.code) AS projection_count,
-                   count(projection.code) FILTER (
+                   count(projection.normalized_code) AS projection_count,
+                   count(projection.normalized_code) FILTER (
                        WHERE projection.open = raw.adjusted_open
                          AND projection.high = raw.adjusted_high
                          AND projection.low = raw.adjusted_low
@@ -581,8 +596,8 @@ def build_event_time_signal_sql(request: EventTimeSignalRequest) -> EventTimeSig
                          AND projection.volume = raw.adjusted_volume
                    ) AS matching_projection_count
             FROM event_time_signal_provider_rows AS raw
-            LEFT JOIN stock_data AS projection
-              ON {projection_code} = raw.normalized_code
+            LEFT JOIN event_time_signal_projection AS projection
+              ON projection.normalized_code = raw.normalized_code
              AND projection.date = raw.date
             GROUP BY raw.normalized_code
         ),
@@ -1395,6 +1410,19 @@ def _validate_research_provider_vintage(
             LEFT JOIN provider_rows raw
               ON raw.code = provider_window.code AND raw.date = event.date
             GROUP BY provider_window.code
+        ), projection_ranked AS (
+            SELECT {projection_code} AS code, projection.date,
+                   projection.open, projection.high, projection.low,
+                   projection.close, projection.volume,
+                   row_number() OVER (
+                       PARTITION BY {projection_code}, projection.date
+                       ORDER BY CASE
+                           WHEN projection.code = {projection_code} THEN 0 ELSE 1
+                       END, length(projection.code), projection.code
+                   ) AS alias_rank
+            FROM stock_data projection
+        ), canonical_projection AS (
+            SELECT * FROM projection_ranked WHERE alias_rank = 1
         ), projection_summary AS (
             SELECT raw.code, count(*) AS raw_count,
                    count(projection.code) AS projection_count,
@@ -1406,8 +1434,8 @@ def _validate_research_provider_vintage(
                          AND projection.volume = raw.adjusted_volume
                    ) AS matching_projection_count
             FROM provider_rows raw
-            LEFT JOIN stock_data projection
-              ON {projection_code} = raw.code AND projection.date = raw.date
+            LEFT JOIN canonical_projection projection
+              ON projection.code = raw.code AND projection.date = raw.date
             GROUP BY raw.code
         )
         SELECT provider_window.code
