@@ -1,86 +1,75 @@
-# === Runtime / Dependencies ===
+# === Dependencies / virtual environments ===
 node_modules/
 .venv/
 
-# === Build outputs ===
-**/dist/
-**/build/
-**/out/
-**/.cache/
-**/*.tsbuildinfo
+# === Build / generated outputs ===
+dist/
+build/
+out/
+.cache/
+*.tsbuildinfo
+*.egg-info/
 
-# === Python ===
-**/__pycache__/
-**/*.pyc
-**/*.egg-info/
-**/.coverage
+# === Test / coverage caches ===
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
 htmlcov/
-
-# === Tool caches ===
-**/.pytest_cache/
-**/.mypy_cache/
-**/.ruff_cache/
-**/coverage/
-**/playwright-report/
-**/test-results/
+coverage/
+playwright-report/
+test-results/
 .playwright-mcp/
+
+# === Local agent workspaces ===
+# Durable specs and reports belong under docs/superpowers/.
 .superpowers/
 .worktrees/
 
 # === OS / Editor ===
-**/.DS_Store
+.DS_Store
 .idea/
 .vscode/
 .cursor/
-**/*.swp
-**/*.swo
-**/*~
+*.swp
+*.swo
+*~
 
 # === Logs / Temp ===
-**/*.log
-**/*.tmp
-**/reports/
-!docs/reports/
-!docs/reports/**
-!docs/archive/reports/
-!docs/archive/reports/**
+*.log
+*.tmp
 
-# === Environment ===
+# === Secrets / local environment ===
 .env
 .env.*
+!.env.example
+!.env.template
 .trading25.key
-**/.trading25.key
 
 # === AI / Editor configs ===
 .mcp.json
-.worktrees/
 **/.codex/
 !/.codex/
 !/.codex/**
+/.codex/config.toml
 
-# === apps/bt ===
-apps/bt/.db
-apps/bt/**/*.csv
-apps/bt/**/*.xlsx
-apps/bt/**/*.json
-!apps/bt/benchmarks/
-!apps/bt/benchmarks/fixtures/
-!apps/bt/benchmarks/fixtures/market-v5-sync.json
-!apps/bt/benchmarks/market-v5-sync-fixture-evidence.json
-!apps/bt/tests/fixtures/ta_golden/*.json
-apps/bt/**/*.pickle
-apps/bt/**/*.pkl
-apps/bt/config/strategies/experimental/
+# === bt runtime state ===
+apps/bt/.tmp/
+# J-Quants CLI default output (when run from the repository root or apps/bt).
+/data/
+/apps/bt/data/
+# Runtime strategies live in XDG; keep the repository-pinned research fixture.
+apps/bt/config/strategies/experimental/*
+!apps/bt/config/strategies/experimental/robustness/
+apps/bt/config/strategies/experimental/robustness/*
+!apps/bt/config/strategies/experimental/robustness/range_break_v15_target_low_pbr.yaml
 apps/bt/config/strategies/production/*
 !apps/bt/config/strategies/production/cutover_smoke.yaml
 apps/bt/config/strategies/legacy/
 
-# === apps/ts ===
-apps/ts/**/test-portfolio-*.db
-apps/ts/**/test-portfolio-*.db-shm
-apps/ts/**/test-portfolio-*.db-wal
-apps/ts/**/__tests__/*.db
-apps/ts/**/__tests__/*.db-shm
-apps/ts/**/__tests__/*.db-wal
-apps/ts/**/test-api.ts
-apps/ts/packages/shared/src/clients/backtest/generated/bt-api-types.ts
+# === ts test databases ===
+apps/ts/**/test-portfolio-*.db*
+apps/ts/**/__tests__/*.db*
