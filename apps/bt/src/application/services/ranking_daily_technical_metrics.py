@@ -27,6 +27,22 @@ def enrich_ranking_collections_with_daily_technical_metrics(
     if not target_date or not items_by_code:
         return
 
+    lower_bound_date = technical_feature_lower_bound_date(target_date)
+    if signal_sql is None:
+        with event_time_signal_sql(
+            reader,
+            signal_date=target_date,
+            start_date=lower_bound_date,
+            market_codes=market_codes or [],
+        ) as materialized_signal:
+            return enrich_ranking_collections_with_daily_technical_metrics(
+                reader,
+                collections,
+                target_date=target_date,
+                market_codes=market_codes,
+                signal_sql=materialized_signal,
+            )
+
     materialized_codes: set[str] = set()
     table_row = reader.query_one(
         """
@@ -72,21 +88,6 @@ def enrich_ranking_collections_with_daily_technical_metrics(
     if materialized_codes == set(items_by_code):
         return
 
-    lower_bound_date = technical_feature_lower_bound_date(target_date)
-    if signal_sql is None:
-        with event_time_signal_sql(
-            reader,
-            signal_date=target_date,
-            start_date=lower_bound_date,
-            market_codes=market_codes or [],
-        ) as materialized_signal:
-            return enrich_ranking_collections_with_daily_technical_metrics(
-                reader,
-                collections,
-                target_date=target_date,
-                market_codes=market_codes,
-                signal_sql=materialized_signal,
-            )
     codes = tuple(items_by_code.keys())
     placeholders = ",".join("?" for _ in codes)
     rows = reader.query(

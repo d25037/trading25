@@ -46,6 +46,10 @@ from src.application.services.ranking_daily_queries import (
     ranking_by_price_change_from_days,
     ranking_by_trading_value_average,
 )
+from src.application.services.ranking_daily_technical_metrics import (
+    enrich_ranking_collections_with_daily_technical_metrics,
+)
+from src.application.services.market_data_errors import MarketDataError
 from src.application.services.ranking_value_composite_config import (
     VALUE_COMPOSITE_PROFILE_BY_ID,
     ensure_supported_value_composite_forward_eps_mode,
@@ -1460,6 +1464,56 @@ class TestGetRankings:
         item = next(item for item in result.rankings.tradingValue if item.code == "72030")
         assert item.sma5AboveCount5d == 4
         assert item.sma5BelowStreak == 3
+
+    def test_materialized_technical_metrics_do_not_bypass_price_lineage_validation(
+        self, ranking_db
+    ):
+        conn = duckdb.connect(ranking_db)
+        try:
+            conn.execute(
+                """
+                INSERT INTO daily_technical_metrics (
+                    code, date, close, sma5, sma5_sessions,
+                    close_above_sma5_flag, sma5_above_count_5d,
+                    sma5_above_count_sessions, sma5_above_count_group,
+                    sma5_below_streak, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("7203", "2024-01-19", 2540.0, 2520.0, 5, 1, 4, 5, "strong", 3, None),
+            )
+            conn.execute(
+                """
+                UPDATE stock_data_raw
+                SET adjusted_close = adjusted_close * 100
+                WHERE code = '72030' AND date = '2024-01-19'
+                """
+            )
+        finally:
+            conn.close()
+
+        item = RankingItem(
+            rank=1,
+            code="72030",
+            companyName="Toyota",
+            marketCode="prime",
+            sector33Name="輸送用機器",
+            currentPrice=2540.0,
+            volume=2_000_000,
+        )
+        reader = MarketDbReader(ranking_db)
+        try:
+            with pytest.raises(
+                MarketDataError,
+                match="provider_window_invalid",
+            ):
+                enrich_ranking_collections_with_daily_technical_metrics(
+                    reader,
+                    ([item],),
+                    target_date="2024-01-19",
+                )
+        finally:
+            reader.close()
 
     def test_include_valuation_does_not_recalculate_missing_canonical_rows(
         self, ranking_db
