@@ -63,8 +63,8 @@ def _coerce_int(value: Any) -> int | None:
 
 
 def is_provider_no_trade_row(quote: dict[str, Any]) -> bool:
-    """Return whether the provider emitted a legitimate all-null daily quote."""
-    return all(
+    """Return whether the provider emitted an ordinary all-null daily quote."""
+    prices_are_null = all(
         quote.get(key) is None
         for key in (
             "O",
@@ -80,6 +80,13 @@ def is_provider_no_trade_row(quote: dict[str, Any]) -> bool:
             "AdjVo",
         )
     )
+    if not prices_are_null:
+        return False
+
+    factor_value = quote.get("AdjFactor")
+    if factor_value is None:
+        return True
+    return _coerce_float(factor_value) == 1.0
 
 
 def build_stock_data_row(

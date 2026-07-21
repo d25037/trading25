@@ -201,6 +201,64 @@ def test_convert_stock_bulk_rows_skips_legitimate_no_trade_row() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "factor",
+    [
+        pytest.param(0.5, id="non-unit"),
+        pytest.param(0.0, id="zero"),
+        pytest.param(-0.5, id="negative"),
+        pytest.param(float("nan"), id="nan"),
+        pytest.param(float("inf"), id="infinite"),
+    ],
+)
+def test_convert_stock_bulk_rows_rejects_no_trade_row_with_invalid_factor(
+    factor: float,
+) -> None:
+    with pytest.raises(ValueError, match="incomplete provider daily row.*7203.*2026-02-10"):
+        convert_stock_bulk_rows(
+            [
+                {
+                    "code": "72030",
+                    "date": "20260210",
+                    "open": None,
+                    "high": None,
+                    "low": None,
+                    "close": None,
+                    "volume": None,
+                    "turnover_value": None,
+                    "adjfactor": factor,
+                    "adjopen": None,
+                    "adjhigh": None,
+                    "adjlow": None,
+                    "adjclose": None,
+                    "adjvolume": None,
+                }
+            ],
+            target_dates={"2026-02-10"},
+        )
+
+
+@pytest.mark.parametrize(
+    ("include_factor", "factor"),
+    [
+        pytest.param(False, None, id="absent"),
+        pytest.param(True, 1.0, id="unit"),
+    ],
+)
+def test_convert_stock_bulk_rows_skips_no_trade_row_with_absent_or_unit_factor(
+    include_factor: bool,
+    factor: float | None,
+) -> None:
+    row: dict[str, object] = {
+        "code": "72030",
+        "date": "20260210",
+    }
+    if include_factor:
+        row["adjfactor"] = factor
+
+    assert convert_stock_bulk_rows([row], target_dates={"2026-02-10"}) == []
+
+
 def test_build_stock_data_row_returns_none_for_invalid_code_or_date() -> None:
     assert (
         build_stock_data_row(

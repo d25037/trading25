@@ -456,6 +456,115 @@ async def test_refresh_stocks_skips_unique_provider_no_trade_rows() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "factor",
+    [
+        pytest.param(0.5, id="non-unit"),
+        pytest.param(0.0, id="zero"),
+        pytest.param(-0.5, id="negative"),
+        pytest.param(float("nan"), id="nan"),
+        pytest.param(float("inf"), id="infinite"),
+    ],
+)
+async def test_refresh_stocks_rejects_no_trade_row_with_invalid_factor(
+    factor: float,
+) -> None:
+    store = DummyTimeSeriesStore()
+    client = DummyJQuantsClient(
+        rows=[
+            {
+                "Code": "72030",
+                "Date": "2026-02-09",
+                "O": None,
+                "H": None,
+                "L": None,
+                "C": None,
+                "Vo": None,
+                "Va": None,
+                "AdjFactor": factor,
+                "AdjO": None,
+                "AdjH": None,
+                "AdjL": None,
+                "AdjC": None,
+                "AdjVo": None,
+            },
+            {
+                "Code": "72030",
+                "Date": "2026-02-10",
+                "O": 100,
+                "H": 102,
+                "L": 99,
+                "C": 101,
+                "Vo": 1000,
+            },
+        ]
+    )
+
+    result = await refresh_stocks(["7203"], DummyMarketDb(), store, client)
+
+    assert result.successCount == 0
+    assert result.failedCount == 1
+    assert result.results[0].error == (
+        "Provider window contains 1 incomplete or non-finite rows"
+    )
+    assert store.replacements == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("include_factor", "factor"),
+    [
+        pytest.param(False, None, id="absent"),
+        pytest.param(True, 1.0, id="unit"),
+    ],
+)
+async def test_refresh_stocks_skips_no_trade_row_with_absent_or_unit_factor(
+    include_factor: bool,
+    factor: float | None,
+) -> None:
+    store = DummyTimeSeriesStore()
+    no_trade_row: dict[str, Any] = {
+        "Code": "72030",
+        "Date": "2026-02-09",
+        "O": None,
+        "H": None,
+        "L": None,
+        "C": None,
+        "Vo": None,
+        "Va": None,
+        "AdjO": None,
+        "AdjH": None,
+        "AdjL": None,
+        "AdjC": None,
+        "AdjVo": None,
+    }
+    if include_factor:
+        no_trade_row["AdjFactor"] = factor
+    client = DummyJQuantsClient(
+        rows=[
+            no_trade_row,
+            {
+                "Code": "72030",
+                "Date": "2026-02-10",
+                "O": 100,
+                "H": 102,
+                "L": 99,
+                "C": 101,
+                "Vo": 1000,
+            },
+        ]
+    )
+    if not include_factor:
+        client.rows[0].pop("AdjFactor")
+
+    result = await refresh_stocks(["7203"], DummyMarketDb(), store, client)
+
+    assert result.successCount == 1
+    assert result.failedCount == 0
+    assert [row["date"] for row in store.rows] == ["2026-02-10"]
+
+
+@pytest.mark.asyncio
 async def test_refresh_stocks_fetches_all_pages_before_one_atomic_replacement() -> None:
     events: list[str] = []
 
