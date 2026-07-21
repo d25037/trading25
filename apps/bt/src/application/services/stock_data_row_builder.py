@@ -117,7 +117,7 @@ def build_stock_data_row(
     adjusted_high = _coerce_float(quote.get("AdjH"))
     adjusted_low = _coerce_float(quote.get("AdjL"))
     adjusted_close = _coerce_float(quote.get("AdjC"))
-    adjusted_volume = _coerce_int(quote.get("AdjVo"))
+    adjusted_volume = _coerce_float(quote.get("AdjVo"))
 
     required_values = (
         open_value,
@@ -135,7 +135,7 @@ def build_stock_data_row(
     )
     if any(value is None for value in required_values):
         return None
-    if adjustment_factor is None or adjustment_factor <= 0:
+    if adjustment_factor is None or adjustment_factor <= 0 or adjusted_volume < 0:
         return None
 
     return {

@@ -190,12 +190,9 @@ def validate_provider_stock_window(
                 raise ValueError(f"Provider stock window {column} must be finite")
         if float(row["adjustment_factor"]) <= 0:
             raise ValueError("Provider stock window adjustment_factor must be positive")
-        if (
-            int(row["volume"]) != row["volume"]
-            or int(row["adjusted_volume"]) != row["adjusted_volume"]
-        ):
-            raise ValueError("Provider stock window volume values must be integral")
-        if int(row["volume"]) < 0 or int(row["adjusted_volume"]) < 0:
+        if int(row["volume"]) != row["volume"]:
+            raise ValueError("Provider stock window raw volume must be integral")
+        if int(row["volume"]) < 0 or float(row["adjusted_volume"]) < 0:
             raise ValueError("Provider stock window volume values must be non-negative")
         if float(row["turnover_value"]) < 0:
             raise ValueError(
@@ -210,7 +207,7 @@ def validate_provider_stock_window(
         row["code"] = normalized_code
         row["date"] = row_date
         row["volume"] = int(row["volume"])
-        row["adjusted_volume"] = int(row["adjusted_volume"])
+        row["adjusted_volume"] = float(row["adjusted_volume"])
         normalized_rows.append(row)
 
     if not normalized_rows:
@@ -247,10 +244,14 @@ def validate_provider_stock_window(
                     "Provider stock window provider-adjusted consistency failed: "
                     f"{adjusted_column} on {row['date']}"
                 )
-        expected_volume = round(int(row["volume"]) / future_factor)
-        # Provider integer conversion and Python's bankers rounding may differ
-        # by one share at an exact half boundary.
-        if abs(int(row["adjusted_volume"]) - expected_volume) > 1:
+        expected_volume = float(row["volume"]) / future_factor
+        # J-Quants publishes adjusted volume at 0.1-share precision.
+        if not math.isclose(
+            float(row["adjusted_volume"]),
+            expected_volume,
+            rel_tol=0.0,
+            abs_tol=0.0500001,
+        ):
             raise ValueError(
                 "Provider stock window provider-adjusted consistency failed: "
                 f"adjusted_volume on {row['date']}"
@@ -270,7 +271,14 @@ def provider_stock_source_fingerprint(rows: Sequence[Mapping[str, Any]]) -> str:
         canonical_row = {
             "code": str(row.get("code", "")),
             "date": str(row.get("date", "")),
-            **{column: row.get(column) for column in PROVIDER_NUMERIC_COLUMNS},
+            **{
+                column: (
+                    float(row[column])
+                    if column == "adjusted_volume" and row.get(column) is not None
+                    else row.get(column)
+                )
+                for column in PROVIDER_NUMERIC_COLUMNS
+            },
         }
         payload = json.dumps(
             canonical_row, ensure_ascii=True, separators=(",", ":"), sort_keys=True

@@ -41,6 +41,82 @@ def test_build_stock_data_row_preserves_provider_raw_and_adjusted_fields() -> No
     assert row["created_at"] == "2026-02-12T00:00:00+00:00"
 
 
+def test_build_stock_data_row_preserves_fractional_provider_adjusted_volume() -> None:
+    row = build_stock_data_row(
+        {
+            "Code": "72030",
+            "Date": "2026-02-10",
+            "O": 100,
+            "H": 110,
+            "L": 90,
+            "C": 105,
+            "Vo": 8_730_892,
+            "Va": 105_500.25,
+            "AdjFactor": 1.0,
+            "AdjO": 100,
+            "AdjH": 110,
+            "AdjL": 90,
+            "AdjC": 105,
+            "AdjVo": 87_308.9,
+        }
+    )
+
+    assert row is not None
+    assert row["volume"] == 8_730_892
+    assert row["adjusted_volume"] == 87_308.9
+
+
+@pytest.mark.parametrize("adjusted_volume", [-0.1, float("nan"), float("inf")])
+def test_build_stock_data_row_rejects_invalid_provider_adjusted_volume(
+    adjusted_volume: float,
+) -> None:
+    assert (
+        build_stock_data_row(
+            {
+                "Code": "72030",
+                "Date": "2026-02-10",
+                "O": 100,
+                "H": 110,
+                "L": 90,
+                "C": 105,
+                "Vo": 8_730_892,
+                "Va": 105_500.25,
+                "AdjFactor": 1.0,
+                "AdjO": 100,
+                "AdjH": 110,
+                "AdjL": 90,
+                "AdjC": 105,
+                "AdjVo": adjusted_volume,
+            }
+        )
+        is None
+    )
+
+
+def test_build_stock_data_row_rejects_fractional_raw_volume() -> None:
+    assert (
+        build_stock_data_row(
+            {
+                "Code": "72030",
+                "Date": "2026-02-10",
+                "O": 100,
+                "H": 110,
+                "L": 90,
+                "C": 105,
+                "Vo": 8_730_892.5,
+                "Va": 105_500.25,
+                "AdjFactor": 1.0,
+                "AdjO": 100,
+                "AdjH": 110,
+                "AdjL": 90,
+                "AdjC": 105,
+                "AdjVo": 87_308.9,
+            }
+        )
+        is None
+    )
+
+
 def test_build_stock_data_row_keeps_raw_and_adjusted_ohlcv_separate() -> None:
     row = build_stock_data_row(
         {

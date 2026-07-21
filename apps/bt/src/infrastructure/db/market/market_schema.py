@@ -316,7 +316,7 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         adjusted_high DOUBLE,
         adjusted_low DOUBLE,
         adjusted_close DOUBLE,
-        adjusted_volume BIGINT,
+        adjusted_volume DOUBLE,
         created_at TEXT,
         PRIMARY KEY (code, date)
     )
@@ -329,7 +329,7 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         high DOUBLE NOT NULL,
         low DOUBLE NOT NULL,
         close DOUBLE NOT NULL,
-        volume BIGINT NOT NULL,
+        volume DOUBLE NOT NULL,
         adjustment_factor DOUBLE,
         created_at TEXT,
         PRIMARY KEY (code, date)

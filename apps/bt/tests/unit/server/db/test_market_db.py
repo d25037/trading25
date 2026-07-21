@@ -197,6 +197,22 @@ class TestMarketDbBasics:
             raw_info[column]
             for column in ("code", "date", "open", "high", "low", "close", "volume")
         )
+        raw_types = {
+            str(row[1]): str(row[2])
+            for row in market_db._fetchall("PRAGMA table_info('stock_data_raw')")
+        }
+        consumer_types = {
+            str(row[1]): str(row[2])
+            for row in market_db._fetchall("PRAGMA table_info('stock_data')")
+        }
+        minute_types = {
+            str(row[1]): str(row[2])
+            for row in market_db._fetchall("PRAGMA table_info('stock_data_minute_raw')")
+        }
+        assert raw_types["adjusted_volume"] == "DOUBLE"
+        assert consumer_types["volume"] == "DOUBLE"
+        assert raw_types["volume"] == "BIGINT"
+        assert minute_types["volume"] == "BIGINT"
 
         for invalid_factor in (0.0, -1.0, 1.0):
             with pytest.raises(duckdb.ConstraintException):

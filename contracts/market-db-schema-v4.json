@@ -76,7 +76,7 @@
                 "adjusted_high": { "const": { "type": "real", "nullable": true } },
                 "adjusted_low": { "const": { "type": "real", "nullable": true } },
                 "adjusted_close": { "const": { "type": "real", "nullable": true } },
-                "adjusted_volume": { "const": { "type": "integer", "nullable": true } },
+                "adjusted_volume": { "const": { "type": "real", "nullable": true } },
                 "created_at": { "const": { "type": "text", "nullable": true } }
               }
             },
@@ -482,7 +482,7 @@
         "high": { "$ref": "#/$defs/required_real" },
         "low": { "$ref": "#/$defs/required_real" },
         "close": { "$ref": "#/$defs/required_real" },
-        "volume": { "$ref": "#/$defs/required_integer" },
+        "volume": { "$ref": "#/$defs/required_real" },
         "adjustment_factor": { "$ref": "#/$defs/nullable_real" },
         "created_at": { "$ref": "#/$defs/nullable_text" }
       }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import json
 import shutil
 from time import perf_counter
@@ -539,7 +540,7 @@ class DuckDbParquetTimeSeriesStore:
                     adjusted_high DOUBLE,
                     adjusted_low DOUBLE,
                     adjusted_close DOUBLE,
-                    adjusted_volume BIGINT,
+                    adjusted_volume DOUBLE,
                     created_at TEXT,
                     PRIMARY KEY (code, date)
                 )
@@ -602,7 +603,7 @@ class DuckDbParquetTimeSeriesStore:
                     high DOUBLE NOT NULL,
                     low DOUBLE NOT NULL,
                     close DOUBLE NOT NULL,
-                    volume BIGINT NOT NULL,
+                    volume DOUBLE NOT NULL,
                     adjustment_factor DOUBLE,
                     created_at TEXT,
                     PRIMARY KEY (code, date)
@@ -905,7 +906,15 @@ class DuckDbParquetTimeSeriesStore:
             columns=self._STOCK_DATA_RAW_UPSERT_SPEC.columns,
         )
         drift_predicate = " OR ".join(
-            f"incoming.{column} IS DISTINCT FROM existing.{column}"
+            (
+                "(incoming.adjusted_volume IS DISTINCT FROM "
+                "existing.adjusted_volume AND NOT ("
+                "incoming.adjusted_volume IS NOT NULL AND "
+                "existing.adjusted_volume IS NOT NULL AND "
+                "abs(incoming.adjusted_volume - existing.adjusted_volume) <= 0.0500001))"
+                if column == "adjusted_volume"
+                else f"incoming.{column} IS DISTINCT FROM existing.{column}"
+            )
             for column in PROVIDER_DRIFT_COLUMNS
         )
         relation_name = self._STOCK_ADJUSTMENT_PROBE_RELATION
@@ -958,8 +967,11 @@ class DuckDbParquetTimeSeriesStore:
                         ("close", "adjusted_close"),
                     )
                 )
-                volume_consistent = (
-                    abs(int(row["adjusted_volume"]) - int(row["volume"])) <= 1
+                volume_consistent = math.isclose(
+                    float(row["adjusted_volume"]),
+                    float(row["volume"]),
+                    rel_tol=0.0,
+                    abs_tol=0.0500001,
                 )
             except (KeyError, TypeError, ValueError):
                 drift_codes.add(str(row.get("code") or ""))

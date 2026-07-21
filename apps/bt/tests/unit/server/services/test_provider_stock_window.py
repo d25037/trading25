@@ -148,7 +148,7 @@ def test_validate_provider_stock_window_accepts_provider_tick_and_volume_roundin
         adjusted_high=36.7,
         adjusted_low=30.0,
         adjusted_close=35.0,
-        adjusted_volume=2999,
+        adjusted_volume=2999.95,
     )
 
     validate_provider_stock_window(
@@ -157,6 +157,56 @@ def test_validate_provider_stock_window_accepts_provider_tick_and_volume_roundin
         {"start": "2026-02-10", "end": "2026-02-11"},
         _metadata(),
     )
+
+
+def test_validate_provider_stock_window_preserves_fractional_adjusted_volume() -> None:
+    rows = [
+        {
+            **_row("2026-02-10", future_factor=100.0),
+            "volume": 8_730_892,
+            "adjusted_volume": 87_308.9,
+        },
+        _row("2026-02-11", factor=100.0, future_factor=1.0),
+    ]
+
+    _code, validated, _coverage, _metadata_value = validate_provider_stock_window(
+        "7203",
+        rows,
+        {"start": "2026-02-10", "end": "2026-02-11"},
+        _metadata(),
+    )
+
+    assert validated[0]["volume"] == 8_730_892
+    assert validated[0]["adjusted_volume"] == 87_308.9
+
+
+@pytest.mark.parametrize("adjusted_volume", [-0.1, float("nan"), float("inf")])
+def test_validate_provider_stock_window_rejects_invalid_adjusted_volume(
+    adjusted_volume: float,
+) -> None:
+    row = _row("2026-02-10")
+    row["adjusted_volume"] = adjusted_volume
+
+    with pytest.raises(ValueError):
+        validate_provider_stock_window(
+            "7203",
+            [row],
+            {"start": "2026-02-10", "end": "2026-02-10"},
+            _metadata(),
+        )
+
+
+def test_validate_provider_stock_window_rejects_fractional_raw_volume() -> None:
+    row = _row("2026-02-10")
+    row["volume"] = 1_000.5
+
+    with pytest.raises(ValueError, match="raw volume must be integral"):
+        validate_provider_stock_window(
+            "7203",
+            [row],
+            {"start": "2026-02-10", "end": "2026-02-10"},
+            _metadata(),
+        )
 
 
 def test_validate_provider_stock_window_rejects_drift_beyond_provider_rounding() -> None:

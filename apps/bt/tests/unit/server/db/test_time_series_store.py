@@ -312,6 +312,75 @@ def test_direct_store_stock_data_ohlcv_is_not_nullable(tmp_path: Path) -> None:
         store.close()
 
 
+def test_stock_data_adjusted_volume_preserves_fractional_provider_value_in_parquet(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "market-timeseries" / "market.duckdb"
+    parquet_dir = tmp_path / "market-timeseries" / "parquet"
+    store = open_time_series_store(
+        duckdb_path=str(db_path),
+        parquet_dir=str(parquet_dir),
+    )
+    first = _stock_row_for("2026-02-10")
+    first.update(
+        volume=8_730_892,
+        adjusted_open=100.0,
+        adjusted_high=200.0,
+        adjusted_low=100.0,
+        adjusted_close=200.0,
+        adjusted_volume=87_308.9,
+    )
+    second = _stock_row_for("2026-02-11")
+    second["adjustment_factor"] = 100.0
+
+    _publish_stock_data(store, [first, second])
+    store.index_stock_data()
+    store.close()
+
+    assert _query_rows(
+        db_path,
+        "SELECT adjusted_volume FROM stock_data_raw WHERE date = '2026-02-10'",
+    ) == [(87_308.9,)]
+    assert _query_rows(
+        db_path,
+        "SELECT volume FROM stock_data WHERE date = '2026-02-10'",
+    ) == [(87_308.9,)]
+    assert _query_rows(
+        db_path,
+        f"""
+        SELECT adjusted_volume
+        FROM read_parquet('{parquet_dir / "stock_data_raw" / "*" / "*.parquet"}')
+        WHERE date = DATE '2026-02-10'
+        """,
+    ) == [(87_308.9,)]
+    assert _query_rows(
+        db_path,
+        f"""
+        SELECT volume
+        FROM read_parquet('{parquet_dir / "stock_data" / "*" / "*.parquet"}')
+        WHERE date = DATE '2026-02-10'
+        """,
+    ) == [(87_308.9,)]
+
+
+def test_detect_stock_provider_drift_detects_fractional_factor_one_volume_drift(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    baseline = _stock_row()
+    _publish_stock_data(store, [baseline])
+    tolerated = dict(baseline, adjusted_volume=100.04)
+    drifted = dict(baseline, adjusted_volume=100.9)
+
+    assert store.detect_stock_provider_drift([tolerated]) == frozenset()
+    assert store.detect_stock_provider_drift([drifted]) == frozenset({"7203"})
+
+    store.close()
+
+
 def test_create_time_series_store_returns_none_when_duckdb_unavailable(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
