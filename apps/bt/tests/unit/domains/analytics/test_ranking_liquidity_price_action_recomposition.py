@@ -10,6 +10,9 @@ from src.domains.analytics.ranking_liquidity_price_action_recomposition import (
     run_ranking_liquidity_price_action_recomposition_research,
     write_ranking_liquidity_price_action_recomposition_bundle,
 )
+from tests.unit.domains.analytics.daily_ranking_market_v5_fixture import (
+    refresh_daily_ranking_provider_window,
+)
 from tests.unit.domains.analytics.test_ranking_color_evidence import (
     _build_ranking_color_db,
 )
@@ -185,27 +188,49 @@ def _build_recomposition_db(db_path: Path) -> Path:
         "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?)",
         sector_rows,
     )
+    conn.execute("ALTER TABLE statements ADD COLUMN sales DOUBLE")
+    conn.execute("ALTER TABLE statements ADD COLUMN type_of_document TEXT")
+    conn.executemany(
+        "INSERT INTO statements VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            (
+                code,
+                f"statement-{code}",
+                "2023-05-15",
+                "2023-05-15T15:00:00+09:00",
+                "2023-03-31",
+                "FY",
+                sales,
+                "FinancialStatements",
+            )
+            for code, sales in (
+                ("1111", 300_000_000.0),
+                ("2222", 100_000_000.0),
+                ("3333", 100_000_000.0),
+                ("4444", 120_000_000.0),
+                ("5555", 150_000_000.0),
+                ("6666", 80_000_000.0),
+            )
+        ],
+    )
     conn.execute(
         """
-        CREATE TABLE statements (
-            code TEXT,
-            disclosed_date TEXT,
-            sales DOUBLE,
-            type_of_current_period TEXT,
-            type_of_document TEXT
-        )
+        INSERT INTO statement_metrics_adjusted
+        SELECT statement.code, statement.statement_id, statement.disclosed_date,
+               statement.disclosed_at, statement.period_end,
+               statement.type_of_current_period,
+               state.fundamentals_adjustment_basis_date,
+               state.source_fingerprint
+        FROM statements AS statement
+        JOIN current_basis_fundamentals_state AS state USING (code)
         """
     )
-    conn.executemany(
-        "INSERT INTO statements VALUES (?, ?, ?, ?, ?)",
-        [
-            ("1111", "2023-05-15", 300_000_000.0, "FY", "FinancialStatements"),
-            ("2222", "2023-05-15", 100_000_000.0, "FY", "FinancialStatements"),
-            ("3333", "2023-05-15", 100_000_000.0, "FY", "FinancialStatements"),
-            ("4444", "2023-05-15", 120_000_000.0, "FY", "FinancialStatements"),
-            ("5555", "2023-05-15", 150_000_000.0, "FY", "FinancialStatements"),
-            ("6666", "2023-05-15", 80_000_000.0, "FY", "FinancialStatements"),
-        ],
+    conn.execute(
+        """
+        UPDATE current_basis_fundamentals_state
+        SET statement_count = 1
+        WHERE code IN ('1111', '2222', '3333', '4444', '5555', '6666')
+        """
     )
     conn.execute(
         """
@@ -237,15 +262,36 @@ def _build_recomposition_db(db_path: Path) -> Path:
             open = shaped.close * 0.995,
             high = shaped.close * 1.01,
             low = shaped.close * 0.99,
-            volume = 50000000 + CAST(strftime(sd.date::DATE, '%j') AS BIGINT)
+            volume = 50000000 + CAST(strftime(sd.date::DATE, '%j') AS BIGINT),
+            adjusted_close = shaped.close,
+            adjusted_open = shaped.close * 0.995,
+            adjusted_high = shaped.close * 1.01,
+            adjusted_low = shaped.close * 0.99,
+            adjusted_volume = 50000000
+                + CAST(strftime(sd.date::DATE, '%j') AS BIGINT)
         FROM shaped
         WHERE sd.code = shaped.code
           AND sd.date = shaped.date
         """
     )
-    conn.execute("UPDATE stock_data_raw SET volume = 1 WHERE code = '3333'")
     conn.execute(
-        "UPDATE stock_data SET open = 1, high = 1, low = 1, close = 1, volume = 0"
+        "UPDATE stock_data_raw SET volume = 1, adjusted_volume = 1 "
+        "WHERE code = '3333'"
     )
+    conn.execute(
+        """
+        UPDATE stock_data AS consumer
+        SET open = raw.adjusted_open, high = raw.adjusted_high,
+            low = raw.adjusted_low, close = raw.adjusted_close,
+            volume = raw.adjusted_volume
+        FROM stock_data_raw AS raw
+        WHERE consumer.code = raw.code
+          AND CAST(consumer.date AS DATE) = raw.date
+        """
+    )
+    for (code,) in conn.execute(
+        "SELECT DISTINCT code FROM stock_data_raw ORDER BY code"
+    ).fetchall():
+        refresh_daily_ranking_provider_window(conn, code=str(code))
     conn.close()
     return db_path

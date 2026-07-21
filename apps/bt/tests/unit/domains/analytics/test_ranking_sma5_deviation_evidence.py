@@ -100,29 +100,50 @@ def _run_test_research(db_path: Path) -> RankingSma5DeviationEvidenceResult:
 
 def _add_statements_fixture(db_path: Path) -> None:
     conn = duckdb.connect(str(db_path))
-    conn.execute(
-        """
-        CREATE TABLE statements (
-            code TEXT,
-            disclosed_date TEXT,
-            sales DOUBLE,
-            type_of_current_period TEXT,
-            type_of_document TEXT
-        )
-        """
-    )
+    conn.execute("ALTER TABLE statements ADD COLUMN sales DOUBLE")
+    conn.execute("ALTER TABLE statements ADD COLUMN type_of_document TEXT")
     codes = [
         str(row[0])
         for row in conn.execute("SELECT DISTINCT code FROM stock_data_raw").fetchall()
     ]
     conn.executemany(
-        "INSERT INTO statements VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO statements VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         [
-            (code, "2023-12-31", 1000000000.0 + index * 10000000.0, "FY", "")
+            (
+                code,
+                f"statement-{code}",
+                "2023-12-31",
+                "2023-12-31T15:00:00+09:00",
+                "2023-12-31",
+                "FY",
+                1000000000.0 + index * 10000000.0,
+                "",
+            )
             for index, code in enumerate(codes)
         ],
     )
     conn.execute(
-        "UPDATE stock_data SET open = 1, high = 1, low = 1, close = 1, volume = 0"
+        """
+        INSERT INTO statement_metrics_adjusted
+        SELECT statement.code, statement.statement_id, statement.disclosed_date,
+               statement.disclosed_at, statement.period_end,
+               statement.type_of_current_period,
+               state.fundamentals_adjustment_basis_date,
+               state.source_fingerprint
+        FROM statements AS statement
+        JOIN current_basis_fundamentals_state AS state USING (code)
+        """
+    )
+    conn.execute(
+        """
+        UPDATE current_basis_fundamentals_state
+        SET statement_count = statement_counts.statement_count
+        FROM (
+            SELECT code, count(*) AS statement_count
+            FROM statements
+            GROUP BY code
+        ) AS statement_counts
+        WHERE current_basis_fundamentals_state.code = statement_counts.code
+        """
     )
     conn.close()

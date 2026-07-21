@@ -14,6 +14,9 @@ from src.domains.analytics.ranking_sma5_position_state_evidence import (
 from tests.unit.domains.analytics.test_ranking_sma5_count_long_evidence import (
     _build_sma5_count_long_db,
 )
+from tests.unit.domains.analytics.daily_ranking_market_v5_fixture import (
+    refresh_daily_ranking_provider_window,
+)
 
 
 def test_sma5_position_state_evidence_builds_position_tables(
@@ -202,13 +205,37 @@ def _build_sma5_position_state_db(db_path: Path) -> Path:
             conn.execute(
                 """
                 UPDATE stock_data_raw
-                SET open = ?, high = ?, low = ?, close = ?
+                SET open = ?, high = ?, low = ?, close = ?,
+                    adjusted_open = ?, adjusted_high = ?, adjusted_low = ?,
+                    adjusted_close = ?
                 WHERE code = ? AND date = ?
                 """,
-                [open_price, high, low, close, code, date],
+                [
+                    open_price,
+                    high,
+                    low,
+                    close,
+                    open_price,
+                    high,
+                    low,
+                    close,
+                    code,
+                    date,
+                ],
             )
     conn.execute(
-        "UPDATE stock_data SET open = 1, high = 1, low = 1, close = 1, volume = 0"
+        """
+        UPDATE stock_data AS consumer
+        SET open = raw.adjusted_open, high = raw.adjusted_high,
+            low = raw.adjusted_low, close = raw.adjusted_close,
+            volume = raw.adjusted_volume
+        FROM stock_data_raw AS raw
+        WHERE consumer.code = raw.code
+          AND CAST(consumer.date AS DATE) = raw.date
+          AND raw.code IN ('1111', '2222', '3333', '4444', '5555', '6666')
+        """
     )
+    for code in target_codes:
+        refresh_daily_ranking_provider_window(conn, code=code)
     conn.close()
     return db_path

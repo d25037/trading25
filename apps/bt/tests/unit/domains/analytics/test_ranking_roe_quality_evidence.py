@@ -114,19 +114,11 @@ def _run_test_research(db_path: Path) -> RankingRoeQualityEvidenceResult:
 def _build_roe_quality_db(db_path: Path) -> Path:
     _build_forecast_op_growth_db(db_path)
     conn = duckdb.connect(str(db_path))
+    conn.execute("ALTER TABLE statement_metrics_adjusted ADD COLUMN adjusted_eps DOUBLE")
+    conn.execute("ALTER TABLE statement_metrics_adjusted ADD COLUMN adjusted_bps DOUBLE")
     conn.execute(
-        """
-        CREATE TABLE statement_metrics_adjusted (
-            code TEXT,
-            disclosed_date TEXT,
-            period_end TEXT,
-            period_type TEXT,
-            adjusted_eps DOUBLE,
-            adjusted_bps DOUBLE,
-            adjusted_forecast_eps DOUBLE,
-            basis_version TEXT
-        )
-        """
+        "ALTER TABLE statement_metrics_adjusted "
+        "ADD COLUMN adjusted_forecast_eps DOUBLE"
     )
     quality_rows = [
         ("1111", "2023-05-15", "2023-03-31", "FY", 25.0, 100.0, 30.0, "unit"),
@@ -149,16 +141,46 @@ def _build_roe_quality_db(db_path: Path) -> Path:
         )
         for extra_index in range(60)
     )
+    conn.execute(
+        """
+        CREATE TEMP TABLE quality_fixture (
+            code TEXT, disclosed_date DATE, period_end DATE, period_type TEXT,
+            adjusted_eps DOUBLE, adjusted_bps DOUBLE,
+            adjusted_forecast_eps DOUBLE, source_label TEXT
+        )
+        """
+    )
     conn.executemany(
-        "INSERT INTO statement_metrics_adjusted VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        quality_rows,
+        "INSERT INTO quality_fixture VALUES (?, ?, ?, ?, ?, ?, ?, ?)", quality_rows
     )
     conn.execute(
         """
-        UPDATE statement_metrics_adjusted AS metrics
-        SET basis_version = basis.basis_id
-        FROM stock_adjustment_bases basis
-        WHERE basis.code = metrics.code
+        INSERT INTO statements
+        SELECT quality.code, 'quality-' || quality.code, quality.disclosed_date,
+               CAST(quality.disclosed_date AS VARCHAR) || 'T15:00:00+09:00',
+               quality.period_end, quality.period_type
+        FROM quality_fixture AS quality
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO statement_metrics_adjusted
+        SELECT quality.code, 'quality-' || quality.code, quality.disclosed_date,
+               CAST(quality.disclosed_date AS VARCHAR) || 'T15:00:00+09:00',
+               quality.period_end, quality.period_type,
+               state.fundamentals_adjustment_basis_date,
+               state.source_fingerprint,
+               quality.adjusted_eps, quality.adjusted_bps,
+               quality.adjusted_forecast_eps
+        FROM quality_fixture AS quality
+        JOIN current_basis_fundamentals_state AS state USING (code)
+        """
+    )
+    conn.execute(
+        """
+        UPDATE current_basis_fundamentals_state
+        SET statement_count = 1
+        WHERE code IN (SELECT code FROM quality_fixture)
         """
     )
     conn.close()
