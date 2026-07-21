@@ -833,6 +833,7 @@ def _build_daily_ranking_event_time_prices(
     raw_code = normalize_code_sql("raw.code")
     master_code = normalize_code_sql("smd.code")
     valuation_code = normalize_code_sql("dv.code")
+    state_code = normalize_code_sql("state.code")
     window_code = normalize_code_sql("provider.code")
 
     raw_conditions: list[str] = []
@@ -942,10 +943,16 @@ def _build_daily_ranking_event_time_prices(
          AND signal.date <= CAST(provider.provider_as_of AS DATE)
         WHERE regexp_full_match(provider.source_fingerprint, '[0-9a-f]{{64}}')
           AND (
-              SELECT count(*) FROM daily_valuation dv
+              SELECT count(*)
+              FROM daily_valuation dv
+              JOIN current_basis_fundamentals_state state
+                ON {state_code} = signal.code
               WHERE {valuation_code} = signal.code
                 AND CAST(dv.date AS DATE) = signal.date
                 AND CAST(dv.price_basis_date AS DATE) = signal.date
+                AND dv.fundamentals_adjustment_basis_date =
+                    state.fundamentals_adjustment_basis_date
+                AND dv.source_fingerprint = state.source_fingerprint
           ) = 1
         """
     )
@@ -1260,6 +1267,7 @@ def _build_price_relation_result(
             f"forward_outcome_completion_date_{horizon}d",
             f"forward_close_return_{horizon}d_pct",
             f"forward_close_excess_return_{horizon}d_pct",
+            f"forward_close_n225_excess_return_{horizon}d_pct",
             f"completion_basis_id_{horizon}d",
         )
     )
@@ -1320,7 +1328,7 @@ def _build_price_relation_result(
             (
                 f"{projection_hash}\n{signal_basis_hash}\n{signal_segment_hash}\n"
                 f"{completion_basis_hash}\n{completion_segment_hash}\n"
-                f"{forward_outcome_hash}"
+                f"{forward_outcome_hash}\n{next_open_outcome_hash}"
             ).encode("utf-8")
         ).hexdigest(),
         signal_basis_policy=(
@@ -1565,6 +1573,7 @@ def _validate_research_provider_vintage(
               ON {state_code} = signal.code
             WHERE {normalize_code_sql("valuation.code")} = signal.code
               AND CAST(valuation.date AS DATE) = signal.date
+              AND CAST(valuation.price_basis_date AS DATE) = signal.date
               AND valuation.fundamentals_adjustment_basis_date =
                   state.fundamentals_adjustment_basis_date
               AND valuation.source_fingerprint = state.source_fingerprint

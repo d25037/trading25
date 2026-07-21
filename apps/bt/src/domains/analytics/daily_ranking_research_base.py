@@ -991,6 +991,7 @@ def _materialize_signal_panel(
 ) -> None:
     market_code = normalize_code_sql("smd.code")
     valuation_code = normalize_code_sql("valuation.code")
+    valuation_state_code = normalize_code_sql("valuation_state.code")
     market_case = _market_scope_case_sql("market_code", "market_name")
     benchmark_conditions: list[str] = []
     benchmark_params: list[date] = []
@@ -1105,10 +1106,15 @@ def _materialize_signal_panel(
                 END AS n225_recent_return_60d_pct
             FROM {signal_prices} price
             JOIN market_master market USING (code, date)
+            JOIN current_basis_fundamentals_state valuation_state
+              ON {valuation_state_code} = price.code
             JOIN daily_valuation valuation
              ON {valuation_code} = price.code
              AND CAST(valuation.date AS DATE) = price.date
              AND CAST(valuation.price_basis_date AS DATE) = price.date
+             AND valuation.fundamentals_adjustment_basis_date =
+                 valuation_state.fundamentals_adjustment_basis_date
+             AND valuation.source_fingerprint = valuation_state.source_fingerprint
             LEFT JOIN topix_ranked topix USING (date)
             LEFT JOIN n225_ranked n225 USING (date)
             WHERE {market_filter}

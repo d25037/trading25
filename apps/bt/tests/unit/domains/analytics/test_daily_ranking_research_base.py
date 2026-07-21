@@ -486,6 +486,34 @@ def test_namespaced_builds_coexist_with_explicit_unique_date_schemas(
         conn.close()
 
 
+def test_signal_panel_uses_only_the_exact_current_lineage_valuation_row(
+    tmp_path: Path,
+) -> None:
+    conn = _build_market_v5_research_fixture(tmp_path / "market.duckdb")
+    try:
+        signal_date = date(2024, 4, 4)
+        conn.execute(
+            "INSERT INTO daily_valuation VALUES "
+            "('1111', ?, ?, 999.0, 999.0, 999.0, 999.0, 999.0, "
+            "999999999.0, 999999999.0, ?, 'stale-fingerprint')",
+            [signal_date, signal_date, signal_date],
+        )
+
+        relations = build_daily_ranking_research_base(
+            conn,
+            _request("exact_current_valuation"),
+        )
+        rows = conn.execute(
+            f"SELECT per FROM {relations.signal_panel.name} "
+            "WHERE code = '1111' AND date = ?",
+            [signal_date],
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert rows == [(10.0,)]
+
+
 def test_base_build_issues_history_from_one_event_time_projection_call(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

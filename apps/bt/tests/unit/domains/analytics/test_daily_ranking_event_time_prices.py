@@ -390,6 +390,89 @@ def test_next_open_uses_stock_entry_date_and_nulls_missing_topix_endpoint(
     assert missing_row == (pytest.approx(0.0), None)
 
 
+def test_research_prices_reject_split_daily_valuation_witnesses(
+    tmp_path: Path,
+) -> None:
+    conn = _build_market_v5_fixture(tmp_path / "market.duckdb")
+    try:
+        conn.execute(
+            "UPDATE daily_valuation SET source_fingerprint = 'stale' "
+            "WHERE date = '2024-01-04'"
+        )
+        conn.execute(
+            "INSERT INTO daily_valuation VALUES "
+            "('1111', '2024-01-04', '2024-01-03', '2024-01-08', "
+            "'fundamentals-1111')"
+        )
+
+        with pytest.raises(RuntimeError, match="current fundamentals lineage"):
+            build_daily_ranking_event_time_prices(
+                conn,
+                _generic_price_request("split_valuation_witness"),
+            )
+    finally:
+        conn.close()
+
+
+def test_n225_outcome_changes_forward_and_aggregate_lineage_hashes(
+    tmp_path: Path,
+) -> None:
+    conn = _build_market_v5_fixture(tmp_path / "market.duckdb")
+    try:
+        before = build_daily_ranking_event_time_prices(
+            conn,
+            _generic_price_request("n225_hash_before"),
+        )
+        before_outcome = conn.execute(
+            f"SELECT forward_close_n225_excess_return_1d_pct "
+            f"FROM {before.forward_outcomes}"
+        ).fetchone()[0]
+        conn.execute(
+            "UPDATE indices_data SET close = 900 "
+            "WHERE code = 'N225_UNDERPX' AND date = '2024-01-08'"
+        )
+        after = build_daily_ranking_event_time_prices(
+            conn,
+            _generic_price_request("n225_hash_after"),
+        )
+        after_outcome = conn.execute(
+            f"SELECT forward_close_n225_excess_return_1d_pct "
+            f"FROM {after.forward_outcomes}"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    assert after_outcome != before_outcome
+    assert after.lineage.forward_outcome_sha256 != before.lineage.forward_outcome_sha256
+    assert after.lineage.price_projection_sha256 != before.lineage.price_projection_sha256
+
+
+def test_next_open_outcome_changes_aggregate_lineage_hash(
+    tmp_path: Path,
+) -> None:
+    conn = _build_market_v5_fixture(tmp_path / "market.duckdb")
+    try:
+        before = build_daily_ranking_event_time_prices(
+            conn,
+            _generic_price_request("next_open_hash_before"),
+        )
+        conn.execute(
+            "UPDATE topix_data SET open = 90 WHERE date = '2024-01-08'"
+        )
+        after = build_daily_ranking_event_time_prices(
+            conn,
+            _generic_price_request("next_open_hash_after"),
+        )
+    finally:
+        conn.close()
+
+    assert (
+        after.lineage.next_open_outcome_sha256
+        != before.lineage.next_open_outcome_sha256
+    )
+    assert after.lineage.price_projection_sha256 != before.lineage.price_projection_sha256
+
+
 @pytest.mark.parametrize(
     ("factor", "adjusted_close", "adjusted_volume", "expected_return"),
     [(0.5, 50.0, 2_000, 20.0), (2.0, 200.0, 500, -70.0)],
