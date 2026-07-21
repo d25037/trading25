@@ -364,6 +364,19 @@ def test_current_basis_source_diagnostics_detect_missing_stale_and_wrong_basis(
     assert stale["wrongBasisAdjustedStatementRows"] == 1
 
 
+def test_provider_adjusted_diagnostics_detect_factor_only_projection_drift(
+    market_db: MarketDb,
+) -> None:
+    _seed_current_sources(market_db)
+    market_db._execute(
+        "UPDATE stock_data SET adjustment_factor = 0.5 WHERE code = '7203'"
+    )
+
+    diagnostics = market_db.get_adjusted_metrics_source_diagnostics()
+
+    assert diagnostics["providerAdjustedMismatchCount"] == 1
+
+
 def test_provider_vintage_recomputes_window_and_event_fingerprints(
     market_db: MarketDb,
 ) -> None:

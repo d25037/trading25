@@ -1067,6 +1067,93 @@ def test_replace_stock_provider_window_prunes_coverage_and_is_idempotent(
     store.close()
 
 
+@pytest.mark.parametrize("corruption", ["delete", "update"])
+def test_replace_stock_provider_window_repairs_missing_or_corrupt_consumer_projection(
+    tmp_path: Path,
+    corruption: str,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    row = _provider_stock_row("2026-02-10", factor=0.5)
+    metadata = {
+        "provider_plan": "premium",
+        "provider_as_of": "2026-02-10",
+        "provider_source_fingerprint": provider_stock_source_fingerprint([row]),
+    }
+    store.replace_stock_provider_window(
+        "7203", [row], {"start": "2026-02-10", "end": "2026-02-10"}, metadata
+    )
+    store.index_stock_data()
+    raw_before = repr(
+        store._conn.execute(  # noqa: SLF001
+            "SELECT * FROM stock_data_raw ORDER BY code, date"
+        ).fetchall()
+    ).encode()
+    raw_created_at_before = store._conn.execute(  # noqa: SLF001
+        "SELECT created_at FROM stock_data_raw WHERE code = '7203'"
+    ).fetchone()
+
+    if corruption == "delete":
+        store._conn.execute("DELETE FROM stock_data WHERE code = '7203'")  # noqa: SLF001
+        corrupt_projection: list[tuple[object, ...]] = []
+    else:
+        store._conn.execute(  # noqa: SLF001
+            "UPDATE stock_data SET close = 1.5, adjustment_factor = 0.25 "
+            "WHERE code = '7203'"
+        )
+        corrupt_projection = [
+            (
+                "7203",
+                "2026-02-10",
+                1.0,
+                2.0,
+                1.0,
+                1.5,
+                100,
+                0.25,
+                "2026-02-10T00:00:00+00:00",
+            )
+        ]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT * FROM stock_data WHERE code = '7203'"
+    ).fetchall() == corrupt_projection
+
+    result = store.replace_stock_provider_window(
+        "7203", [row], {"start": "2026-02-10", "end": "2026-02-10"}, metadata
+    )
+
+    assert result.mutated_rows == 0
+    assert repr(
+        store._conn.execute(  # noqa: SLF001
+            "SELECT * FROM stock_data_raw ORDER BY code, date"
+        ).fetchall()
+    ).encode() == raw_before
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT created_at FROM stock_data_raw WHERE code = '7203'"
+    ).fetchone() == raw_created_at_before
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT * FROM stock_data WHERE code = '7203'"
+    ).fetchall() == [
+        (
+            "7203",
+            "2026-02-10",
+            1.0,
+            2.0,
+            1.0,
+            2.0,
+            100,
+            0.5,
+            "2026-02-10T00:00:00+00:00",
+        )
+    ]
+    assert store._dirty_tables == {"stock_data"}  # noqa: SLF001
+    assert store._dirty_partition_dates.get("stock_data_raw", set()) == set()  # noqa: SLF001
+    assert store._dirty_partition_dates["stock_data"] == {"2026-02-10"}  # noqa: SLF001
+    store.close()
+
+
 def test_replace_stock_provider_window_marks_every_rewritten_price_partition_dirty(
     tmp_path: Path,
 ) -> None:

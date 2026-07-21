@@ -406,7 +406,9 @@ def get_adjusted_metrics_source_diagnostics(
                        OR raw.adjusted_high IS DISTINCT FROM adjusted.high
                        OR raw.adjusted_low IS DISTINCT FROM adjusted.low
                        OR raw.adjusted_close IS DISTINCT FROM adjusted.close
-                       OR raw.adjusted_volume IS DISTINCT FROM adjusted.volume AS invalid
+                       OR raw.adjusted_volume IS DISTINCT FROM adjusted.volume
+                       OR raw.adjustment_factor IS DISTINCT FROM adjusted.adjustment_factor
+                       AS invalid
                 FROM stock_data_raw AS raw
                 FULL OUTER JOIN stock_data AS adjusted USING (code, date)
             )

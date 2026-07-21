@@ -29,6 +29,7 @@ from src.infrastructure.db.market.market_writer_resources import (
     MarketWriterSession,
     MarketWriterResourceFactory,
 )
+from src.shared.provider_stock_window import ProviderStockStage
 
 
 def _snapshot(
@@ -216,7 +217,11 @@ def _seed_healthy_v5_current_basis(session: MarketWriterSession) -> None:
                 "adjusted_volume": 100,
             }
         ],
-        provider_plan="premium",
+        stage=ProviderStockStage(
+            provider_plan="premium",
+            provider_as_of="2024-12-30",
+            provider_codes=frozenset({"7203"}),
+        ),
     )
     session.handles.time_series_store.publish_statements(
         [
@@ -682,6 +687,51 @@ def test_source_validation_reuses_exact_adjusted_metric_diagnostics(
             match="Market v5 current-basis validation failed",
         ):
             compactor.maintain(authority)
+
+
+def test_source_validation_rejects_projection_factor_drift_before_staging(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with _managed_v5_writer_session(tmp_path) as session:
+        _seed_healthy_v5_current_basis(session)
+        market_db = session.handles.market_db
+        market_db._execute(
+            "UPDATE stock_data SET adjustment_factor = 0.5 WHERE code = '7203'"
+        )
+        token = session.close_writable_handles()
+        authority = session.authorize_maintenance(token)
+        source = authority.identity.path
+        original = (source.stat().st_ino, source.read_bytes())
+        staging_attempted = False
+
+        def fail_if_staging_is_attempted(*_args: object, **_kwargs: object) -> None:
+            nonlocal staging_attempted
+            staging_attempted = True
+            raise AssertionError("compaction staging must not be created")
+
+        monkeypatch.setattr(
+            compaction_module,
+            "_create_candidate_staging",
+            fail_if_staging_is_attempted,
+        )
+        compactor = MarketCompactor(
+            size_reader=lambda _path: _hard_snapshot(),
+            available_bytes=lambda _path: required_compaction_capacity(
+                source.stat().st_size
+            ),
+        )
+
+        with pytest.raises(
+            MarketCompactionError,
+            match="Market v5 current-basis validation failed",
+        ):
+            compactor.maintain(authority)
+
+        assert staging_attempted is False
+        assert (source.stat().st_ino, source.read_bytes()) == original
+        assert not list(source.parent.glob(".market-maintenance-*"))
+        assert not (source.parent / ".market-maintenance.v1.jsonl").exists()
 
 
 def test_source_validation_reuses_invalid_current_basis_provider_state_snapshot(

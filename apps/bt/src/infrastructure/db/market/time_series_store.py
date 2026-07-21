@@ -1065,6 +1065,20 @@ class DuckDbParquetTimeSeriesStore:
             result = self._classify_provider_window_delta(
                 existing_rows=existing_rows,
                 desired_rows=normalized_rows,
+                columns=raw_columns,
+            )
+            existing_projection_rows = [
+                dict(zip(projection_columns, row, strict=True))
+                for row in self._conn.execute(
+                    f"SELECT {', '.join(projection_columns)} "
+                    "FROM stock_data WHERE code = ?",
+                    [normalized_code],
+                ).fetchall()
+            ]
+            projection_result = self._classify_provider_window_delta(
+                existing_rows=existing_projection_rows,
+                desired_rows=projected_rows,
+                columns=projection_columns,
             )
             existing_events = self._conn.execute(
                 """
@@ -1113,6 +1127,7 @@ class DuckDbParquetTimeSeriesStore:
             metadata_changed = existing_metadata != metadata_values
             if (
                 not result.mutated_rows
+                and not projection_result.mutated_rows
                 and not events_changed
                 and not ledger_changed
                 and not metadata_changed
@@ -1121,23 +1136,24 @@ class DuckDbParquetTimeSeriesStore:
 
             relations: list[tuple[str, pd.DataFrame]] = []
             if result.mutated_rows:
-                relations.extend(
+                relations.append(
                     (
-                        (
-                            self._STOCK_DATA_RAW_UPSERT_SPEC.relation_name,
-                            pd.DataFrame.from_records(
-                                (
-                                    {column: row.get(column) for column in raw_columns}
-                                    for row in normalized_rows
-                                ),
-                                columns=raw_columns,
+                        self._STOCK_DATA_RAW_UPSERT_SPEC.relation_name,
+                        pd.DataFrame.from_records(
+                            (
+                                {column: row.get(column) for column in raw_columns}
+                                for row in normalized_rows
                             ),
+                            columns=raw_columns,
                         ),
-                        (
-                            self._STOCK_DATA_UPSERT_SPEC.relation_name,
-                            pd.DataFrame.from_records(
-                                projected_rows, columns=projection_columns
-                            ),
+                    )
+                )
+            if projection_result.mutated_rows:
+                relations.append(
+                    (
+                        self._STOCK_DATA_UPSERT_SPEC.relation_name,
+                        pd.DataFrame.from_records(
+                            projected_rows, columns=projection_columns
                         ),
                     )
                 )
@@ -1159,14 +1175,15 @@ class DuckDbParquetTimeSeriesStore:
                         "DELETE FROM stock_data_raw WHERE code = ?", [normalized_code]
                     )
                     self._conn.execute(
-                        "DELETE FROM stock_data WHERE code = ?", [normalized_code]
-                    )
-                    self._conn.execute(
                         f"""
                         INSERT INTO stock_data_raw ({", ".join(raw_columns)})
                         SELECT {", ".join(raw_columns)}
                         FROM {self._STOCK_DATA_RAW_UPSERT_SPEC.relation_name}
                         """
+                    )
+                if projection_result.mutated_rows:
+                    self._conn.execute(
+                        "DELETE FROM stock_data WHERE code = ?", [normalized_code]
                     )
                     self._conn.execute(
                         f"""
@@ -1241,12 +1258,18 @@ class DuckDbParquetTimeSeriesStore:
                 affected_dates = {
                     str(row["date"]) for row in (*existing_rows, *normalized_rows)
                 }
-                self._dirty_tables.update(("stock_data_raw", "stock_data"))
+                self._dirty_tables.add("stock_data_raw")
                 self._dirty_partition_dates.setdefault("stock_data_raw", set()).update(
                     affected_dates
                 )
+            if projection_result.mutated_rows:
+                affected_projection_dates = {
+                    str(row["date"])
+                    for row in (*existing_projection_rows, *projected_rows)
+                }
+                self._dirty_tables.add("stock_data")
                 self._dirty_partition_dates.setdefault("stock_data", set()).update(
-                    affected_dates
+                    affected_projection_dates
                 )
             if events_changed:
                 self._dirty_tables.add("stock_adjustment_events")
@@ -1258,10 +1281,11 @@ class DuckDbParquetTimeSeriesStore:
         *,
         existing_rows: list[dict[str, Any]],
         desired_rows: list[dict[str, Any]],
+        columns: tuple[str, ...],
     ) -> SemanticDeltaResult:
         semantic_columns = tuple(
             column
-            for column in cls._STOCK_DATA_RAW_UPSERT_SPEC.columns
+            for column in columns
             if column not in {"code", "date", "created_at"}
         )
         existing_by_date = {str(row["date"]): row for row in existing_rows}

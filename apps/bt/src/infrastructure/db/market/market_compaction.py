@@ -376,6 +376,7 @@ def _validate_current_basis_fundamentals(conn: Any) -> None:
         "missingDailyValuationRows",
         "extraDailyValuationRows",
         "wrongBasisDailyValuationRows",
+        "providerAdjustedMismatchCount",
     )
     if any(int(diagnostics.get(key, 0)) != 0 for key in invalid_diagnostics):
         raise MarketCompactionError("Market v5 current-basis validation failed")
