@@ -466,7 +466,7 @@ def build_event_time_signal_sql(request: EventTimeSignalRequest) -> EventTimeSig
             CROSS JOIN event_time_signal_config AS config
             WHERE raw.date = config.signal_date
         ),
-        event_time_signal_provider_rows AS (
+        event_time_signal_provider_rows_ranked AS (
             SELECT
                 {raw_code} AS normalized_code,
                 raw.code AS source_code,
@@ -474,10 +474,18 @@ def build_event_time_signal_sql(request: EventTimeSignalRequest) -> EventTimeSig
                 raw.open, raw.high, raw.low, raw.close, raw.volume,
                 raw.turnover_value, raw.adjustment_factor,
                 raw.adjusted_open, raw.adjusted_high, raw.adjusted_low,
-                raw.adjusted_close, raw.adjusted_volume
+                raw.adjusted_close, raw.adjusted_volume,
+                row_number() OVER (
+                    PARTITION BY {raw_code}, raw.date
+                    ORDER BY CASE WHEN raw.code = {raw_code} THEN 0 ELSE 1 END,
+                             length(raw.code), raw.code
+                ) AS alias_rank
             FROM stock_data_raw AS raw
             JOIN event_time_signal_codes AS signal
               ON signal.normalized_code = {raw_code}
+        ),
+        event_time_signal_provider_rows AS (
+            SELECT * FROM event_time_signal_provider_rows_ranked WHERE alias_rank = 1
         ),
         event_time_signal_provider_row_hashes AS (
             SELECT normalized_code, date, adjustment_factor,

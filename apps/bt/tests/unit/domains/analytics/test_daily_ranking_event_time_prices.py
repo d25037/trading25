@@ -159,6 +159,23 @@ def _build_market_v5_fixture(path: Path) -> duckdb.DuckDBPyConnection:
     return conn
 
 
+def _refresh_provider_window(conn: duckdb.DuckDBPyConnection) -> None:
+    columns = tuple(_provider_rows()[0])
+    raw_rows = conn.execute(
+        f"SELECT {', '.join(columns)} FROM stock_data_raw "
+        "QUALIFY row_number() OVER ("
+        "PARTITION BY CASE WHEN length(code) IN (5, 6) AND right(code, 1) = '0' "
+        "THEN left(code, length(code) - 1) ELSE code END, date "
+        "ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, length(code), code"
+        ") = 1 ORDER BY date"
+    ).fetchall()
+    rows = [dict(zip(columns, row, strict=True)) for row in raw_rows]
+    conn.execute(
+        "UPDATE stock_provider_windows SET source_fingerprint = ?",
+        [provider_stock_source_fingerprint(rows)],
+    )
+
+
 def test_event_time_signal_uses_provider_adjusted_rows_and_vintage(tmp_path: Path) -> None:
     conn = _build_market_v5_fixture(tmp_path / "market.duckdb")
     try:
@@ -180,6 +197,51 @@ def test_event_time_signal_uses_provider_adjusted_rows_and_vintage(tmp_path: Pat
     assert rows[0][2:7] == pytest.approx((50.0, 51.0, 49.0, 50.0, 2_000))
     assert rows[1][2:7] == pytest.approx((60.0, 61.0, 59.0, 60.0, 2_000))
     assert rows[1][-1].startswith("provider-v1:1111:2024-01-08:")
+
+
+@pytest.mark.parametrize(
+    ("column", "value", "expected_issue"),
+    [
+        (None, None, None),
+        ("close", 999.0, "raw_alias_conflict"),
+        ("adjustment_factor", 2.0, "raw_alias_conflict"),
+    ],
+)
+def test_event_time_signal_normalized_raw_aliases_fail_only_on_conflict(
+    tmp_path: Path,
+    column: str | None,
+    value: float | None,
+    expected_issue: str | None,
+) -> None:
+    conn = _build_market_v5_fixture(tmp_path / "market.duckdb")
+    try:
+        conn.execute(
+            "INSERT INTO stock_data_raw SELECT '11110', date, open, high, low, close, "
+            "volume, turnover_value, adjustment_factor, adjusted_open, adjusted_high, "
+            "adjusted_low, adjusted_close, adjusted_volume FROM stock_data_raw"
+        )
+        if column is not None:
+            conn.execute(
+                f"UPDATE stock_data_raw SET {column} = ? "
+                "WHERE code = '11110' AND date = '2024-01-08'",
+                [value],
+            )
+        _refresh_provider_window(conn)
+        built = build_event_time_signal_sql(
+            EventTimeSignalRequest(
+                signal_date="2024-01-08",
+                start_date="2024-01-04",
+                market_codes=("0111",),
+            )
+        )
+        issues = conn.execute(built.validation_sql, built.validation_params).fetchall()
+    finally:
+        conn.close()
+
+    if expected_issue is None:
+        assert issues == []
+    else:
+        assert expected_issue in {str(row[0]) for row in issues}
 
 
 @pytest.mark.parametrize(
