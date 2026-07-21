@@ -170,8 +170,9 @@ uv sync
 # バックテスト実行
 uv run bt backtest buy_and_hold
 
-# パラメータ最適化
-uv run bt backtest sma_cross --optimize
+# パラメータ最適化（下記 XDG strategy に top-level
+# `optimization.parameter_ranges` を保存済みであること）
+uv run bt backtest experimental/sma_cross_opt --optimize
 
 # 戦略一覧
 uv run bt list
@@ -183,6 +184,8 @@ uv run bt validate buy_and_hold
 uv run bt server
 uv run bt server --port 3002 --reload
 ```
+
+`--optimize` は `~/.local/share/trading25/strategies/experimental/sma_cross_opt.yaml` のような XDG strategy に、top-level `optimization.parameter_ranges` を保存してから実行する。`reference/sma_cross` にはその block が無いため、そのまま `--optimize` しない。
 
 ### ポートフォリオCLI
 `apps/bt` の `portfolio` コマンドは廃止済み。ポートフォリオ操作は `apps/ts/packages/web` の
