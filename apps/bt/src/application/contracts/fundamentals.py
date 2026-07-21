@@ -281,11 +281,11 @@ class DailyValuationDataPoint(BaseModel):
     forwardSalesSource: Literal["revised", "fy"] | None = Field(
         None, description="Forward sales source"
     )
-    priceBasisDate: str | None = Field(
-        None, description="Adjusted price basis date for this valuation row"
+    fundamentalsAdjustmentBasisDate: str | None = Field(
+        None, description="Fundamentals adjustment basis date for this valuation row"
     )
-    basisVersion: str | None = Field(
-        None, description="Adjusted valuation materialization basis version"
+    providerAsOf: str | None = Field(
+        None, description="Provider snapshot timestamp for this valuation row"
     )
 
 
@@ -401,11 +401,11 @@ class FundamentalsComputeResponse(BaseModel):
     dailyValuation: list[DailyValuationDataPoint] | None = Field(
         None, description="Daily PER/PBR time-series"
     )
-    priceBasisDate: str | None = Field(
-        None, description="Adjusted price basis date used by daily valuation"
+    fundamentalsAdjustmentBasisDate: str | None = Field(
+        None, description="Fundamentals adjustment basis date used by daily valuation"
     )
-    valuationBasisVersion: str | None = Field(
-        None, description="Adjusted valuation materialization basis version"
+    providerAsOf: str | None = Field(
+        None, description="Provider snapshot timestamp used by daily valuation"
     )
     liquidityProfile: LiquidityProfile | None = Field(
         None,

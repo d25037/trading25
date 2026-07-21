@@ -19,12 +19,12 @@ from src.application.services.listed_market_targets import (
 from src.application.services.intraday_schedule import build_intraday_freshness
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.infrastructure.db.market.market_db import METADATA_KEYS
+from src.shared.provider_stock_window import validate_provider_plan
 from src.shared.contracts import market_maintenance as maintenance_contracts
 from src.infrastructure.db.market.market_maintenance_evidence import (
     read_market_maintenance_evidence,
 )
 from src.application.contracts.market_data_plane import (
-    AdjustedMetricsStats,
     DateRange,
     FundamentalsStats,
     IndicesStats,
@@ -34,6 +34,7 @@ from src.application.contracts.market_data_plane import (
     MarketStatsResponse,
     MarketSchemaStats,
     Options225Stats,
+    ProviderVintageStats,
     StockMasterCoverageStats,
     StockDataStats,
     StockMinuteDataStats,
@@ -52,12 +53,15 @@ class MarketDbStatsLike(Protocol):
     def get_stats(self) -> dict[str, int]: ...
     def get_market_schema_version(self) -> int | None: ...
     def is_market_schema_current(self) -> bool: ...
+    def is_reset_before_sync_eligible(self) -> bool: ...
     def get_stock_master_coverage(self) -> dict[str, Any]: ...
     def get_stock_count_by_market(self) -> dict[str, int]: ...
     def get_fundamentals_target_stock_rows(self) -> list[dict[str, str]]: ...
     def get_index_master_category_counts(self) -> dict[str, int]: ...
     def get_adjusted_metrics_snapshot(self) -> dict[str, Any]: ...
     def get_adjusted_metrics_source_diagnostics(self) -> dict[str, int]: ...
+    def get_provider_vintage_snapshot(self) -> dict[str, Any]: ...
+    def get_adjustment_events_count(self) -> int: ...
 
 
 class TimeSeriesStoreStatsLike(Protocol):
@@ -238,14 +242,14 @@ def get_market_stats(
     )
     storage = _resolve_storage_stats(time_series_store)
     maintenance = _resolve_maintenance_evidence(time_series_store)
-    adjusted_metrics = _build_adjusted_metrics_stats(
+    provider_vintage = _build_provider_vintage_stats(
         {
             **market_db.get_adjusted_metrics_snapshot(),
             **market_db.get_adjusted_metrics_source_diagnostics(),
+            **market_db.get_provider_vintage_snapshot(),
         },
         source_stock_count=inspection.stock_count,
         source_statement_count=inspection.statements_count,
-        latest_stock_date=inspection.stock_max,
     )
 
     # Topix
@@ -357,6 +361,7 @@ def get_market_stats(
         schema_=MarketSchemaStats(
             version=market_db.get_market_schema_version(),
             current=market_db.is_market_schema_current(),
+            resetBeforeSyncEligible=market_db.is_reset_before_sync_eligible(),
         ),
         stockMaster=StockMasterCoverageStats(
             dailyCount=int(master_coverage.get("dailyCount", 0) or 0),
@@ -388,7 +393,7 @@ def get_market_stats(
         options225=options_225,
         margin=margin,
         fundamentals=fundamentals,
-        adjustedMetrics=adjusted_metrics,
+        providerVintage=provider_vintage,
         intradayFreshness=IntradayFreshness(
             status=intraday_freshness_snapshot.status,
             expectedDate=intraday_freshness_snapshot.expected_date,
@@ -403,38 +408,57 @@ def get_market_stats(
     )
 
 
-def _build_adjusted_metrics_stats(
+def _build_provider_vintage_stats(
     snapshot: dict[str, Any],
     *,
     source_stock_count: int,
     source_statement_count: int,
-    latest_stock_date: str | None,
-) -> AdjustedMetricsStats:
-    statement_rows = int(snapshot.get("statementRows", 0) or 0)
-    daily_rows = int(snapshot.get("dailyValuationRows", 0) or 0)
-    daily_technical_rows = int(snapshot.get("dailyTechnicalMetricRows", 0) or 0)
-    daily_valuation_latest_date = snapshot.get("dailyValuationLatestDate")
-    daily_valuation_latest_code_count = int(
-        snapshot.get("dailyValuationLatestCodeCount", 0) or 0
+    provider_plan: str | None = None,
+) -> ProviderVintageStats:
+    del provider_plan
+    current_basis_statement_count = int(
+        snapshot.get("currentBasisStatementCount", 0) or 0
     )
-    daily_valuation_previous_code_count = int(
-        snapshot.get("dailyValuationPreviousCodeCount", 0) or 0
+    current_basis_state_count = int(snapshot.get("currentBasisStateCount", 0) or 0)
+    invalid_current_basis_state_count = int(
+        snapshot.get("invalidCurrentBasisStateCount", 0) or 0
     )
-    price_basis_date = snapshot.get("priceBasisDate")
-    basis_version = snapshot.get("basisVersion")
-    basis_version_count = int(snapshot.get("basisVersionCount", 0) or 0)
-    retained_basis_count = int(snapshot.get("retainedBasisCount", 0) or 0)
-    ready_basis_count = int(snapshot.get("readyBasisCount", 0) or 0)
-    invalid_basis_count = int(snapshot.get("invalidBasisCount", 0) or 0)
-    active_coverage_frontier = snapshot.get("activeCoverageFrontier")
-    under_covered_active_basis_count = int(
-        snapshot.get("underCoveredActiveBasisCount", 0) or 0
+    fundamentals_adjustment_basis_date = snapshot.get(
+        "fundamentalsAdjustmentBasisDate"
     )
-    overlapping_basis_count = int(snapshot.get("overlappingBasisCount", 0) or 0)
+    provider_window_count = int(snapshot.get("providerWindowCount", 0) or 0)
+    ready_provider_window_count = int(
+        snapshot.get("readyProviderWindowCount", 0) or 0
+    )
+    pending_current_basis_code_count = int(
+        snapshot.get("pendingCurrentBasisCodeCount", 0) or 0
+    )
     orphan_adjusted_statement_rows = int(
         snapshot.get("orphanAdjustedStatementRows", 0) or 0
     )
-    orphan_daily_valuation_rows = int(snapshot.get("orphanDailyValuationRows", 0) or 0)
+    provider_window_fingerprint_count = int(
+        snapshot.get("providerWindowFingerprintCount", 0) or 0
+    )
+    invalid_provider_window_count = int(
+        snapshot.get("invalidProviderWindowCount", 0) or 0
+    )
+    adjustment_event_fingerprint_count = int(
+        snapshot.get("adjustmentEventFingerprintCount", 0) or 0
+    )
+    invalid_adjustment_event_count = int(
+        snapshot.get("invalidAdjustmentEventCount", 0) or 0
+    )
+    provider_adjusted_mismatch_count = int(
+        snapshot.get("providerAdjustedMismatchCount", 0) or 0
+    )
+    provider_as_of = snapshot.get("providerAsOf")
+    provider_as_of_min = snapshot.get("providerAsOfMin")
+    provider_as_of_max = snapshot.get("providerAsOfMax")
+    coverage_start = snapshot.get("effectiveCoverageStart")
+    coverage_end = snapshot.get("effectiveCoverageEnd")
+    source_fingerprint = snapshot.get("providerSourceFingerprint")
+    provider_window_coherent = bool(snapshot.get("providerWindowCoherent", False))
+    adjustment_event_count = int(snapshot.get("adjustmentEventCount", 0) or 0)
     source_statement_key_count = int(snapshot.get("sourceStatementKeyCount", 0) or 0)
     expected_adjusted_statement_rows = int(
         snapshot.get("expectedAdjustedStatementRows", 0) or 0
@@ -451,85 +475,109 @@ def _build_adjusted_metrics_stats(
     wrong_basis_adjusted_statement_rows = int(
         snapshot.get("wrongBasisAdjustedStatementRows", 0) or 0
     )
-    missing_daily_valuation_rows = int(
-        snapshot.get("missingDailyValuationRows", 0) or 0
-    )
-    extra_daily_valuation_rows = int(snapshot.get("extraDailyValuationRows", 0) or 0)
-    wrong_basis_daily_valuation_rows = int(
-        snapshot.get("wrongBasisDailyValuationRows", 0) or 0
-    )
     has_raw_source = source_stock_count > 0 or source_statement_count > 0
-    if (
-        invalid_basis_count > 0
-        or overlapping_basis_count > 0
+    is_empty_source = not any(
+        (
+            has_raw_source,
+            provider_window_count,
+            adjustment_event_count,
+            current_basis_state_count,
+            current_basis_statement_count,
+            invalid_current_basis_state_count,
+            pending_current_basis_code_count,
+            source_statement_key_count,
+            expected_adjusted_statement_rows,
+            missing_adjusted_statement_rows,
+            extra_adjusted_statement_rows,
+            stale_adjusted_statement_rows,
+            wrong_basis_adjusted_statement_rows,
+            orphan_adjusted_statement_rows,
+            invalid_provider_window_count,
+            invalid_adjustment_event_count,
+            provider_adjusted_mismatch_count,
+        )
+    )
+    provider_plan = snapshot.get("providerPlan")
+    provider_plan_valid = is_empty_source
+    if not is_empty_source:
+        try:
+            provider_plan = validate_provider_plan(provider_plan)
+            provider_plan_valid = True
+        except ValueError:
+            provider_plan_valid = False
+    provider_metadata_valid = bool(
+        provider_window_coherent
+        and provider_as_of_min
+        and provider_as_of_max
+        and coverage_start
+        and coverage_end
+        and source_fingerprint
+        and coverage_start <= coverage_end
+        and provider_as_of_min >= coverage_end
+    )
+    if is_empty_source:
+        status = "empty_source"
+    elif (
+        invalid_current_basis_state_count > 0
         or wrong_basis_adjusted_statement_rows > 0
-        or wrong_basis_daily_valuation_rows > 0
+        or invalid_provider_window_count > 0
+        or invalid_adjustment_event_count > 0
+        or provider_adjusted_mismatch_count > 0
+        or not provider_plan_valid
+        or (provider_window_count > 0 and not provider_metadata_valid)
     ):
-        status = "invalid_lineage"
-    elif missing_adjusted_statement_rows > 0 or missing_daily_valuation_rows > 0:
-        status = "incomplete_coverage"
+        status = "invalid"
+    elif pending_current_basis_code_count > 0 or ready_provider_window_count < provider_window_count:
+        status = "pending"
+    elif missing_adjusted_statement_rows > 0:
+        status = "missing"
     elif (
         stale_adjusted_statement_rows > 0
         or extra_adjusted_statement_rows > 0
-        or extra_daily_valuation_rows > 0
         or orphan_adjusted_statement_rows > 0
-        or orphan_daily_valuation_rows > 0
     ):
         status = "stale"
-    elif statement_rows <= 0 and daily_rows <= 0 and not has_raw_source:
-        status = "empty_source"
-    elif statement_rows <= 0 or daily_rows <= 0:
+    elif provider_window_count <= 0 or (source_statement_count > 0 and current_basis_statement_count <= 0):
         status = "missing"
-    elif (
-        isinstance(daily_valuation_latest_date, str)
-        and latest_stock_date is not None
-        and daily_valuation_latest_date < latest_stock_date
-    ):
-        status = "stale"
-    elif (
-        daily_valuation_previous_code_count > 0
-        and daily_valuation_latest_code_count
-        < max(1, int(daily_valuation_previous_code_count * 0.5))
-    ):
-        status = "stale"
-    elif under_covered_active_basis_count > 0:
-        status = "incomplete_coverage"
     else:
         status = "ready"
-    return AdjustedMetricsStats(
-        statementRows=statement_rows,
-        dailyValuationRows=daily_rows,
-        dailyTechnicalMetricRows=daily_technical_rows,
-        dailyValuationLatestDate=(
-            str(daily_valuation_latest_date)
-            if daily_valuation_latest_date is not None
+    return ProviderVintageStats(
+        providerPlan=provider_plan,
+        providerAsOf=provider_as_of,
+        providerAsOfRange=DateRange(min=provider_as_of_min, max=provider_as_of_max)
+        if provider_as_of_min and provider_as_of_max
+        else None,
+        effectiveCoverage=DateRange(min=coverage_start, max=coverage_end)
+        if coverage_start and coverage_end
+        else None,
+        sourceFingerprint=source_fingerprint,
+        providerWindowCoherent=provider_window_coherent,
+        providerWindowCount=provider_window_count,
+        readyProviderWindowCount=ready_provider_window_count,
+        providerWindowFingerprintCount=provider_window_fingerprint_count,
+        invalidProviderWindowCount=invalid_provider_window_count,
+        adjustmentEventCount=adjustment_event_count,
+        adjustmentEventFingerprintCount=adjustment_event_fingerprint_count,
+        invalidAdjustmentEventCount=invalid_adjustment_event_count,
+        providerAdjustedMismatchCount=provider_adjusted_mismatch_count,
+        currentBasisStatementCount=current_basis_statement_count,
+        currentBasisStateCount=current_basis_state_count,
+        invalidCurrentBasisStateCount=invalid_current_basis_state_count,
+        fundamentalsAdjustmentBasisDate=(
+            str(fundamentals_adjustment_basis_date)
+            if fundamentals_adjustment_basis_date is not None
             else None
         ),
-        dailyValuationLatestCodeCount=daily_valuation_latest_code_count,
-        dailyValuationPreviousCodeCount=daily_valuation_previous_code_count,
-        priceBasisDate=str(price_basis_date) if price_basis_date is not None else None,
-        basisVersion=str(basis_version) if basis_version is not None else None,
-        basisVersionCount=basis_version_count,
-        retainedBasisCount=retained_basis_count,
-        readyBasisCount=ready_basis_count,
-        invalidBasisCount=invalid_basis_count,
-        activeCoverageFrontier=(
-            str(active_coverage_frontier)
-            if active_coverage_frontier is not None
-            else None
-        ),
-        underCoveredActiveBasisCount=under_covered_active_basis_count,
-        overlappingBasisCount=overlapping_basis_count,
+        pendingCurrentBasisCodeCount=pending_current_basis_code_count,
         orphanAdjustedStatementRows=orphan_adjusted_statement_rows,
-        orphanDailyValuationRows=orphan_daily_valuation_rows,
         sourceStatementKeyCount=source_statement_key_count,
         expectedAdjustedStatementRows=expected_adjusted_statement_rows,
         missingAdjustedStatementRows=missing_adjusted_statement_rows,
         extraAdjustedStatementRows=extra_adjusted_statement_rows,
         staleAdjustedStatementRows=stale_adjusted_statement_rows,
         wrongBasisAdjustedStatementRows=wrong_basis_adjusted_statement_rows,
-        missingDailyValuationRows=missing_daily_valuation_rows,
-        extraDailyValuationRows=extra_daily_valuation_rows,
-        wrongBasisDailyValuationRows=wrong_basis_daily_valuation_rows,
         status=status,
+        recoveryStage="market_db_sync"
+        if status in {"missing", "stale", "pending", "invalid"}
+        else None,
     )

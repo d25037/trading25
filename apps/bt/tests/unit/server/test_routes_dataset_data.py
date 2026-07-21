@@ -15,21 +15,22 @@ from src.entrypoints.http.app import _configure_http_app
 from src.entrypoints.http.openapi_config import get_openapi_config
 from src.application.services.dataset_resolver import DatasetResolver
 from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
-from src.infrastructure.db.dataset_io.snapshot_contract import (
-    EVENT_TIME_PIT_DATE_TO_INFO_KEY,
-)
 from src.infrastructure.db.market.dataset_snapshot_reader import (
     build_dataset_snapshot_logical_checksum,
     inspect_dataset_snapshot_duckdb,
 )
+from tests.unit.server.test_dataset_snapshot_reader import (
+    _populate_provider_payload_from_convenience,
+    _set_v4_source_info,
+)
 
 
-def _write_manifest_v3(snapshot_dir: Path, name: str) -> None:
+def _write_manifest_v4(snapshot_dir: Path, name: str) -> None:
     duckdb_path = snapshot_dir / "dataset.duckdb"
     parquet_dir = snapshot_dir / "parquet"
     inspection = inspect_dataset_snapshot_duckdb(duckdb_path)
     manifest = {
-        "schemaVersion": 3,
+        "schemaVersion": 4,
         "generatedAt": "2026-03-14T00:00:00+00:00",
         "dataset": {
             "name": name,
@@ -37,16 +38,13 @@ def _write_manifest_v3(snapshot_dir: Path, name: str) -> None:
             "duckdbFile": "dataset.duckdb",
             "parquetDir": "parquet",
         },
-        "source": {
-            "backend": "duckdb-parquet",
-            "marketSchemaVersion": 4,
-            "stockPriceAdjustmentMode": "local_projection_v2_event_time",
-        },
+        "source": inspection.source.model_dump(),
         "logicalCounts": inspection.counts.model_dump(),
         "coverage": inspection.coverage.model_dump(),
         "checksums": {
             "duckdbSha256": hashlib.sha256(duckdb_path.read_bytes()).hexdigest(),
             "logicalSha256": build_dataset_snapshot_logical_checksum(
+                source=inspection.source,
                 counts=inspection.counts,
                 coverage=inspection.coverage,
                 date_range=inspection.date_range,
@@ -124,6 +122,16 @@ def _build_snapshot(base_dir: Path, name: str) -> None:
             "volume": 500,
             "adjustment_factor": 1.0,
         },
+        {
+            "code": "9984",
+            "date": "2024-01-05",
+            "open": 205,
+            "high": 215,
+            "low": 195,
+            "close": 210,
+            "volume": 550,
+            "adjustment_factor": 1.0,
+        },
     ])
     writer.upsert_topix_data([
         {
@@ -132,7 +140,14 @@ def _build_snapshot(base_dir: Path, name: str) -> None:
             "high": 2520,
             "low": 2490,
             "close": 2510,
-        }
+        },
+        {
+            "date": "2024-01-05",
+            "open": 2510,
+            "high": 2530,
+            "low": 2500,
+            "close": 2520,
+        },
     ])
     writer.upsert_indices_data([
         {
@@ -159,7 +174,7 @@ def _build_snapshot(base_dir: Path, name: str) -> None:
             "short_margin_volume": 20000,
         },
     ])
-    writer.upsert_statements([
+    statements = [
         {
             "code": "7203",
             "disclosed_date": "2024-01-30",
@@ -252,11 +267,21 @@ def _build_snapshot(base_dir: Path, name: str) -> None:
             "next_year_forecast_earnings_per_share": 180.0,
             "forecast_eps": 180.0,
         },
-    ])
+    ]
+    for index, statement in enumerate(statements):
+        disclosed_date = str(statement["disclosed_date"])
+        statement["statement_id"] = f"statement-7203-{index}"
+        statement["disclosed_at"] = f"{disclosed_date}T15:00:00+09:00"
+        statement["period_start"] = "2024-01-01"
+        statement["period_end"] = "2024-12-31"
+    writer.upsert_statements(statements)
     writer.set_dataset_info("preset", "primeMarket")
-    writer.set_dataset_info(EVENT_TIME_PIT_DATE_TO_INFO_KEY, "2024-12-31")
+    _set_v4_source_info(
+        writer, coverage_start="2024-01-04", coverage_end="2024-01-05"
+    )
     writer.close()
-    _write_manifest_v3(snapshot_dir, name)
+    _populate_provider_payload_from_convenience(snapshot_dir)
+    _write_manifest_v4(snapshot_dir, name)
 
 
 @pytest.fixture(scope="module")
@@ -315,7 +340,7 @@ class TestDatasetDataRoutes:
         data = resp.json()
         assert "7203" in data
         assert len(data["7203"]) == 2
-        assert len(data["9984"]) == 1
+        assert len(data["9984"]) == 2
 
     def test_ohlcv_batch_too_many(self, client: TestClient) -> None:
         codes = ",".join([f"000{i}" for i in range(101)])
@@ -326,7 +351,7 @@ class TestDatasetDataRoutes:
         resp = client.get("/api/dataset/test-market/topix")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 1
+        assert len(data) == 2
         assert "volume" not in data[0]  # TOPIX has no volume
 
     def test_indices_list(self, client: TestClient) -> None:

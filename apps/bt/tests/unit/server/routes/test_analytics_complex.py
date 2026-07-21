@@ -21,6 +21,7 @@ from src.application.contracts.jobs import JobStatus
 from src.application.contracts.jobs import JobEvent
 from src.application.contracts.ranking import MarketRankingResponse, Rankings
 from src.application.services.run_contracts import build_parameterized_run_spec
+from src.shared.provider_stock_window import provider_stock_source_fingerprint
 
 
 def _generate_dates(n: int, start: str = "2023-01-02") -> list[str]:
@@ -213,6 +214,18 @@ def analytics_timeseries_dir(tmp_path_factory):
                 "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
                 (code, d, o, h, lo, price, vol, 1.0, None),
             )
+    conn.execute(
+        """
+        INSERT INTO stock_data_raw (
+            code, date, open, high, low, close, volume, turnover_value,
+            adjustment_factor, adjusted_open, adjusted_high, adjusted_low,
+            adjusted_close, adjusted_volume
+        )
+        SELECT code, date, open, high, low, close, volume, close * volume,
+               1.0, open, high, low, close, volume
+        FROM stock_data
+        """
+    )
 
     conn.execute("""
         INSERT INTO stock_master_daily
@@ -283,67 +296,77 @@ def analytics_timeseries_dir(tmp_path_factory):
                 ),
             )
 
-    # statements data for fundamental ranking
-    conn.execute(
+    # statements data for fundamental ranking (Market v5 disclosure identity)
+    conn.executemany(
         """
         INSERT INTO statements (
-            code, disclosed_date, earnings_per_share, type_of_current_period,
-            next_year_forecast_earnings_per_share, forecast_eps, shares_outstanding
+            code, statement_id, disclosed_date, disclosed_at,
+            period_start, period_end, earnings_per_share,
+            type_of_current_period, next_year_forecast_earnings_per_share,
+            forecast_eps, shares_outstanding
         )
-        VALUES (?,?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)
         """,
-        ("72030", "2024-01-10", 100.0, "FY", 120.0, 118.0, 100.0),
+        [
+            ("72030", "7203-fy", "2024-01-10", "2024-01-10T15:00:00+09:00", "2023-01-01", "2023-12-31", 100.0, "FY", 120.0, 118.0, 100.0),
+            ("72030", "7203-q1", "2024-01-20", "2024-01-20T15:00:00+09:00", "2024-01-01", "2024-03-31", None, "1Q", None, 130.0, 100.0),
+            ("67580", "6758-fy", "2024-01-12", "2024-01-12T15:00:00+09:00", "2023-01-01", "2023-12-31", 180.0, "FY", 210.0, None, 200.0),
+            ("67580", "6758-q1", "2024-01-22", "2024-01-22T15:00:00+09:00", "2024-01-01", "2024-03-31", None, "Q1", None, 225.0, 200.0),
+            ("33330", "3333-fy-2023", "2023-05-20", "2023-05-20T15:00:00+09:00", "2022-04-01", "2023-03-31", 300.0, "FY", 320.0, 320.0, 100.0),
+            ("33330", "3333-fy-2024", "2024-01-20", "2024-01-20T15:00:00+09:00", "2023-04-01", "2024-03-31", 200.0, "FY", 250.0, 250.0, 100.0),
+        ],
     )
+    provider_columns = (
+        "code",
+        "date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "turnover_value",
+        "adjustment_factor",
+        "adjusted_open",
+        "adjusted_high",
+        "adjusted_low",
+        "adjusted_close",
+        "adjusted_volume",
+    )
+    for normalized_code, source_code in (
+        ("7203", "72030"),
+        ("6758", "67580"),
+        ("3333", "33330"),
+    ):
+        rows = conn.execute(
+            f"SELECT {', '.join(provider_columns)} FROM stock_data_raw "
+            "WHERE code = ? ORDER BY date",
+            (source_code,),
+        ).fetchall()
+        source_fingerprint = provider_stock_source_fingerprint(
+            [dict(zip(provider_columns, row, strict=True)) for row in rows]
+        )
+        conn.execute(
+            "INSERT INTO stock_provider_windows (code, coverage_start, coverage_end, "
+            "provider_plan, provider_as_of, source_fingerprint, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                normalized_code,
+                dates[0],
+                dates[-1],
+                "premium",
+                dates[-1],
+                source_fingerprint,
+                "2024-03-01T17:00:00+09:00",
+            ),
+        )
     conn.execute(
         """
-        INSERT INTO statements (
-            code, disclosed_date, type_of_current_period, forecast_eps, shares_outstanding
-        )
-        VALUES (?,?,?,?,?)
-        """,
-        ("72030", "2024-01-20", "1Q", 130.0, 100.0),
-    )
-    conn.execute(
+        INSERT INTO current_basis_recompute_pending
+        SELECT code, 'fixture materialization', source_fingerprint,
+               '2024-03-01T17:00:00+09:00'
+        FROM stock_provider_windows
         """
-        INSERT INTO statements (
-            code, disclosed_date, earnings_per_share, type_of_current_period,
-            next_year_forecast_earnings_per_share, shares_outstanding
-        )
-        VALUES (?,?,?,?,?,?)
-        """,
-        ("67580", "2024-01-12", 180.0, "FY", 210.0, 200.0),
     )
-    conn.execute(
-        """
-        INSERT INTO statements (
-            code, disclosed_date, type_of_current_period, forecast_eps, shares_outstanding
-        )
-        VALUES (?,?,?,?,?)
-        """,
-        ("67580", "2024-01-22", "Q1", 225.0, 200.0),
-    )
-    conn.execute(
-        """
-        INSERT INTO statements (
-            code, disclosed_date, earnings_per_share, type_of_current_period,
-            next_year_forecast_earnings_per_share, forecast_eps, shares_outstanding
-        )
-        VALUES (?,?,?,?,?,?,?)
-        """,
-        ("33330", "2023-05-20", 300.0, "FY", 320.0, 320.0, 100.0),
-    )
-    conn.execute(
-        """
-        INSERT INTO statements (
-            code, disclosed_date, earnings_per_share, type_of_current_period,
-            next_year_forecast_earnings_per_share, forecast_eps, shares_outstanding
-        )
-        VALUES (?,?,?,?,?,?,?)
-        """,
-        ("33330", "2024-01-20", 200.0, "FY", 250.0, 250.0, 100.0),
-    )
-
-    conn.execute("INSERT INTO stock_data_raw SELECT * FROM stock_data")
     conn.close()
 
     from src.application.services.adjusted_metrics_materializer import (
@@ -351,7 +374,9 @@ def analytics_timeseries_dir(tmp_path_factory):
     )
 
     market_db = open_market_db(db_path)
-    AdjustedMetricsMaterializer(market_db).rebuild_all()
+    AdjustedMetricsMaterializer(market_db).rebuild_current_basis(
+        ["7203", "6758", "3333"]
+    )
     market_db.close()
     return str(base_dir)
 
@@ -1056,25 +1081,25 @@ class TestScreening:
 
 
 class TestAnalyticsRouteErrorMapping:
-    def test_ranking_returns_adjusted_metrics_pit_recovery_for_missing_basis(
+    def test_ranking_returns_market_db_sync_recovery_for_provider_lineage(
         self, analytics_client, monkeypatch
     ):
         from src.application.services.market_data_errors import MarketDataError
         from src.application.services.ranking_service import RankingService
 
-        def _raise_missing_basis(self, **_kwargs):  # noqa: ANN001
+        def _raise_provider_lineage(self, **_kwargs):  # noqa: ANN001
             raise MarketDataError(
-                message="Daily Ranking signal basis is unavailable",
+                message="Daily Ranking provider lineage is unavailable",
                 reason="event_time_signal_lineage_unavailable",
-                recovery="adjusted_metrics_pit",
+                recovery="market_db_sync",
                 status_code=409,
             )
 
-        monkeypatch.setattr(RankingService, "get_rankings", _raise_missing_basis)
+        monkeypatch.setattr(RankingService, "get_rankings", _raise_provider_lineage)
         response = analytics_client.get("/api/analytics/ranking?limit=20")
 
         assert response.status_code == 409
-        assert {"field": "recovery", "message": "adjusted_metrics_pit"} in response.json()[
+        assert {"field": "recovery", "message": "market_db_sync"} in response.json()[
             "details"
         ]
 

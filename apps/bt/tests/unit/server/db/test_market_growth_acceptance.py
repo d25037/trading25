@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 from pathlib import Path
@@ -29,10 +31,18 @@ from src.infrastructure.db.market.market_compaction import (
 from src.infrastructure.db.market.market_maintenance_evidence import (
     read_market_maintenance_evidence,
 )
+from src.infrastructure.db.market.market_schema import MARKET_SCHEMA_VERSION
 from src.infrastructure.db.market.market_writer_resources import (
     MarketWriterResourceFactory,
+    MarketWriterSession,
     ReadOnlyMarketResources,
 )
+from src.shared.provider_stock_window import ProviderStockStage
+
+
+_PROVIDER_PLAN = "premium"
+_PROVIDER_AS_OF = "2026-02-11"
+_PROVIDER_CODES = frozenset({"7203"})
 
 
 class _SqlRecorder:
@@ -87,7 +97,13 @@ def _stock_rows() -> list[dict[str, object]]:
             "low": float(99 + day),
             "close": float(100 + day),
             "volume": 1_000 + day,
+            "turnover_value": float((100 + day) * (1_000 + day)),
             "adjustment_factor": 1.0,
+            "adjusted_open": float(100 + day),
+            "adjusted_high": float(101 + day),
+            "adjusted_low": float(99 + day),
+            "adjusted_close": float(100 + day),
+            "adjusted_volume": 1_000 + day,
             "created_at": f"2026-02-{day:02d}T00:00:00+00:00",
         }
         for day in range(2, 12)
@@ -98,11 +114,20 @@ def _statement_rows() -> list[dict[str, object]]:
     return [
         {
             "code": "7203",
+            "statement_id": "disclosure-1",
+            "disclosure_number": "disclosure-1",
             "disclosed_date": "2026-02-02",
+            "disclosed_at": "2026-02-02T15:30:00+09:00",
+            "period_start": "2025-04-01",
+            "period_end": "2026-03-31",
             "type_of_current_period": "FY",
+            "type_of_document": "FYFinancialStatements",
             "earnings_per_share": 100.0,
+            "diluted_earnings_per_share": 98.0,
             "bps": 1_000.0,
             "forecast_eps": 110.0,
+            "dividend_fy": 30.0,
+            "forecast_dividend_fy": 40.0,
             "shares_outstanding": 10_000_000.0,
             "treasury_shares": 1_000_000.0,
         }
@@ -182,8 +207,10 @@ _REQUIRED_TABLES = (
     "stock_master_intervals",
     "stocks_latest",
     "stocks",
-    "stock_adjustment_bases",
-    "stock_adjustment_basis_segments",
+    "stock_adjustment_events",
+    "stock_provider_windows",
+    "current_basis_fundamentals_state",
+    "current_basis_recompute_pending",
     "statement_metrics_adjusted",
     "daily_valuation",
     "daily_technical_metrics",
@@ -198,18 +225,25 @@ def _persistent_writes(statements: tuple[str, ...]) -> list[str]:
     persistent_tables = (
         "TOPIX_DATA|STOCK_DATA_RAW|STOCK_DATA|STATEMENTS|STOCK_MASTER_DAILY|"
         "INDEX_MEMBERSHIP_DAILY|STOCK_MASTER_INTERVALS|STOCKS_LATEST|STOCKS|"
-        "STOCK_ADJUSTMENT_BASES|STOCK_ADJUSTMENT_BASIS_SEGMENTS|"
+        "STOCK_ADJUSTMENT_EVENTS|STOCK_PROVIDER_WINDOWS|"
+        "CURRENT_BASIS_FUNDAMENTALS_STATE|CURRENT_BASIS_RECOMPUTE_PENDING|"
         "STATEMENT_METRICS_ADJUSTED|DAILY_VALUATION|DAILY_TECHNICAL_METRICS"
     )
     persistent_dml = re.compile(
         rf"\b(?:INSERT(?:\s+OR\s+\w+)?\s+INTO|UPDATE|DELETE\s+FROM|MERGE\s+INTO)"
         rf'\s+"?(?:{persistent_tables})\b'
     )
+    provider_event_rebind_probe = re.compile(
+        r"^UPDATE STOCK_ADJUSTMENT_EVENTS SET SOURCE_FINGERPRINT = \? "
+        r"WHERE CODE = \? AND SOURCE_FINGERPRINT IS DISTINCT FROM \? RETURNING CODE$"
+    )
     return [
         sql
         for sql in statements
-        if sql.startswith(("BEGIN", "COMMIT", "ROLLBACK"))
-        or persistent_dml.search(sql)
+        if (
+            persistent_dml.search(sql)
+            and provider_event_rebind_probe.fullmatch(sql) is None
+        )
         or ("COPY " in sql and " TO " in sql)
     ]
 
@@ -235,84 +269,160 @@ def test_growth_guard_rejects_cumulative_one_block_monotonic_growth() -> None:
         )
 
 
+def _cleanup_writer_session_for_test(session: MarketWriterSession) -> None:
+    if session._process_lock is None:
+        return
+    if session.fenced:
+        if not session._handles_closed:
+            session.handles.close()
+            session._handles_closed = True
+        session.lease.release()
+        session._process_lock.release()
+        session._process_lock = None
+        return
+    token = session.close_writable_handles()
+    read_only = session.reopen_read_only(token)
+    try:
+        session.release_after_read_only_reopen(token)
+    finally:
+        read_only.close()
+
+
+@contextmanager
+def _managed_writer_session(
+    factory: MarketWriterResourceFactory,
+    *,
+    reset: bool,
+) -> Iterator[MarketWriterSession]:
+    session = factory.reset_and_open_v4() if reset else factory.open_existing()
+    try:
+        yield session
+    finally:
+        _cleanup_writer_session_for_test(session)
+
+
+def test_managed_writer_session_releases_process_lock_after_body_failure(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data"
+    factory = MarketWriterResourceFactory(
+        data_root=data_root,
+        market_root=data_root / "market-timeseries",
+    )
+
+    with pytest.raises(RuntimeError, match="injected writer body failure"):
+        with _managed_writer_session(factory, reset=True):
+            raise RuntimeError("injected writer body failure")
+
+    with _managed_writer_session(factory, reset=False) as probe:
+        assert probe.handles.market_db.get_market_schema_version() == (
+            MARKET_SCHEMA_VERSION
+        )
+
+
 def _run_cycle(
     factory: MarketWriterResourceFactory,
     *,
     reset: bool,
 ) -> _CycleObservation:
-    session = factory.reset_and_open_v4() if reset else factory.open_existing()
-    market_db = session.handles.market_db
-    store = session.handles.time_series_store
-    db_recorder = _SqlRecorder(market_db._conn)
-    store_recorder = _SqlRecorder(store._conn)
-    market_db._conn = db_recorder
-    store._conn = store_recorder
-    before_counts = _table_counts(market_db)
+    with _managed_writer_session(factory, reset=reset) as session:
+        market_db = session.handles.market_db
+        store = session.handles.time_series_store
+        db_recorder = _SqlRecorder(market_db._conn)
+        store_recorder = _SqlRecorder(store._conn)
+        market_db._conn = db_recorder
+        store._conn = store_recorder
+        before_counts = _table_counts(market_db)
 
-    topix = store.publish_topix_data(_topix_rows())
-    stocks = store.publish_stock_data(_stock_rows())
-    statements = store.publish_statements(_statement_rows())
-    store.index_topix_data()
-    store.index_stock_data()
-    store.index_statements()
-    master = market_db.publish_stock_master_daily_rows(_stock_master_rows())
-    adjusted = AdjustedMetricsMaterializer(market_db).rebuild_all()
-    after_counts = _table_counts(market_db)
-
-    attached: list[ReadOnlyMarketResources] = []
-    terminals = []
-    finalizer = MarketMaintenanceFinalizer(
-        session=session,
-        operation="synthetic_incremental_acceptance",
-        attach=lambda resources, _record: attached.append(resources),
-    )
-    decision = finalizer.finalize(
-        operation_outcome=MarketOperationOutcome.SUCCEEDED,
-        publish_terminal=terminals.append,
-    )
-    assert terminals == [decision]
-    assert decision.terminal_outcome is MarketOperationOutcome.SUCCEEDED
-    assert decision.maintenance.outcome is MaintenanceOutcome.PASSED
-    assert len(attached) == 1
-    assert attached[0].market_db.get_market_schema_version() == 4
-    attached[0].close()
-
-    evidence = read_market_maintenance_evidence(factory.market_root)
-    assert evidence.evidenceStatus is MaintenanceEvidenceStatus.VALID
-    assert evidence.outcome is MaintenanceOutcome.PASSED
-    db_path = factory.market_root / "market.duckdb"
-    size = _read_size(db_path)
-    return _CycleObservation(
-        mutations={
-            "topix": topix.mutated_rows,
-            "stock_data_raw": stocks.mutated_rows,
-            "stock_data": (
-                after_counts["stock_data"] - before_counts["stock_data"]
+        topix = store.publish_topix_data(_topix_rows())
+        stocks = store.publish_stock_data(
+            _stock_rows(),
+            stage=ProviderStockStage(
+                provider_plan=_PROVIDER_PLAN,
+                provider_as_of=_PROVIDER_AS_OF,
+                provider_codes=_PROVIDER_CODES,
             ),
-            "statements": statements.mutated_rows,
-            "stock_master_daily": master.daily.mutated_rows,
-            "index_membership_daily": master.membership.mutated_rows,
-            "stock_master_intervals": master.intervals.mutated_rows,
-            "stocks_latest": master.stocks_latest.mutated_rows,
-            "stocks": master.stocks.mutated_rows,
-            "stock_adjustment_bases": adjusted.mutation_stats["basis"].mutated_rows,
-            "stock_adjustment_basis_segments": adjusted.mutation_stats[
-                "segments"
-            ].mutated_rows,
-            "statement_metrics_adjusted": adjusted.mutation_stats[
-                "statements"
-            ].mutated_rows,
-            "daily_valuation": adjusted.mutation_stats["valuations"].mutated_rows,
-            "daily_technical_metrics": adjusted.mutation_stats[
-                "technical_metrics"
-            ].mutated_rows,
-        },
-        row_counts=after_counts,
-        statements=tuple(db_recorder.statements + store_recorder.statements),
-        parquet=_parquet_identity(factory.market_root / "parquet"),
-        db_bytes=db_path.stat().st_size,
-        size=size,
-    )
+        )
+        statements = store.publish_statements(_statement_rows())
+        store.index_topix_data()
+        store.index_stock_data()
+        store.index_statements()
+        master = market_db.publish_stock_master_daily_rows(_stock_master_rows())
+        adjusted = AdjustedMetricsMaterializer(market_db).rebuild_current_basis([])
+        after_counts = _table_counts(market_db)
+
+        attached: list[ReadOnlyMarketResources] = []
+        terminals = []
+        finalizer = MarketMaintenanceFinalizer(
+            session=session,
+            operation="synthetic_incremental_acceptance",
+            attach=lambda resources, _record: attached.append(resources),
+        )
+        decision = finalizer.finalize(
+            operation_outcome=MarketOperationOutcome.SUCCEEDED,
+            publish_terminal=terminals.append,
+        )
+        assert terminals == [decision]
+        assert decision.terminal_outcome is MarketOperationOutcome.SUCCEEDED
+        assert decision.maintenance.outcome is MaintenanceOutcome.PASSED
+        assert len(attached) == 1
+        assert attached[0].market_db.get_market_schema_version() == (
+            MARKET_SCHEMA_VERSION
+        )
+        attached[0].close()
+
+        evidence = read_market_maintenance_evidence(factory.market_root)
+        assert evidence.evidenceStatus is MaintenanceEvidenceStatus.VALID
+        assert evidence.outcome is MaintenanceOutcome.PASSED
+        db_path = factory.market_root / "market.duckdb"
+        size = _read_size(db_path)
+        return _CycleObservation(
+            mutations={
+                "topix": topix.mutated_rows,
+                "stock_data_raw": stocks.mutated_rows,
+                "stock_data": (
+                    after_counts["stock_data"] - before_counts["stock_data"]
+                ),
+                "statements": statements.mutated_rows,
+                "stock_master_daily": master.daily.mutated_rows,
+                "index_membership_daily": master.membership.mutated_rows,
+                "stock_master_intervals": master.intervals.mutated_rows,
+                "stocks_latest": master.stocks_latest.mutated_rows,
+                "stocks": master.stocks.mutated_rows,
+                "stock_adjustment_events": (
+                    after_counts["stock_adjustment_events"]
+                    - before_counts["stock_adjustment_events"]
+                ),
+                "stock_provider_windows": (
+                    after_counts["stock_provider_windows"]
+                    - before_counts["stock_provider_windows"]
+                ),
+                "current_basis_fundamentals_state": (
+                    after_counts["current_basis_fundamentals_state"]
+                    - before_counts["current_basis_fundamentals_state"]
+                ),
+                "current_basis_recompute_pending": (
+                    after_counts["current_basis_recompute_pending"]
+                    - before_counts["current_basis_recompute_pending"]
+                ),
+                "statement_metrics_adjusted": adjusted.mutation_stats[
+                    "statements"
+                ].mutated_rows,
+                "daily_valuation": (
+                    after_counts["daily_valuation"]
+                    - before_counts["daily_valuation"]
+                ),
+                "daily_technical_metrics": (
+                    after_counts["daily_technical_metrics"]
+                    - before_counts["daily_technical_metrics"]
+                ),
+            },
+            row_counts=after_counts,
+            statements=tuple(db_recorder.statements + store_recorder.statements),
+            parquet=_parquet_identity(factory.market_root / "parquet"),
+            db_bytes=db_path.stat().st_size,
+            size=size,
+        )
 
 
 def test_identical_incremental_cycle_reaches_zero_mutation_steady_state(
@@ -337,11 +447,13 @@ def test_identical_incremental_cycle_reaches_zero_mutation_steady_state(
     assert first.mutations["stock_master_intervals"] == 1
     assert first.mutations["stocks_latest"] == 1
     assert first.mutations["stocks"] == 1
-    assert first.mutations["stock_adjustment_bases"] == 1
-    assert first.mutations["stock_adjustment_basis_segments"] == 1
+    assert first.mutations["stock_adjustment_events"] == 0
+    assert first.mutations["stock_provider_windows"] == 1
+    assert first.mutations["current_basis_fundamentals_state"] == 1
+    assert first.mutations["current_basis_recompute_pending"] == 0
     assert first.mutations["statement_metrics_adjusted"] == 1
     assert first.mutations["daily_valuation"] == 10
-    assert first.mutations["daily_technical_metrics"] == 2
+    assert first.mutations["daily_technical_metrics"] == 0
     assert first.row_counts["topix_data"] == 10
     assert first.row_counts["stock_data_raw"] == 10
     assert first.row_counts["stock_data"] == 10
@@ -351,11 +463,13 @@ def test_identical_incremental_cycle_reaches_zero_mutation_steady_state(
     assert first.row_counts["stock_master_intervals"] == 1
     assert first.row_counts["stocks_latest"] == 1
     assert first.row_counts["stocks"] == 1
-    assert first.row_counts["stock_adjustment_bases"] == 1
-    assert first.row_counts["stock_adjustment_basis_segments"] == 1
+    assert first.row_counts["stock_adjustment_events"] == 0
+    assert first.row_counts["stock_provider_windows"] == 1
+    assert first.row_counts["current_basis_fundamentals_state"] == 1
+    assert first.row_counts["current_basis_recompute_pending"] == 0
     assert first.row_counts["statement_metrics_adjusted"] == 1
     assert first.row_counts["daily_valuation"] == 10
-    assert first.row_counts["daily_technical_metrics"] == 2
+    assert first.row_counts["daily_technical_metrics"] == 0
     assert second.mutations == {name: 0 for name in second.mutations}
     assert third.mutations == {name: 0 for name in third.mutations}
     assert second.row_counts == first.row_counts
@@ -381,7 +495,8 @@ def test_identical_incremental_cycle_reaches_zero_mutation_steady_state(
     assert third.parquet == second.parquet
 
     tolerance = max(
-        first.size.block_size, second.size.block_size, third.size.block_size
+        observation.size.block_size + observation.size.free_bytes
+        for observation in (first, second, third)
     )
     _assert_steady_state_growth(
         (first.db_bytes, second.db_bytes, third.db_bytes),
@@ -405,64 +520,66 @@ def test_test_equivalent_hard_cap_compacts_and_persists_verified_evidence(
         data_root=data_root,
         market_root=data_root / "market-timeseries",
     )
-    session = factory.reset_and_open_v4()
-    source = factory.market_root / "market.duckdb"
-    actual_before = _size_from_cursor(
-        session.handles.market_db._conn.execute("PRAGMA database_size"),
-        path=source,
-    )
-    hard_cap = max(actual_before.block_size * 2, 2)
-    policy = MarketCompactionPolicy(
-        soft_free_bytes=hard_cap * 2,
-        soft_free_ratio=1.0,
-        hard_free_bytes=hard_cap,
-    )
-    observations = 0
+    with _managed_writer_session(factory, reset=True) as session:
+        source = factory.market_root / "market.duckdb"
+        actual_before = _size_from_cursor(
+            session.handles.market_db._conn.execute("PRAGMA database_size"),
+            path=source,
+        )
+        hard_cap = max(actual_before.block_size * 2, 2)
+        policy = MarketCompactionPolicy(
+            soft_free_bytes=hard_cap * 2,
+            soft_free_ratio=1.0,
+            hard_free_bytes=hard_cap,
+        )
+        observations = 0
 
-    def forced_size_reader(path: Path) -> DuckDbSizeSnapshot:
-        nonlocal observations
-        observations += 1
-        actual = _read_size(path)
-        if observations == 1:
-            free_blocks = max(
-                2, (hard_cap + actual.block_size - 1) // actual.block_size
-            )
-            total_blocks = max(actual.total_blocks, free_blocks)
-            return DuckDbSizeSnapshot(
-                block_size=actual.block_size,
-                total_blocks=total_blocks,
-                used_blocks=total_blocks - free_blocks,
-                free_blocks=free_blocks,
-                wal_bytes=actual.wal_bytes,
-            )
-        return actual
+        def forced_size_reader(path: Path) -> DuckDbSizeSnapshot:
+            nonlocal observations
+            observations += 1
+            actual = _read_size(path)
+            if observations == 1:
+                free_blocks = max(
+                    2, (hard_cap + actual.block_size - 1) // actual.block_size
+                )
+                total_blocks = max(actual.total_blocks, free_blocks)
+                return DuckDbSizeSnapshot(
+                    block_size=actual.block_size,
+                    total_blocks=total_blocks,
+                    used_blocks=total_blocks - free_blocks,
+                    free_blocks=free_blocks,
+                    wal_bytes=actual.wal_bytes,
+                )
+            return actual
 
-    attached: list[ReadOnlyMarketResources] = []
-    decisions = []
-    finalizer = MarketMaintenanceFinalizer(
-        session=session,
-        operation="forced_hard_cap_acceptance",
-        compactor=MarketCompactor(
-            size_reader=forced_size_reader,
-            policy=policy,
-        ),
-        attach=lambda resources, _record: attached.append(resources),
-    )
-    decision = finalizer.finalize(
-        operation_outcome=MarketOperationOutcome.SUCCEEDED,
-        publish_terminal=decisions.append,
-    )
+        attached: list[ReadOnlyMarketResources] = []
+        decisions = []
+        finalizer = MarketMaintenanceFinalizer(
+            session=session,
+            operation="forced_hard_cap_acceptance",
+            compactor=MarketCompactor(
+                size_reader=forced_size_reader,
+                policy=policy,
+            ),
+            attach=lambda resources, _record: attached.append(resources),
+        )
+        decision = finalizer.finalize(
+            operation_outcome=MarketOperationOutcome.SUCCEEDED,
+            publish_terminal=decisions.append,
+        )
 
-    assert decisions == [decision]
-    assert decision.terminal_outcome is MarketOperationOutcome.SUCCEEDED
-    assert decision.maintenance.compacted is True
-    assert decision.maintenance.trigger == CompactionTrigger.HARD.value
-    assert decision.maintenance.validation == "passed"
-    assert observations == 2
-    assert _read_size(source).free_bytes < hard_cap
-    assert len(attached) == 1
-    assert attached[0].market_db.get_market_schema_version() == 4
-    attached[0].close()
+        assert decisions == [decision]
+        assert decision.terminal_outcome is MarketOperationOutcome.SUCCEEDED
+        assert decision.maintenance.compacted is True
+        assert decision.maintenance.trigger == CompactionTrigger.HARD.value
+        assert decision.maintenance.validation == "passed"
+        assert observations == 2
+        assert _read_size(source).free_bytes < hard_cap
+        assert len(attached) == 1
+        assert attached[0].market_db.get_market_schema_version() == (
+            MARKET_SCHEMA_VERSION
+        )
+        attached[0].close()
 
     sidecar = read_market_maintenance_evidence(factory.market_root)
     assert sidecar.evidenceStatus is MaintenanceEvidenceStatus.VALID
@@ -471,8 +588,7 @@ def test_test_equivalent_hard_cap_compacts_and_persists_verified_evidence(
     assert sidecar.trigger == CompactionTrigger.HARD.value
     assert sidecar.validation == "passed"
 
-    probe = factory.open_existing(blocking=False)
-    token = probe.close_writable_handles()
-    reopened = probe.reopen_read_only(token)
-    probe.release_after_read_only_reopen(token)
-    reopened.close()
+    with _managed_writer_session(factory, reset=False) as probe:
+        assert probe.handles.market_db.get_market_schema_version() == (
+            MARKET_SCHEMA_VERSION
+        )

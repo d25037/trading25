@@ -1,9 +1,11 @@
-"""Market v4 cutover service tests."""
+"""Market v5 cutover service tests."""
 
 from __future__ import annotations
 
 from pathlib import Path
+import importlib.util
 
+import pytest
 
 import src.application.services.market_v4_cutover.service as cutover_module
 from src.application.services.market_v4_cutover.filesystem import (
@@ -20,8 +22,52 @@ from tests.unit.server.services.market_v4_cutover_test_support import (
 )
 
 
-def test_market_schema_stats_requires_v4_by_default() -> None:
-    assert MarketSchemaStats().requiredVersion == 4
+def test_market_schema_stats_requires_v5_by_default() -> None:
+    assert MarketSchemaStats().requiredVersion == 5
+
+
+def test_market_v5_cutover_has_no_retained_v4_public_path(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+
+    assert not hasattr(service, "rehearse_retained")
+    assert not hasattr(service, "promote_retained")
+
+
+@pytest.mark.parametrize(
+    "module",
+    (
+        "promotion",
+        "promotion_artifacts",
+        "promotion_cleanup",
+        "promotion_contracts",
+        "promotion_evidence",
+        "promotion_eligibility",
+        "promotion_recovery",
+        "promotion_reports",
+        "promotion_rollback",
+        "promotion_transaction",
+        "rehearsal",
+        "journal",
+        "journal_directories",
+        "journal_storage",
+        "journal_validation",
+    ),
+)
+def test_internal_retained_v4_execution_boundary_is_deleted(module: str) -> None:
+    assert (
+        importlib.util.find_spec(
+            f"src.application.services.market_v4_cutover.{module}"
+        )
+        is None
+    )
+
+
+def test_market_v5_cutover_uses_v5_operation_identity(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+
+    assert service._workspace.operations_root == (
+        tmp_path / "operations" / "market-v5-cutover"
+    )
 
 
 def test_cutover_test_service_uses_explicit_atomic_exchange_capability(
@@ -56,6 +102,9 @@ def test_cutover_service_preserves_false_valued_atomic_exchange(
     class FalseValuedAtomicExchange:
         def __bool__(self) -> bool:
             return False
+
+        def require_capability(self) -> None:
+            return None
 
         def exchange(
             self,

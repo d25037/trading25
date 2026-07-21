@@ -23,6 +23,17 @@ STANDALONE_ADJUSTED_WRITERS = {
     "upsert_daily_valuation",
     "upsert_daily_valuation_from_adjusted_metrics",
 }
+LEGACY_MARKET_BASIS_READERS = {
+    "get_ready_adjustment_basis",
+    "get_adjustment_basis_segments",
+    "get_basis_adjusted_stock_data",
+    "load_raw_adjustment_points",
+    "list_adjustment_materialization_codes",
+}
+DEAD_DAILY_VALUATION_DOMAIN_TYPES = {
+    "DailyValuationInput",
+    "DailyValuationMetric",
+}
 ALLOWED_DATASET_WRITER_CALLS = {
     Path("infrastructure/db/dataset_io/dataset_writer.py"): {
         "upsert_stock_data",
@@ -57,6 +68,10 @@ def _module_functions(path: Path) -> set[str]:
         for node in _tree(path).body
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
     }
+
+
+def _module_classes(path: Path) -> set[str]:
+    return {node.name for node in _tree(path).body if isinstance(node, ast.ClassDef)}
 
 
 def _imported_names(path: Path, module: str) -> set[str]:
@@ -171,8 +186,14 @@ def test_canonical_market_writer_paths_exist() -> None:
     assert {
         "publish_stock_master_daily_rows",
         "reconcile_stock_master_frontier",
-        "publish_adjusted_basis_materialization",
     } <= market_db_methods
+    assert {
+        "publish_adjusted_basis_materialization",
+        "_commit_basis_publish",
+        "load_basis_snapshots",
+        "load_adjusted_materialization_source",
+        "load_adjusted_market_sessions",
+    }.isdisjoint(market_db_methods)
     assert {
         "upsert_stock_master_daily",
         "upsert_stock_master_daily_rows",
@@ -194,7 +215,11 @@ def test_time_series_store_has_one_semantic_delta_writer_kernel() -> None:
     assert "_build_executemany_upsert_sql" not in source
     assert "dirty_all or not dirty_dates" not in source
     assert "_dirty_stock_minute_dates or" not in source
-    assert "DELETE FROM stock_data WHERE code" not in source
+    # One full-code replacement kernel is allowed. Provider-window expiry also
+    # performs a bounded ``date < frontier`` delete and is not a second
+    # semantic replacement writer.
+    assert source.count("DELETE FROM stock_data WHERE code = ?\"") == 1
+    assert source.count("DELETE FROM stock_data WHERE code = ? AND date < ?") == 1
 
 
 def test_time_series_publish_contracts_do_not_return_legacy_int_counts() -> None:
@@ -234,10 +259,31 @@ def test_stock_master_writer_has_no_global_rebuild_or_legacy_entrypoint() -> Non
     assert "DELETE FROM index_membership_daily WHERE date=? AND index_code=? AND code=?" in source
 
 
-def test_atomic_writers_import_and_use_focused_lineage_validation() -> None:
+def test_current_basis_writer_has_no_retained_lineage_validation_dependency() -> None:
     module = "src.infrastructure.db.market.adjustment_basis_validation"
-    required = {"validate_lineages", "validate_final_catalog"}
-    for filename in ("valuation_writers.py",):
-        path = MARKET_ROOT / filename
-        assert required <= _imported_names(path, module)
-        assert required <= _called_names(path)
+    removed = {"validate_lineages", "validate_final_catalog"}
+    path = MARKET_ROOT / "valuation_writers.py"
+
+    assert removed.isdisjoint(_imported_names(path, module))
+    assert removed.isdisjoint(_called_names(path))
+
+
+def test_market_db_has_no_archived_adjustment_basis_query_surface() -> None:
+    path = MARKET_ROOT / "market_db.py"
+    methods = _class_methods(path, "MarketDb")
+
+    assert LEGACY_MARKET_BASIS_READERS.isdisjoint(methods)
+    assert "adjustment_basis_queries" not in _imported_names(
+        path, "src.infrastructure.db.market"
+    )
+    assert _module_functions(MARKET_ROOT / "adjustment_basis_queries.py") == {
+        "get_ready_adjustment_basis",
+        "get_basis_adjusted_stock_data",
+    }
+
+
+def test_adjusted_metrics_domain_has_no_dead_daily_valuation_builder() -> None:
+    path = SRC_ROOT / "domains" / "fundamentals" / "adjusted_metrics.py"
+
+    assert DEAD_DAILY_VALUATION_DOMAIN_TYPES.isdisjoint(_module_classes(path))
+    assert "build_daily_valuation_metric" not in _module_functions(path)

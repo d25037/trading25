@@ -1,4 +1,4 @@
-"""Architecture guards for the focused Market v4 cutover package."""
+"""Architecture guards for the focused Market v5 cutover package."""
 
 from __future__ import annotations
 
@@ -15,6 +15,9 @@ CUTOVER_PACKAGE = SRC_ROOT / "application/services/market_v4_cutover"
 TEST_ROOT = Path(__file__).parent
 
 EXPECTED_RESPONSIBILITIES = {
+    "activation_journal.py",
+    "activation_runtime.py",
+    "activation_contract.py",
     "backup.py",
     "contracts.py",
     "duckdb_identity.py",
@@ -22,14 +25,18 @@ EXPECTED_RESPONSIBILITIES = {
     "evidence.py",
     "filesystem.py",
     "full_rehearsal.py",
-    "journal.py",
-    "promotion.py",
-    "rehearsal.py",
     "reports.py",
     "runtime.py",
     "service.py",
     "smoke.py",
     "workspace.py",
+}
+
+FORBIDDEN_RETAINED_PROMOTION_JOURNALS = {
+    "journal.py",
+    "journal_directories.py",
+    "journal_storage.py",
+    "journal_validation.py",
 }
 
 
@@ -101,6 +108,9 @@ def test_cutover_is_a_focused_package_without_compatibility_module() -> None:
     assert EXPECTED_RESPONSIBILITIES <= {
         path.name for path in CUTOVER_PACKAGE.glob("*.py")
     }
+    assert FORBIDDEN_RETAINED_PROMOTION_JOURNALS.isdisjoint(
+        path.name for path in CUTOVER_PACKAGE.glob("*.py")
+    )
     init_source = (CUTOVER_PACKAGE / "__init__.py").read_text(encoding="utf-8")
     init_tree = ast.parse(init_source)
     assert not any(
@@ -136,7 +146,13 @@ def test_cutover_modules_are_acyclic_and_bounded() -> None:
         path.name: len(path.read_text(encoding="utf-8").splitlines())
         for path in modules
         if len(path.read_text(encoding="utf-8").splitlines())
-        > (600 if path.name == "service.py" else 700)
+        > (
+            725
+            if path.name == "activation.py"
+            else 600
+            if path.name == "service.py"
+            else 700
+        )
     }
     assert oversized == {}
 

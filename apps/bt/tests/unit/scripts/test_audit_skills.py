@@ -93,49 +93,6 @@ def _literal_sequence_assignment(path: Path, name: str) -> tuple[str, ...]:
     raise AssertionError(f"Missing source assignment: {name}")
 
 
-def _required_promote_retained_shape(repo_root: Path) -> str:
-    source_path = repo_root / "apps/bt/src/entrypoints/cli/market_cutover.py"
-    tree = ast.parse(source_path.read_text())
-    for node in tree.body:
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        if not any(
-            isinstance(decorator, ast.Call)
-            and decorator.args
-            and isinstance(decorator.args[0], ast.Constant)
-            and decorator.args[0].value == "promote-retained"
-            for decorator in node.decorator_list
-        ):
-            continue
-
-        defaults = [None] * (len(node.args.args) - len(node.args.defaults)) + list(
-            node.args.defaults
-        )
-        parts = ["bt", "market-cutover", "promote-retained"]
-        for argument, default in zip(node.args.args, defaults, strict=True):
-            if not isinstance(default, ast.Call) or not default.args:
-                continue
-            if not (
-                isinstance(default.func, ast.Attribute)
-                and isinstance(default.func.value, ast.Name)
-                and default.func.value.id == "typer"
-                and isinstance(default.args[0], ast.Constant)
-                and default.args[0].value is Ellipsis
-            ):
-                continue
-            if default.func.attr == "Argument":
-                parts.append(argument.arg.upper())
-            elif default.func.attr == "Option":
-                option = next(
-                    value.value
-                    for value in default.args[1:]
-                    if isinstance(value, ast.Constant)
-                    and isinstance(value.value, str)
-                    and value.value.startswith("--")
-                )
-                parts.extend((option, "..."))
-        return " ".join(parts)
-    raise AssertionError("Missing promote-retained Typer command")
 
 
 VOLATILE_PERFORMANCE_CLAIM = re.compile(
@@ -163,6 +120,20 @@ def test_repository_skill_descriptions_are_discovery_compliant() -> None:
     ]
 
     assert errors == []
+
+
+def test_financial_analysis_skills_use_current_market_v5_contract() -> None:
+    repo_root = _repo_root()
+    for skill_name in ("bt-financial-analysis", "ts-financial-analysis"):
+        content = (
+            repo_root / f".codex/skills/{skill_name}/SKILL.md"
+        ).read_text(encoding="utf-8")
+
+        assert "Market v5" in content
+        assert "provider_adjusted_v1" in content
+        assert "bt market-cutover cutover" in content
+        assert "Market v4" not in content
+        assert "local_projection_v2_event_time" not in content
 
 
 def test_description_without_use_when_trigger_is_rejected(tmp_path: Path) -> None:
@@ -702,33 +673,50 @@ def test_web_design_guideline_source_is_commit_pinned() -> None:
     "skill_name",
     ("bt-database-management", "bt-market-sync-strategies"),
 )
-def test_market_cutover_skills_retrieve_retained_promotion_contract(
+def test_market_cutover_skills_require_v5_full_rebuild_contract(
     skill_name: str,
 ) -> None:
     module = _load_audit_module()
     skill_file = _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
     content = skill_file.read_text()
 
-    assert "bt market-cutover promote-retained" in content
-    assert "bt market-cutover cutover" in content
-    assert "noSync" in content
-    assert "noJQuants" in content
-    assert "same-attempt recovery" in content
-
     assert module.validate_market_cutover_guidance(content, skill_file) == []
+    for fragment in (
+        "schema v5",
+        "provider_adjusted_v1",
+        "bt market-cutover cutover",
+        "full rebuild only",
+        "retained Market v4",
+        "ineligible",
+        "immutable backup",
+        "atomic activation",
+        "exact rollback",
+        "providerVintage",
+        "schemaVersion: 4",
+        "operations/market-v5-cutover",
+    ):
+        assert fragment in content
+    assert "promote-retained" not in content
+    assert "rehearse-retained" not in content
 
 
-def test_market_cutover_guidance_rejects_retained_promotion_contradiction() -> None:
+def test_market_cutover_guidance_rejects_obsolete_retained_cli() -> None:
     module = _load_audit_module()
     skill_file = _repo_root() / ".codex/skills/bt-database-management/SKILL.md"
-    contradictory = skill_file.read_text() + (
-        "\nRetained promotion with `bt market-cutover promote-retained` may run sync "
-        "and J-Quants rebuild when the deadline is close.\n"
-    )
+    content = skill_file.read_text() + "\nRun `bt market-cutover promote-retained`.\n"
 
-    errors = module.validate_market_cutover_guidance(contradictory, skill_file)
+    errors = module.validate_market_cutover_guidance(content, skill_file)
 
-    assert any("contradictory retained-promotion guidance" in error for error in errors)
+    assert any("obsolete retained-v4 CLI guidance" in error for error in errors)
+
+
+def test_market_cutover_cli_source_has_no_retained_commands() -> None:
+    source = (
+        _repo_root() / "apps/bt/src/entrypoints/cli/market_cutover.py"
+    ).read_text()
+
+    assert 'command("promote-retained")' not in source
+    assert 'command("rehearse-retained")' not in source
 
 
 def test_active_agent_dependency_versions_follow_manifests_and_locks() -> None:
@@ -845,209 +833,6 @@ def test_strategy_category_guidance_matches_runtime_ownership() -> None:
         assert f"{project_contract} は project-owned" in content
         assert rendered_search_order in content
         assert "3層構造" not in content
-
-
-@pytest.mark.parametrize(
-    "skill_name",
-    ("bt-database-management", "bt-market-sync-strategies"),
-)
-def test_market_cutover_skills_retrieve_structural_promotion_contract(
-    skill_name: str,
-) -> None:
-    module = _load_audit_module()
-    skill_file = _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
-    content = skill_file.read_text()
-
-    assert module.validate_market_cutover_guidance(content, skill_file) == []
-    required_fragments = (
-        _required_promote_retained_shape(_repo_root()),
-        "retained report provenance",
-        "source root",
-        "command 内で",
-        "create-only immutable backup",
-        "atomic exchange",
-        "exact report/payload/backup/quarantine identity",
-        "semantic smoke",
-        "server/worker join verdict",
-        "process-local",
-        "same-ID recovery",
-        "joined failure は exact rollback",
-        "unjoined child は両 lease を保持した deferred fencing",
-        "post-commit cleanup staging は journal に束縛された same-ID recovery",
-        "immutable backup と quarantined v3 は成功後も保持",
-    )
-    for fragment in required_fragments:
-        assert fragment in content
-        drifted = content.replace(fragment, f"removed-{required_fragments.index(fragment)}", 1)
-        assert module.validate_market_cutover_guidance(drifted, skill_file) != []
-
-
-@pytest.mark.parametrize(
-    "missing_option",
-    ("--retained-report-id", "--backup-id", "--symbol", "--strategy"),
-)
-@pytest.mark.parametrize(
-    "skill_name",
-    ("bt-database-management", "bt-market-sync-strategies"),
-)
-def test_market_cutover_guidance_rejects_pressure_example_missing_required_option(
-    missing_option: str,
-    skill_name: str,
-) -> None:
-    module = _load_audit_module()
-    repo_root = _repo_root()
-    skill_file = repo_root / f".codex/skills/{skill_name}/SKILL.md"
-    canonical = _required_promote_retained_shape(repo_root)
-    incomplete = canonical.replace(f" {missing_option} ...", "")
-    current_incomplete = (
-        "bt market-cutover promote-retained REPORT_ID "
-        "--retained-report-id ... --backup-id ..."
-    )
-    content = skill_file.read_text().replace(current_incomplete, canonical)
-    content += f"\nPressure example: `{incomplete}`.\n"
-
-    errors = module.validate_market_cutover_guidance(content, skill_file)
-
-    assert any("incomplete promote-retained CLI example" in error for error in errors)
-
-
-@pytest.mark.parametrize(
-    "relative_path",
-    (
-        "AGENTS.md",
-        ".superpowers/sdd/task-6-report.md",
-        "docs/superpowers/plans/2026-07-17-repository-governance-modernization.md",
-        "docs/superpowers/specs/2026-07-17-repository-governance-modernization-design.md",
-    ),
-)
-def test_active_market_cutover_guidance_uses_source_derived_cli_shape(
-    relative_path: str,
-) -> None:
-    repo_root = _repo_root()
-
-    assert _required_promote_retained_shape(repo_root) in (
-        repo_root / relative_path
-    ).read_text()
-
-
-@pytest.mark.parametrize(
-    "contradiction",
-    (
-        "Retained promotion with promote-retained may run sync.",
-        "Retained promotion with promote-retained can call J-Quants.",
-        "Retained promotion with promote-retained is allowed to rebuild.",
-        "During retained promotion, sync is allowed.",
-        "During retained promotion, J-Quants calls are permitted.",
-        "During retained promotion, rebuild is allowed.",
-        "During retained promotion, operators may manually clear lock, journal, and staging.",
-        "During retained promotion, manual lock and journal changes are allowed.",
-        "Retained promotion では sync を実行する。",
-        "Retained promotion では J-Quants を呼び出す。",
-        "Retained promotion では rebuild する。",
-        "Retained promotion では lock / journal / staging を手動変更する。",
-    ),
-)
-@pytest.mark.parametrize(
-    "skill_name",
-    ("bt-database-management", "bt-market-sync-strategies"),
-)
-def test_market_cutover_guidance_rejects_all_forbidden_allowance_language(
-    contradiction: str,
-    skill_name: str,
-) -> None:
-    module = _load_audit_module()
-    skill_file = _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
-
-    errors = module.validate_market_cutover_guidance(
-        f"{skill_file.read_text()}\n{contradiction}\n",
-        skill_file,
-    )
-
-    assert any("contradictory retained-promotion guidance" in error for error in errors)
-
-
-@pytest.mark.parametrize(
-    "skill_name",
-    ("bt-database-management", "bt-market-sync-strategies"),
-)
-def test_market_cutover_guidance_accepts_exact_japanese_negative_clauses(
-    skill_name: str,
-) -> None:
-    module = _load_audit_module()
-    skill_file = _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
-    negative_clauses = (
-        "Retained promotion では sync を実行しない。",
-        "Retained promotion では J-Quants を呼び出さない。",
-        "Retained promotion では rebuild しない。",
-        "Retained promotion では lock / journal / staging を手動変更しない。",
-    )
-
-    errors = module.validate_market_cutover_guidance(
-        f"{skill_file.read_text()}\n{' '.join(negative_clauses)}\n",
-        skill_file,
-    )
-
-    assert errors == []
-
-
-@pytest.mark.parametrize(
-    ("skill_name", "negative_fragment"),
-    (
-        (
-            "bt-database-management",
-            "lock / journal / staging を手動変更せず",
-        ),
-        (
-            "bt-market-sync-strategies",
-            "operator は lock / journal / staging を手動変更しない",
-        ),
-    ),
-)
-def test_market_cutover_guidance_requires_actual_operator_non_mutation_clause(
-    skill_name: str,
-    negative_fragment: str,
-) -> None:
-    module = _load_audit_module()
-    skill_file = _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
-    content = skill_file.read_text()
-
-    assert negative_fragment in content
-    drifted = content.replace(negative_fragment, "removed-operator-non-mutation", 1)
-    errors = module.validate_market_cutover_guidance(drifted, skill_file)
-
-    assert any("operator non-mutation" in error for error in errors)
-
-
-@pytest.mark.parametrize(
-    ("skill_name", "negative_fragment", "affirmative_fragment"),
-    (
-        (
-            "bt-database-management",
-            "lock / journal / staging を手動変更せず",
-            "lock / journal / staging を手動変更する",
-        ),
-        (
-            "bt-market-sync-strategies",
-            "operator は lock / journal / staging を手動変更しない",
-            "operator は lock / journal / staging を手動変更する",
-        ),
-    ),
-)
-def test_market_cutover_guidance_rejects_actual_operator_clause_reversal(
-    skill_name: str,
-    negative_fragment: str,
-    affirmative_fragment: str,
-) -> None:
-    module = _load_audit_module()
-    skill_file = _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
-    content = skill_file.read_text()
-
-    assert negative_fragment in content
-    drifted = content.replace(negative_fragment, affirmative_fragment, 1)
-    errors = module.validate_market_cutover_guidance(drifted, skill_file)
-
-    assert any("operator non-mutation" in error for error in errors)
-    assert any("contradictory retained-promotion guidance" in error for error in errors)
 
 
 def test_ts_financial_guidance_tracks_optional_request_and_required_response() -> None:

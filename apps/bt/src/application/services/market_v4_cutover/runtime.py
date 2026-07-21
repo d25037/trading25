@@ -1,4 +1,4 @@
-"""Focused Market v4 cutover responsibility module."""
+"""Focused Market v5 cutover responsibility module."""
 
 from __future__ import annotations
 
@@ -23,7 +23,6 @@ from .project_paths import bt_project_root
 
 _CREATE_JOB_RESPONSE_FIELDS: dict[str, tuple[str, str]] = {
     "/api/db/sync": ("sync", "jobId"),
-    "/api/db/adjusted-metrics/materialize": ("materialize", "jobId"),
     "/api/analytics/screening/jobs": ("screening", "job_id"),
     "/api/dataset": ("dataset", "jobId"),
 }
@@ -219,16 +218,21 @@ class SubprocessRuntimeAdapter:
             )
         except RuntimeStopError:
             raise
-        except Exception as exc:
+        except BaseException as exc:
             try:
                 self.stop(api)
             except RuntimeStopError as stop_error:
                 raise stop_error from exc
-            except Exception as stop_error:
+            except BaseException as stop_error:
                 raise RuntimeStopError(
                     "Owned FastAPI startup cleanup has no join verdict",
                     process_joined=False,
                 ) from stop_error
+            if not isinstance(exc, Exception):
+                raise RuntimeStopError(
+                    "Owned FastAPI startup interrupted after child joined",
+                    process_joined=True,
+                ) from exc
             raise
 
     def cancel_owned_work(self, api: ApiAdapter) -> None:
@@ -239,11 +243,6 @@ class SubprocessRuntimeAdapter:
                 "DELETE",
                 "/api/db/sync/jobs/{job_id}",
                 "/api/db/sync/jobs/{job_id}",
-            ),
-            "materialize": (
-                "DELETE",
-                "/api/db/adjusted-metrics/materialize/jobs/{job_id}",
-                "/api/db/adjusted-metrics/materialize/jobs/{job_id}",
             ),
             "screening": (
                 "POST",

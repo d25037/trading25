@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import date
 from typing import Any, Literal
 
 import pandas as pd
@@ -21,8 +23,8 @@ from src.domains.analytics.fundamental_ranking import (
     StatementRow,
     normalize_period_label,
 )
-from src.domains.fundamentals.adjustment_basis import StockAdjustmentBasis
 from src.infrastructure.db.market.market_reader import MarketDbQueryable, MarketDbReader
+from src.shared.provider_stock_window import validate_provider_plan
 from src.shared.utils.pit_guard import filter_records_as_of
 from src.shared.utils.share_adjustment import (
     ShareCountSnapshot,
@@ -35,66 +37,194 @@ FUNDAMENTAL_BASE_COLUMNS = (
 )
 
 
-def resolve_ready_adjustment_bases(
+@dataclass(frozen=True)
+class ProviderWindow:
+    code: str
+    coverage_start: str
+    coverage_end: str
+    provider_plan: str
+    provider_as_of: str
+    source_fingerprint: str
+    fundamentals_adjustment_basis_date: str
+    fundamentals_source_fingerprint: str
+    statement_count: int
+    materialized_at: str
+
+
+def resolve_provider_windows(
     reader: MarketDbQueryable,
     codes: Sequence[str],
     effective_market_date: str,
-) -> dict[str, StockAdjustmentBasis]:
-    """Resolve exactly one ready, containing, fully covered basis per code."""
+) -> dict[str, ProviderWindow]:
+    """Resolve complete provider windows and fail closed on pending current metrics."""
     normalized_codes = sorted({normalize_equity_code(code) for code in codes if code})
     if not normalized_codes:
         return {}
     placeholders = ", ".join("?" for _ in normalized_codes)
+    provider_code = normalized_code_sql("provider.code")
     rows = reader.query(
         f"""
-        SELECT code, basis_id, valid_from, valid_to_exclusive,
-               adjustment_through_date, source_fingerprint,
-               materialized_through_date, status
-        FROM stock_adjustment_bases
-        WHERE code IN ({placeholders})
-          AND valid_from <= ?
-          AND (valid_to_exclusive IS NULL OR ? < valid_to_exclusive)
-        ORDER BY code, valid_from
+        SELECT {provider_code} AS code,
+               provider.coverage_start, provider.coverage_end,
+               provider.provider_plan,
+               provider.provider_as_of,
+               provider.source_fingerprint AS provider_source_fingerprint,
+               state.fundamentals_adjustment_basis_date,
+               state.source_fingerprint AS fundamentals_source_fingerprint,
+               state.statement_count, state.materialized_at
+        FROM stock_provider_windows AS provider
+        LEFT JOIN current_basis_fundamentals_state AS state
+          ON state.code = {provider_code}
+        WHERE {provider_code} IN ({placeholders})
+        ORDER BY code
         """,
-        (*normalized_codes, effective_market_date, effective_market_date),
+        tuple(normalized_codes),
     )
-    by_code: dict[str, list[Any]] = {}
+    by_code: dict[str, Any] = {}
     for row in rows:
-        by_code.setdefault(normalize_equity_code(row["code"]), []).append(row)
+        by_code[normalize_equity_code(row["code"])] = row
 
-    resolved: dict[str, StockAdjustmentBasis] = {}
-    for code in normalized_codes:
-        candidates = by_code.get(code, [])
-        if len(candidates) != 1:
-            raise ValueError(
-                f"adjusted_metrics_pit unavailable for {code} on {effective_market_date}: "
-                f"expected one containing basis, found {len(candidates)}"
-            )
-        row = candidates[0]
-        raw_materialized_through_date = row["materialized_through_date"]
-        materialized_through_date = (
-            str(raw_materialized_through_date)
-            if raw_materialized_through_date is not None
-            else ""
+    pending_code = normalized_code_sql("code")
+    pending_rows = reader.query(
+        f"""
+        SELECT DISTINCT {pending_code} AS code
+        FROM current_basis_recompute_pending
+        WHERE {pending_code} IN ({placeholders})
+        ORDER BY code
+        """,
+        tuple(normalized_codes),
+    )
+    if pending_rows:
+        raise ValueError(
+            "market_db_sync current-basis recompute is pending for "
+            + ", ".join(str(row["code"]) for row in pending_rows)
         )
-        if row["status"] != "ready" or materialized_through_date < effective_market_date:
+
+    metric_code = normalized_code_sql("metric.code")
+    source_code = normalized_code_sql("source.code")
+    metric_integrity_rows = reader.query(
+        f"""
+        SELECT {metric_code} AS code,
+               COUNT(DISTINCT metric.statement_id) AS metric_count,
+               COUNT(*) FILTER (
+                   WHERE state.code IS NULL
+                      OR metric.fundamentals_adjustment_basis_date
+                         IS DISTINCT FROM state.fundamentals_adjustment_basis_date
+                      OR metric.source_fingerprint
+                         IS DISTINCT FROM state.source_fingerprint
+                      OR source.statement_id IS NULL
+                      OR metric.disclosed_date IS DISTINCT FROM source.disclosed_date
+                      OR metric.disclosed_at IS DISTINCT FROM source.disclosed_at
+                      OR metric.period_end IS DISTINCT FROM source.period_end
+                      OR upper(COALESCE(metric.period_type, ''))
+                         IS DISTINCT FROM upper(
+                             COALESCE(source.type_of_current_period, '')
+                         )
+               ) AS invalid_count
+        FROM statement_metrics_adjusted AS metric
+        LEFT JOIN current_basis_fundamentals_state AS state
+          ON state.code = {metric_code}
+        LEFT JOIN statements AS source
+          ON {source_code} = {metric_code}
+         AND source.statement_id = metric.statement_id
+        WHERE {metric_code} IN ({placeholders})
+        GROUP BY 1
+        """,
+        tuple(normalized_codes),
+    )
+    metric_integrity = {
+        normalize_equity_code(row["code"]): (
+            int(row["metric_count"] or 0),
+            int(row["invalid_count"] or 0),
+        )
+        for row in metric_integrity_rows
+    }
+    raw_count_rows = reader.query(
+        f"""
+        SELECT {source_code} AS code,
+               COUNT(DISTINCT source.statement_id) AS statement_count
+        FROM statements AS source
+        WHERE {source_code} IN ({placeholders})
+        GROUP BY 1
+        """,
+        tuple(normalized_codes),
+    )
+    raw_counts = {
+        normalize_equity_code(row["code"]): int(row["statement_count"] or 0)
+        for row in raw_count_rows
+    }
+
+    resolved: dict[str, ProviderWindow] = {}
+    provider_plans: set[str] = set()
+    provider_as_of_dates: set[date] = set()
+    for code in normalized_codes:
+        row = by_code.get(code)
+        if row is None:
             raise ValueError(
-                f"adjusted_metrics_pit unavailable for {code} on {effective_market_date}: "
-                "basis is not ready and fully covered"
+                f"market_db_sync unavailable for {code} on {effective_market_date}: "
+                "provider window is missing"
             )
-        resolved[code] = StockAdjustmentBasis(
+        coverage_start = str(row["coverage_start"])
+        coverage_end = str(row["coverage_end"])
+        try:
+            coverage_start_date = date.fromisoformat(coverage_start)
+            coverage_end_date = date.fromisoformat(coverage_end)
+            provider_as_of_date = date.fromisoformat(str(row["provider_as_of"]))
+            provider_plan = validate_provider_plan(row["provider_plan"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"market_db_sync unavailable for {code} on {effective_market_date}: "
+                "provider window lineage is invalid"
+            ) from exc
+        state_basis_date = row["fundamentals_adjustment_basis_date"]
+        state_fingerprint = row["fundamentals_source_fingerprint"]
+        state_count = row["statement_count"]
+        materialized_at = row["materialized_at"]
+        if (
+            coverage_start > effective_market_date
+            or coverage_end < effective_market_date
+            or coverage_start_date > coverage_end_date
+            or provider_as_of_date < coverage_end_date
+            or not str(row["provider_source_fingerprint"] or "").strip()
+        ):
+            raise ValueError(
+                f"market_db_sync unavailable for {code} on {effective_market_date}: "
+                "provider window does not fully cover the target date"
+            )
+        metric_count, invalid_count = metric_integrity.get(code, (0, 0))
+        raw_count = raw_counts.get(code, 0)
+        if (
+            state_basis_date is None
+            or str(state_basis_date) != coverage_end
+            or not str(state_fingerprint or "").strip()
+            or state_count is None
+            or int(state_count) != metric_count
+            or int(state_count) != raw_count
+            or invalid_count != 0
+            or not str(materialized_at or "").strip()
+        ):
+            raise ValueError(
+                f"market_db_sync unavailable for {code} on "
+                f"{effective_market_date}: current-basis provenance is stale or incomplete"
+            )
+        resolved[code] = ProviderWindow(
             code=code,
-            basis_id=str(row["basis_id"]),
-            valid_from=str(row["valid_from"]),
-            valid_to_exclusive=(
-                str(row["valid_to_exclusive"])
-                if row["valid_to_exclusive"] is not None
-                else None
-            ),
-            adjustment_through_date=str(row["adjustment_through_date"]),
-            source_fingerprint=str(row["source_fingerprint"]),
-            materialized_through_date=materialized_through_date,
-            status="ready",
+            coverage_start=coverage_start,
+            coverage_end=coverage_end,
+            provider_plan=provider_plan,
+            provider_as_of=str(row["provider_as_of"]),
+            source_fingerprint=str(row["provider_source_fingerprint"]),
+            fundamentals_adjustment_basis_date=str(state_basis_date),
+            fundamentals_source_fingerprint=str(state_fingerprint),
+            statement_count=int(state_count),
+            materialized_at=str(materialized_at),
+        )
+        provider_plans.add(provider_plan)
+        provider_as_of_dates.add(provider_as_of_date)
+    if len(provider_plans) != 1 or len(provider_as_of_dates) != 1:
+        raise ValueError(
+            "market_db_sync unavailable: provider windows do not share one provider "
+            "plan and as-of frontier"
         )
     return resolved
 
@@ -118,63 +248,26 @@ def _target_stock_codes(
     return [str(row["code"]) for row in rows]
 
 
-def _resolved_basis_values_sql(
-    bases: Mapping[str, StockAdjustmentBasis],
-) -> tuple[str, tuple[str, ...]]:
-    if not bases:
-        return "VALUES (CAST(NULL AS TEXT), CAST(NULL AS TEXT))", ()
-    values = ", ".join("(?, ?)" for _ in bases)
-    params = tuple(value for code, basis in bases.items() for value in (code, basis.basis_id))
-    return f"VALUES {values}", params
-
-
-def resolved_basis_price_ctes(
-    bases: Mapping[str, StockAdjustmentBasis],
-) -> tuple[str, tuple[str, ...]]:
-    """Build exact-basis projected raw OHLCV CTEs for analytics queries."""
-    basis_values_sql, basis_params = _resolved_basis_values_sql(bases)
-    raw_norm = normalized_code_sql("raw.code")
-    raw_order = prefer_4digit_order_sql("raw.code")
-    return (
-        f"""
-        resolved_bases(normalized_code, basis_id) AS ({basis_values_sql}),
-        normalized_raw AS (
+def provider_price_cte() -> str:
+    """Canonical normalized provider-adjusted stock_data relation."""
+    price_norm = normalized_code_sql("price.code")
+    price_order = prefer_4digit_order_sql("price.code")
+    return f"""
+        provider_price AS (
             SELECT normalized_code, date, open, high, low, close, volume
             FROM (
                 SELECT
-                    {raw_norm} AS normalized_code,
-                    raw.date, raw.open, raw.high, raw.low, raw.close, raw.volume,
+                    {price_norm} AS normalized_code,
+                    price.date, price.open, price.high, price.low, price.close, price.volume,
                     ROW_NUMBER() OVER (
-                        PARTITION BY {raw_norm}, raw.date
-                        ORDER BY {raw_order}
+                        PARTITION BY {price_norm}, price.date
+                        ORDER BY {price_order}
                     ) AS rn
-                FROM stock_data_raw AS raw
+                FROM stock_data AS price
             )
             WHERE rn = 1
-        ),
-        basis_price AS (
-            SELECT
-                raw.normalized_code,
-                raw.date,
-                raw.open * segment.cumulative_factor AS open,
-                raw.high * segment.cumulative_factor AS high,
-                raw.low * segment.cumulative_factor AS low,
-                raw.close * segment.cumulative_factor AS close,
-                ROUND(raw.volume / segment.cumulative_factor) AS volume
-            FROM normalized_raw AS raw
-            JOIN resolved_bases AS basis USING (normalized_code)
-            JOIN stock_adjustment_basis_segments AS segment
-              ON segment.code = basis.normalized_code
-             AND segment.basis_id = basis.basis_id
-             AND raw.date >= segment.source_date_from
-             AND (
-                 segment.source_date_to_exclusive IS NULL
-                 OR raw.date < segment.source_date_to_exclusive
-             )
         )
-        """,
-        basis_params,
-    )
+        """
 
 
 def table_exists(reader: MarketDbReader, table_name: str) -> bool:
@@ -207,9 +300,9 @@ def optional_daily_valuation_expr(
 
 
 def resolve_latest_stock_data_date(reader: MarketDbReader) -> str:
-    if not table_exists(reader, "stock_data_raw"):
+    if not table_exists(reader, "stock_data"):
         raise ValueError("No trading data available in database")
-    row = reader.query_one("SELECT MAX(date) as max_date FROM stock_data_raw")
+    row = reader.query_one("SELECT MAX(date) as max_date FROM stock_data")
     if row is None or row["max_date"] is None:
         raise ValueError("No trading data available in database")
     return str(row["max_date"])
@@ -221,10 +314,10 @@ def load_fundamental_stock_rows(
     market_codes: list[str],
 ) -> list[Mapping[str, Any]]:
     market_clause, market_params = build_market_filter(market_codes)
-    bases = resolve_ready_adjustment_bases(
+    resolve_provider_windows(
         reader, _target_stock_codes(reader, date, market_codes), date
     )
-    price_ctes, basis_params = resolved_basis_price_ctes(bases)
+    price_ctes = provider_price_cte()
     stocks_cte = stocks_canonical_cte()
     sql = f"""
         WITH
@@ -232,11 +325,11 @@ def load_fundamental_stock_rows(
         {price_ctes}
         SELECT {FUNDAMENTAL_BASE_COLUMNS}
         FROM stocks_canonical s
-        JOIN basis_price sd
+        JOIN provider_price sd
             ON sd.normalized_code = s.normalized_code AND sd.date = ?
         WHERE 1 = 1{market_clause}
     """
-    return reader.query(sql, (date, *basis_params, date, *market_params))
+    return reader.query(sql, (date, date, *market_params))
 
 
 def load_adjusted_daily_valuation_frame(
@@ -245,14 +338,14 @@ def load_adjusted_daily_valuation_frame(
     market_codes: list[str],
 ) -> pd.DataFrame:
     if not table_exists(reader, "daily_valuation"):
-        raise ValueError("adjusted_metrics_pit daily_valuation is unavailable")
+        raise ValueError("market_db_sync daily_valuation is unavailable")
     market_clause, market_params = build_market_filter(market_codes)
-    bases = resolve_ready_adjustment_bases(
+    resolve_provider_windows(
         reader,
         _target_stock_codes(reader, date, market_codes),
         date,
     )
-    price_ctes, basis_params = resolved_basis_price_ctes(bases)
+    price_ctes = provider_price_cte()
     stocks_cte = stocks_canonical_cte()
     valuation_norm = normalized_code_sql("code")
     valuation_order = prefer_4digit_order_sql("code")
@@ -299,7 +392,8 @@ def load_adjusted_daily_valuation_frame(
                 forward_eps_source,
                 forward_sales_disclosed_date,
                 forward_sales_source,
-                basis_version
+                fundamentals_adjustment_basis_date,
+                source_fingerprint
             FROM (
                 SELECT
                     {valuation_norm} AS normalized_code,
@@ -325,18 +419,14 @@ def load_adjusted_daily_valuation_frame(
                     forward_eps_source,
                     {forward_sales_disclosed_date_expr} AS forward_sales_disclosed_date,
                     {forward_sales_source_expr} AS forward_sales_source,
-                    basis_version,
+                    fundamentals_adjustment_basis_date,
+                    source_fingerprint,
                     ROW_NUMBER() OVER (
                         PARTITION BY {valuation_norm}, date
                         ORDER BY
-                            price_basis_date DESC NULLS LAST,
-                            basis_version DESC,
                             {valuation_order}
                     ) AS rn
                 FROM daily_valuation
-                JOIN resolved_bases
-                  ON resolved_bases.normalized_code = {valuation_norm}
-                 AND resolved_bases.basis_id = daily_valuation.basis_version
                 WHERE date = ?
             )
             WHERE rn = 1
@@ -346,7 +436,7 @@ def load_adjusted_daily_valuation_frame(
             s.company_name,
             s.market_code,
             s.sector_33_name,
-            bp.close AS current_price,
+            v.close AS current_price,
             bp.volume,
             v.eps,
             v.bps,
@@ -368,15 +458,24 @@ def load_adjusted_daily_valuation_frame(
             v.forward_sales_disclosed_date,
             v.forward_sales_source,
             v.price_basis_date,
-            v.basis_version
+            v.fundamentals_adjustment_basis_date,
+            provider.provider_as_of
         FROM valuation_canonical v
         JOIN stocks_canonical s
             ON s.normalized_code = v.normalized_code
-        JOIN basis_price bp
+        JOIN provider_price bp
             ON bp.normalized_code = v.normalized_code AND bp.date = v.date
+        JOIN current_basis_fundamentals_state state
+            ON state.code = v.normalized_code
+           AND state.fundamentals_adjustment_basis_date =
+               v.fundamentals_adjustment_basis_date
+           AND state.source_fingerprint = v.source_fingerprint
+        JOIN stock_provider_windows provider
+            ON provider.code = v.normalized_code
+           AND provider.coverage_end = state.fundamentals_adjustment_basis_date
         WHERE 1 = 1{market_clause}
     """
-    rows = reader.query(sql, (date, *basis_params, date, *market_params))
+    rows = reader.query(sql, (date, date, *market_params))
     return pd.DataFrame([dict(row.items()) for row in rows])
 
 
@@ -386,17 +485,18 @@ def load_adjusted_statement_metric_rows(
     market_codes: list[str],
 ) -> list[Mapping[str, Any]]:
     if not table_exists(reader, "statement_metrics_adjusted"):
-        raise ValueError("adjusted_metrics_pit statement metrics are unavailable")
+        raise ValueError("market_db_sync statement metrics are unavailable")
     market_clause, market_params = build_market_filter(market_codes)
-    bases = resolve_ready_adjustment_bases(
+    resolve_provider_windows(
         reader,
         _target_stock_codes(reader, date, market_codes),
         date,
     )
-    price_ctes, basis_params = resolved_basis_price_ctes(bases)
+    price_ctes = provider_price_cte()
     stocks_cte = stocks_canonical_cte()
-    metrics_norm = normalized_code_sql("code")
-    metrics_order = prefer_4digit_order_sql("code")
+    metrics_norm = normalized_code_sql("metric.code")
+    metrics_order = prefer_4digit_order_sql("metric.code")
+    source_norm = normalized_code_sql("source.code")
     sql = f"""
         WITH
         {stocks_cte},
@@ -404,56 +504,74 @@ def load_adjusted_statement_metric_rows(
         metrics_canonical AS (
             SELECT
                 normalized_code,
+                statement_id,
                 disclosed_date,
+                disclosed_at,
                 period_end,
                 period_type,
                 adjusted_eps,
                 adjusted_bps,
                 adjusted_forecast_eps,
-                basis_version
+                fundamentals_adjustment_basis_date,
+                source_fingerprint
             FROM (
                 SELECT
                     {metrics_norm} AS normalized_code,
-                    disclosed_date,
-                    period_end,
-                    period_type,
-                    adjusted_eps,
-                    adjusted_bps,
-                    adjusted_forecast_eps,
-                    basis_version,
+                    metric.statement_id,
+                    metric.disclosed_date,
+                    metric.disclosed_at,
+                    metric.period_end,
+                    metric.period_type,
+                    metric.adjusted_eps,
+                    metric.adjusted_bps,
+                    metric.adjusted_forecast_eps,
+                    metric.fundamentals_adjustment_basis_date,
+                    metric.source_fingerprint,
                     ROW_NUMBER() OVER (
-                        PARTITION BY {metrics_norm}, disclosed_date, period_end, period_type
-                        ORDER BY
-                            price_basis_date DESC NULLS LAST,
-                            basis_version DESC,
-                            {metrics_order}
+                        PARTITION BY {metrics_norm}, metric.statement_id
+                        ORDER BY {metrics_order}
                     ) AS rn
-                FROM statement_metrics_adjusted
-                JOIN resolved_bases
-                  ON resolved_bases.normalized_code = {metrics_norm}
-                 AND resolved_bases.basis_id = statement_metrics_adjusted.basis_version
-                WHERE disclosed_date <= ?
+                FROM statement_metrics_adjusted AS metric
+                JOIN current_basis_fundamentals_state AS state
+                  ON state.code = {metrics_norm}
+                 AND state.fundamentals_adjustment_basis_date =
+                     metric.fundamentals_adjustment_basis_date
+                 AND state.source_fingerprint = metric.source_fingerprint
+                JOIN stock_provider_windows AS provider
+                  ON provider.code = state.code
+                 AND provider.coverage_end =
+                     state.fundamentals_adjustment_basis_date
+                JOIN statements AS source
+                  ON {source_norm} = {metrics_norm}
+                 AND source.statement_id = metric.statement_id
+                WHERE metric.disclosed_at <= ?
             )
             WHERE rn = 1
         )
         SELECT
             s.code,
+            m.statement_id,
             m.disclosed_date,
+            m.disclosed_at,
             m.period_end,
             m.period_type,
             m.adjusted_eps,
             m.adjusted_bps,
             m.adjusted_forecast_eps,
-            m.basis_version
+            m.fundamentals_adjustment_basis_date,
+            m.source_fingerprint
         FROM metrics_canonical m
         JOIN stocks_canonical s
             ON s.normalized_code = m.normalized_code
-        JOIN basis_price bp
+        JOIN provider_price bp
             ON bp.normalized_code = m.normalized_code AND bp.date = ?
         WHERE 1 = 1{market_clause}
-        ORDER BY s.code, m.disclosed_date DESC
+        ORDER BY s.code, m.disclosed_at DESC, m.statement_id
     """
-    return reader.query(sql, (date, *basis_params, date, date, *market_params))
+    return reader.query(
+        sql,
+        (date, f"{date}T23:59:59.999999+09:00", date, *market_params),
+    )
 
 
 def adjusted_recent_actual_eps_max_by_code(

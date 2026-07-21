@@ -1,4 +1,4 @@
-"""Focused Market v4 cutover responsibility module."""
+"""Focused Market v5 cutover responsibility module."""
 
 from __future__ import annotations
 
@@ -7,9 +7,7 @@ import hashlib
 import os
 from pathlib import Path
 import re
-import secrets
 import stat
-import time
 from typing import Callable, Iterator
 
 from src.infrastructure.db.market import managed_root as _managed_root
@@ -18,6 +16,7 @@ from src.infrastructure.db.market import (
 )
 from . import filesystem
 from .contracts import (
+    ApiAdapter,
     AtomicExchange,
     DuckDbAdapter,
     MarketSourceMetadata,
@@ -85,6 +84,35 @@ class CutoverWorkspace:
             )
         return self._active_lease.fd
 
+    def start_runtime(
+        self,
+        *,
+        root_fd: int,
+        market_fd: int,
+        lease_fd: int,
+        environment: dict[str, str],
+        log_path: Path,
+        log_fd: int,
+    ) -> ApiAdapter:
+        """Require an explicit join verdict if startup exits before returning."""
+
+        try:
+            return self.runtime.start(
+                root_fd=root_fd,
+                market_fd=market_fd,
+                lease_fd=lease_fd,
+                environment=environment,
+                log_path=log_path,
+                log_fd=log_fd,
+            )
+        except RuntimeStopError:
+            raise
+        except BaseException as exc:
+            raise RuntimeStopError(
+                "Owned FastAPI startup failed without a join verdict",
+                process_joined=False,
+            ) from exc
+
     @contextmanager
     def exclusive_operation(self) -> Iterator[str]:
         if self._active_lease is not None:
@@ -139,7 +167,7 @@ class CutoverWorkspace:
 
     @property
     def operations_root(self) -> Path:
-        return self.data_root / "operations" / "market-v4-cutover"
+        return self.data_root / "operations" / "market-v5-cutover"
 
     @property
     def backups_root(self) -> Path:
@@ -311,30 +339,57 @@ class CutoverWorkspace:
         with _managed_root.ManagedRootFd(Path("."), os.dup(market_fd)) as market:
             market.remove_tree(Path(runtime_name))
 
-    def _activate_staged_market(self, staged_market: Path, operation_id: str) -> Path:
+    def _prepare_staged_activation(
+        self,
+        staged_market: Path,
+        *,
+        quarantine: Path,
+    ) -> None:
         self._assert_current_data_root_identity()
         self._validate_active_roots()
         self._assert_managed_directory(staged_market)
         quarantine_root = self.operations_root / "quarantine"
+        if quarantine.parent != quarantine_root:
+            raise _managed_root.CutoverSafetyError(
+                "Activation quarantine path is not deterministic"
+            )
         self._prepare_managed_directory(quarantine_root, exist_ok=True)
-        quarantine = quarantine_root / (
-            f"pre-cutover-{operation_id}-{time.time_ns()}-{secrets.token_hex(4)}"
-        )
         self._assert_managed_target_absent(quarantine)
-        self._secure_rename(self.market_root, quarantine)
+
+    def _activate_staged_market(
+        self,
+        staged_market: Path,
+        *,
+        quarantine: Path,
+    ) -> None:
+        self._assert_current_data_root_identity()
+        self._validate_active_roots()
+        self._assert_managed_directory(staged_market)
+        self._assert_managed_directory(quarantine.parent)
+        self._assert_managed_target_absent(quarantine)
+        active_relative = self._managed_relative(self.market_root)
+        staged_relative = self._managed_relative(staged_market)
+        self.atomic_exchange.exchange(
+            self.managed(),
+            active_relative,
+            staged_relative,
+        )
         try:
-            self._secure_rename(staged_market, self.market_root)
+            self._secure_rename(staged_market, quarantine)
         except Exception as exc:
             try:
-                self._secure_rename(quarantine, self.market_root)
+                self.atomic_exchange.exchange(
+                    self.managed(),
+                    active_relative,
+                    staged_relative,
+                )
             except Exception as rollback_exc:
                 raise _managed_root.CutoverSafetyError(
-                    "Staged Market activation and active-tree rollback failed"
+                    "Atomic Market activation committed but active-tree rollback failed"
                 ) from rollback_exc
             raise _managed_root.CutoverSafetyError(
-                "Staged Market activation failed; active tree was rolled back"
+                "Activated Market quarantine failed; atomic exchange was rolled back"
             ) from exc
-        return quarantine
 
     @staticmethod
     def _validate_id(value: str | None, *, label: str) -> str:

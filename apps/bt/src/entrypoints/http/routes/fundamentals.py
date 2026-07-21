@@ -53,9 +53,9 @@ Compute fundamental analysis metrics for a stock symbol.
 **Data Sources**:
 - Financial statements: local `market.duckdb`
 - Valuation/per-share summary: local `daily_valuation` in `market.duckdb`
-- Historical adjustment basis, exact stock-master snapshot, and PIT-consistent
-  adjusted metrics are required; unavailable PIT inputs return 409 with
-  `adjusted_metrics_pit` recovery guidance.
+- Provider vintage, exact stock-master snapshot, and PIT-consistent current-basis
+  fundamentals are required; unavailable inputs return 409 with normal
+  `market_db_sync` recovery guidance.
 
 **Response includes**:
 - `data`: Array of fundamental data points sorted by date (descending)

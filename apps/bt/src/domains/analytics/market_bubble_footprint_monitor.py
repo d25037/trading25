@@ -16,10 +16,6 @@ from typing import Any
 import duckdb
 import pandas as pd
 
-from src.domains.analytics.daily_ranking_consumer_support import (
-    sql_string_list as _sql_string_list,
-    table_exists as _table_exists,
-)
 from src.domains.analytics.market_bubble_footprint_support import (
     DEFAULT_FOOTPRINT_HORIZONS,
     BUBBLE_FOOTPRINT_ID,
@@ -27,11 +23,7 @@ from src.domains.analytics.market_bubble_footprint_support import (
     assert_footprint_required_tables as _assert_footprint_required_tables,
     build_footprint_table as _build_footprint_table,
     classify_footprint as _classify_footprint,
-    column_exists as _column_exists,
-    market_scope_case_sql as _market_scope_case_sql,
-    optional_double_expr as _optional_double_expr,
 )
-from src.domains.analytics.readonly_duckdb_support import normalize_code_sql
 from src.shared.config.settings import get_settings
 from src.shared.paths.resolver import get_cache_dir
 from src.shared.utils.market_code_alias import canonicalize_market_list
@@ -129,287 +121,14 @@ def _build_market_bubble_footprint_percentile_baseline(
     market_scopes: tuple[str, ...],
     table_name: str,
 ) -> pd.DataFrame:
-    _create_monitor_footprint_base_tables(
+    return _build_footprint_table(
         conn,
         start_date=start_date,
         end_date=end_date,
+        return_horizons=return_horizons,
         market_scopes=market_scopes,
-    )
-    horizons_sql = ", ".join(f"({int(horizon)})" for horizon in return_horizons)
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE monitor_footprint_pairs AS
-        WITH horizons(horizon) AS (VALUES {horizons_sql})
-        SELECT
-            s.snapshot_date,
-            h.horizon,
-            ca.date AS anchor_date
-        FROM monitor_snapshot_dates s
-        JOIN monitor_calendar cs ON cs.date = s.snapshot_date
-        JOIN horizons h ON TRUE
-        JOIN monitor_calendar ca ON ca.rn = cs.rn - h.horizon
-        """
-    )
-    conn.execute(
-        """
-        CREATE OR REPLACE TEMP TABLE monitor_footprint_observations AS
-        SELECT
-            p.snapshot_date,
-            p.anchor_date,
-            p.horizon,
-            l.code,
-            l.close / nullif(a.close, 0) - 1.0 AS return_decimal,
-            va.market_cap AS anchor_market_cap,
-            vl.market_cap AS latest_market_cap,
-            vl.forward_per,
-            vl.pbr
-        FROM monitor_footprint_pairs p
-        JOIN monitor_latest_stock l
-          ON l.date = p.snapshot_date
-        JOIN monitor_stock_price a
-          ON a.code = l.code
-         AND a.date = p.anchor_date
-        LEFT JOIN monitor_daily_valuation va
-          ON va.code = l.code
-         AND va.date = a.date
-        LEFT JOIN monitor_daily_valuation vl
-          ON vl.code = l.code
-         AND vl.date = l.date
-        WHERE l.close > 0
-          AND a.close > 0
-        """
-    )
-    conn.execute(
-        """
-        CREATE OR REPLACE TEMP TABLE monitor_footprint_contribution_base AS
-        SELECT
-            *,
-            anchor_market_cap * return_decimal AS cap_return_contribution
-        FROM monitor_footprint_observations
-        WHERE return_decimal IS NOT NULL
-          AND anchor_market_cap IS NOT NULL
-          AND anchor_market_cap > 0
-        """
-    )
-    conn.execute(
-        """
-        CREATE OR REPLACE TEMP TABLE monitor_footprint_metric_base AS
-        SELECT
-            c.*,
-            row_number() OVER (
-                PARTITION BY snapshot_date, horizon
-                ORDER BY cap_return_contribution DESC NULLS LAST
-            ) AS positive_contribution_rank,
-            row_number() OVER (
-                PARTITION BY snapshot_date, horizon
-                ORDER BY latest_market_cap DESC NULLS LAST
-            ) AS mcap_rank
-        FROM monitor_footprint_contribution_base c
-        """
-    )
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE {table_name} AS
-        SELECT
-            snapshot_date,
-            anchor_date,
-            horizon,
-            count(*) AS observation_count,
-            count(DISTINCT code) AS code_count,
-            avg(CASE WHEN return_decimal > 0 THEN 1.0 ELSE 0.0 END) * 100.0
-                AS breadth_up_pct,
-            avg(return_decimal) * 100.0 AS equal_weight_return_pct,
-            sum(anchor_market_cap * return_decimal) / nullif(sum(anchor_market_cap), 0)
-                * 100.0 AS cap_weight_return_pct,
-            (quantile_cont(return_decimal, 0.90) - quantile_cont(return_decimal, 0.10))
-                * 100.0 AS return_p90_p10_spread_pct,
-            sum(CASE WHEN positive_contribution_rank <= 10 AND cap_return_contribution > 0
-                     THEN cap_return_contribution ELSE 0 END)
-                / nullif(sum(CASE WHEN cap_return_contribution > 0
-                                  THEN cap_return_contribution ELSE 0 END), 0)
-                * 100.0 AS top10_positive_contribution_share_pct,
-            sum(CASE WHEN mcap_rank <= 10 THEN latest_market_cap ELSE 0 END)
-                / nullif(sum(latest_market_cap), 0) * 100.0 AS top10_mcap_share_pct,
-            sum(CASE WHEN forward_per > 40 OR pbr > 5 THEN latest_market_cap ELSE 0 END)
-                / nullif(sum(latest_market_cap), 0) * 100.0 AS expensive_mcap_share_pct,
-            100.0 AS pct_above_sma50,
-            100.0 AS pct_above_sma200,
-            CAST(NULL AS DOUBLE) AS top5_positive_contribution_share_pct,
-            CAST(NULL AS DOUBLE) AS top5_mcap_share_pct,
-            CAST(NULL AS DOUBLE) AS expensive_count_share_pct,
-            CAST(NULL AS DOUBLE) AS no_positive_earnings_count_share_pct,
-            CAST(NULL AS DOUBLE) AS median_trading_value_ratio_20v232,
-            CAST(NULL AS DOUBLE) AS p90_trading_value_ratio_20v232,
-            CAST(NULL AS DOUBLE) AS topix_return_pct
-        FROM monitor_footprint_metric_base
-        GROUP BY snapshot_date, anchor_date, horizon
-        ORDER BY snapshot_date, horizon
-        """
-    )
-    return conn.execute(f"SELECT * FROM {table_name}").fetchdf()
-
-
-def _create_monitor_footprint_base_tables(
-    conn: Any,
-    *,
-    start_date: str,
-    end_date: str | None,
-    market_scopes: tuple[str, ...],
-) -> None:
-    query_start = (pd.Timestamp(start_date) - pd.Timedelta(days=900)).strftime("%Y-%m-%d")
-    query_end_filter = "" if end_date is None else "AND date <= ?"
-    query_end_params = [] if end_date is None else [end_date]
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE monitor_calendar AS
-        SELECT date, row_number() OVER (ORDER BY date) AS rn
-        FROM (
-            SELECT DISTINCT date
-            FROM topix_data
-            WHERE close > 0
-              AND date >= ?
-              {query_end_filter}
-        )
-        ORDER BY date
-        """,
-        [query_start, *query_end_params],
-    )
-    conn.execute(
-        """
-        CREATE OR REPLACE TEMP TABLE monitor_snapshot_dates AS
-        WITH ranged AS (
-            SELECT date, substr(date, 1, 7) AS period_key
-            FROM monitor_calendar
-            WHERE date >= ?
-        ),
-        periodic AS (
-            SELECT max(date) AS snapshot_date
-            FROM ranged
-            GROUP BY period_key
-        ),
-        latest AS (
-            SELECT max(date) AS snapshot_date
-            FROM ranged
-        )
-        SELECT DISTINCT snapshot_date
-        FROM (
-            SELECT snapshot_date FROM periodic
-            UNION ALL
-            SELECT snapshot_date FROM latest
-        )
-        WHERE snapshot_date IS NOT NULL
-        ORDER BY snapshot_date
-        """,
-        [start_date],
-    )
-    conn.execute(
-        """
-        CREATE OR REPLACE TEMP TABLE monitor_required_dates AS
-        SELECT snapshot_date AS date FROM monitor_snapshot_dates
-        UNION
-        SELECT ca.date
-        FROM monitor_snapshot_dates s
-        JOIN monitor_calendar cs ON cs.date = s.snapshot_date
-        JOIN monitor_calendar ca
-          ON ca.rn IN (
-              cs.rn - 20,
-              cs.rn - 60,
-              cs.rn - 120,
-              cs.rn - 252
-          )
-        WHERE ca.date IS NOT NULL
-        """
-    )
-    _create_monitor_market_master_source(conn)
-    stock_code = normalize_code_sql("sd.code")
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE monitor_stock_price AS
-        SELECT code, date, close
-        FROM (
-            SELECT
-                {stock_code} AS code,
-                sd.date,
-                CAST(sd.close AS DOUBLE) AS close,
-                row_number() OVER (
-                    PARTITION BY {stock_code}, sd.date
-                    ORDER BY CASE WHEN length(sd.code) = 4 THEN 0 ELSE 1 END, sd.code
-                ) AS row_rank
-            FROM stock_data sd
-            JOIN monitor_required_dates rd
-              ON rd.date = sd.date
-            WHERE sd.close > 0
-        )
-        WHERE row_rank = 1
-        """
-    )
-    market_filter = (
-        "TRUE"
-        if "all" in market_scopes
-        else f"mm.market IN ({_sql_string_list(market_scopes)})"
-    )
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE monitor_latest_stock AS
-        SELECT p.code, p.date, p.close, mm.market
-        FROM monitor_stock_price p
-        JOIN monitor_market_master_source mm
-          ON mm.code = p.code
-         AND mm.date = p.date
-        WHERE {market_filter}
-        """
-    )
-    valuation_code = normalize_code_sql("dv.code")
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE monitor_daily_valuation AS
-        SELECT code, date, market_cap, forward_per, pbr
-        FROM (
-            SELECT
-                {valuation_code} AS code,
-                dv.date,
-                CAST(dv.market_cap AS DOUBLE) AS market_cap,
-                {_optional_double_expr(conn, "daily_valuation", "dv", "forward_per")}
-                    AS forward_per,
-                {_optional_double_expr(conn, "daily_valuation", "dv", "pbr")} AS pbr,
-                row_number() OVER (
-                    PARTITION BY {valuation_code}, dv.date
-                    ORDER BY dv.price_basis_date DESC NULLS LAST,
-                             dv.basis_version DESC NULLS LAST,
-                             CASE WHEN length(dv.code) = 4 THEN 0 ELSE 1 END,
-                             dv.code
-                ) AS row_rank
-            FROM daily_valuation dv
-            JOIN monitor_required_dates rd
-              ON rd.date = dv.date
-        )
-        WHERE row_rank = 1
-        """
-    )
-
-
-def _create_monitor_market_master_source(conn: Any) -> None:
-    if not _table_exists(conn, "stock_master_daily"):
-        raise RuntimeError("market.duckdb requires stock_master_daily for PIT bubble monitor")
-    code = normalize_code_sql("smd.code")
-    sector_expr = (
-        "smd.sector_33_name"
-        if _column_exists(conn, "stock_master_daily", "sector_33_name")
-        else "'unknown'"
-    )
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE monitor_market_master_source AS
-        SELECT
-            {code} AS code,
-            smd.date,
-            smd.company_name,
-            {_market_scope_case_sql("smd.market_code")} AS market,
-            {sector_expr} AS sector_33_name
-        FROM stock_master_daily smd
-        JOIN monitor_snapshot_dates d
-          ON d.snapshot_date = smd.date
-        """
+        frequency="monthly",
+        table_name=table_name,
     )
 
 
@@ -576,11 +295,14 @@ def _resolve_bubble_footprint_target_date(db_path: str, *, date: str | None) -> 
     conn = duckdb.connect(db_path, read_only=True)
     try:
         if date is None:
-            row = conn.execute("SELECT max(date) FROM stock_data WHERE close > 0").fetchone()
+            row = conn.execute(
+                "SELECT max(date) FROM stock_data_raw WHERE adjusted_close > 0"
+            ).fetchone()
         else:
             target = pd.Timestamp(date).strftime("%Y-%m-%d")
             row = conn.execute(
-                "SELECT max(date) FROM stock_data WHERE close > 0 AND date <= ?",
+                "SELECT max(date) FROM stock_data_raw "
+                "WHERE adjusted_close > 0 AND date <= ?",
                 [target],
             ).fetchone()
     finally:

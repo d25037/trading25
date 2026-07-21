@@ -3,8 +3,11 @@ from __future__ import annotations
 from datetime import date, timedelta
 from pathlib import Path
 
+import duckdb
+
 from tests.unit.domains.analytics.test_daily_ranking_research_base import (
-    _build_market_v4_research_fixture,
+    _build_market_v5_research_fixture,
+    _refresh_provider_window,
 )
 from src.domains.analytics.ranking_sma5_atr_deviation_evidence import (
     RankingSma5AtrDeviationEvidenceResult,
@@ -30,6 +33,13 @@ def test_sma5_atr_deviation_evidence_builds_direction_threshold_tables(
 
     assert result.observation_count > 0
     assert result.atr_windows == (5, 20)
+    assert {
+        "stock_provider_windows",
+        "stock_adjustment_events",
+        "current_basis_recompute_pending",
+        "current_basis_fundamentals_state",
+        "statement_metrics_adjusted",
+    }.issubset(result.required_tables)
     assert not result.coverage_diagnostics_df.empty
     assert not result.sma5_atr_deviation_bucket_evidence_df.empty
     assert not result.long_scaffold_sma5_atr_threshold_evidence_df.empty
@@ -115,7 +125,8 @@ def _build_sparse_large_atr_window_db(
     valid_dates = tuple(
         date(2020, 1, 1) + timedelta(days=index * 3) for index in range(700)
     )
-    conn = _build_market_v4_research_fixture(db_path, session_dates=valid_dates)
+    conn = _build_market_v5_research_fixture(db_path, session_dates=valid_dates)
+    _add_sma5_atr_statement_columns(conn)
     conn.execute("ALTER TABLE stock_master_daily ADD COLUMN sector_33_code TEXT")
     conn.execute("ALTER TABLE stock_master_daily ADD COLUMN sector_33_name TEXT")
     conn.execute(
@@ -141,9 +152,9 @@ def _build_sparse_large_atr_window_db(
         market_cap,
         base_volume,
     ) in enumerate(extra_securities):
-        basis_id = f"event-pit-v1:{code}:{valid_dates[0]}"
         conn.executemany(
-            "INSERT INTO stock_data_raw VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO stock_data_raw VALUES "
+            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     code,
@@ -152,11 +163,23 @@ def _build_sparse_large_atr_window_db(
                     close * 1.01,
                     close * 0.99,
                     close,
-                    base_volume + index * (security_index + 2),
+                    (volume := base_volume + index * (security_index + 2)),
+                    close * volume,
                     1.0,
+                    close * 0.995,
+                    close * 1.01,
+                    close * 0.99,
+                    close,
+                    volume,
                 )
                 for index, session_date in enumerate(valid_dates)
             ],
+        )
+        conn.execute(
+            "INSERT INTO stock_data SELECT code, date, adjusted_open, "
+            "adjusted_high, adjusted_low, adjusted_close, adjusted_volume "
+            "FROM stock_data_raw WHERE code = ?",
+            [code],
         )
         conn.executemany(
             "INSERT INTO stock_master_daily VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -175,7 +198,8 @@ def _build_sparse_large_atr_window_db(
             ],
         )
         conn.executemany(
-            "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO daily_valuation VALUES "
+            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     code,
@@ -188,28 +212,23 @@ def _build_sparse_large_atr_window_db(
                     7.0 + security_index,
                     market_cap,
                     market_cap * (0.55 + (security_index % 4) * 0.1),
-                    basis_id,
+                    valid_dates[-1],
+                    f"fundamentals-{code}",
                 )
                 for session_date in valid_dates
             ],
         )
         conn.execute(
-            "INSERT INTO stock_adjustment_bases VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-                code,
-                basis_id,
-                valid_dates[0],
-                None,
-                valid_dates[0],
-                f"fixture-{code}",
-                valid_dates[-1],
-                "ready",
-            ],
+            "INSERT INTO stock_provider_windows (code, coverage_start, coverage_end, "
+            "provider_plan, provider_as_of, source_fingerprint, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [code, valid_dates[0], valid_dates[-1], "premium", valid_dates[-1], "", "now"],
         )
         conn.execute(
-            "INSERT INTO stock_adjustment_basis_segments VALUES (?, ?, ?, ?, ?)",
-            [code, basis_id, valid_dates[0], None, 1.0],
+            "INSERT INTO current_basis_fundamentals_state VALUES (?, ?, ?, 0, ?)",
+            [code, valid_dates[-1], f"fundamentals-{code}", "now"],
         )
+        _refresh_provider_window(conn, code=code, provider_as_of=valid_dates[-1])
     conn.execute(
         """
         CREATE TABLE index_master (
@@ -218,30 +237,36 @@ def _build_sparse_large_atr_window_db(
         )
         """
     )
-    conn.execute(
-        """
-        CREATE TABLE statements (
-            code TEXT, disclosed_date TEXT, sales DOUBLE,
-            type_of_current_period TEXT, type_of_document TEXT
-        )
-        """
-    )
-    conn.executemany(
-        "INSERT INTO statements VALUES (?, ?, ?, ?, ?)",
-        [
-            (code, "2019-12-31", 1_000_000_000.0, "FY", "")
-            for (code,) in conn.execute(
-                "SELECT DISTINCT code FROM stock_data_raw ORDER BY code"
-            ).fetchall()
-        ],
-    )
     invalid_dates = tuple(
         session_date + timedelta(days=1) for session_date in valid_dates
     )
     conn.executemany(
-        "INSERT INTO stock_data_raw VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO stock_data_raw VALUES "
+        "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
-            ("1111", session_date, 0.0, 0.0, 0.0, 0.0, 10_000, 1.0)
+            (
+                "1111",
+                session_date,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                10_000,
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                10_000,
+            )
+            for session_date in invalid_dates
+        ],
+    )
+    conn.executemany(
+        "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [
+            ("1111", session_date, 0.0, 0.0, 0.0, 0.0, 10_000)
             for session_date in invalid_dates
         ],
     )
@@ -261,8 +286,18 @@ def _build_sparse_large_atr_window_db(
             for session_date in invalid_dates
         ],
     )
+    _refresh_provider_window(
+        conn,
+        code="1111",
+        provider_as_of=invalid_dates[-1],
+    )
     conn.close()
     return db_path, valid_dates
+
+
+def _add_sma5_atr_statement_columns(conn: duckdb.DuckDBPyConnection) -> None:
+    conn.execute("ALTER TABLE statements ADD COLUMN sales DOUBLE")
+    conn.execute("ALTER TABLE statements ADD COLUMN type_of_document TEXT")
 
 
 def _run_test_research(db_path: Path) -> RankingSma5AtrDeviationEvidenceResult:

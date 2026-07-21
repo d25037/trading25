@@ -58,7 +58,7 @@ def _make_response(symbol: str = "7203", data_count: int = 1) -> FundamentalsCom
         data=data,
         latestMetrics=data[0] if data else None,
         dailyValuation=None,
-        priceBasisDate="2024-06-27",
+        fundamentalsAdjustmentBasisDate="2024-06-27",
         tradingValuePeriod=15,
         forecastEpsLookbackFyCount=3,
         lastUpdated="2024-06-01T00:00:00Z",
@@ -104,7 +104,8 @@ class TestGetFundamentals:
         ("reason", "status"),
         [
             ("stock_not_listed_as_of", 404),
-            ("historical_adjustment_basis_required", 409),
+            ("provider_window_required", 409),
+            ("current_adjusted_metrics_required", 409),
             ("stock_master_snapshot_required", 409),
             ("pit_snapshot_inconsistent", 409),
         ],
@@ -143,12 +144,12 @@ class TestGetFundamentals:
             recovery = [item for item in body["details"] if item["field"] == "recovery"]
             if status == 409:
                 assert recovery == [
-                    {"field": "recovery", "message": "adjusted_metrics_pit"}
+                    {"field": "recovery", "message": "market_db_sync"}
                 ]
             else:
                 assert recovery == []
 
-    def test_get_and_post_map_total_valuation_loss_to_adjusted_metrics_recovery(
+    def test_get_and_post_map_provider_vintage_loss_to_normal_sync_recovery(
         self, client: TestClient
     ) -> None:
         error = FundamentalsPitSnapshotError(
@@ -176,7 +177,7 @@ class TestGetFundamentals:
             assert {"field": "reason", "message": "pit_snapshot_inconsistent"} in response.json()[
                 "details"
             ]
-            assert {"field": "recovery", "message": "adjusted_metrics_pit"} in response.json()[
+            assert {"field": "recovery", "message": "market_db_sync"} in response.json()[
                 "details"
             ]
 
@@ -202,7 +203,8 @@ class TestGetFundamentals:
         assert call_args.forecast_eps_lookback_fy_count == 5
         body = resp.json()
         assert body["asOfDate"] == "2024-06-28"
-        assert body["priceBasisDate"] == "2024-06-27"
+        assert body["fundamentalsAdjustmentBasisDate"] == "2024-06-27"
+        assert "priceBasisDate" not in body
 
     @pytest.mark.parametrize(
         "value",

@@ -62,6 +62,52 @@ def service(market_alias_db):
     reader.close()
 
 
+@pytest.fixture
+def duplicate_stock_alias_service(tmp_path):
+    db_path = str(tmp_path / "duplicate-stock-alias.db")
+    conn = duckdb.connect(db_path)
+    conn.execute("""
+        CREATE TABLE stocks (
+            code TEXT PRIMARY KEY,
+            company_name TEXT NOT NULL,
+            market_code TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE stock_data (
+            code TEXT NOT NULL,
+            date TEXT NOT NULL,
+            open REAL NOT NULL,
+            high REAL NOT NULL,
+            low REAL NOT NULL,
+            close REAL NOT NULL,
+            volume INTEGER NOT NULL,
+            PRIMARY KEY (code, date)
+        )
+    """)
+    conn.executemany(
+        "INSERT INTO stocks (code, company_name, market_code) VALUES (?, ?, ?)",
+        (
+            ("7203", "Four Digit Toyota", "prime"),
+            ("72030", "Five Digit Toyota", "prime"),
+        ),
+    )
+    conn.executemany(
+        "INSERT INTO stock_data "
+        "(code, date, open, high, low, close, volume) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            ("7203", "2026-02-06", 100, 110, 90, 105, 1000),
+            ("72030", "2026-02-06", 200, 210, 190, 205, 2000),
+        ),
+    )
+    conn.close()
+
+    reader = MarketDbReader(db_path)
+    yield MarketDataService(reader)
+    reader.close()
+
+
 class TestGetAllStocksMarketCodeCompatibility:
     def test_prime_query_matches_legacy_and_numeric_prime(self, service):
         result = service.get_all_stocks(market="prime", history_days=30)
@@ -92,3 +138,17 @@ class TestGetAllStocksMarketCodeCompatibility:
         assert result is not None
         assert len(result) == 2
         assert {item.code for item in result} == {"10050", "10060"}
+
+    def test_duplicate_code_aliases_return_one_four_digit_stock(
+        self, duplicate_stock_alias_service
+    ):
+        result = duplicate_stock_alias_service.get_all_stocks(
+            market="prime", history_days=30
+        )
+
+        assert result is not None
+        assert len(result) == 1
+        assert result[0].code == "7203"
+        assert result[0].company_name == "Four Digit Toyota"
+        assert len(result[0].data) == 1
+        assert result[0].data[0].close == 105

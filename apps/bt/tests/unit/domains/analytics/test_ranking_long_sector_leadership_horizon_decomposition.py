@@ -11,6 +11,9 @@ from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition 
     write_ranking_long_sector_leadership_horizon_decomposition_bundle,
 )
 
+from daily_ranking_market_v5_fixture import (
+    refresh_daily_ranking_provider_window,
+)
 from test_ranking_core_sector_relative_value_evidence import _build_core_value_db
 
 
@@ -165,9 +168,17 @@ def _boost_low_value_momentum_fixture(db_path: Path) -> None:
         SET open = source.open,
             high = source.high,
             low = source.low,
-            close = source.close
+            close = source.close,
+            turnover_value = source.close * source.volume,
+            adjusted_open = source.open,
+            adjusted_high = source.high,
+            adjusted_low = source.low,
+            adjusted_close = source.close,
+            adjusted_volume = source.volume
         FROM stock_data source
         WHERE source.code = raw.code AND CAST(source.date AS DATE) = raw.date
         """
     )
+    for code in ("1100", "1101", "1102", "1103", "1104"):
+        refresh_daily_ranking_provider_window(conn, code=code)
     conn.close()

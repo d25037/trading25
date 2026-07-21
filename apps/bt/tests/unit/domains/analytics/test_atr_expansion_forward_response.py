@@ -17,8 +17,8 @@ from src.domains.analytics.atr_expansion_forward_response import (
     write_atr_expansion_forward_response_bundle,
 )
 
-from daily_ranking_market_v4_fixture import (
-    upgrade_daily_ranking_fixture_to_market_v4,
+from daily_ranking_market_v5_fixture import (
+    upgrade_daily_ranking_fixture_to_market_v5,
 )
 
 
@@ -355,6 +355,6 @@ def _build_atr_expansion_db(db_path: Path) -> Path:
         "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         valuation_rows,
     )
-    upgrade_daily_ranking_fixture_to_market_v4(conn)
+    upgrade_daily_ranking_fixture_to_market_v5(conn)
     conn.close()
     return db_path

@@ -50,7 +50,7 @@ schema v3 as supported and must be retired after cutover.
   current/latest data fallback.
 - No automatic deletion of the pre-cutover database or Parquet tree.
 - No change to the physical Dataset manifest filename `manifest.v2.json`; its
-  payload remains `schemaVersion: 3`.
+  payload is exactly `schemaVersion: 4` for the Market v5 provider snapshot.
 - No frontend-local financial calculation or recovery-side materialization.
 - No attempt to make external J-Quants availability deterministic. External
   failures must stop cutover before activation and retain the old data plane.
@@ -223,4 +223,3 @@ isolated rehearsal
 11. A checksummed pre-cutover backup and restoration instructions remain.
 12. Current executable guards and SoT documentation no longer claim Market v3
     support.
-

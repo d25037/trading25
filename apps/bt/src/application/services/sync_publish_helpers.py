@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, TypeVar
 
 from src.application.services.options_225 import (
     OPTIONS_225_SYNTHETIC_INDEX_CATEGORY,
@@ -15,6 +17,31 @@ from src.application.services.options_225 import (
 )
 from src.application.services.sync_state_helpers import _require_time_series_store
 from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
+from src.shared.provider_stock_window import ProviderStockStage
+
+
+_T = TypeVar("_T")
+
+
+async def _to_thread_joined(function: Callable[..., _T], /, *args: Any, **kwargs: Any) -> _T:
+    """Delay cancellation until a store worker can no longer mutate shared state."""
+    worker = asyncio.create_task(asyncio.to_thread(function, *args, **kwargs))
+    deferred_cancellation: asyncio.CancelledError | None = None
+    while not worker.done():
+        try:
+            await asyncio.shield(worker)
+        except asyncio.CancelledError as exc:
+            deferred_cancellation = exc
+    result = worker.result()
+    if deferred_cancellation is not None:
+        raise deferred_cancellation
+    return result
+
+
+@dataclass(frozen=True, slots=True)
+class StockDataStageResult:
+    staged_rows: int
+    affected_codes: frozenset[str]
 
 
 async def _publish_synthetic_nikkei_rows(
@@ -48,11 +75,45 @@ async def _publish_topix_rows(ctx: Any, rows: list[dict[str, Any]]) -> SemanticD
     return await asyncio.to_thread(store.publish_topix_data, rows)
 
 
-async def _publish_stock_data_rows(ctx: Any, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
-    if not rows:
-        return SemanticDeltaResult.empty()
+async def _publish_stock_data_rows(
+    ctx: Any, rows: list[dict[str, Any]], *, stage: ProviderStockStage
+) -> SemanticDeltaResult:
     store = _require_time_series_store(ctx)
-    return await asyncio.to_thread(store.publish_stock_data, rows)
+    return await asyncio.to_thread(
+        store.publish_stock_data,
+        rows,
+        stage=stage,
+    )
+
+
+async def _stage_stock_data_rows(
+    ctx: Any, rows: list[dict[str, Any]]
+) -> StockDataStageResult:
+    if not rows:
+        return StockDataStageResult(staged_rows=0, affected_codes=frozenset())
+    store = _require_time_series_store(ctx)
+    affected_codes = await asyncio.to_thread(store.detect_stock_provider_drift, rows)
+    await _to_thread_joined(store.stage_stock_data_rows, rows)
+    return StockDataStageResult(
+        staged_rows=len(rows),
+        affected_codes=frozenset(affected_codes),
+    )
+
+
+async def _flush_staged_stock_data_rows(
+    ctx: Any, *, stage: ProviderStockStage, exclude_codes: frozenset[str]
+) -> SemanticDeltaResult:
+    store = _require_time_series_store(ctx)
+    return await _to_thread_joined(
+        store.flush_staged_stock_data,
+        stage=stage,
+        exclude_codes=exclude_codes,
+    )
+
+
+async def _discard_staged_stock_data_rows(ctx: Any) -> None:
+    store = _require_time_series_store(ctx)
+    await asyncio.to_thread(store.discard_staged_stock_data)
 
 
 async def _publish_indices_rows(ctx: Any, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
@@ -80,7 +141,10 @@ async def _publish_statement_rows(ctx: Any, rows: list[dict[str, Any]]) -> Seman
     if not rows:
         return SemanticDeltaResult.empty()
     store = _require_time_series_store(ctx)
-    return await asyncio.to_thread(store.publish_statements, rows)
+    mutation = await asyncio.to_thread(store.publish_statements, rows)
+    if mutation.affected_codes:
+        ctx.changed_fundamentals_codes.update(mutation.affected_codes)
+    return mutation
 
 
 def _emit_index_progress(
@@ -222,6 +286,8 @@ __all__ = [
     "_index_statement_rows",
     "_index_stock_data_rows",
     "_index_topix_rows",
+    "_discard_staged_stock_data_rows",
+    "_flush_staged_stock_data_rows",
     "_publish_indices_rows",
     "_publish_margin_rows",
     "_publish_options_225_rows",
@@ -229,4 +295,5 @@ __all__ = [
     "_publish_stock_data_rows",
     "_publish_synthetic_nikkei_rows",
     "_publish_topix_rows",
+    "_stage_stock_data_rows",
 ]

@@ -16,7 +16,7 @@ from src.domains.analytics.readonly_duckdb_support import (
     fetch_date_range,
     normalize_code_sql,
     open_readonly_analysis_connection,
-    require_market_v4_compatibility,
+    require_market_v5_compatibility,
 )
 
 
@@ -66,11 +66,12 @@ def _market_compatibility_connection(
 @pytest.mark.parametrize(
     ("version", "adjustment_mode"),
     [
-        (3, "local_projection_v2_event_time"),
-        (4, "local_projection_v1"),
+        (4, "local_projection_v2_event_time"),
+        (5, "local_projection_v2_event_time"),
+        (5, "local_projection_v1"),
     ],
 )
-def test_require_market_v4_compatibility_rejects_incompatible_metadata(
+def test_require_market_v5_compatibility_rejects_incompatible_metadata(
     version: int,
     adjustment_mode: str,
 ) -> None:
@@ -79,32 +80,34 @@ def test_require_market_v4_compatibility_rejects_incompatible_metadata(
         adjustment_mode=adjustment_mode,
     )
     try:
-        with pytest.raises(RuntimeError, match="resetBeforeSync=true"):
-            require_market_v4_compatibility(conn, required_tables=("stock_data",))
+        with pytest.raises(RuntimeError, match="market-cutover cutover"):
+            require_market_v5_compatibility(conn, required_tables=("stock_data",))
     finally:
         conn.close()
 
 
-def test_require_market_v4_compatibility_rejects_missing_consumer_table() -> None:
+def test_require_market_v5_compatibility_rejects_missing_consumer_table() -> None:
     conn = _market_compatibility_connection(
-        version=4,
-        adjustment_mode="local_projection_v2_event_time",
+        version=5,
+        adjustment_mode="provider_adjusted_v1",
         include_stock_data=False,
     )
     try:
-        with pytest.raises(RuntimeError, match="stock_data.*resetBeforeSync=true"):
-            require_market_v4_compatibility(conn, required_tables=("stock_data",))
+        with pytest.raises(RuntimeError, match="stock_data.*market-cutover cutover"):
+            require_market_v5_compatibility(conn, required_tables=("stock_data",))
     finally:
         conn.close()
 
 
-def test_require_market_v4_compatibility_accepts_exact_v4_event_time_schema() -> None:
+def test_require_market_v5_compatibility_accepts_exact_v5_provider_schema() -> None:
     conn = _market_compatibility_connection(
-        version=4,
-        adjustment_mode="local_projection_v2_event_time",
+        version=5,
+        adjustment_mode="provider_adjusted_v1",
     )
     try:
-        require_market_v4_compatibility(conn, required_tables=("stock_data",))
+        assert require_market_v5_compatibility(
+            conn, required_tables=("stock_data",)
+        ) == 5
     finally:
         conn.close()
 

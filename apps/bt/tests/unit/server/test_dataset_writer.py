@@ -19,7 +19,12 @@ def _source_statement_payload(code: str, disclosed_date: str, **values: object) 
     columns = dataset_writer_module._DatasetDuckDbStore._STATEMENT_COLUMNS
     payload: dict[str, object | None] = {column: None for column in columns}
     payload["code"] = code
+    normalized_code = code[:-1] if len(code) in (5, 6) and code.endswith("0") else code
+    payload["statement_id"] = f"statement-{normalized_code}-{disclosed_date}"
     payload["disclosed_date"] = disclosed_date
+    payload["disclosed_at"] = f"{disclosed_date}T15:00:00+09:00"
+    payload["period_start"] = "2025-01-01"
+    payload["period_end"] = "2025-12-31"
     payload.update(values)
     return tuple(payload[column] for column in columns)
 
@@ -61,7 +66,7 @@ def _create_source_market_duckdb(tmp_path: Path) -> Path:
             f"""
             CREATE TABLE statements (
                 {", ".join(
-                    f"{column} {'TEXT' if column in ('code', 'disclosed_date', 'type_of_current_period', 'type_of_document') else 'DOUBLE'}"
+                    f"{column} {'TEXT' if column in dataset_writer_module._DatasetDuckDbStore._STATEMENT_TEXT_COLUMNS | {'code', 'statement_id'} else 'DOUBLE'}"
                     for column in columns
                 )},
                 PRIMARY KEY (code, disclosed_date)
@@ -178,7 +183,13 @@ def test_upsert_margin_data(writer: DatasetWriter) -> None:
 
 def test_upsert_statements(writer: DatasetWriter) -> None:
     count = writer.upsert_statements([
-        {"code": "7203", "disclosed_date": "2024-03-15", "earnings_per_share": 250.0},
+        {
+            "code": "7203", "statement_id": "statement-7203",
+            "disclosed_date": "2024-03-15",
+            "disclosed_at": "2024-03-15T15:00:00+09:00",
+            "period_start": "2023-01-01", "period_end": "2023-12-31",
+            "earnings_per_share": 250.0,
+        },
     ])
     assert count == 1
 
@@ -262,7 +273,13 @@ def test_existing_code_helpers_and_topix_presence(writer: DatasetWriter) -> None
         {"code": "7203", "date": "2024-01-04", "long_margin_volume": 50000, "short_margin_volume": 30000},
     ])
     writer.upsert_statements([
-        {"code": "7203", "disclosed_date": "2024-03-15", "earnings_per_share": 250.0},
+        {
+            "code": "7203", "statement_id": "statement-7203",
+            "disclosed_date": "2024-03-15",
+            "disclosed_at": "2024-03-15T15:00:00+09:00",
+            "period_start": "2023-01-01", "period_end": "2023-12-31",
+            "earnings_per_share": 250.0,
+        },
     ])
 
     assert writer.get_existing_stock_data_codes() == {"7203", "9984"}
@@ -315,8 +332,6 @@ def test_close_exports_event_time_pit_parquet_tables(tmp_path: Path) -> None:
         {
             "stock_data_raw",
             "stock_master_daily",
-            "stock_adjustment_bases",
-            "stock_adjustment_basis_segments",
             "statement_metrics_adjusted",
             "daily_valuation",
         }
@@ -332,15 +347,13 @@ def test_close_exports_event_time_pit_parquet_tables(tmp_path: Path) -> None:
         "statements.parquet",
         "stock_data_raw.parquet",
         "stock_master_daily.parquet",
-        "stock_adjustment_bases.parquet",
-        "stock_adjustment_basis_segments.parquet",
         "statement_metrics_adjusted.parquet",
         "daily_valuation.parquet",
     }
 
 
-def test_close_exports_exact_dataset_v3_parquet_artifact_set(tmp_path: Path) -> None:
-    writer = DatasetWriter(str(tmp_path / "v3-parquet-export"))
+def test_close_exports_exact_dataset_v4_parquet_artifact_set(tmp_path: Path) -> None:
+    writer = DatasetWriter(str(tmp_path / "v4-parquet-export"))
     writer.close()
 
     assert {path.name for path in writer.parquet_dir.glob("*.parquet")} == {
@@ -352,8 +365,6 @@ def test_close_exports_exact_dataset_v3_parquet_artifact_set(tmp_path: Path) -> 
         "statements.parquet",
         "stock_data_raw.parquet",
         "stock_master_daily.parquet",
-        "stock_adjustment_bases.parquet",
-        "stock_adjustment_basis_segments.parquet",
         "statement_metrics_adjusted.parquet",
         "daily_valuation.parquet",
     }
@@ -369,6 +380,7 @@ def test_copy_stock_data_from_source_merges_alias_rows_and_tracks_invalid_rows(
     result = writer.copy_stock_data_from_source(
         source_duckdb_path=str(source_path),
         normalized_codes=["1111", "2222", "3333", "4444", "9999"],
+        date_from="2026-01-01",
         date_to="2026-01-31",
     )
 
@@ -412,6 +424,7 @@ def test_copy_from_source_uses_temp_copy_when_source_db_is_already_open(
         stock_result = writer.copy_stock_data_from_source(
             source_duckdb_path=str(source_path),
             normalized_codes=["1111", "2222", "3333", "4444"],
+            date_from="2026-01-01",
             date_to="2026-01-31",
         )
         statement_rows = writer.copy_statements_from_source(
@@ -422,6 +435,7 @@ def test_copy_from_source_uses_temp_copy_when_source_db_is_already_open(
         margin_rows = writer.copy_margin_data_from_source(
             source_duckdb_path=str(source_path),
             normalized_codes=["1111", "2222"],
+            date_from="2026-01-01",
             date_to="2026-01-31",
         )
 
@@ -480,6 +494,7 @@ def test_copy_margin_data_from_source_merges_alias_rows(writer: DatasetWriter, t
     inserted_rows = writer.copy_margin_data_from_source(
         source_duckdb_path=str(source_path),
         normalized_codes=["1111", "2222"],
+        date_from="2026-01-01",
         date_to="2026-01-31",
     )
 

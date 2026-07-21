@@ -8,7 +8,7 @@ from typing import Any
 import pandas as pd
 
 from src.application.services.ranking_fundamental_queries import (
-    resolve_ready_adjustment_bases,
+    resolve_provider_windows,
 )
 from src.infrastructure.external_api.dataset.statements_mixin import APIPeriodType
 from src.infrastructure.data_access.loaders.statements_loaders import (
@@ -149,7 +149,7 @@ def attach_statements(
             missing_keys = sorted(required_keys - available_keys)
             if missing_keys:
                 raise ValueError(
-                    f"adjusted_metrics_pit incomplete for {code}: "
+                    f"market_db_sync incomplete for {code}: "
                     f"missing statement keys {missing_keys[:3]}"
                 )
             base_daily = transform_statements_df(
@@ -166,7 +166,7 @@ def attach_statements(
                 base_daily = merge_forward_forecast_revision(base_daily, revision_daily)
             result.setdefault(code, {})["statements_daily"] = base_daily
         except ValueError as e:
-            if "adjusted_metrics_pit" in str(e):
+            if "market_db_sync" in str(e):
                 raise
             warnings.append(f"{code} statements transform failed ({e})")
         except Exception as e:  # noqa: BLE001 - screening should continue
@@ -238,10 +238,13 @@ def build_statements_rows_sql(
         missing_optional_columns,
     )
     sql = f"""
+        WITH ranked_statements AS (
         SELECT
             code,
+            statement_id,
             disclosed_date,
-            disclosed_date AS period_end,
+            disclosed_at,
+            period_end,
             earnings_per_share,
             profit,
             equity,
@@ -267,15 +270,23 @@ def build_statements_rows_sql(
             cash_and_equivalents,
             total_assets,
             shares_outstanding,
-            treasury_shares
+            treasury_shares,
+            ROW_NUMBER() OVER (
+                PARTITION BY
+                    CASE WHEN length(code) = 5 AND right(code, 1) = '0'
+                         THEN left(code, 4) ELSE code END,
+                    statement_id
+                ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END,
+                         length(code), code
+            ) AS alias_rank
         FROM statements
         WHERE code IN ({placeholders})
     """
 
     if start_date:
-        sql += " AND disclosed_date >= ?"
+        sql += " AND disclosed_at >= ?"
     if end_date:
-        sql += " AND disclosed_date <= ?"
+        sql += " AND disclosed_at <= ?"
 
     period_values = resolve_period_filter_values(period_type)
     if period_values:
@@ -291,7 +302,13 @@ def build_statements_rows_sql(
             )
         """
 
-    sql += " ORDER BY code, disclosed_date"
+    sql += """
+        )
+        SELECT * EXCLUDE (alias_rank)
+        FROM ranked_statements
+        WHERE alias_rank = 1
+        ORDER BY code, disclosed_at, statement_id
+    """
     return sql
 
 
@@ -304,9 +321,9 @@ def build_statements_rows_params(
 ) -> list[Any]:
     params: list[Any] = list(query_codes)
     if start_date:
-        params.append(start_date)
+        params.append(f"{start_date}T00:00:00+09:00")
     if end_date:
-        params.append(end_date)
+        params.append(f"{end_date}T23:59:59.999999+09:00")
     period_values = resolve_period_filter_values(period_type)
     if period_values:
         params.extend(period_values)
@@ -340,48 +357,60 @@ def query_adjusted_statement_metric_rows(
         return []
     strict_reference_date = reference_date or end_date
     if strict_reference_date is None:
-        raise ValueError("adjusted_metrics_pit requires a screening reference date")
-    bases = resolve_ready_adjustment_bases(
+        raise ValueError("market_db_sync requires a screening reference date")
+    resolve_provider_windows(
         reader,
         normalized_codes,
         strict_reference_date,
     )
-    basis_values = ", ".join("(?, ?)" for _ in bases)
-    basis_params = [
-        value
-        for code, basis in bases.items()
-        for value in (code, basis.basis_id)
-    ]
     normalized_metric_code = (
         "CASE WHEN length(m.code) = 5 AND right(m.code, 1) = '0' "
         "THEN left(m.code, 4) ELSE m.code END"
     )
+    normalized_source_code = (
+        "CASE WHEN length(source.code) = 5 AND right(source.code, 1) = '0' "
+        "THEN left(source.code, 4) ELSE source.code END"
+    )
     sql = f"""
-        WITH resolved_bases(code, basis_id) AS (VALUES {basis_values})
         SELECT
             m.code,
+            m.statement_id,
             m.disclosed_date,
+            m.disclosed_at,
             m.period_end,
             m.period_type,
             m.adjusted_eps,
             m.adjusted_bps,
             m.adjusted_forecast_eps,
             m.adjusted_dividend_fy,
-            m.basis_version
+            m.fundamentals_adjustment_basis_date,
+            m.source_fingerprint
         FROM statement_metrics_adjusted AS m
-        JOIN resolved_bases AS b
-          ON b.code = {normalized_metric_code}
-         AND b.basis_id = m.basis_version
-        WHERE 1 = 1
+        JOIN current_basis_fundamentals_state AS state
+          ON state.code = {normalized_metric_code}
+         AND state.fundamentals_adjustment_basis_date =
+             m.fundamentals_adjustment_basis_date
+         AND state.source_fingerprint = m.source_fingerprint
+        JOIN stock_provider_windows AS provider
+          ON provider.code = state.code
+         AND provider.coverage_end = state.fundamentals_adjustment_basis_date
+        JOIN statements AS source
+          ON {normalized_source_code} = {normalized_metric_code}
+         AND source.statement_id = m.statement_id
+         AND source.disclosed_date = m.disclosed_date
+         AND source.disclosed_at = m.disclosed_at
+         AND source.period_end = m.period_end
+         AND upper(COALESCE(source.type_of_current_period, '')) =
+             upper(COALESCE(m.period_type, ''))
+        WHERE {normalized_metric_code} IN ({", ".join("?" for _ in normalized_codes)})
     """
-    params: list[Any] = basis_params
+    params: list[Any] = list(normalized_codes)
     if start_date:
-        sql += " AND disclosed_date >= ?"
-        params.append(start_date)
-    if end_date:
-        sql += " AND disclosed_date <= ?"
-        params.append(end_date)
-    sql += " ORDER BY m.code, m.disclosed_date"
+        sql += " AND m.disclosed_at >= ?"
+        params.append(f"{start_date}T00:00:00+09:00")
+    sql += " AND m.disclosed_at <= ?"
+    params.append(f"{strict_reference_date}T23:59:59.999999+09:00")
+    sql += " ORDER BY m.code, m.disclosed_at, m.statement_id"
     return reader.query(sql, tuple(params))
 
 
@@ -406,10 +435,10 @@ def group_statement_rows(rows: list[Any]) -> dict[str, pd.DataFrame]:
     for row in rows:
         code = normalize_stock_code(str(row["code"]))
         grouped.setdefault(code, []).append({
+            "statementId": row["statement_id"],
             "disclosedDate": row["disclosed_date"],
-            "periodEnd": row.get("period_end", row["disclosed_date"])
-            if hasattr(row, "get")
-            else row["period_end"],
+            "disclosedAt": row["disclosed_at"],
+            "periodEnd": row["period_end"],
             **{
                 api_col: row.get(db_col) if hasattr(row, "get") else row[db_col]
                 for db_col, api_col in STATEMENT_DB_TO_API_COLUMNS.items()
@@ -434,13 +463,16 @@ def group_adjusted_statement_metric_rows(rows: list[Any]) -> dict[str, pd.DataFr
         code = normalize_stock_code(str(row["code"]))
         grouped.setdefault(code, []).append(
             {
+                "statementId": row["statement_id"],
                 "disclosedDate": row["disclosed_date"],
+                "disclosedAt": row["disclosed_at"],
                 "periodEnd": row["period_end"],
                 "periodType": row["period_type"],
                 "adjustedEps": row["adjusted_eps"],
                 "adjustedBps": row["adjusted_bps"],
                 "adjustedForecastEps": row["adjusted_forecast_eps"],
                 "adjustedDividendFy": row["adjusted_dividend_fy"],
+                "sourceFingerprint": row["source_fingerprint"],
             }
         )
 
@@ -455,25 +487,15 @@ def group_adjusted_statement_metric_rows(rows: list[Any]) -> dict[str, pd.DataFr
     return result
 
 
-def statement_materialization_keys(df: pd.DataFrame) -> set[tuple[str, str, str]]:
-    return {
-        (
-            pd.Timestamp(str(index)).strftime("%Y-%m-%d"),
-            pd.Timestamp(row.get("periodEnd", index)).strftime("%Y-%m-%d"),
-            normalize_period_type(str(row.get("typeOfCurrentPeriod", "FY"))) or "FY",
-        )
-        for index, row in df.iterrows()
-    }
+def statement_materialization_keys(df: pd.DataFrame) -> set[str]:
+    if "statementId" not in df.columns or df["statementId"].isna().any():
+        raise ValueError("market_db_sync raw statement identity is missing")
+    return {str(value) for value in df["statementId"]}
 
 
 def adjusted_statement_materialization_keys(
     df: pd.DataFrame,
-) -> set[tuple[str, str, str]]:
-    return {
-        (
-            pd.Timestamp(str(index)).strftime("%Y-%m-%d"),
-            pd.Timestamp(row["periodEnd"]).strftime("%Y-%m-%d"),
-            normalize_period_type(str(row["periodType"])) or "FY",
-        )
-        for index, row in df.iterrows()
-    }
+) -> set[str]:
+    if "statementId" not in df.columns or df["statementId"].isna().any():
+        raise ValueError("market_db_sync adjusted statement identity is missing")
+    return {str(value) for value in df["statementId"]}

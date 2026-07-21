@@ -8,24 +8,34 @@ POST /api/db/stocks/refresh のビジネスロジック。
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Any, Protocol, cast
+from typing import Any, Protocol, TypeVar, cast
 
 from loguru import logger
 
-from src.application.services.adjusted_metrics_materializer import (
-    AdjustedMetricsMaterializer,
+from src.application.contracts.market_data_plane import (
+    RefreshResponse,
+    RefreshStockResult,
 )
-from src.infrastructure.db.market.market_db import (
-    LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+from src.shared.provider_stock_window import (
+    ProviderStockStage,
+    provider_stock_source_fingerprint,
+    validate_provider_plan,
+)
+from src.application.services.stock_data_row_builder import (
+    build_stock_data_row,
+    is_provider_no_trade_row,
+)
+from src.infrastructure.db.market.market_schema import (
+    PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
     METADATA_KEYS,
-    MarketDb,
 )
 from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
-from src.infrastructure.db.market.query_helpers import expand_stock_code, normalize_stock_code
-from src.application.contracts.market_data_plane import RefreshResponse, RefreshStockResult
-from src.application.services.stock_data_row_builder import build_stock_data_row
+from src.infrastructure.db.market.query_helpers import (
+    expand_stock_code,
+    normalize_stock_code,
+)
 
 
 class StockRefreshMarketDbLike(Protocol):
@@ -33,11 +43,12 @@ class StockRefreshMarketDbLike(Protocol):
 
 
 class StockRefreshClientLike(Protocol):
-    async def get_paginated(
+    async def get_paginated_with_meta(
         self,
         path: str,
         params: dict[str, str] | None = None,
-    ) -> list[dict[str, Any]]: ...
+        max_pages: int = 10,
+    ) -> tuple[list[dict[str, Any]], int]: ...
 
 
 class StockRefreshTimeSeriesStoreLike(Protocol):
@@ -48,8 +59,56 @@ class StockRefreshTimeSeriesStoreLike(Protocol):
         statement_non_null_columns: list[str] | None = None,
     ) -> Any: ...
 
-    def publish_stock_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
+    def replace_stock_provider_window(
+        self,
+        code: str,
+        rows: list[dict[str, Any]],
+        coverage: dict[str, str],
+        metadata: dict[str, str],
+    ) -> SemanticDeltaResult: ...
+    def has_pending_index(self, table_name: str) -> bool: ...
     def index_stock_data(self) -> None: ...
+
+
+_T = TypeVar("_T")
+
+
+async def _to_thread_joined_with_cancellation(
+    function: Callable[..., _T], /, *args: Any
+) -> tuple[_T, asyncio.CancelledError | None]:
+    """Join a mutating worker and return any cancellation deferred while joining."""
+    worker = asyncio.create_task(asyncio.to_thread(function, *args))
+    deferred_cancellation: asyncio.CancelledError | None = None
+    while not worker.done():
+        try:
+            await asyncio.shield(worker)
+        except asyncio.CancelledError as exc:
+            deferred_cancellation = deferred_cancellation or exc
+    return worker.result(), deferred_cancellation
+
+
+async def _fetch_complete_provider_window(
+    client: StockRefreshClientLike,
+    *,
+    code: str,
+    provider_as_of: str,
+) -> tuple[list[dict[str, Any]], int]:
+    params = {"code": code, "to": provider_as_of}
+    get_with_meta = getattr(client, "get_paginated_with_meta", None)
+    if not callable(get_with_meta):
+        raise RuntimeError(
+            "Stock refresh requires terminal pagination proof before publication"
+        )
+    get_with_meta_callable = cast(
+        Callable[..., Awaitable[tuple[list[dict[str, Any]], int]]],
+        get_with_meta,
+    )
+    rows, calls = await get_with_meta_callable(
+        "/equities/bars/daily",
+        params=params,
+        max_pages=10_000,
+    )
+    return rows, int(calls)
 
 
 async def refresh_stocks(
@@ -58,6 +117,8 @@ async def refresh_stocks(
     time_series_store: StockRefreshTimeSeriesStoreLike,
     jquants_client: StockRefreshClientLike,
     *,
+    provider_plan: str,
+    provider_as_of: str,
     progress_callback: Callable[[int, int, str], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
 ) -> RefreshResponse:
@@ -68,55 +129,100 @@ async def refresh_stocks(
     errors: list[str] = []
     any_rows_published = False
     cancelled = False
-    unique_codes = list(dict.fromkeys(codes))
+    deferred_cancellation: asyncio.CancelledError | None = None
+    unique_codes = list(
+        dict.fromkeys(
+            normalized for code in codes if (normalized := normalize_stock_code(code))
+        )
+    )
     total_codes = len(unique_codes)
-
-    # TOPIX 日付範囲を取得（フィルタ用）
-    inspection = await asyncio.to_thread(time_series_store.inspect)
-    min_date = inspection.topix_min
-    max_date = inspection.topix_max
+    normalized_plan = validate_provider_plan(provider_plan)
+    if unique_codes:
+        stage = ProviderStockStage(
+            provider_plan=normalized_plan,
+            provider_as_of=provider_as_of,
+            provider_codes=frozenset(unique_codes),
+        )
+        normalized_as_of = stage.provider_as_of
+    else:
+        try:
+            parsed_as_of = datetime.strptime(provider_as_of, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise ValueError(
+                "Provider stock window provider as-of must be an ISO date"
+            ) from exc
+        normalized_as_of = parsed_as_of.isoformat()
+        if normalized_as_of != provider_as_of:
+            raise ValueError("Provider stock window provider as-of must be an ISO date")
 
     for index, code in enumerate(unique_codes, start=1):
         if cancel_check is not None and cancel_check():
             cancelled = True
             if progress_callback is not None:
-                progress_callback(index - 1, total_codes, f"Cancelled stock refresh before stock {index}/{total_codes}")
+                progress_callback(
+                    index - 1,
+                    total_codes,
+                    f"Cancelled stock refresh before stock {index}/{total_codes}",
+                )
             break
-        normalized = normalize_stock_code(code)
+        normalized = code
         expanded = expand_stock_code(normalized)
         if progress_callback is not None:
-            progress_callback(index - 1, total_codes, f"Refreshing stock {index}/{total_codes}: {normalized}")
-        try:
-            data = await jquants_client.get_paginated(
-                "/equities/bars/daily",
-                params={"code": expanded},
+            progress_callback(
+                index - 1,
+                total_codes,
+                f"Refreshing stock {index}/{total_codes}: {normalized}",
             )
-            total_calls += 1
+        try:
+            data, fetch_calls = await _fetch_complete_provider_window(
+                jquants_client,
+                code=expanded,
+                provider_as_of=normalized_as_of,
+            )
+            total_calls += fetch_calls
 
             if cancel_check is not None and cancel_check():
                 cancelled = True
                 if progress_callback is not None:
-                    progress_callback(index - 1, total_codes, f"Cancelled stock refresh after fetching stock {index}/{total_codes}: {normalized}")
+                    progress_callback(
+                        index - 1,
+                        total_codes,
+                        f"Cancelled stock refresh after fetching stock {index}/{total_codes}: {normalized}",
+                    )
                 break
 
             # TOPIX 日付範囲でフィルタ
             rows: list[dict[str, Any]] = []
             skipped_rows = 0
+            provider_dates: set[str] = set()
             created_at = datetime.now(UTC).isoformat()
             for d in data:
+                payload_code = normalize_stock_code(str(d.get("Code") or ""))
+                provider_date = str(d.get("Date") or "")
+                if payload_code != normalized:
+                    raise ValueError("Provider window row code does not match requested code")
+                try:
+                    parsed_date = datetime.strptime(provider_date, "%Y-%m-%d").date()
+                except ValueError as exc:
+                    raise ValueError("Provider window contains invalid row date") from exc
+                if parsed_date.isoformat() != provider_date:
+                    raise ValueError("Provider window contains invalid row date")
+                if provider_date > normalized_as_of:
+                    raise ValueError("Provider window row date exceeds provider as-of")
+                if provider_date in provider_dates:
+                    raise ValueError(
+                        f"Provider window contains duplicate date: {provider_date}"
+                    )
+                provider_dates.add(provider_date)
                 row = build_stock_data_row(
                     d,
                     normalized_code=normalized,
                     created_at=created_at,
                 )
                 if row is None:
+                    if is_provider_no_trade_row(d):
+                        continue
                     skipped_rows += 1
-                    continue
-
-                date = row["date"]
-                if min_date and date < min_date:
-                    continue
-                if max_date and date > max_date:
                     continue
                 rows.append(row)
 
@@ -127,72 +233,129 @@ async def refresh_stocks(
                     normalized,
                 )
 
+                raise ValueError(
+                    f"Provider window contains {skipped_rows} incomplete or non-finite rows"
+                )
+
             stored = 0
             if cancel_check is not None and cancel_check():
                 cancelled = True
                 if progress_callback is not None:
-                    progress_callback(index - 1, total_codes, f"Cancelled stock refresh before publishing stock {index}/{total_codes}: {normalized}")
+                    progress_callback(
+                        index - 1,
+                        total_codes,
+                        f"Cancelled stock refresh before publishing stock {index}/{total_codes}: {normalized}",
+                    )
                 break
             elif rows:
-                mutation = await asyncio.to_thread(time_series_store.publish_stock_data, rows)
+                coverage = {
+                    "start": min(str(row["date"]) for row in rows),
+                    "end": max(str(row["date"]) for row in rows),
+                }
+                metadata = {
+                    METADATA_KEYS["PROVIDER_PLAN"]: normalized_plan,
+                    METADATA_KEYS["PROVIDER_AS_OF"]: normalized_as_of,
+                    METADATA_KEYS["PROVIDER_SOURCE_FINGERPRINT"]: (
+                        provider_stock_source_fingerprint(rows)
+                    ),
+                    METADATA_KEYS["LAST_STOCKS_REFRESH"]: created_at,
+                    METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"]: (
+                        PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
+                    ),
+                }
+                mutation, replacement_cancellation = (
+                    await _to_thread_joined_with_cancellation(
+                        time_series_store.replace_stock_provider_window,
+                        normalized,
+                        rows,
+                        coverage,
+                        metadata,
+                    )
+                )
                 stored = mutation.mutated_rows
-                if mutation.mutated_rows:
+                if mutation.mutated_rows or time_series_store.has_pending_index(
+                    "stock_data"
+                ):
                     any_rows_published = True
             else:
-                failure_message = "No publishable rows matched the local market snapshot date range"
+                failure_message = (
+                    "No publishable rows matched the local market snapshot date range"
+                )
                 errors.append(f"{normalized}: {failure_message}")
-                results.append(RefreshStockResult(
-                    code=normalized,
-                    success=False,
-                    recordsFetched=len(data),
-                    recordsStored=0,
-                    error=failure_message,
-                ))
+                results.append(
+                    RefreshStockResult(
+                        code=normalized,
+                        success=False,
+                        recordsFetched=len(data),
+                        recordsStored=0,
+                        error=failure_message,
+                    )
+                )
                 if progress_callback is not None:
-                    progress_callback(index, total_codes, f"Refresh failed for stock {index}/{total_codes}: {normalized}")
+                    progress_callback(
+                        index,
+                        total_codes,
+                        f"Refresh failed for stock {index}/{total_codes}: {normalized}",
+                    )
                 continue
             total_stored += stored
-            results.append(RefreshStockResult(
-                code=normalized,
-                success=True,
-                recordsFetched=len(data),
-                recordsStored=stored,
-            ))
+            results.append(
+                RefreshStockResult(
+                    code=normalized,
+                    success=True,
+                    recordsFetched=len(data),
+                    recordsStored=stored,
+                )
+            )
             if progress_callback is not None:
-                progress_callback(index, total_codes, f"Refreshed stock {index}/{total_codes}: {normalized}")
+                progress_callback(
+                    index,
+                    total_codes,
+                    f"Refreshed stock {index}/{total_codes}: {normalized}",
+                )
+            if replacement_cancellation is not None:
+                cancelled = True
+                deferred_cancellation = replacement_cancellation
+                break
+            if cancel_check is not None and cancel_check():
+                cancelled = True
+                if progress_callback is not None:
+                    progress_callback(
+                        index,
+                        total_codes,
+                        f"Cancelled stock refresh after publishing stock {index}/{total_codes}: {normalized}",
+                    )
+                break
         except Exception as e:
             logger.warning(f"Refresh failed for {code}: {e}")
             errors.append(f"{code}: {e}")
-            results.append(RefreshStockResult(
-                code=normalized,
-                success=False,
-                error=str(e),
-            ))
+            results.append(
+                RefreshStockResult(
+                    code=normalized,
+                    success=False,
+                    error=str(e),
+                )
+            )
             if progress_callback is not None:
-                progress_callback(index, total_codes, f"Refresh failed for stock {index}/{total_codes}: {normalized}")
+                progress_callback(
+                    index,
+                    total_codes,
+                    f"Refresh failed for stock {index}/{total_codes}: {normalized}",
+                )
 
     if any_rows_published:
-        await asyncio.to_thread(time_series_store.index_stock_data)
-        successful_normalized_codes = sorted(
-            {result.code for result in results if result.success}
+        _, index_cancellation = await _to_thread_joined_with_cancellation(
+            time_series_store.index_stock_data
         )
-        if successful_normalized_codes:
-            await asyncio.to_thread(
-                AdjustedMetricsMaterializer(cast(MarketDb, market_db)).rebuild_codes,
-                successful_normalized_codes,
-            )
+        if index_cancellation is not None:
+            cancelled = True
+            deferred_cancellation = deferred_cancellation or index_cancellation
     if cancelled:
         errors.append("Cancelled")
 
-    # Update metadata
     now_iso = datetime.now(UTC).isoformat()
-    market_db.set_sync_metadata(METADATA_KEYS["LAST_STOCKS_REFRESH"], now_iso)
-    market_db.set_sync_metadata(
-        METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"],
-        LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
-    )
 
-    return RefreshResponse(
+    response = RefreshResponse(
         totalStocks=total_codes,
         successCount=sum(1 for r in results if r.success),
         failedCount=sum(1 for r in results if not r.success),
@@ -202,3 +365,10 @@ async def refresh_stocks(
         errors=errors,
         lastUpdated=now_iso,
     )
+    if deferred_cancellation is not None:
+        deferred_cancellation.add_note(
+            "Stock refresh cancellation propagated after committed work was finalized"
+        )
+        setattr(deferred_cancellation, "response", response)
+        raise deferred_cancellation
+    return response

@@ -67,11 +67,15 @@ DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
 OVERHEAT_RETURN_20D_THRESHOLD_PCT = 30.0
 _REQUIRED_TABLES: tuple[str, ...] = (
     "stock_data_raw",
-    "stock_adjustment_bases",
-    "stock_adjustment_basis_segments",
+    "stock_provider_windows",
+    "stock_adjustment_events",
+    "current_basis_recompute_pending",
+    "current_basis_fundamentals_state",
     "topix_data",
     "daily_valuation",
     "stock_master_daily",
+    "statements",
+    "statement_metrics_adjusted",
     "indices_data",
     "index_master",
 )

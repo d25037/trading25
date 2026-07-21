@@ -117,15 +117,15 @@ def _pit_snapshot(
     adjusted_statement_metrics: list[dict[str, object]] | None = None,
 ) -> FundamentalsPitSnapshot:
     effective_date = date(2024, 6, 28)
-    basis_id = "event-pit-v1:7203:2024-01-01"
     return FundamentalsPitSnapshot(
         requested_cutoff_date=None,
         knowledge_cutoff_date=effective_date,
         effective_market_date=effective_date,
         stock_master_snapshot_date=effective_date,
-        basis_id=basis_id,
-        adjustment_through_date=effective_date,
-        materialized_through_date=effective_date,
+        fundamentals_adjustment_basis_date=effective_date,
+        provider_as_of="2024-06-28T16:30:00+09:00",
+        provider_coverage_start=date(2024, 1, 1),
+        provider_coverage_end=effective_date,
         stock_info=stock_info or _default_stock_info(),
         statements=statements,
         adjusted_statement_metrics=tuple(adjusted_statement_metrics or []),

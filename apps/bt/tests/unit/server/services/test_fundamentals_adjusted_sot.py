@@ -29,9 +29,10 @@ class FakeAdjustedMarketClient:
             knowledge_cutoff_date=cutoff_date or effective_date,
             effective_market_date=effective_date,
             stock_master_snapshot_date=effective_date,
-            basis_id="event-pit-v1:7203:2024-01-01",
-            adjustment_through_date=effective_date,
-            materialized_through_date=effective_date,
+            fundamentals_adjustment_basis_date=effective_date,
+            provider_as_of="2024-12-30T16:30:00+09:00",
+            provider_coverage_start=date(2024, 1, 1),
+            provider_coverage_end=effective_date,
             stock_info=self.get_stock_info(stock_code),
             statements=self.get_statements(stock_code),
             adjusted_statement_metrics=tuple(
@@ -113,8 +114,7 @@ class FakeAdjustedMarketClient:
                 "adjusted_bps": 500.0,
                 "adjusted_forecast_eps": 60.0,
                 "adjusted_dividend_fy": 15.0,
-                "basis_version": "event-pit-v1:7203:2024-01-01",
-                "price_basis_date": "2024-12-30",
+                "fundamentals_adjustment_basis_date": "2024-12-30",
             }
         ]
 
@@ -129,7 +129,7 @@ class FakeAdjustedMarketClient:
             {
                 "code": "7203",
                 "date": "2024-12-30",
-                "price_basis_date": "2024-12-30",
+                "fundamentals_adjustment_basis_date": "2024-12-30",
                 "close": 500.0,
                 "eps": 50.0,
                 "bps": 500.0,
@@ -142,7 +142,7 @@ class FakeAdjustedMarketClient:
                 "statement_disclosed_date": "2024-05-10",
                 "forward_eps_disclosed_date": "2024-05-10",
                 "forward_eps_source": "fy",
-                "basis_version": "event-pit-v1:7203:2024-01-01",
+                "provider_as_of": "2024-12-30T16:30:00+09:00",
             }
         ]
 
@@ -208,8 +208,7 @@ class FakeAdjustedMarketClientWithLatestQuarter(FakeAdjustedMarketClient):
                 "adjusted_bps": 500.0,
                 "adjusted_forecast_eps": 60.0,
                 "adjusted_dividend_fy": 15.0,
-                "basis_version": "event-pit-v1:7203:2024-01-01",
-                "price_basis_date": "2024-12-30",
+                "fundamentals_adjustment_basis_date": "2024-12-30",
             },
             {
                 "code": "7203",
@@ -220,8 +219,7 @@ class FakeAdjustedMarketClientWithLatestQuarter(FakeAdjustedMarketClient):
                 "adjusted_bps": 520.0,
                 "adjusted_forecast_eps": 62.5,
                 "adjusted_dividend_fy": 15.0,
-                "basis_version": "event-pit-v1:7203:2024-01-01",
-                "price_basis_date": "2024-12-30",
+                "fundamentals_adjustment_basis_date": "2024-12-30",
             },
         ]
 
@@ -243,13 +241,13 @@ def test_compute_prefers_adjusted_tables_for_valuation_and_keeps_raw_history() -
 
     result = service.compute_fundamentals(FundamentalsComputeQuery(symbol="7203"))
 
-    assert result.priceBasisDate == "2024-12-30"
-    assert result.valuationBasisVersion == "event-pit-v1:7203:2024-01-01"
+    assert result.fundamentalsAdjustmentBasisDate == "2024-12-30"
+    assert result.providerAsOf == "2024-12-30T16:30:00+09:00"
     assert result.dailyValuation is not None
     assert result.dailyValuation[0].per == 10.0
     assert result.dailyValuation[0].forwardPer == 8.3333333333
-    assert result.dailyValuation[0].priceBasisDate == "2024-12-30"
-    assert result.dailyValuation[0].basisVersion == "event-pit-v1:7203:2024-01-01"
+    assert result.dailyValuation[0].fundamentalsAdjustmentBasisDate == "2024-12-30"
+    assert result.dailyValuation[0].providerAsOf == "2024-12-30T16:30:00+09:00"
 
     assert result.data[0].eps == 100.0
     assert result.data[0].bps == 1000.0

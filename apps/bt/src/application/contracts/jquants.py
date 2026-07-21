@@ -162,7 +162,9 @@ class StatementItem(BaseModel):
     """財務諸表データ（EPS サブセット）"""
 
     DiscDate: str
+    DiscTime: str | None = None
     Code: str
+    DiscNo: str | None = None
     CurPerType: str
     CurPerSt: str
     CurPerEn: str
@@ -193,7 +195,9 @@ class RawStatementItem(BaseModel):
 
     # Identification
     DiscDate: str
+    DiscTime: str | None = None
     Code: str
+    DiscNo: str | None = None
     DocType: str | None = None
     # Period Information
     CurPerType: str

@@ -23,7 +23,7 @@ from src.domains.analytics.readonly_duckdb_support import (
     fetch_date_range as _fetch_date_range,
     normalize_code_sql as _normalize_code_sql,
     open_readonly_analysis_connection,
-    require_market_v4_compatibility,
+    require_market_v5_compatibility,
 )
 from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
@@ -1199,7 +1199,7 @@ def run_topix_gap_intraday_distribution(
 
     with _open_analysis_connection(db_path) as ctx:
         conn = ctx.connection
-        require_market_v4_compatibility(
+        market_schema_version = require_market_v5_compatibility(
             conn,
             required_tables=(
                 "stock_data",
@@ -1208,7 +1208,6 @@ def run_topix_gap_intraday_distribution(
                 "topix_data",
             ),
         )
-        market_schema_version = 4
         _assert_topix500_membership_available(
             conn,
             start_date=start_date,

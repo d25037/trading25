@@ -24,12 +24,6 @@ const mockStartSyncState = {
   error: null as Error | null,
 };
 
-const mockStartMaterializeState = {
-  mutate: vi.fn(),
-  isPending: false,
-  error: null as Error | null,
-};
-
 const mockCancelSyncState = {
   mutate: vi.fn(),
   isPending: false,
@@ -39,8 +33,6 @@ const mockUseSyncJobStatus = vi.fn();
 const mockUseSyncFetchDetails = vi.fn();
 const mockUseSyncSSE = vi.fn();
 const mockUseActiveSyncJob = vi.fn();
-const mockUseActiveAdjustedMetricsMaterializeJob = vi.fn();
-const mockUseAdjustedMetricsMaterializeJobStatus = vi.fn();
 const mockUseDbStats = vi.fn();
 const mockUseDbValidation = vi.fn();
 const mockUseRefreshStocks = vi.fn();
@@ -61,11 +53,8 @@ const baseStorageStats = {
 
 vi.mock('@/hooks/useDbSync', () => ({
   useStartSync: () => mockStartSyncState,
-  useStartAdjustedMetricsMaterialize: () => mockStartMaterializeState,
   useCancelSync: () => mockCancelSyncState,
   useActiveSyncJob: () => mockUseActiveSyncJob(),
-  useActiveAdjustedMetricsMaterializeJob: () => mockUseActiveAdjustedMetricsMaterializeJob(),
-  useAdjustedMetricsMaterializeJobStatus: (jobId: string | null) => mockUseAdjustedMetricsMaterializeJobStatus(jobId),
   useSyncSSE: (jobId: string | null) => mockUseSyncSSE(jobId),
   useSyncJobStatus: (jobId: string | null, sseConnected?: boolean) => mockUseSyncJobStatus(jobId, sseConnected),
   useSyncFetchDetails: (jobId: string | null, sseConnected?: boolean) => mockUseSyncFetchDetails(jobId, sseConnected),
@@ -79,20 +68,8 @@ beforeEach(() => {
   localStorage.clear();
   mockStartSyncState.isPending = false;
   mockStartSyncState.error = null;
-  mockStartMaterializeState.isPending = false;
-  mockStartMaterializeState.error = null;
   mockCancelSyncState.isPending = false;
   mockUseActiveSyncJob.mockReturnValue({
-    data: null,
-    isLoading: false,
-    error: null,
-  });
-  mockUseActiveAdjustedMetricsMaterializeJob.mockReturnValue({
-    data: null,
-    isLoading: false,
-    error: null,
-  });
-  mockUseAdjustedMetricsMaterializeJobStatus.mockReturnValue({
     data: null,
     isLoading: false,
     error: null,
@@ -182,6 +159,30 @@ beforeEach(() => {
           emptySkippedCount: 4,
         },
       },
+      providerVintage: {
+        providerPlan: 'standard',
+        providerAsOf: '2026-02-28',
+        providerAsOfRange: { min: '2026-02-28', max: '2026-02-28' },
+        effectiveCoverage: { min: '2016-02-29', max: '2026-02-27' },
+        sourceFingerprint: 'provider-sha256',
+        providerWindowCoherent: true,
+        providerWindowCount: 2500,
+        readyProviderWindowCount: 2499,
+        adjustmentEventCount: 81,
+        currentBasisStatementCount: 9800,
+        currentBasisStateCount: 2499,
+        invalidCurrentBasisStateCount: 0,
+        pendingCurrentBasisCodeCount: 1,
+        fundamentalsAdjustmentBasisDate: '2026-02-27',
+        status: 'pending',
+        recoveryStage: 'market_db_sync',
+      },
+      schema: {
+        version: 5,
+        requiredVersion: 5,
+        current: true,
+        resetBeforeSyncEligible: true,
+      },
       lastUpdated: '2026-03-01T12:00:00Z',
     },
     isLoading: false,
@@ -195,6 +196,12 @@ beforeEach(() => {
       lastSync: '2026-02-28T02:29:45.768793+00:00',
       lastStocksRefresh: '2026-03-01T03:00:00Z',
       timeSeriesSource: 'duckdb-parquet',
+      schema: {
+        version: 5,
+        requiredVersion: 5,
+        current: true,
+        resetBeforeSyncEligible: true,
+      },
       topix: { count: 2450, dateRange: { min: '2016-02-29', max: '2026-02-27' } },
       stocks: { total: 3800, byMarket: { Prime: 1800 } },
       stockData: {
@@ -271,6 +278,61 @@ beforeEach(() => {
 });
 
 describe('SettingsPage', () => {
+  it('disables live reset and directs incompatible roots to market cutover', async () => {
+    const user = userEvent.setup();
+    const statsState = mockUseDbStats();
+    const validationState = mockUseDbValidation();
+    mockUseDbStats.mockReturnValue({
+      ...statsState,
+      data: {
+        ...statsState.data,
+        schema: {
+          version: 4,
+          requiredVersion: 5,
+          current: false,
+          resetBeforeSyncEligible: false,
+        },
+      },
+    });
+    mockUseDbValidation.mockReturnValue({
+      ...validationState,
+      data: {
+        ...validationState.data,
+        status: 'error',
+        schema: {
+          version: 4,
+          requiredVersion: 5,
+          current: false,
+          resetBeforeSyncEligible: false,
+        },
+        recommendations: [
+          'Run `bt market-cutover cutover` to rebuild the incompatible Market root as schema v5 (current schema version: 4)',
+        ],
+      },
+    });
+
+    render(<SettingsPage />);
+    await user.click(screen.getByRole('combobox', { name: 'Sync Mode' }));
+    await user.click(screen.getByText(/Full bootstrap of the local DuckDB snapshot/i));
+
+    expect(screen.getByRole('switch', { name: /Reset market\.duckdb \+ parquet first/i })).toBeDisabled();
+    expect(screen.getAllByText('bt market-cutover cutover', { selector: 'code' })).toHaveLength(2);
+    expect(
+      screen.queryByText(/legacy stock-price adjustment drift requires initial sync with reset enabled/i)
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows provider vintage as read-only sync state without standalone materialization controls', () => {
+    render(<SettingsPage />);
+
+    expect(screen.getByRole('heading', { name: 'Provider Vintage' })).toBeInTheDocument();
+    expect(screen.getByText('standard')).toBeInTheDocument();
+    expect(screen.getByText('2016-02-29 → 2026-02-27')).toBeInTheDocument();
+    expect(screen.getByText(/1 current-basis code pending normal sync/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Materialize Adjusted Metrics/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/adjusted_metrics_pit/i)).not.toBeInTheDocument();
+  });
+
   it('loads active job id from localStorage on mount', () => {
     localStorage.setItem('trading25.settings.sync.activeJobId', 'stored-job-1');
 

@@ -99,6 +99,13 @@ def validate_rows_required_fields(
             continue
         position = positions.get(row_key)
         if position is not None:
+            existing = deduped[position]
+            statement_id = str(row.get("statement_id") or "")
+            if statement_id.startswith("fallback:") and row != existing:
+                raise ValueError(
+                    "fallback statement identity collision before dedupe: "
+                    f"code={row.get('code')} statement_id={statement_id}"
+                )
             duplicate_count += 1
             deduped[position] = row
             continue

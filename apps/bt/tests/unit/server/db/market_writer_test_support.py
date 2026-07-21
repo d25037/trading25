@@ -24,6 +24,7 @@ from src.infrastructure.db.market.time_series_store import (
     MarketTimeSeriesStore,
     create_time_series_store,
 )
+from src.shared.provider_stock_window import ProviderStockStage
 
 
 _TEST_WRITER_LEASES: dict[Path, tuple[MarketOperationLease, int]] = {}
@@ -218,8 +219,36 @@ def _publish(
         store.close()
 
 
-def publish_stock_data(db: MarketDb, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
-    return _publish(db, rows, DuckDbParquetTimeSeriesStore.publish_stock_data)
+def publish_stock_data(
+    db: MarketDb,
+    rows: list[dict[str, Any]],
+    *,
+    provider_plan: str = "premium",
+) -> SemanticDeltaResult:
+    complete_rows = []
+    for source in rows:
+        row = dict(source)
+        row.setdefault("adjustment_factor", 1.0)
+        row.setdefault("adjusted_open", row.get("open"))
+        row.setdefault("adjusted_high", row.get("high"))
+        row.setdefault("adjusted_low", row.get("low"))
+        row.setdefault("adjusted_close", row.get("close"))
+        row.setdefault("adjusted_volume", row.get("volume"))
+        complete_rows.append(row)
+    if not complete_rows:
+        return SemanticDeltaResult.empty()
+    stage = ProviderStockStage(
+        provider_plan=provider_plan,
+        provider_as_of=max(str(row["date"]) for row in complete_rows),
+        provider_codes=frozenset(str(row["code"]) for row in complete_rows),
+    )
+    return _publish(
+        db,
+        complete_rows,
+        lambda store, values: store.publish_stock_data(
+            values, stage=stage
+        ),
+    )
 
 
 def publish_topix_data(db: MarketDb, rows: list[dict[str, Any]]) -> SemanticDeltaResult:

@@ -30,11 +30,10 @@ from src.application.services.db_validation_payloads import (
     build_topix_stats,
     build_validation_sample_windows,
 )
-from src.application.services.db_stats_service import _build_adjusted_metrics_stats
+from src.application.services.db_stats_service import _build_provider_vintage_stats
 from src.domains.strategy.signals.feature_registry import resolve_feature_requirement_spec
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
 from src.infrastructure.db.market.market_db import (
-    LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
     MARKET_SCHEMA_VERSION,
     METADATA_KEYS,
 )
@@ -118,6 +117,7 @@ class _ValidationBaseSnapshot:
     basic: dict[str, int]
     schema_version: int | None
     schema_current: bool
+    reset_before_sync_eligible: bool
     master_coverage: dict[str, Any]
     missing_master_dates_count: int
     missing_master_dates: list[str]
@@ -175,6 +175,7 @@ class ValidationMarketDbLike(Protocol):
     def get_stats(self) -> dict[str, int]: ...
     def get_market_schema_version(self) -> int | None: ...
     def is_market_schema_current(self) -> bool: ...
+    def is_reset_before_sync_eligible(self) -> bool: ...
     def get_stock_master_coverage(self) -> dict[str, Any]: ...
     def get_stock_count_by_market(self) -> dict[str, int]: ...
     def get_adjustment_events(self, limit: int = 20) -> list[dict[str, Any]]: ...
@@ -187,6 +188,7 @@ class ValidationMarketDbLike(Protocol):
     def get_options_225_underlying_price_issue_count(self, *, issue_type: str) -> int: ...
     def get_adjusted_metrics_snapshot(self) -> dict[str, Any]: ...
     def get_adjusted_metrics_source_diagnostics(self) -> dict[str, int]: ...
+    def get_provider_vintage_snapshot(self) -> dict[str, Any]: ...
 
 
 class ValidationTimeSeriesStoreLike(Protocol):
@@ -201,10 +203,8 @@ class ValidationTimeSeriesStoreLike(Protocol):
 
 def _build_recommendations(
     *,
-    schema_current: bool,
     schema_version: int | None,
-    legacy_stock_snapshot: bool,
-    stock_price_adjustment_mode: str | None,
+    reset_before_sync_eligible: bool,
     initialized: bool,
     missing_dates_count: int,
     missing_master_dates_count: int,
@@ -222,28 +222,17 @@ def _build_recommendations(
     intraday_is_stale: bool,
     intraday_expected_date: str,
     intraday_latest_date: str | None,
-    adjusted_metrics_status: str,
+    provider_vintage_status: str,
     readiness_recommendations: list[str],
     inspection: TimeSeriesInspection,
 ) -> list[str]:
     recommendations: list[str] = []
-    if not schema_current:
+    if not reset_before_sync_eligible:
         observed = "missing" if schema_version is None else str(schema_version)
         return [
-            "Run initial sync with reset enabled (resetBeforeSync=true) to recreate "
-            f"market.duckdb schema v{MARKET_SCHEMA_VERSION} "
-            f"(current schema version: {observed})"
+            "Run `bt market-cutover cutover` to rebuild the incompatible Market root "
+            f"as schema v{MARKET_SCHEMA_VERSION} (current schema version: {observed})"
         ]
-    if legacy_stock_snapshot:
-        recommendations.append(
-            "Run initial sync with reset enabled, or manually reset "
-            "market-timeseries/market.duckdb and market-timeseries/parquet first, "
-            "to rebuild stock_data_raw and local adjusted stock_data"
-        )
-    elif stock_price_adjustment_mode != LOCAL_STOCK_PRICE_ADJUSTMENT_MODE:
-        recommendations.append(
-            "Run initial sync with reset enabled to enable local stock price projection"
-        )
     if not initialized:
         recommendations.append("Run initial sync to populate the database")
     if missing_dates_count > 0:
@@ -292,20 +281,10 @@ def _build_recommendations(
             f"{intraday_expected_date} "
             f"(latest local minute date: {intraday_latest_date or 'n/a'})"
         )
-    if adjusted_metrics_status == "missing":
+    if provider_vintage_status in {"missing", "stale", "pending", "invalid"}:
         recommendations.append(
-            "Rerun Market DB sync/materialization stage adjusted_metrics_pit"
-        )
-    elif adjusted_metrics_status == "stale":
-        recommendations.append(
-            "Rerun Market DB sync/materialization stage adjusted_metrics_pit"
-        )
-    elif adjusted_metrics_status in {
-        "incomplete_coverage",
-        "invalid_lineage",
-    }:
-        recommendations.append(
-            "Rerun Market DB sync/materialization stage adjusted_metrics_pit"
+            "Run a normal Market DB sync to refresh the provider vintage and "
+            "recompute pending current-basis fundamentals"
         )
     recommendations.extend(readiness_recommendations)
     return recommendations
@@ -314,6 +293,7 @@ def _build_recommendations(
 def _resolve_validation_statuses(
     *,
     schema_current: bool,
+    reset_before_sync_eligible: bool,
     legacy_stock_snapshot: bool,
     initialized: bool,
     missing_dates_count: int,
@@ -323,8 +303,8 @@ def _resolve_validation_statuses(
     fundamentals_failed_dates_count: int,
     fundamentals_failed_codes_count: int,
     integrity_issues_count: int,
-    adjusted_metrics_needs_rebuild: bool,
-    adjusted_metrics_invalid_lineage: bool,
+    provider_vintage_needs_sync: bool,
+    provider_vintage_invalid: bool,
     options_225_missing_local_data: bool,
     options_225_stale_local_data: bool,
     options_225_pending_local_data: bool,
@@ -342,6 +322,7 @@ def _resolve_validation_statuses(
 ]:
     core_daily_status = _resolve_core_daily_status(
         schema_current=schema_current,
+        reset_before_sync_eligible=reset_before_sync_eligible,
         legacy_stock_snapshot=legacy_stock_snapshot,
         initialized=initialized,
         missing_dates_count=missing_dates_count,
@@ -351,8 +332,8 @@ def _resolve_validation_statuses(
         fundamentals_failed_dates_count=fundamentals_failed_dates_count,
         fundamentals_failed_codes_count=fundamentals_failed_codes_count,
         integrity_issues_count=integrity_issues_count,
-        adjusted_metrics_needs_rebuild=adjusted_metrics_needs_rebuild,
-        adjusted_metrics_invalid_lineage=adjusted_metrics_invalid_lineage,
+        provider_vintage_needs_sync=provider_vintage_needs_sync,
+        provider_vintage_invalid=provider_vintage_invalid,
     )
     derivatives_status = _resolve_derivatives_status(
         missing_local_data=options_225_missing_local_data,
@@ -407,22 +388,21 @@ def validate_market_db(
         latest_time=base.inspection.latest_stock_minute_time,
         last_intraday_sync=base.last_intraday_sync,
     )
-    adjusted_metrics = _build_adjusted_metrics_stats(
+    provider_vintage = _build_provider_vintage_stats(
         {
             **market_db.get_adjusted_metrics_snapshot(),
             **market_db.get_adjusted_metrics_source_diagnostics(),
+            **market_db.get_provider_vintage_snapshot(),
         },
         source_stock_count=base.inspection.stock_count,
         source_statement_count=base.inspection.statements_count,
-        latest_stock_date=base.inspection.stock_max,
+        provider_plan=market_db.get_sync_metadata(METADATA_KEYS["PROVIDER_PLAN"]),
     )
     integrity_issues, readiness_recommendations = _build_readiness_issues(base.inspection)
 
     recommendations = _build_recommendations(
-        schema_current=base.schema_current,
         schema_version=base.schema_version,
-        legacy_stock_snapshot=base.legacy_stock_snapshot,
-        stock_price_adjustment_mode=base.stock_price_adjustment_mode,
+        reset_before_sync_eligible=base.reset_before_sync_eligible,
         initialized=base.initialized,
         missing_dates_count=_resolve_missing_dates_count(base.inspection),
         missing_master_dates_count=base.missing_master_dates_count,
@@ -440,13 +420,14 @@ def validate_market_db(
         intraday_is_stale=intraday_freshness_snapshot.status == "stale",
         intraday_expected_date=intraday_freshness_snapshot.expected_date,
         intraday_latest_date=intraday_freshness_snapshot.latest_date,
-        adjusted_metrics_status=adjusted_metrics.status,
+        provider_vintage_status=provider_vintage.status,
         readiness_recommendations=readiness_recommendations,
         inspection=base.inspection,
     )
 
     health_statuses = _resolve_validation_statuses(
         schema_current=base.schema_current,
+        reset_before_sync_eligible=base.reset_before_sync_eligible,
         legacy_stock_snapshot=base.legacy_stock_snapshot,
         initialized=base.initialized,
         missing_dates_count=_resolve_missing_dates_count(base.inspection),
@@ -456,9 +437,9 @@ def validate_market_db(
         fundamentals_failed_dates_count=len(fundamentals.failed_dates),
         fundamentals_failed_codes_count=len(fundamentals.failed_codes),
         integrity_issues_count=len(integrity_issues),
-        adjusted_metrics_needs_rebuild=adjusted_metrics.status
-        in {"missing", "stale", "incomplete_coverage"},
-        adjusted_metrics_invalid_lineage=adjusted_metrics.status == "invalid_lineage",
+        provider_vintage_needs_sync=provider_vintage.status
+        in {"missing", "stale", "pending"},
+        provider_vintage_invalid=provider_vintage.status == "invalid",
         options_225_missing_local_data=options_225.missing_local_data,
         options_225_stale_local_data=options_225.stale_local_data,
         options_225_pending_local_data=options_225.pending_local_data,
@@ -476,7 +457,7 @@ def validate_market_db(
         options_225=options_225,
         source_quality=source_quality,
         failed_dates=failed_dates,
-        adjusted_metrics=adjusted_metrics,
+        provider_vintage=provider_vintage,
         intraday_freshness_snapshot=intraday_freshness_snapshot,
         integrity_issues=integrity_issues,
         recommendations=recommendations,
@@ -499,6 +480,7 @@ def _load_validation_base_snapshot(
     basic = market_db.get_stats()
     schema_version = market_db.get_market_schema_version()
     schema_current = market_db.is_market_schema_current()
+    reset_before_sync_eligible = market_db.is_reset_before_sync_eligible()
     master_coverage = market_db.get_stock_master_coverage()
     missing_master_dates_count = int(master_coverage.get("missingTopixDatesCount", 0) or 0)
     missing_master_dates = [str(d) for d in master_coverage.get("missingTopixDates", [])]
@@ -514,6 +496,7 @@ def _load_validation_base_snapshot(
         basic=basic,
         schema_version=schema_version,
         schema_current=schema_current,
+        reset_before_sync_eligible=reset_before_sync_eligible,
         master_coverage=master_coverage,
         missing_master_dates_count=missing_master_dates_count,
         missing_master_dates=missing_master_dates,
@@ -688,7 +671,7 @@ def _build_market_validation_response(
     options_225: _Options225ValidationSnapshot,
     source_quality: _SourceQualitySnapshot,
     failed_dates: list[str],
-    adjusted_metrics: Any,
+    provider_vintage: Any,
     intraday_freshness_snapshot: Any,
     integrity_issues: list[IntegrityIssue],
     recommendations: list[str],
@@ -769,6 +752,7 @@ def _build_market_validation_response(
         schema_=MarketSchemaStats(
             version=base.schema_version,
             current=base.schema_current,
+            resetBeforeSyncEligible=base.reset_before_sync_eligible,
         ),
         stockMaster=build_stock_master_coverage_stats(
             base.master_coverage,
@@ -782,7 +766,7 @@ def _build_market_validation_response(
         options225=options_225_val,
         margin=margin_val,
         fundamentals=fundamentals_val,
-        adjustedMetrics=adjusted_metrics,
+        providerVintage=provider_vintage,
         failedDates=failed_dates[:_FAILED_DATES_SAMPLE_LIMIT],
         failedDatesCount=len(failed_dates),
         adjustmentEvents=build_adjustment_events(source_quality.adjustment_events),
@@ -940,6 +924,7 @@ def _resolve_options_225_missing_topix_coverage_dates(
 def _resolve_core_daily_status(
     *,
     schema_current: bool,
+    reset_before_sync_eligible: bool,
     legacy_stock_snapshot: bool,
     initialized: bool,
     missing_dates_count: int,
@@ -949,14 +934,15 @@ def _resolve_core_daily_status(
     fundamentals_failed_dates_count: int,
     fundamentals_failed_codes_count: int,
     integrity_issues_count: int,
-    adjusted_metrics_needs_rebuild: bool,
-    adjusted_metrics_invalid_lineage: bool,
+    provider_vintage_needs_sync: bool,
+    provider_vintage_invalid: bool,
 ) -> Literal["healthy", "warning", "error"]:
     if (
         not schema_current
+        or not reset_before_sync_eligible
         or legacy_stock_snapshot
         or not initialized
-        or adjusted_metrics_invalid_lineage
+        or provider_vintage_invalid
     ):
         return "error"
     if (
@@ -967,7 +953,7 @@ def _resolve_core_daily_status(
         or fundamentals_failed_dates_count > 0
         or fundamentals_failed_codes_count > 0
         or integrity_issues_count > 0
-        or adjusted_metrics_needs_rebuild
+        or provider_vintage_needs_sync
     ):
         return "warning"
     return "healthy"

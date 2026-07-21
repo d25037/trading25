@@ -573,13 +573,14 @@ def normalize_daily_ranking_market_scopes(
 
 
 def assert_daily_ranking_research_tables(conn: Any) -> None:
-    """Fail closed unless canonical Market v4 research inputs are present."""
+    """Fail closed unless canonical Market v5 research inputs are present."""
 
     required = {
         "stock_data_raw",
+        "stock_data",
         "stock_master_daily",
-        "stock_adjustment_bases",
-        "stock_adjustment_basis_segments",
+        "stock_provider_windows",
+        "stock_adjustment_events",
         "daily_valuation",
         "topix_data",
         "indices_data",
@@ -593,7 +594,7 @@ def assert_daily_ranking_research_tables(conn: Any) -> None:
     missing = sorted(required - observed)
     if missing:
         raise ValueError(
-            "market.duckdb is missing required Market v4 tables: " + ", ".join(missing)
+            "market.duckdb is missing required Market v5 tables: " + ", ".join(missing)
         )
 
 
@@ -990,6 +991,7 @@ def _materialize_signal_panel(
 ) -> None:
     market_code = normalize_code_sql("smd.code")
     valuation_code = normalize_code_sql("valuation.code")
+    valuation_state_code = normalize_code_sql("valuation_state.code")
     market_case = _market_scope_case_sql("market_code", "market_name")
     benchmark_conditions: list[str] = []
     benchmark_params: list[date] = []
@@ -1081,7 +1083,7 @@ def _materialize_signal_panel(
                 CAST(valuation.pbr AS DOUBLE) AS pbr,
                 CAST(valuation.p_op AS DOUBLE) AS p_op,
                 CAST(valuation.forward_p_op AS DOUBLE) AS forecast_p_op,
-                CAST(valuation.basis_version AS VARCHAR) AS valuation_basis_id,
+                price.price_basis_id AS valuation_basis_id,
                 CAST(valuation.market_cap AS DOUBLE) / 1000000000.0
                     AS market_cap_bil_jpy,
                 coalesce(
@@ -1104,10 +1106,15 @@ def _materialize_signal_panel(
                 END AS n225_recent_return_60d_pct
             FROM {signal_prices} price
             JOIN market_master market USING (code, date)
+            JOIN current_basis_fundamentals_state valuation_state
+              ON {valuation_state_code} = price.code
             JOIN daily_valuation valuation
-              ON {valuation_code} = price.code
+             ON {valuation_code} = price.code
              AND CAST(valuation.date AS DATE) = price.date
-             AND CAST(valuation.basis_version AS VARCHAR) = price.price_basis_id
+             AND CAST(valuation.price_basis_date AS DATE) = price.date
+             AND valuation.fundamentals_adjustment_basis_date =
+                 valuation_state.fundamentals_adjustment_basis_date
+             AND valuation.source_fingerprint = valuation_state.source_fingerprint
             LEFT JOIN topix_ranked topix USING (date)
             LEFT JOIN n225_ranked n225 USING (date)
             WHERE {market_filter}
@@ -1335,7 +1342,9 @@ def _require_research_columns(conn: Any) -> None:
             "forward_p_op",
             "market_cap",
             "free_float_market_cap",
-            "basis_version",
+            "price_basis_date",
+            "fundamentals_adjustment_basis_date",
+            "source_fingerprint",
         },
     }
     missing: list[str] = []

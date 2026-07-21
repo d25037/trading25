@@ -1,0 +1,66 @@
+# Market v5 Hardening Task 9: recover interrupted activation by exact same ID
+
+Implement exactly Task 9 in `docs/superpowers/plans/2026-07-21-market-v5-review-hardening.md` after independently approved Task 8 head `cf351627688abab33ec5ccc8fede3402c0c8ac92`.
+
+## Scope
+
+- create `apps/bt/src/application/services/market_v4_cutover/activation_recovery.py`
+- create `apps/bt/src/application/services/market_v4_cutover/activation_runtime.py` when
+  required to isolate the P1-only exact recovery-runtime ownership manifest, gated
+  active-core comparison, and prepare/atomic-retirement operations from recovery
+  state orchestration while preserving structure caps
+- final P1 remediation may replace recovery-only recursive removal with exact atomic
+  retirement in the same ownership helper and its focused recovery tests
+- create `apps/bt/tests/unit/server/services/test_market_v4_cutover_activation_crash_recovery.py`
+- modify `apps/bt/src/application/services/market_v4_cutover/activation.py`
+- modify `apps/bt/src/application/services/market_v4_cutover/service.py`
+- minimally modify `apps/bt/src/application/services/market_v4_cutover/activation_journal.py` and its focused tests when required to securely discover and load the stored attempt by an exact validated report ID in a fresh process
+- only unavoidable existing cutover test helpers needed to run true child-process crash cases
+- `.superpowers/sdd/market-v5-hardening-task-9-report.md`
+
+### Approved plan file-list omissions
+
+The Task 9 plan's four-file list omits three changes required by its own fresh-process
+contract: an anchored descriptor-relative `load_existing(report_id)` entry point in
+`activation_journal.py` with focused journal tests; the two existing Task 8 report
+publication failure cases whose obsolete restore expectation contradicts Task 8's
+approved preserve-for-recovery boundary; and the P1-only `activation_runtime.py`
+ownership helper needed to keep runtime evidence out of the 612-line recovery state
+orchestrator and preserve package line/responsibility caps. The task brief and parent
+approval therefore allow those minimal focused changes; they do not broaden production
+recovery scope.
+
+## Contract
+
+- Recovery runs at same-ID entry before any new preparation or mutation and requires exact report/rehearsal/backup IDs, config, code version, target/source/staged/active/backup/quarantine identities and canonical evidence.
+- Fresh discovery must use an anchored validated report ID and descriptor-relative/no-follow canonical loading; it must not scan filenames or infer ownership from path names.
+- A residual deterministic recovery runtime may be excluded from active-tree identity
+  only after validating its anchored report-derived path, managed
+  no-follow/single-link traversal, allowed top-level shape, exact config digest, and
+  exact staged strategy map with the canonical smoke overlay. Recovery never
+  recursively deletes that runtime: after joined-process proof it atomically renames
+  the complete exact tree to
+  `operations/market-v5-cutover/recovery-runtime-quarantine/<REPORT_ID>`.
+- The retained destination must be absent or the one exact existing retained
+  artifact. Active plus retained, tampered, or unexpected states fail without
+  mutation. Exact retained plus absent active may be atomically reactivated for a
+  retry. Success and joined failure both retire the active runtime; rename failure
+  leaves the original active runtime intact and retryable. Retained evidence is never
+  deleted by recovery.
+- Fresh child-process crash tests use `os._exit(75)` before exchange, after exchange, after durable `activated` before report, and after report publication before `reported`.
+- `reported`: validate exact report and filesystem identities, then return it.
+- `activated`: validate exact active/quarantine/backup identities, run active smoke, publish/adopt exact report, append `reported`.
+- `exchange_started`: recognize only the three explicitly legal exact-identity layouts and resume deterministically.
+- `prepared`: proceed only while source/staged identities remain exact.
+- Mismatched attempt arguments, target fingerprint, report, or ambiguous/duplicate ownership must never be adopted. Restore immutable backup only when ownership is exactly provable; otherwise fail closed without mutation.
+- Final success keeps expected v5 active, exact source v4 quarantine, immutable
+  backup, latest state `reported`, no active runtime, and the exact deterministic
+  retained runtime evidence without duplicate/unowned trees.
+- Preserve Task 8 caught-exception preserve-for-recovery boundaries and create-only report behavior.
+- P0-P2 findings block. P3-or-lower findings are GitHub Issues, not immediate fixes.
+- General cutover matrix expansion remains deferred to GitHub issue #496 and retained
+  runtime garbage collection remains deferred to GitHub issue #497.
+
+## Process
+
+Follow Task 9 RED/GREEN with real fresh child processes. Run the full cutover glob plus CLI test, scoped Ruff, scoped Pyright. Do not run repository-wide tests. Write the report, commit only Task 9, and do not push.

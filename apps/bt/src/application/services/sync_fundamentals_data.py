@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger
 
@@ -34,6 +35,17 @@ from src.infrastructure.db.market.market_db import METADATA_KEYS
 
 
 _FUNDAMENTALS_REST_BACKFILL_MAX_ESTIMATED_CALLS = 250
+
+
+async def recompute_changed_fundamentals(ctx: Any) -> None:
+    """Flush the current stage's changed disclosures through the v5 updater."""
+    changed_codes = frozenset(ctx.changed_fundamentals_codes)
+    recompute = getattr(ctx, "recompute_affected_stock_codes", None)
+    if not callable(recompute):
+        ctx.changed_fundamentals_codes.clear()
+        return
+    await cast(Callable[[frozenset[str]], Awaitable[None]], recompute)(changed_codes)
+    ctx.changed_fundamentals_codes.clear()
 
 
 def _format_target_label(
@@ -378,8 +390,8 @@ async def sync_fundamentals_initial(
                     continue
                 rows = validate_rows_required_fields(
                     convert_fins_summary_rows(data, default_code=code),
-                    required_fields=("code", "disclosed_date"),
-                    dedupe_keys=("code", "disclosed_date"),
+                    required_fields=("code", "statement_id", "disclosed_date"),
+                    dedupe_keys=("code", "statement_id"),
                     stage="fundamentals",
                 )
                 rows = [row for row in rows if row.get("code") in allowed_statement_codes]
@@ -727,8 +739,8 @@ async def _sync_fundamentals_incremental_dates_rest(
             rows = [row for row in rows if row.get("code") in allowed_statement_codes]
             rows = validate_rows_required_fields(
                 rows,
-                required_fields=("code", "disclosed_date"),
-                dedupe_keys=("code", "disclosed_date"),
+                required_fields=("code", "statement_id", "disclosed_date"),
+                dedupe_keys=("code", "statement_id"),
                 stage="fundamentals",
             )
             if rows:
@@ -841,8 +853,8 @@ async def _sync_fundamentals_backfill_codes(
             rows = [row for row in rows if row.get("code") in allowed_statement_codes]
             rows = validate_rows_required_fields(
                 rows,
-                required_fields=("code", "disclosed_date"),
-                dedupe_keys=("code", "disclosed_date"),
+                required_fields=("code", "statement_id", "disclosed_date"),
+                dedupe_keys=("code", "statement_id"),
                 stage="fundamentals",
             )
             if rows:

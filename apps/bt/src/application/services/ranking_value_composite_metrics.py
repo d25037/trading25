@@ -73,7 +73,7 @@ def resolve_value_composite_symbol_target_date(
     row = reader.query_one(
         f"""
         SELECT MAX(date) AS max_date
-        FROM stock_data_raw
+        FROM stock_data
         WHERE date <= ?
           AND {raw_code} = ?
         """,

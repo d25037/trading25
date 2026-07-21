@@ -1,21 +1,71 @@
 from __future__ import annotations
 
+import hashlib
 import builtins
 import os
-import hashlib
+import shutil
+from datetime import date, timedelta
 from pathlib import Path
 from threading import Barrier, Lock, RLock, Thread
 from time import sleep
+from typing import Any
 
 import duckdb
 import pytest
 
 from src.infrastructure.db.market.time_series_store import DuckDbParquetTimeSeriesStore
+from src.infrastructure.db.market.valuation_queries import get_provider_vintage_snapshot
+from src.shared import provider_stock_window
+from src.shared.provider_stock_window import provider_stock_source_fingerprint
 from tests.unit.server.db.market_writer_test_support import (
     connect_market_duckdb_for_test,
     create_time_series_store_for_test,
     open_time_series_store,
 )
+
+
+def _publish_stock_data(
+    store: DuckDbParquetTimeSeriesStore,
+    rows: list[dict[str, Any]],
+    *,
+    provider_plan: str = "premium",
+    provider_as_of: str | None = None,
+    provider_codes: frozenset[str] | None = None,
+):
+    row_codes = {
+        str(row["code"])[:-1]
+        if len(str(row["code"])) in {5, 6} and str(row["code"]).endswith("0")
+        else str(row["code"])
+        for row in rows
+    }
+    stage = provider_stock_window.ProviderStockStage(
+        provider_plan=provider_plan,
+        provider_as_of=provider_as_of or max((str(row["date"]) for row in rows), default="2026-02-10"),
+        provider_codes=provider_codes or frozenset(row_codes or {"7203"}),
+    )
+    return store.publish_stock_data(rows, stage=stage)
+
+
+def _flush_staged_stock_data(
+    store: DuckDbParquetTimeSeriesStore,
+    *,
+    exclude_codes: frozenset[str] = frozenset(),
+):
+    staged = store._conn.execute(  # noqa: SLF001
+        "SELECT code, date FROM __tmp_stock_data_stage"
+    ).fetchall()
+    codes = frozenset(
+        code[:-1] if len(code) in {5, 6} and code.endswith("0") else code
+        for code, _ in staged
+    )
+    return store.flush_staged_stock_data(
+        stage=provider_stock_window.ProviderStockStage(
+            provider_plan="premium",
+            provider_as_of=max((row_date for _, row_date in staged), default="2026-02-10"),
+            provider_codes=codes or frozenset({"7203"}),
+        ),
+        exclude_codes=exclude_codes,
+    )
 
 
 def _stock_row() -> dict[str, object]:
@@ -27,7 +77,13 @@ def _stock_row() -> dict[str, object]:
         "low": 1.0,
         "close": 2.0,
         "volume": 100,
-        "adjustment_factor": None,
+        "turnover_value": 200.0,
+        "adjustment_factor": 1.0,
+        "adjusted_open": 1.0,
+        "adjusted_high": 2.0,
+        "adjusted_low": 1.0,
+        "adjusted_close": 2.0,
+        "adjusted_volume": 100,
         "created_at": "2026-02-10T00:00:00+00:00",
     }
 
@@ -36,6 +92,21 @@ def _stock_row_for(date: str) -> dict[str, object]:
     row = _stock_row()
     row["date"] = date
     row["created_at"] = f"{date}T00:00:00+00:00"
+    return row
+
+
+def _provider_stock_row(
+    date: str,
+    *,
+    code: str = "7203",
+    factor: float = 1.0,
+    adjusted_close: float | None = None,
+) -> dict[str, object]:
+    row = _stock_row_for(date)
+    row["code"] = code
+    row["adjustment_factor"] = factor
+    if adjusted_close is not None:
+        row["adjusted_close"] = adjusted_close
     return row
 
 
@@ -57,6 +128,16 @@ def _stock_minute_row(
         "turnover_value": 200.0,
         "created_at": f"{date}T00:00:00+00:00",
     }
+
+
+def _rmtree_with_injected_oserror(
+    path: str | Path,
+    ignore_errors: bool = False,
+) -> None:
+    del path
+    if ignore_errors:
+        return
+    raise OSError("injected partition deletion failure")
 
 
 def _query_rows(db_path: Path, sql: str) -> list[tuple]:
@@ -141,18 +222,26 @@ def _margin_rows() -> list[dict[str, object]]:
 
 def _statement_rows() -> list[dict[str, object]]:
     return [
-        {
-            "code": "7203",
-            "disclosed_date": "2026-02-10",
-            "earnings_per_share": 120.0,
-            "profit": 1000.0,
-        },
-        {
-            "code": "7203",
-            "disclosed_date": "2026-02-11",
-            "earnings_per_share": 122.0,
-        },
+        _statement_row(
+            "2026-02-10",
+            earnings_per_share=120.0,
+            profit=1000.0,
+        ),
+        _statement_row("2026-02-11", earnings_per_share=122.0),
     ]
+
+
+def _statement_row(disclosed_date: str, **values: object) -> dict[str, object]:
+    row: dict[str, object] = {
+        "code": "7203",
+        "statement_id": f"7203:{disclosed_date}",
+        "disclosed_date": disclosed_date,
+        "disclosed_at": f"{disclosed_date}T15:30:00+09:00",
+        "period_start": "2025-04-01",
+        "period_end": "2026-03-31",
+    }
+    row.update(values)
+    return row
 
 
 def test_create_time_series_store_returns_none_for_unsupported_backend(
@@ -164,6 +253,63 @@ def test_create_time_series_store_returns_none_for_unsupported_backend(
         parquet_dir=str(tmp_path / "parquet"),
     )
     assert store is None
+
+
+def test_writable_store_rejects_v4_without_partial_schema_mutation(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "market-timeseries" / "market.duckdb"
+    db_path.parent.mkdir(parents=True)
+    connection = duckdb.connect(str(db_path))
+    connection.execute(
+        "CREATE TABLE market_schema_version (version INTEGER PRIMARY KEY)"
+    )
+    connection.execute("INSERT INTO market_schema_version VALUES (4)")
+    connection.execute(
+        "CREATE TABLE stock_data_raw (code TEXT, date TEXT, PRIMARY KEY (code, date))"
+    )
+    connection.close()
+
+    with pytest.raises(RuntimeError, match="schema version 4.*required version 5"):
+        open_time_series_store(
+            duckdb_path=str(db_path),
+            parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+        )
+
+    connection = duckdb.connect(str(db_path))
+    try:
+        assert {row[0] for row in connection.execute("SHOW TABLES").fetchall()} == {
+            "market_schema_version",
+            "stock_data_raw",
+        }
+        assert [
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info('stock_data_raw')"
+            ).fetchall()
+        ] == ["code", "date"]
+    finally:
+        connection.close()
+
+
+def test_direct_store_stock_data_ohlcv_is_not_nullable(tmp_path: Path) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    try:
+        columns = {
+            str(row[1]): bool(row[3])
+            for row in store._conn.execute(  # noqa: SLF001
+                "PRAGMA table_info('stock_data')"
+            ).fetchall()
+        }
+        assert all(
+            columns[column]
+            for column in ("code", "date", "open", "high", "low", "close", "volume")
+        )
+    finally:
+        store.close()
 
 
 def test_create_time_series_store_returns_none_when_duckdb_unavailable(
@@ -413,7 +559,7 @@ def test_duckdb_store_inspect_reports_core_stats(tmp_path: Path) -> None:
     assert store is not None
 
     store.publish_topix_data(_topix_rows())
-    store.publish_stock_data([_stock_row()])
+    _publish_stock_data(store, [_stock_row()])
     store.publish_stock_minute_data(
         [
             _stock_minute_row(date="2026-02-10", time="09:00"),
@@ -453,17 +599,12 @@ def test_duckdb_store_inspect_reports_core_stats(tmp_path: Path) -> None:
     )
     store.publish_statements(
         [
-            {
-                "code": "7203",
-                "disclosed_date": "2026-02-10",
-                "earnings_per_share": 120.0,
-                "profit": 1000.0,
-            },
-            {
-                "code": "7203",
-                "disclosed_date": "2026-02-11",
-                "earnings_per_share": 122.0,
-            },
+            _statement_row(
+                "2026-02-10",
+                earnings_per_share=120.0,
+                profit=1000.0,
+            ),
+            _statement_row("2026-02-11", earnings_per_share=122.0),
         ]
     )
     store.index_topix_data()
@@ -524,24 +665,25 @@ def test_publish_statements_persists_forecast_sales_columns(tmp_path: Path) -> N
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
     try:
-        assert store.publish_statements(
-            [
-                {
-                    "code": "7203",
-                    "disclosed_date": "2026-05-08",
-                    "sales": 50_684_952_000_000.0,
-                    "forecast_sales": None,
-                    "next_year_forecast_sales": 51_000_000_000_000.0,
-                },
-                {
-                    "code": "7203",
-                    "disclosed_date": "2026-08-07",
-                    "sales": 12_253_326_000_000.0,
-                    "forecast_sales": 48_500_000_000_000.0,
-                    "next_year_forecast_sales": None,
-                },
-            ]
-        ).stats.inserted == 2
+        assert (
+            store.publish_statements(
+                [
+                    _statement_row(
+                        "2026-05-08",
+                        sales=50_684_952_000_000.0,
+                        forecast_sales=None,
+                        next_year_forecast_sales=51_000_000_000_000.0,
+                    ),
+                    _statement_row(
+                        "2026-08-07",
+                        sales=12_253_326_000_000.0,
+                        forecast_sales=48_500_000_000_000.0,
+                        next_year_forecast_sales=None,
+                    ),
+                ]
+            ).stats.inserted
+            == 2
+        )
     finally:
         store.close()
 
@@ -572,11 +714,102 @@ def test_index_options_225_data_exports_partitioned_parquet(tmp_path: Path) -> N
     store.publish_options_225_data(_options_225_rows())
     store.index_options_225_data()
 
-    assert (parquet_dir / "options_225_data" / "date=2026-02-10" / "data.parquet").exists()
-    assert (parquet_dir / "options_225_data" / "date=2026-02-11" / "data.parquet").exists()
+    assert (
+        parquet_dir / "options_225_data" / "date=2026-02-10" / "data.parquet"
+    ).exists()
+    assert (
+        parquet_dir / "options_225_data" / "date=2026-02-11" / "data.parquet"
+    ).exists()
     assert not (parquet_dir / "options_225_data.parquet").exists()
 
     store.close()
+
+
+def test_partitioned_parquet_copy_failure_preserves_previous_partition(
+    tmp_path: Path,
+) -> None:
+    parquet_dir = tmp_path / "market-timeseries" / "parquet"
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(parquet_dir),
+    )
+    store.publish_options_225_data(_options_225_rows())
+    store.index_options_225_data()
+    output = (
+        parquet_dir / "options_225_data" / "date=2026-02-10" / "data.parquet"
+    )
+    previous = output.read_bytes()
+
+    changed = _options_225_rows()[0]
+    changed["underlying_price"] = 999.0
+    store.publish_options_225_data([changed])
+    original_connection = store._conn
+
+    class _FailPartitionCopy:
+        def execute(self, sql: str, parameters: object = None) -> object:
+            if sql.lstrip().startswith("COPY ("):
+                raise RuntimeError("injected partition copy failure")
+            if parameters is None:
+                return original_connection.execute(sql)
+            return original_connection.execute(sql, parameters)
+
+    store._conn = _FailPartitionCopy()  # type: ignore[assignment]
+    try:
+        with pytest.raises(RuntimeError, match="partition copy failure"):
+            store.index_options_225_data()
+
+        assert output.read_bytes() == previous
+        assert store._dirty_partition_dates["options_225_data"] == {"2026-02-10"}
+        assert not list(output.parent.glob("*.tmp"))
+    finally:
+        store._conn = original_connection
+        store.close()
+
+
+def test_daily_partition_deletion_failure_keeps_dirty_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parquet_dir = tmp_path / "market-timeseries" / "parquet"
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(parquet_dir),
+    )
+    store.publish_options_225_data([_options_225_rows()[0]])
+    store.index_options_225_data()
+    partition_dir = parquet_dir / "options_225_data" / "date=2026-02-10"
+    output = partition_dir / "data.parquet"
+    previous = output.read_bytes()
+    store._conn.execute(  # noqa: SLF001
+        "DELETE FROM options_225_data WHERE date = ?",
+        ["2026-02-10"],
+    )
+    store._dirty_tables.add("options_225_data")  # noqa: SLF001
+    store._dirty_partition_dates.setdefault("options_225_data", set()).add(  # noqa: SLF001
+        "2026-02-10"
+    )
+    original_rmtree = shutil.rmtree
+    monkeypatch.setattr(shutil, "rmtree", _rmtree_with_injected_oserror)
+    try:
+        with pytest.raises(OSError, match="partition deletion failure"):
+            store.index_options_225_data()
+
+        assert partition_dir.exists()
+        assert output.read_bytes() == previous
+        assert store._dirty_partition_dates["options_225_data"] == {  # noqa: SLF001
+            "2026-02-10"
+        }
+        assert store.has_pending_index("options_225_data") is True
+
+        monkeypatch.setattr(shutil, "rmtree", original_rmtree)
+        store.index_options_225_data()
+
+        assert not partition_dir.exists()
+        assert store._dirty_partition_dates["options_225_data"] == set()  # noqa: SLF001
+        assert store.has_pending_index("options_225_data") is False
+    finally:
+        monkeypatch.setattr(shutil, "rmtree", original_rmtree)
+        store.close()
 
 
 def test_index_stock_data_exports_large_tables_by_dirty_date(tmp_path: Path) -> None:
@@ -588,11 +821,17 @@ def test_index_stock_data_exports_large_tables_by_dirty_date(tmp_path: Path) -> 
     )
     assert store is not None
 
-    store.publish_stock_data([_stock_row_for("2026-02-10"), _stock_row_for("2026-02-11")])
+    _publish_stock_data(store,
+        [_stock_row_for("2026-02-10"), _stock_row_for("2026-02-11")]
+    )
     store.index_stock_data()
 
-    assert (parquet_dir / "stock_data_raw" / "date=2026-02-10" / "data.parquet").exists()
-    assert (parquet_dir / "stock_data_raw" / "date=2026-02-11" / "data.parquet").exists()
+    assert (
+        parquet_dir / "stock_data_raw" / "date=2026-02-10" / "data.parquet"
+    ).exists()
+    assert (
+        parquet_dir / "stock_data_raw" / "date=2026-02-11" / "data.parquet"
+    ).exists()
     assert (parquet_dir / "stock_data" / "date=2026-02-10" / "data.parquet").exists()
     assert (parquet_dir / "stock_data" / "date=2026-02-11" / "data.parquet").exists()
     assert not (parquet_dir / "stock_data_raw.parquet").exists()
@@ -607,18 +846,18 @@ def test_staged_stock_data_flushes_once_and_projects_rows(tmp_path: Path) -> Non
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
     try:
-        assert store.stage_stock_data_rows(
-            [_stock_row_for("2026-02-10")]
-        ).stats.input == 1
-        assert store.stage_stock_data_rows(
-            [_stock_row_for("2026-02-11")]
-        ).stats.input == 1
+        assert (
+            store.stage_stock_data_rows([_stock_row_for("2026-02-10")]).stats.input == 1
+        )
+        assert (
+            store.stage_stock_data_rows([_stock_row_for("2026-02-11")]).stats.input == 1
+        )
         assert _query_rows(
             tmp_path / "market-timeseries" / "market.duckdb",
             "SELECT COUNT(*) FROM stock_data_raw",
         ) == [(0,)]
 
-        assert store.flush_staged_stock_data().stats.inserted == 2
+        assert _flush_staged_stock_data(store).stats.inserted == 2
 
         assert _query_rows(
             tmp_path / "market-timeseries" / "market.duckdb",
@@ -649,10 +888,56 @@ def test_index_stock_minute_data_exports_partitioned_parquet(tmp_path: Path) -> 
     )
     store.index_stock_minute_data()
 
-    assert (parquet_dir / "stock_data_minute_raw" / "date=2026-02-10" / "data.parquet").exists()
-    assert (parquet_dir / "stock_data_minute_raw" / "date=2026-02-11" / "data.parquet").exists()
+    assert (
+        parquet_dir / "stock_data_minute_raw" / "date=2026-02-10" / "data.parquet"
+    ).exists()
+    assert (
+        parquet_dir / "stock_data_minute_raw" / "date=2026-02-11" / "data.parquet"
+    ).exists()
 
     store.close()
+
+
+def test_minute_partition_deletion_failure_keeps_dirty_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parquet_dir = tmp_path / "market-timeseries" / "parquet"
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(parquet_dir),
+    )
+    store.publish_stock_minute_data([_stock_minute_row()])
+    store.index_stock_minute_data()
+    partition_dir = parquet_dir / "stock_data_minute_raw" / "date=2026-02-10"
+    output = partition_dir / "data.parquet"
+    previous = output.read_bytes()
+    store._conn.execute(  # noqa: SLF001
+        "DELETE FROM stock_data_minute_raw WHERE date = ?",
+        ["2026-02-10"],
+    )
+    store._dirty_tables.add("stock_data_minute_raw")  # noqa: SLF001
+    store._dirty_stock_minute_dates.add("2026-02-10")  # noqa: SLF001
+    original_rmtree = shutil.rmtree
+    monkeypatch.setattr(shutil, "rmtree", _rmtree_with_injected_oserror)
+    try:
+        with pytest.raises(OSError, match="partition deletion failure"):
+            store.index_stock_minute_data()
+
+        assert partition_dir.exists()
+        assert output.read_bytes() == previous
+        assert store._dirty_stock_minute_dates == {"2026-02-10"}  # noqa: SLF001
+        assert store.has_pending_index("stock_data_minute_raw") is True
+
+        monkeypatch.setattr(shutil, "rmtree", original_rmtree)
+        store.index_stock_minute_data()
+
+        assert not partition_dir.exists()
+        assert store._dirty_stock_minute_dates == set()  # noqa: SLF001
+        assert store.has_pending_index("stock_data_minute_raw") is False
+    finally:
+        monkeypatch.setattr(shutil, "rmtree", original_rmtree)
+        store.close()
 
 
 def test_publish_stock_data_batch_uses_semantic_delta_kernel(tmp_path: Path) -> None:
@@ -663,7 +948,7 @@ def test_publish_stock_data_batch_uses_semantic_delta_kernel(tmp_path: Path) -> 
     )
     assert store is not None
 
-    mutation = store.publish_stock_data(
+    mutation = _publish_stock_data(store,
         [_stock_row_for("2026-02-10"), _stock_row_for("2026-02-11")]
     )
 
@@ -677,9 +962,557 @@ def test_publish_stock_data_batch_uses_semantic_delta_kernel(tmp_path: Path) -> 
     store.close()
 
 
-def test_publish_stock_data_directly_projects_append_rows_without_future_adjustments(
+def test_publish_stock_data_rejects_missing_adjusted_values_without_partial_raw_write(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = create_time_series_store_for_test(
+        backend="duckdb-parquet",
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    assert store is not None
+    incomplete = _stock_row_for("2026-02-10")
+    incomplete.pop("adjusted_close")
+
+    with pytest.raises(duckdb.ConstraintException):
+        _publish_stock_data(store, [incomplete])
+
+    assert store._conn.execute("SELECT COUNT(*) FROM stock_data_raw").fetchone() == (0,)  # noqa: SLF001
+    assert store._conn.execute("SELECT COUNT(*) FROM stock_data").fetchone() == (0,)  # noqa: SLF001
+    store.close()
+
+
+def test_replace_stock_provider_window_publishes_exact_adjusted_rows_events_and_metadata(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    rows = [
+        _provider_stock_row("2026-02-10", adjusted_close=1.0),
+        _provider_stock_row("2026-02-11", factor=0.5, adjusted_close=2.0),
+    ]
+    rows[0].update(
+        adjusted_open=0.5,
+        adjusted_high=1.0,
+        adjusted_low=0.5,
+        adjusted_volume=200,
+    )
+    fingerprint = provider_stock_source_fingerprint(rows)
+
+    result = store.replace_stock_provider_window(
+        "7203",
+        rows,
+        {"start": "2026-02-10", "end": "2026-02-11"},
+        {
+            "provider_plan": "premium",
+            "provider_as_of": "2026-02-11",
+            "provider_source_fingerprint": fingerprint,
+        },
+    )
+
+    assert result.stats.inserted == 2
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT date, close, volume FROM stock_data ORDER BY date"
+    ).fetchall() == [
+        ("2026-02-10", 1.0, 200),
+        ("2026-02-11", 2.0, 100),
+    ]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, date, adjustment_factor, source_fingerprint "
+        "FROM stock_adjustment_events"
+    ).fetchall() == [("7203", "2026-02-11", 0.5, fingerprint)]
+    assert dict(
+        store._conn.execute(  # noqa: SLF001
+            "SELECT key, value FROM sync_metadata WHERE key LIKE 'provider_%'"
+        ).fetchall()
+    ) == {"provider_plan": "premium"}
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, coverage_start, coverage_end, provider_as_of, "
+        "source_fingerprint FROM stock_provider_windows"
+    ).fetchall() == [
+        (
+            "7203",
+            "2026-02-10",
+            "2026-02-11",
+            "2026-02-11",
+            fingerprint,
+        )
+    ]
+    store.close()
+
+
+def test_publish_stock_data_requires_and_persists_provider_plan(tmp_path: Path) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    row = _provider_stock_row("2026-02-10")
+
+    for invalid_plan in (None, "", " premium "):
+        with pytest.raises(ValueError, match="provider plan"):
+            provider_stock_window.ProviderStockStage(
+                provider_plan=invalid_plan,  # type: ignore[arg-type]
+                provider_as_of="2026-02-10",
+                provider_codes=frozenset({"7203"}),
+            )
+
+    _publish_stock_data(store, [row], provider_plan="premium")
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT value FROM sync_metadata WHERE key = 'provider_plan'"
+    ).fetchone() == ("premium",)
+    store.close()
+
+
+def test_flush_staged_stock_data_rejects_missing_plan_without_discarding_rows(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    row = _provider_stock_row("2026-02-10")
+    store.stage_stock_data_rows([row])
+
+    with pytest.raises(TypeError, match="stage"):
+        store.flush_staged_stock_data()
+
+    mutation = _flush_staged_stock_data(store)
+    assert mutation.stats.inserted == 1
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT COUNT(*) FROM stock_data_raw"
+    ).fetchone() == (1,)
+    store.close()
+
+
+def test_detect_stock_provider_drift_flags_events_factor_corrections_and_adjusted_drift(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    baseline = _provider_stock_row("2026-02-10")
+    store.replace_stock_provider_window(
+        "7203",
+        [baseline],
+        {"start": "2026-02-10", "end": "2026-02-10"},
+        {
+            "provider_plan": "premium",
+            "provider_as_of": "2026-02-10",
+            "provider_source_fingerprint": "1" * 64,
+        },
+    )
+
+    factor_event = _provider_stock_row("2026-02-11", factor=0.5)
+    corrected_factor = dict(baseline, adjustment_factor=0.25)
+    adjusted_drift = dict(baseline, adjusted_close=2.5)
+
+    assert store.detect_stock_provider_drift([factor_event]) == frozenset({"7203"})
+    assert store.detect_stock_provider_drift([corrected_factor]) == frozenset({"7203"})
+    assert store.detect_stock_provider_drift([adjusted_drift]) == frozenset({"7203"})
+    assert store.detect_stock_provider_drift([baseline]) == frozenset()
+    store.close()
+
+
+def test_replace_stock_provider_window_prunes_coverage_and_is_idempotent(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    initial = [_provider_stock_row("2026-02-09"), _provider_stock_row("2026-02-10")]
+    store.replace_stock_provider_window(
+        "7203",
+        initial,
+        {"start": "2026-02-09", "end": "2026-02-10"},
+        {
+            "provider_plan": "premium",
+            "provider_as_of": "2026-02-10",
+            "provider_source_fingerprint": "1" * 64,
+        },
+    )
+    narrowed = [_provider_stock_row("2026-02-10")]
+
+    pruned = store.replace_stock_provider_window(
+        "7203",
+        narrowed,
+        {"start": "2026-02-10", "end": "2026-02-10"},
+        {
+            "provider_plan": "premium",
+            "provider_as_of": "2026-02-10",
+            "provider_source_fingerprint": "2" * 64,
+        },
+    )
+    repeated = store.replace_stock_provider_window(
+        "7203",
+        narrowed,
+        {"start": "2026-02-10", "end": "2026-02-10"},
+        {
+            "provider_plan": "premium",
+            "provider_as_of": "2026-02-10",
+            "provider_source_fingerprint": "2" * 64,
+        },
+    )
+
+    assert pruned.stats.deleted == 1
+    assert repeated.mutated_rows == 0
+    assert repeated.stats.unchanged == 1
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT date FROM stock_data_raw WHERE code = '7203'"
+    ).fetchall() == [("2026-02-10",)]
+    store.close()
+
+
+@pytest.mark.parametrize(
+    ("corruption", "expected_inserted", "expected_updated"),
+    [("delete", 1, 0), ("update", 0, 1)],
+)
+def test_replace_stock_provider_window_repairs_missing_or_corrupt_consumer_projection(
+    tmp_path: Path,
+    corruption: str,
+    expected_inserted: int,
+    expected_updated: int,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    row = _provider_stock_row("2026-02-10", factor=0.5)
+    metadata = {
+        "provider_plan": "premium",
+        "provider_as_of": "2026-02-10",
+        "provider_source_fingerprint": provider_stock_source_fingerprint([row]),
+    }
+    store.replace_stock_provider_window(
+        "7203", [row], {"start": "2026-02-10", "end": "2026-02-10"}, metadata
+    )
+    store.index_stock_data()
+    raw_before = repr(
+        store._conn.execute(  # noqa: SLF001
+            "SELECT * FROM stock_data_raw ORDER BY code, date"
+        ).fetchall()
+    ).encode()
+    raw_created_at_before = store._conn.execute(  # noqa: SLF001
+        "SELECT created_at FROM stock_data_raw WHERE code = '7203'"
+    ).fetchone()
+
+    if corruption == "delete":
+        store._conn.execute("DELETE FROM stock_data WHERE code = '7203'")  # noqa: SLF001
+        corrupt_projection: list[tuple[object, ...]] = []
+    else:
+        store._conn.execute(  # noqa: SLF001
+            "UPDATE stock_data SET close = 1.5, adjustment_factor = 0.25 "
+            "WHERE code = '7203'"
+        )
+        corrupt_projection = [
+            (
+                "7203",
+                "2026-02-10",
+                1.0,
+                2.0,
+                1.0,
+                1.5,
+                100,
+                0.25,
+                "2026-02-10T00:00:00+00:00",
+            )
+        ]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT * FROM stock_data WHERE code = '7203'"
+    ).fetchall() == corrupt_projection
+
+    replayed_row = {**row, "created_at": "2026-02-11T00:00:00+00:00"}
+    result = store.replace_stock_provider_window(
+        "7203",
+        [replayed_row],
+        {"start": "2026-02-10", "end": "2026-02-10"},
+        metadata,
+    )
+
+    assert repr(
+        store._conn.execute(  # noqa: SLF001
+            "SELECT * FROM stock_data_raw ORDER BY code, date"
+        ).fetchall()
+    ).encode() == raw_before
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT created_at FROM stock_data_raw WHERE code = '7203'"
+    ).fetchone() == raw_created_at_before
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT * FROM stock_data WHERE code = '7203'"
+    ).fetchall() == [
+        (
+            "7203",
+            "2026-02-10",
+            1.0,
+            2.0,
+            1.0,
+            2.0,
+            100,
+            0.5,
+            "2026-02-10T00:00:00+00:00",
+        )
+    ]
+    assert result.stats.inserted == expected_inserted
+    assert result.stats.updated == expected_updated
+    assert result.stats.unchanged == 0
+    assert result.mutated_rows == 1
+    assert store._dirty_tables == {"stock_data"}  # noqa: SLF001
+    assert store._dirty_partition_dates.get("stock_data_raw", set()) == set()  # noqa: SLF001
+    assert store._dirty_partition_dates["stock_data"] == {"2026-02-10"}  # noqa: SLF001
+
+    no_op = store.replace_stock_provider_window(
+        "7203",
+        [replayed_row],
+        {"start": "2026-02-10", "end": "2026-02-10"},
+        metadata,
+    )
+    assert no_op.stats.inserted == 0
+    assert no_op.stats.updated == 0
+    assert no_op.stats.unchanged == 1
+    assert no_op.mutated_rows == 0
+    store.close()
+
+
+def test_replace_stock_provider_window_marks_every_rewritten_price_partition_dirty(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    rows = [_provider_stock_row("2026-02-09"), _provider_stock_row("2026-02-10")]
+    metadata = {
+        "provider_plan": "premium",
+        "provider_as_of": "2026-02-10",
+        "provider_source_fingerprint": "1" * 64,
+    }
+    store.replace_stock_provider_window(
+        "7203", rows, {"start": "2026-02-09", "end": "2026-02-10"}, metadata
+    )
+    store.index_stock_data()
+    corrected = [dict(rows[0]), dict(rows[1])]
+    corrected[1].update(high=3.0, close=3.0, adjusted_high=3.0, adjusted_close=3.0)
+
+    store.replace_stock_provider_window(
+        "7203",
+        corrected,
+        {"start": "2026-02-09", "end": "2026-02-10"},
+        metadata,
+    )
+
+    assert store._dirty_partition_dates["stock_data_raw"] == {  # noqa: SLF001
+        "2026-02-09",
+        "2026-02-10",
+    }
+    assert store._dirty_partition_dates["stock_data"] == {  # noqa: SLF001
+        "2026-02-09",
+        "2026-02-10",
+    }
+    store.close()
+
+
+def test_replace_stock_provider_window_validation_failure_preserves_snapshot_and_metadata(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    baseline = _provider_stock_row("2026-02-10")
+    metadata = {
+        "provider_plan": "premium",
+        "provider_as_of": "2026-02-10",
+        "provider_source_fingerprint": "1" * 64,
+    }
+    store.replace_stock_provider_window(
+        "7203", [baseline], {"start": "2026-02-10", "end": "2026-02-10"}, metadata
+    )
+    invalid = dict(baseline, adjusted_close=float("nan"))
+
+    with pytest.raises(ValueError, match="finite"):
+        store.replace_stock_provider_window(
+            "7203",
+            [invalid],
+            {"start": "2026-02-10", "end": "2026-02-10"},
+            {**metadata, "provider_source_fingerprint": "2" * 64},
+        )
+
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT adjusted_close FROM stock_data_raw"
+    ).fetchall() == [(2.0,)]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT source_fingerprint FROM stock_provider_windows WHERE code = '7203'"
+    ).fetchone() == ("1" * 64,)
+    store.close()
+
+
+def test_replace_stock_provider_window_rejects_inconsistent_adjusted_ohlc(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    inconsistent = _provider_stock_row("2026-02-10")
+    inconsistent["adjusted_high"] = 0.5
+
+    with pytest.raises(ValueError, match="provider-adjusted consistency failed"):
+        store.replace_stock_provider_window(
+            "7203",
+            [inconsistent],
+            {"start": "2026-02-10", "end": "2026-02-10"},
+            {
+                "provider_plan": "premium",
+                "provider_as_of": "2026-02-10",
+                "provider_source_fingerprint": "1" * 64,
+            },
+        )
+
+    assert store._conn.execute("SELECT COUNT(*) FROM stock_data_raw").fetchone() == (0,)  # noqa: SLF001
+    assert store._conn.execute("SELECT COUNT(*) FROM sync_metadata").fetchone() == (0,)  # noqa: SLF001
+    store.close()
+
+
+def test_replace_stock_provider_window_transaction_failure_rolls_back_all_state(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    baseline = _provider_stock_row("2026-02-10")
+    metadata = {
+        "provider_plan": "premium",
+        "provider_as_of": "2026-02-10",
+        "provider_source_fingerprint": "1" * 64,
+    }
+    store.replace_stock_provider_window(
+        "7203", [baseline], {"start": "2026-02-10", "end": "2026-02-10"}, metadata
+    )
+    dirty_before = set(store._dirty_tables)  # noqa: SLF001
+
+    class FailingConnection:
+        def __init__(self, connection: object) -> None:
+            self.connection = connection
+
+        def execute(self, sql: str, *args: object, **kwargs: object) -> object:
+            if sql.lstrip().upper().startswith("INSERT INTO STOCK_ADJUSTMENT_EVENTS"):
+                raise RuntimeError("event insert failed")
+            return self.connection.execute(sql, *args, **kwargs)  # type: ignore[attr-defined]
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(self.connection, name)
+
+    real_connection = store._conn  # noqa: SLF001
+    store._conn = FailingConnection(real_connection)  # type: ignore[assignment]  # noqa: SLF001
+    with pytest.raises(RuntimeError, match="event insert failed"):
+        store.replace_stock_provider_window(
+            "7203",
+            [_provider_stock_row("2026-02-11", factor=0.5)],
+            {"start": "2026-02-11", "end": "2026-02-11"},
+            {
+                **metadata,
+                "provider_as_of": "2026-02-11",
+                "provider_source_fingerprint": "2" * 64,
+            },
+        )
+    store._conn = real_connection  # noqa: SLF001
+
+    assert real_connection.execute(
+        "SELECT date, adjusted_close FROM stock_data_raw"
+    ).fetchall() == [("2026-02-10", 2.0)]
+    assert real_connection.execute(
+        "SELECT source_fingerprint FROM stock_provider_windows WHERE code = '7203'"
+    ).fetchone() == ("1" * 64,)
+    assert store._dirty_tables == dirty_before  # noqa: SLF001
+    store.close()
+
+
+def test_replace_stock_provider_window_metadata_only_update_preserves_price_rows(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    row = _provider_stock_row("2026-02-10")
+    metadata = {
+        "provider_plan": "premium",
+        "provider_as_of": "2026-02-10",
+        "provider_source_fingerprint": "1" * 64,
+        "last_stocks_refresh": "2026-02-10T00:00:00+00:00",
+    }
+    store.replace_stock_provider_window(
+        "7203", [row], {"start": "2026-02-10", "end": "2026-02-10"}, metadata
+    )
+    store.index_stock_data()
+    ledger_updated_at = store._conn.execute(  # noqa: SLF001
+        "SELECT updated_at FROM stock_provider_windows WHERE code = '7203'"
+    ).fetchone()
+    repeated = dict(row, created_at="2026-02-11T00:00:00+00:00")
+
+    result = store.replace_stock_provider_window(
+        "7203",
+        [repeated],
+        {"start": "2026-02-10", "end": "2026-02-10"},
+        {**metadata, "last_stocks_refresh": "2026-02-11T00:00:00+00:00"},
+    )
+
+    assert result.mutated_rows == 0
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT created_at FROM stock_data_raw WHERE code = '7203'"
+    ).fetchone() == ("2026-02-10T00:00:00+00:00",)
+    assert store._dirty_tables == set()  # noqa: SLF001
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT updated_at FROM stock_provider_windows WHERE code = '7203'"
+    ).fetchone() == ledger_updated_at
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT value FROM sync_metadata WHERE key = 'last_stocks_refresh'"
+    ).fetchone() == ("2026-02-11T00:00:00+00:00",)
+    store.close()
+
+
+def test_replace_stock_provider_window_fingerprint_only_dirties_event_not_prices(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    row = _provider_stock_row("2026-02-10", factor=0.5)
+    metadata = {
+        "provider_plan": "premium",
+        "provider_as_of": "2026-02-10",
+        "provider_source_fingerprint": "1" * 64,
+    }
+    store.replace_stock_provider_window(
+        "7203", [row], {"start": "2026-02-10", "end": "2026-02-10"}, metadata
+    )
+    store.index_stock_data()
+
+    result = store.replace_stock_provider_window(
+        "7203",
+        [row],
+        {"start": "2026-02-10", "end": "2026-02-10"},
+        {**metadata, "provider_source_fingerprint": "2" * 64},
+    )
+
+    assert result.mutated_rows == 0
+    assert store._dirty_tables == {"stock_adjustment_events"}  # noqa: SLF001
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT source_fingerprint FROM stock_adjustment_events"
+    ).fetchone() == ("2" * 64,)
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT source_fingerprint FROM stock_provider_windows WHERE code = '7203'"
+    ).fetchone() == ("2" * 64,)
+    store.close()
+
+
+def test_publish_stock_data_appends_exact_provider_adjusted_values(
+    tmp_path: Path,
 ) -> None:
     db_path = tmp_path / "market-timeseries" / "market.duckdb"
     store = create_time_series_store_for_test(
@@ -689,17 +1522,15 @@ def test_publish_stock_data_directly_projects_append_rows_without_future_adjustm
     )
     assert store is not None
 
-    projection_calls = 0
-    original_project = DuckDbParquetTimeSeriesStore._project_stock_rows
-
-    def _spy_project(self: DuckDbParquetTimeSeriesStore, rows: list[dict[str, object]]) -> None:
-        nonlocal projection_calls
-        projection_calls += 1
-        original_project(self, rows)
-
-    monkeypatch.setattr(DuckDbParquetTimeSeriesStore, "_project_stock_rows", _spy_project)
-
-    store.publish_stock_data([_stock_row_for("2026-02-10")])
+    provider_row = _stock_row_for("2026-02-10")
+    provider_row.update(
+        adjusted_open=1.25,
+        adjusted_high=2.25,
+        adjusted_low=1.125,
+        adjusted_close=2.125,
+        adjusted_volume=80,
+    )
+    _publish_stock_data(store, [provider_row])
 
     rows = _query_rows(
         db_path,
@@ -710,13 +1541,51 @@ def test_publish_stock_data_directly_projects_append_rows_without_future_adjustm
         """,
     )
 
-    assert projection_calls == 0
-    assert rows == [("7203", "2026-02-10", 1.0, 2.0, 1.0, 2.0, 100, None)]
+    assert rows == [("7203", "2026-02-10", 1.25, 2.25, 1.125, 2.125, 80, 1.0)]
 
     store.close()
 
 
-def test_index_stock_data_projects_split_adjustments_from_raw_rows(tmp_path: Path) -> None:
+def test_publish_stock_data_rolls_back_raw_when_consumer_insert_fails_and_retry_repairs(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+
+    class ConsumerFailingConnection:
+        def __init__(self, connection: object) -> None:
+            self.connection = connection
+
+        def execute(self, sql: str, *args: object, **kwargs: object) -> object:
+            if sql.lstrip().upper().startswith("INSERT INTO STOCK_DATA ("):
+                raise RuntimeError("consumer insert failed")
+            return self.connection.execute(sql, *args, **kwargs)  # type: ignore[attr-defined]
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(self.connection, name)
+
+    real_connection = store._conn  # noqa: SLF001
+    store._conn = ConsumerFailingConnection(real_connection)  # type: ignore[assignment]  # noqa: SLF001
+    with pytest.raises(RuntimeError, match="consumer insert failed"):
+        _publish_stock_data(store, [_stock_row()])
+    store._conn = real_connection  # noqa: SLF001
+
+    assert real_connection.execute("SELECT COUNT(*) FROM stock_data_raw").fetchone() == (0,)
+    assert real_connection.execute("SELECT COUNT(*) FROM stock_data").fetchone() == (0,)
+
+    result = _publish_stock_data(store, [_stock_row()])
+
+    assert result.stats.inserted == 1
+    assert real_connection.execute("SELECT COUNT(*) FROM stock_data_raw").fetchone() == (1,)
+    assert real_connection.execute("SELECT COUNT(*) FROM stock_data").fetchone() == (1,)
+    store.close()
+
+
+def test_index_stock_data_preserves_raw_and_uses_provider_split_adjusted_rows(
+    tmp_path: Path,
+) -> None:
     db_path = tmp_path / "market-timeseries" / "market.duckdb"
     store = create_time_series_store_for_test(
         backend="duckdb-parquet",
@@ -725,7 +1594,7 @@ def test_index_stock_data_projects_split_adjustments_from_raw_rows(tmp_path: Pat
     )
     assert store is not None
 
-    store.publish_stock_data(
+    _publish_stock_data(store,
         [
             {
                 "code": "7203",
@@ -735,7 +1604,13 @@ def test_index_stock_data_projects_split_adjustments_from_raw_rows(tmp_path: Pat
                 "low": 9.0,
                 "close": 10.0,
                 "volume": 1000,
+                "turnover_value": 10_000.0,
                 "adjustment_factor": 1.0,
+                "adjusted_open": 5.0,
+                "adjusted_high": 5.5,
+                "adjusted_low": 4.5,
+                "adjusted_close": 5.0,
+                "adjusted_volume": 2000,
                 "created_at": "2026-02-05T00:00:00+00:00",
             },
             {
@@ -746,7 +1621,13 @@ def test_index_stock_data_projects_split_adjustments_from_raw_rows(tmp_path: Pat
                 "low": 4.0,
                 "close": 5.0,
                 "volume": 1000,
+                "turnover_value": 5_000.0,
                 "adjustment_factor": 0.5,
+                "adjusted_open": 5.0,
+                "adjusted_high": 6.0,
+                "adjusted_low": 4.0,
+                "adjusted_close": 5.0,
+                "adjusted_volume": 1000,
                 "created_at": "2026-02-06T00:00:00+00:00",
             },
         ]
@@ -785,7 +1666,9 @@ def test_index_stock_data_projects_split_adjustments_from_raw_rows(tmp_path: Pat
     store.close()
 
 
-def test_index_stock_data_projects_chained_adjustments_without_boundary_gap(tmp_path: Path) -> None:
+def test_index_stock_data_uses_provider_chained_adjusted_values_without_reprojection(
+    tmp_path: Path,
+) -> None:
     db_path = tmp_path / "market-timeseries" / "market.duckdb"
     store = create_time_series_store_for_test(
         backend="duckdb-parquet",
@@ -794,7 +1677,7 @@ def test_index_stock_data_projects_chained_adjustments_without_boundary_gap(tmp_
     )
     assert store is not None
 
-    store.publish_stock_data(
+    _publish_stock_data(store,
         [
             {
                 "code": "9984",
@@ -804,7 +1687,13 @@ def test_index_stock_data_projects_chained_adjustments_without_boundary_gap(tmp_
                 "low": 5550.0,
                 "close": 5604.0,
                 "volume": 1000,
+                "turnover_value": 5_604_000.0,
                 "adjustment_factor": 1.0,
+                "adjusted_open": 700.0,
+                "adjusted_high": 706.25,
+                "adjusted_low": 693.75,
+                "adjusted_close": 700.5,
+                "adjusted_volume": 8000,
                 "created_at": "2016-03-23T00:00:00+00:00",
             },
             {
@@ -815,7 +1704,13 @@ def test_index_stock_data_projects_chained_adjustments_without_boundary_gap(tmp_
                 "low": 5520.0,
                 "close": 5590.4,
                 "volume": 2000,
+                "turnover_value": 11_180_800.0,
                 "adjustment_factor": 1.0,
+                "adjusted_open": 700.0,
+                "adjusted_high": 710.0,
+                "adjusted_low": 690.0,
+                "adjusted_close": 698.8,
+                "adjusted_volume": 16000,
                 "created_at": "2016-03-24T00:00:00+00:00",
             },
             {
@@ -826,7 +1721,13 @@ def test_index_stock_data_projects_chained_adjustments_without_boundary_gap(tmp_
                 "low": 590.0,
                 "close": 605.0,
                 "volume": 3000,
+                "turnover_value": 1_815_000.0,
                 "adjustment_factor": 0.5,
+                "adjusted_open": 150.0,
+                "adjusted_high": 152.5,
+                "adjusted_low": 147.5,
+                "adjusted_close": 151.25,
+                "adjusted_volume": 12000,
                 "created_at": "2019-06-25T00:00:00+00:00",
             },
             {
@@ -837,7 +1738,13 @@ def test_index_stock_data_projects_chained_adjustments_without_boundary_gap(tmp_
                 "low": 140.0,
                 "close": 155.0,
                 "volume": 4000,
+                "turnover_value": 620_000.0,
                 "adjustment_factor": 0.25,
+                "adjusted_open": 150.0,
+                "adjusted_high": 160.0,
+                "adjusted_low": 140.0,
+                "adjusted_close": 155.0,
+                "adjusted_volume": 4000,
                 "created_at": "2025-12-29T00:00:00+00:00",
             },
         ]
@@ -883,7 +1790,9 @@ def test_publish_indices_data_batch_uses_semantic_delta_kernel(tmp_path: Path) -
     store.close()
 
 
-def test_publish_options_225_data_batch_uses_semantic_delta_kernel(tmp_path: Path) -> None:
+def test_publish_options_225_data_batch_uses_semantic_delta_kernel(
+    tmp_path: Path,
+) -> None:
     store = create_time_series_store_for_test(
         backend="duckdb-parquet",
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
@@ -936,12 +1845,11 @@ def test_publish_statements_batch_preserves_non_null_merge(tmp_path: Path) -> No
     store.publish_statements(_statement_rows())
     store.publish_statements(
         [
-            {
-                "code": "7203",
-                "disclosed_date": "2026-02-10",
-                "earnings_per_share": None,
-                "profit": 1100.0,
-            }
+            _statement_row(
+                "2026-02-10",
+                earnings_per_share=None,
+                profit=1100.0,
+            )
         ]
     )
 
@@ -960,6 +1868,763 @@ def test_publish_statements_batch_preserves_non_null_merge(tmp_path: Path) -> No
     ]
 
     store.close()
+
+
+def test_publish_statements_preserves_distinct_same_day_disclosures(tmp_path: Path) -> None:
+    db_path = tmp_path / "market-timeseries" / "market.duckdb"
+    store = create_time_series_store_for_test(
+        backend="duckdb-parquet",
+        duckdb_path=str(db_path),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    assert store is not None
+    first = _statement_row("2026-02-10", forecast_eps=120.0)
+    first["statement_id"] = "earnings-revision"
+    first["type_of_document"] = "EarnForecastRevision"
+    second = _statement_row("2026-02-10", forecast_dividend_fy=40.0)
+    second["statement_id"] = "dividend-revision"
+    second["type_of_document"] = "DividendForecastRevision"
+
+    mutation = store.publish_statements([first, second])
+
+    assert mutation.stats.inserted == 2
+    assert mutation.affected_codes == frozenset({"7203"})
+    assert _query_rows(
+        db_path,
+        "SELECT statement_id, type_of_document FROM statements ORDER BY statement_id",
+    ) == [
+        ("dividend-revision", "DividendForecastRevision"),
+        ("earnings-revision", "EarnForecastRevision"),
+    ]
+    store.close()
+
+
+def test_publish_statements_rejects_fallback_identity_collision_within_batch(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    first = _statement_row("2026-02-10", profit=100.0)
+    first["statement_id"] = "fallback:collision"
+    corrected = {**first, "profit": 101.0}
+
+    with pytest.raises(ValueError, match="fallback statement identity collision"):
+        store.publish_statements([first, corrected])
+
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT COUNT(*) FROM statements"
+    ).fetchone() == (0,)
+    store.close()
+
+
+def test_publish_statements_rejects_fallback_collision_against_existing_row(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    first = _statement_row("2026-02-10", profit=100.0)
+    first["statement_id"] = "fallback:collision"
+    store.publish_statements([first])
+
+    with pytest.raises(ValueError, match="fallback statement identity collision"):
+        store.publish_statements([{**first, "profit": 101.0}])
+
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT profit FROM statements WHERE statement_id = 'fallback:collision'"
+    ).fetchone() == (100.0,)
+    store.close()
+
+
+def test_publish_statements_dedupes_identical_fallback_identity(tmp_path: Path) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    row = _statement_row("2026-02-10", profit=100.0)
+    row["statement_id"] = "fallback:identical"
+
+    mutation = store.publish_statements([row, dict(row)])
+
+    assert mutation.stats.inserted == 1
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT COUNT(*) FROM statements"
+    ).fetchone() == (1,)
+    store.close()
+
+
+def test_publish_statements_allows_provider_identity_correction(tmp_path: Path) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    original = _statement_row("2026-02-10", profit=100.0)
+    original["statement_id"] = "DiscNo:123"
+    store.publish_statements([original])
+
+    corrected = {
+        **original,
+        "disclosed_date": "2026-02-11",
+        "disclosed_at": "2026-02-11T15:30:00+09:00",
+        "profit": 101.0,
+    }
+    mutation = store.publish_statements([corrected])
+
+    assert mutation.stats.updated == 1
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT disclosed_date, profit FROM statements WHERE statement_id = 'DiscNo:123'"
+    ).fetchone() == ("2026-02-11", 101.0)
+    store.close()
+
+
+def test_statement_change_marks_current_basis_recompute_pending(tmp_path: Path) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    row = _statement_row("2026-02-10", earnings_per_share=100.0)
+
+    first = store.publish_statements([row])
+    second = store.publish_statements([row])
+
+    assert first.stats.inserted == 1
+    assert second.mutated_rows == 0
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, reason FROM current_basis_recompute_pending"
+    ).fetchall() == [("7203", "statement_change")]
+    store.close()
+
+
+def test_staged_unit_factor_append_establishes_provider_window_without_pending(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    rows = [
+        _stock_row_for("2026-02-10"),
+        _stock_row_for("2026-02-11"),
+    ]
+    store.stage_stock_data_rows(rows)
+
+    result = _flush_staged_stock_data(store)
+
+    assert result.stats.inserted == 2
+    window = store._conn.execute(  # noqa: SLF001
+        "SELECT coverage_start, coverage_end, provider_as_of, source_fingerprint "
+        "FROM stock_provider_windows WHERE code = '7203'"
+    ).fetchone()
+    assert window is not None
+    assert window[:3] == ("2026-02-10", "2026-02-11", "2026-02-11")
+    assert window[3] == provider_stock_source_fingerprint(rows)
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, reason, source_fingerprint FROM current_basis_recompute_pending"
+    ).fetchall() == []
+    store.close()
+
+
+def test_provider_stage_advances_suspended_symbol_without_inventing_coverage(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    for code in ("7203", "6758"):
+        baseline = [_provider_stock_row("2026-02-10", code=code)]
+        store.replace_stock_provider_window(
+            code,
+            baseline,
+            {"start": "2026-02-10", "end": "2026-02-10"},
+            {
+                "provider_plan": "premium",
+                "provider_as_of": "2026-02-10",
+                "provider_source_fingerprint": provider_stock_source_fingerprint(
+                    baseline
+                ),
+            },
+        )
+
+    store.publish_stock_data(
+        [_provider_stock_row("2026-02-12", code="7203")],
+        stage=provider_stock_window.ProviderStockStage(
+            provider_plan="premium",
+            provider_as_of="2026-02-12",
+            provider_codes=frozenset({"7203", "6758"}),
+        ),
+    )
+
+    windows = store._conn.execute(  # noqa: SLF001
+        "SELECT code, coverage_end, provider_plan, provider_as_of "
+        "FROM stock_provider_windows ORDER BY code"
+    ).fetchall()
+    assert windows == [
+        ("6758", "2026-02-10", "premium", "2026-02-12"),
+        ("7203", "2026-02-12", "premium", "2026-02-12"),
+    ]
+    store.close()
+
+
+def test_provider_stage_plan_change_does_not_relabel_untouched_window(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    for code in ("7203", "6758"):
+        baseline = [_provider_stock_row("2026-02-10", code=code)]
+        store.replace_stock_provider_window(
+            code,
+            baseline,
+            {"start": "2026-02-10", "end": "2026-02-10"},
+            {
+                "provider_plan": "free",
+                "provider_as_of": "2026-02-10",
+                "provider_source_fingerprint": provider_stock_source_fingerprint(
+                    baseline
+                ),
+            },
+        )
+
+    store.publish_stock_data(
+        [_provider_stock_row("2026-02-12", code="7203")],
+        stage=provider_stock_window.ProviderStockStage(
+            provider_plan="premium",
+            provider_as_of="2026-02-12",
+            provider_codes=frozenset({"7203"}),
+        ),
+    )
+
+    windows = store._conn.execute(  # noqa: SLF001
+        "SELECT code, provider_plan, provider_as_of "
+        "FROM stock_provider_windows ORDER BY code"
+    ).fetchall()
+    assert windows == [
+        ("6758", "free", "2026-02-10"),
+        ("7203", "premium", "2026-02-12"),
+    ]
+    store.close()
+
+
+def test_provider_stage_canonicalizes_alias_across_stock_publication(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    canonical = _provider_stock_row("2026-02-10", code="7203")
+    provider_alias = _provider_stock_row(
+        "2026-02-10", code="72030", factor=0.5
+    )
+
+    store.publish_stock_data(
+        [canonical, provider_alias],
+        stage=provider_stock_window.ProviderStockStage(
+            provider_plan="premium",
+            provider_as_of="2026-02-10",
+            provider_codes=frozenset({"72030"}),
+        ),
+    )
+
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, date FROM stock_data_raw ORDER BY code, date"
+    ).fetchall() == [("7203", "2026-02-10")]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, date FROM stock_data ORDER BY code, date"
+    ).fetchall() == [("7203", "2026-02-10")]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, provider_plan FROM stock_provider_windows ORDER BY code"
+    ).fetchall() == [("7203", "premium")]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, date FROM stock_adjustment_events ORDER BY code, date"
+    ).fetchall() == [("7203", "2026-02-10")]
+    store.close()
+
+
+def test_same_plan_older_backfill_preserves_monotonic_provider_frontier(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    initial = [
+        _provider_stock_row("2026-02-04"),
+        _provider_stock_row("2026-02-06"),
+    ]
+    store.replace_stock_provider_window(
+        "7203",
+        initial,
+        {"start": "2026-02-04", "end": "2026-02-06"},
+        {
+            "provider_plan": "premium",
+            "provider_as_of": "2026-02-06",
+            "provider_source_fingerprint": provider_stock_source_fingerprint(
+                initial
+            ),
+        },
+    )
+    backfill = _provider_stock_row("2026-02-05")
+
+    store.publish_stock_data(
+        [backfill],
+        stage=provider_stock_window.ProviderStockStage(
+            provider_plan="premium",
+            provider_as_of="2026-02-05",
+            provider_codes=frozenset({"7203"}),
+        ),
+    )
+
+    expected_fingerprint = provider_stock_source_fingerprint(
+        [*initial, backfill]
+    )
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT coverage_start, coverage_end, provider_plan, provider_as_of, "
+        "source_fingerprint FROM stock_provider_windows WHERE code = '7203'"
+    ).fetchone() == (
+        "2026-02-04",
+        "2026-02-06",
+        "premium",
+        "2026-02-06",
+        expected_fingerprint,
+    )
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT date FROM stock_data_raw WHERE code = '7203' ORDER BY date"
+    ).fetchall() == [
+        ("2026-02-04",),
+        ("2026-02-05",),
+        ("2026-02-06",),
+    ]
+    store.close()
+
+
+def test_same_plan_older_backfill_preserves_no_row_peer_window(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    initial_by_code = {
+        code: [
+            _provider_stock_row("2026-02-04", code=code),
+            _provider_stock_row("2026-02-06", code=code),
+        ]
+        for code in ("7203", "6758")
+    }
+    for code, initial in initial_by_code.items():
+        store.replace_stock_provider_window(
+            code,
+            initial,
+            {"start": "2026-02-04", "end": "2026-02-06"},
+            {
+                "provider_plan": "premium",
+                "provider_as_of": "2026-02-06",
+                "provider_source_fingerprint": provider_stock_source_fingerprint(
+                    initial
+                ),
+            },
+        )
+    backfill = _provider_stock_row("2026-02-05", code="7203")
+
+    result = store.publish_stock_data(
+        [backfill],
+        stage=provider_stock_window.ProviderStockStage(
+            provider_plan="premium",
+            provider_as_of="2026-02-05",
+            provider_codes=frozenset({"7203", "6758"}),
+        ),
+    )
+
+    assert result.stats.inserted == 1
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT date FROM stock_data_raw WHERE code = '7203' ORDER BY date"
+    ).fetchall() == [
+        ("2026-02-04",),
+        ("2026-02-05",),
+        ("2026-02-06",),
+    ]
+    windows = store._conn.execute(  # noqa: SLF001
+        "SELECT code, coverage_start, coverage_end, provider_plan, provider_as_of, "
+        "source_fingerprint FROM stock_provider_windows ORDER BY code"
+    ).fetchall()
+    assert windows == [
+        (
+            "6758",
+            "2026-02-04",
+            "2026-02-06",
+            "premium",
+            "2026-02-06",
+            provider_stock_source_fingerprint(initial_by_code["6758"]),
+        ),
+        (
+            "7203",
+            "2026-02-04",
+            "2026-02-06",
+            "premium",
+            "2026-02-06",
+            provider_stock_source_fingerprint(
+                [*initial_by_code["7203"], backfill]
+            ),
+        ),
+    ]
+    assert all(provider_as_of >= coverage_end for _, _, coverage_end, _, provider_as_of, _ in windows)
+    store.close()
+
+
+def test_normal_unit_factor_append_does_not_mark_fundamentals_pending(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+
+    _publish_stock_data(store, [_stock_row_for("2026-02-10")])
+
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT * FROM current_basis_recompute_pending"
+    ).fetchall() == []
+    store.close()
+
+
+def test_normal_append_advances_rolling_provider_frontier_and_prunes_expired_rows(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    initial = [
+        _stock_row_for("2026-01-01"),
+        _stock_row_for("2026-01-02"),
+        _stock_row_for("2026-01-03"),
+    ]
+    store.replace_stock_provider_window(
+        "7203",
+        initial,
+        {"start": "2026-01-01", "end": "2026-01-03"},
+        {
+            "provider_plan": "premium",
+            "provider_as_of": "2026-01-03",
+            "provider_source_fingerprint": provider_stock_source_fingerprint(initial),
+        },
+    )
+    store.index_stock_data()
+
+    _publish_stock_data(store, [_stock_row_for("2026-01-04")])
+    store.index_stock_data()
+
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT coverage_start, coverage_end FROM stock_provider_windows"
+    ).fetchone() == ("2026-01-02", "2026-01-04")
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT date FROM stock_data_raw ORDER BY date"
+    ).fetchall() == [("2026-01-02",), ("2026-01-03",), ("2026-01-04",)]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT date FROM read_parquet(?) ORDER BY date",
+        [str(tmp_path / "market-timeseries" / "parquet" / "stock_data_raw" / "*" / "*.parquet")],
+    ).fetchall() == [(date(2026, 1, 2),), (date(2026, 1, 3),), (date(2026, 1, 4),)]
+    store.close()
+
+
+def test_dormant_code_does_not_pin_active_code_provider_frontier(tmp_path: Path) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    for code in ("7203", "6758"):
+        rows = [
+            _provider_stock_row(session, code=code)
+            for session in ("2026-01-01", "2026-01-02", "2026-01-03")
+        ]
+        store.replace_stock_provider_window(
+            code,
+            rows,
+            {"start": "2026-01-01", "end": "2026-01-03"},
+            {
+                "provider_plan": "premium",
+                "provider_as_of": "2026-01-03",
+                "provider_source_fingerprint": provider_stock_source_fingerprint(rows),
+            },
+        )
+    store.index_stock_data()
+
+    _publish_stock_data(store, [_provider_stock_row("2026-01-04", code="7203")])
+    _publish_stock_data(store, [_provider_stock_row("2026-01-05", code="7203")])
+    store.index_stock_data()
+
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, coverage_start, coverage_end "
+        "FROM stock_provider_windows ORDER BY code"
+    ).fetchall() == [
+        ("6758", "2026-01-01", "2026-01-03"),
+        ("7203", "2026-01-03", "2026-01-05"),
+    ]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, min(date), max(date), count(*) "
+        "FROM stock_data_raw GROUP BY code ORDER BY code"
+    ).fetchall() == [
+        ("6758", "2026-01-01", "2026-01-03", 3),
+        ("7203", "2026-01-03", "2026-01-05", 3),
+    ]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, min(date), max(date), count(*) FROM read_parquet(?) "
+        "GROUP BY code ORDER BY code",
+        [
+            str(
+                tmp_path
+                / "market-timeseries"
+                / "parquet"
+                / "stock_data_raw"
+                / "*"
+                / "*.parquet"
+            )
+        ],
+    ).fetchall() == [
+        ("6758", date(2026, 1, 1), date(2026, 1, 3), 3),
+        ("7203", date(2026, 1, 3), date(2026, 1, 5), 3),
+    ]
+    store.close()
+
+
+def test_new_adjustment_factor_marks_fundamentals_pending(tmp_path: Path) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+
+    _publish_stock_data(
+        store,
+        [_provider_stock_row("2026-02-10", factor=0.5)],
+    )
+
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT pending.code, pending.reason, pending.source_fingerprint, "
+        "provider_window.source_fingerprint "
+        "FROM current_basis_recompute_pending AS pending "
+        "JOIN stock_provider_windows AS provider_window USING (code)"
+    ).fetchall() == [
+        (
+            "7203",
+            "provider_basis_change",
+            provider_stock_source_fingerprint(
+                [_provider_stock_row("2026-02-10", factor=0.5)]
+            ),
+            provider_stock_source_fingerprint(
+                [_provider_stock_row("2026-02-10", factor=0.5)]
+            ),
+        )
+    ]
+    store.close()
+
+
+def test_detect_stock_provider_drift_refreshes_inconsistent_complete_append(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    row = _stock_row_for("2026-02-10")
+    row["adjusted_close"] = 999.0
+
+    assert store.detect_stock_provider_drift([row]) == frozenset({"7203"})
+    store.close()
+
+
+def test_append_rebinds_historical_adjustment_event_to_window_fingerprint(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    historical = _provider_stock_row("2026-02-10", factor=0.5)
+    appended = _provider_stock_row("2026-02-11")
+
+    _publish_stock_data(store, [historical])
+    _publish_stock_data(store, [appended])
+
+    window_fingerprint = store._conn.execute(  # noqa: SLF001
+        "SELECT source_fingerprint FROM stock_provider_windows WHERE code = '7203'"
+    ).fetchone()[0]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT source_fingerprint FROM stock_adjustment_events WHERE code = '7203'"
+    ).fetchone() == (window_fingerprint,)
+    store.close()
+
+
+def test_append_rebound_event_fingerprint_is_exported_to_parquet(tmp_path: Path) -> None:
+    parquet_dir = tmp_path / "market-timeseries" / "parquet"
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(parquet_dir),
+    )
+    _publish_stock_data(
+        store,
+        [_provider_stock_row("2026-02-10", factor=0.5)],
+    )
+    store.index_stock_data()
+    _publish_stock_data(store, [_provider_stock_row("2026-02-11")])
+    store.index_stock_data()
+
+    duckdb_fingerprint = store._conn.execute(  # noqa: SLF001
+        "SELECT source_fingerprint FROM stock_adjustment_events WHERE code = '7203'"
+    ).fetchone()[0]
+    parquet_fingerprint = store._conn.execute(  # noqa: SLF001
+        "SELECT source_fingerprint FROM read_parquet(?) WHERE code = '7203'",
+        [str(parquet_dir / "stock_adjustment_events.parquet")],
+    ).fetchone()[0]
+
+    assert parquet_fingerprint == duckdb_fingerprint
+    store.close()
+
+
+def test_provider_vintage_sql_fingerprint_matches_python_with_symbol_bounded_evidence(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    first_day = date(2024, 1, 1)
+    rows: list[dict[str, Any]] = []
+    for code in ("7203", "131A0"):
+        for offset in range(200):
+            row = _provider_stock_row(
+                (first_day + timedelta(days=offset)).isoformat(),
+                code=code,
+            )
+            row["open"] = 0.1 + offset
+            row["adjusted_open"] = 0.1 + offset
+            row["turnover_value"] = None if offset % 7 == 0 else 200.25 + offset
+            rows.append(row)
+    _publish_stock_data(store, list(reversed(rows)))
+    materialized_rows: list[int] = []
+
+    def fetchall_dicts(
+        sql: str,
+        params: list[Any] | tuple[Any, ...] | None,
+    ) -> list[dict[str, Any]]:
+        result = store._conn.execute(sql) if params is None else store._conn.execute(sql, params)  # noqa: SLF001
+        columns = [str(desc[0]) for desc in result.description]
+        values = [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+        materialized_rows.append(len(values))
+        return values
+
+    snapshot = get_provider_vintage_snapshot(lambda _table: True, fetchall_dicts)
+
+    assert snapshot["providerWindowFingerprintCount"] == 2
+    assert snapshot["invalidProviderWindowCount"] == 0
+    assert len(materialized_rows) <= 3
+    assert sum(materialized_rows) <= 4
+    store.close()
+
+
+def test_provider_vintage_fails_closed_for_raw_and_event_codes_without_window(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    _publish_stock_data(
+        store,
+        [
+            _provider_stock_row("2026-02-10", code="7203"),
+            _provider_stock_row("2026-02-10", code="6758", factor=0.5),
+        ],
+    )
+    store._conn.execute(  # noqa: SLF001
+        "DELETE FROM stock_provider_windows WHERE code = '6758'"
+    )
+
+    def fetchall_dicts(
+        sql: str,
+        params: list[Any] | tuple[Any, ...] | None,
+    ) -> list[dict[str, Any]]:
+        result = store._conn.execute(sql) if params is None else store._conn.execute(sql, params)  # noqa: SLF001
+        columns = [str(desc[0]) for desc in result.description]
+        return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+
+    snapshot = get_provider_vintage_snapshot(lambda _table: True, fetchall_dicts)
+
+    assert store._conn.execute("SELECT COUNT(*) FROM stock_data_raw").fetchone() == (2,)  # noqa: SLF001
+    assert store._conn.execute("SELECT COUNT(*) FROM stock_provider_windows").fetchone() == (1,)  # noqa: SLF001
+    assert store._conn.execute("SELECT COUNT(*) FROM stock_adjustment_events").fetchone() == (1,)  # noqa: SLF001
+    assert snapshot["providerWindowCoherent"] is False
+    assert snapshot["invalidProviderWindowCount"] == 1
+    assert snapshot["adjustmentEventCount"] == 1
+    assert snapshot["invalidAdjustmentEventCount"] == 1
+    store.close()
+
+
+def test_provider_vintage_fails_closed_for_window_without_raw_rows(tmp_path: Path) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    _publish_stock_data(store, [_provider_stock_row("2026-02-10")])
+    store._conn.execute("DELETE FROM stock_data_raw")  # noqa: SLF001
+
+    def fetchall_dicts(
+        sql: str,
+        params: list[Any] | tuple[Any, ...] | None,
+    ) -> list[dict[str, Any]]:
+        result = store._conn.execute(sql) if params is None else store._conn.execute(sql, params)  # noqa: SLF001
+        columns = [str(desc[0]) for desc in result.description]
+        return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+
+    snapshot = get_provider_vintage_snapshot(lambda _table: True, fetchall_dicts)
+
+    assert snapshot["providerWindowCoherent"] is False
+    assert snapshot["invalidProviderWindowCount"] == 1
+    store.close()
+
+
+def test_incremental_provider_fingerprint_matches_full_window_fingerprint(
+    tmp_path: Path,
+) -> None:
+    rows = [_stock_row_for("2026-02-10"), _stock_row_for("2026-02-11")]
+    incremental = open_time_series_store(
+        duckdb_path=str(tmp_path / "incremental" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "incremental" / "parquet"),
+    )
+    _publish_stock_data(incremental, [rows[0]])
+    _publish_stock_data(incremental, [rows[1]])
+    incremental_fingerprint = incremental._conn.execute(  # noqa: SLF001
+        "SELECT source_fingerprint FROM stock_provider_windows WHERE code = '7203'"
+    ).fetchone()[0]
+    incremental.close()
+
+    full = open_time_series_store(
+        duckdb_path=str(tmp_path / "full" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "full" / "parquet"),
+    )
+    expected_fingerprint = provider_stock_source_fingerprint(rows)
+    full.replace_stock_provider_window(
+        "7203",
+        rows,
+        {"start": "2026-02-10", "end": "2026-02-11"},
+        {
+            "provider_plan": "premium",
+            "provider_as_of": "2026-02-11",
+            "provider_source_fingerprint": expected_fingerprint,
+        },
+    )
+    full_fingerprint = full._conn.execute(  # noqa: SLF001
+        "SELECT source_fingerprint FROM stock_provider_windows WHERE code = '7203'"
+    ).fetchone()[0]
+    full.close()
+
+    assert incremental_fingerprint == full_fingerprint == expected_fingerprint
 
 
 def test_publish_topix_data_excludes_flat_row_equal_to_previous_close(
@@ -1003,7 +2668,7 @@ def test_publish_topix_data_excludes_flat_row_equal_to_previous_close(
     assert published.stats.input == 3
     assert published.stats.inserted == 2
 
-    store.publish_stock_data(
+    _publish_stock_data(store,
         [
             _stock_row_for("2020-09-30"),
             _stock_row_for("2020-10-02"),
@@ -1153,7 +2818,10 @@ class _ConcurrentAccessDetectingConnection:
             return _ResultCursor(one=(0, None, None))
         if "FROM stock_data_minute_raw" in sql and "COUNT(DISTINCT date)" in sql:
             return _ResultCursor(one=(0, None, None, 0, 0))
-        if "FROM stock_data_minute_raw" in sql and "ORDER BY date DESC, time DESC" in sql:
+        if (
+            "FROM stock_data_minute_raw" in sql
+            and "ORDER BY date DESC, time DESC" in sql
+        ):
             return _ResultCursor(one=None)
         if "FROM stock_data" in sql and "COUNT(DISTINCT date)" in sql:
             return _ResultCursor(one=(0, None, None, 0))
@@ -1193,7 +2861,6 @@ def _build_lock_test_store(tmp_path: Path) -> DuckDbParquetTimeSeriesStore:
     store._dirty_tables = set()
     store._dirty_partition_dates = {}
     store._dirty_stock_minute_dates = set()
-    store._stock_projection_full_rebuild_codes = set()
     store._lock = RLock()
     return store
 
@@ -1212,7 +2879,7 @@ def test_duckdb_store_serializes_publish_and_inspect(tmp_path: Path) -> None:
         try:
             barrier.wait(timeout=2)
             for _ in range(iterations):
-                store.publish_stock_data([row])
+                _publish_stock_data(store, [row])
         except Exception as exc:  # pragma: no cover - failure path
             errors.append(exc)
 
@@ -1266,7 +2933,7 @@ def test_duckdb_store_init_raises_when_duckdb_import_missing(
 def test_publish_methods_return_empty_delta_for_empty_rows(tmp_path: Path) -> None:
     store = _build_lock_test_store(tmp_path)
     assert store.publish_topix_data([]).mutated_rows == 0
-    assert store.publish_stock_data([]).mutated_rows == 0
+    assert _publish_stock_data(store, []).mutated_rows == 0
     assert store.publish_stock_minute_data([]).mutated_rows == 0
     assert store.publish_indices_data([]).mutated_rows == 0
     assert store.publish_margin_data([]).mutated_rows == 0
@@ -1289,7 +2956,9 @@ def test_export_if_dirty_handles_absent_and_existing_parquet(tmp_path: Path) -> 
     assert "topix_data" not in store._dirty_tables
 
 
-def test_export_if_dirty_preserves_existing_parquet_when_copy_fails(tmp_path: Path) -> None:
+def test_export_if_dirty_preserves_existing_parquet_when_copy_fails(
+    tmp_path: Path,
+) -> None:
     store = _build_lock_test_store(tmp_path)
     store._conn = _FailingCopyConnection()
     output = store._parquet_dir / "topix_data.parquet"
@@ -1327,13 +2996,21 @@ def test_identical_nullable_publish_is_zero_delta_and_preserves_parquet_identity
     first = store.publish_indices_data([row])
     store.index_indices_data()
     output = parquet_dir / "indices_data.parquet"
-    before = (output.stat().st_ino, output.stat().st_mtime_ns, hashlib.sha256(output.read_bytes()).hexdigest())
+    before = (
+        output.stat().st_ino,
+        output.stat().st_mtime_ns,
+        hashlib.sha256(output.read_bytes()).hexdigest(),
+    )
 
     repeated = dict(row)
     repeated["created_at"] = "2099-01-01T00:00:00+00:00"
     second = store.publish_indices_data([repeated])
     store.index_indices_data()
-    after = (output.stat().st_ino, output.stat().st_mtime_ns, hashlib.sha256(output.read_bytes()).hexdigest())
+    after = (
+        output.stat().st_ino,
+        output.stat().st_mtime_ns,
+        hashlib.sha256(output.read_bytes()).hexdigest(),
+    )
 
     assert first.stats.inserted == 1
     assert second.stats.unchanged == 1
@@ -1354,21 +3031,29 @@ def test_identical_stock_publish_preserves_partitioned_parquet_identity(
         parquet_dir=str(parquet_dir),
     )
     rows = [_stock_row()]
-    store.publish_stock_data(rows)
+    _publish_stock_data(store, rows)
     store.index_stock_data()
     outputs = [
         parquet_dir / "stock_data_raw" / "date=2026-02-10" / "data.parquet",
         parquet_dir / "stock_data" / "date=2026-02-10" / "data.parquet",
     ]
     before = {
-        path: (path.stat().st_ino, path.stat().st_mtime_ns, hashlib.sha256(path.read_bytes()).hexdigest())
+        path: (
+            path.stat().st_ino,
+            path.stat().st_mtime_ns,
+            hashlib.sha256(path.read_bytes()).hexdigest(),
+        )
         for path in outputs
     }
 
-    assert store.publish_stock_data(rows).mutated_rows == 0
+    assert _publish_stock_data(store, rows).mutated_rows == 0
     store.index_stock_data()
     after = {
-        path: (path.stat().st_ino, path.stat().st_mtime_ns, hashlib.sha256(path.read_bytes()).hexdigest())
+        path: (
+            path.stat().st_ino,
+            path.stat().st_mtime_ns,
+            hashlib.sha256(path.read_bytes()).hexdigest(),
+        )
         for path in outputs
     }
 
@@ -1412,7 +3097,7 @@ def test_nullable_value_transition_is_reported_as_true_update(tmp_path: Path) ->
     store.close()
 
 
-def test_adjustment_semantic_change_reprojects_affected_code_via_anti_diff(
+def test_adjustment_semantic_change_does_not_reproject_other_provider_rows(
     tmp_path: Path,
 ) -> None:
     store = open_time_series_store(
@@ -1422,49 +3107,26 @@ def test_adjustment_semantic_change_reprojects_affected_code_via_anti_diff(
     prior = _stock_row_for("2026-01-01")
     boundary = _stock_row_for("2026-01-02")
     boundary["adjustment_factor"] = 2.0
-    store.publish_stock_data([prior, boundary])
+    _publish_stock_data(store, [prior, boundary])
     store.index_stock_data()
     assert store._conn.execute(
         "SELECT close FROM stock_data WHERE date = '2026-01-01'"
-    ).fetchone() == (4.0,)
+    ).fetchone() == (2.0,)
 
     corrected = dict(boundary)
     corrected["adjustment_factor"] = 1.0
+    corrected["adjusted_close"] = 2.5
     corrected["created_at"] = "2099-01-01T00:00:00+00:00"
-    result = store.publish_stock_data([corrected])
+    result = _publish_stock_data(store, [corrected])
     store.index_stock_data()
 
     assert result.stats.updated == 1
     assert store._conn.execute(
         "SELECT close FROM stock_data WHERE date = '2026-01-01'"
     ).fetchone() == (2.0,)
-    store.close()
-
-
-def test_full_code_projection_removes_only_target_only_stale_keys(tmp_path: Path) -> None:
-    store = open_time_series_store(
-        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
-        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
-    )
-    raw = _stock_row_for("2026-01-02")
-    raw["adjustment_factor"] = 2.0
-    store.publish_stock_data([raw])
-    store._conn.execute(
-        """
-        INSERT INTO stock_data
-        (code, date, open, high, low, close, volume, adjustment_factor, created_at)
-        VALUES ('7203', '1900-01-01', 1, 1, 1, 1, 1, 1, '1900-01-01')
-        """
-    )
-
-    result = store._reproject_pending_stock_codes()
-
-    assert result.stats.deleted == 1
-    assert result.deleted_keys == (("7203", "1900-01-01"),)
-    assert result.affected_dates == frozenset({"1900-01-01", "2026-01-02"})
     assert store._conn.execute(
-        "SELECT date FROM stock_data WHERE code = '7203' ORDER BY date"
-    ).fetchall() == [("2026-01-02",)]
+        "SELECT close FROM stock_data WHERE date = '2026-01-02'"
+    ).fetchone() == (2.5,)
     store.close()
 
 
@@ -1477,7 +3139,7 @@ def test_every_high_volume_writer_reports_zero_delta_for_identical_input(
     )
     cases = [
         (store.publish_topix_data, _topix_rows()),
-        (store.publish_stock_data, [_stock_row()]),
+        (lambda rows: _publish_stock_data(store, rows), [_stock_row()]),
         (store.publish_stock_minute_data, [_stock_minute_row()]),
         (store.publish_indices_data, _indices_rows()),
         (store.publish_options_225_data, _options_225_rows()),
@@ -1532,10 +3194,8 @@ def test_statement_null_input_preserves_existing_non_null_as_zero_delta(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
-    store.publish_statements([{"code": "7203", "disclosed_date": "2026-01-01", "profit": 10.0}])
-    result = store.publish_statements([
-        {"code": "7203", "disclosed_date": "2026-01-01", "profit": None}
-    ])
+    store.publish_statements([_statement_row("2026-01-01", profit=10.0)])
+    result = store.publish_statements([_statement_row("2026-01-01", profit=None)])
 
     assert result.mutated_rows == 0
     assert store._conn.execute("SELECT profit FROM statements").fetchone() == (10.0,)
@@ -1552,17 +3212,19 @@ def test_staged_stock_flush_uses_same_last_wins_semantic_kernel(tmp_path: Path) 
     last["close"] = 7.0
     store.stage_stock_data_rows([first])
     store.stage_stock_data_rows([last])
-    result = store.flush_staged_stock_data()
+    result = _flush_staged_stock_data(store)
 
     assert result.stats.input == 2
     assert result.stats.inserted == 1
     assert store._conn.execute("SELECT close FROM stock_data_raw").fetchone() == (7.0,)
     store.stage_stock_data_rows([last])
-    assert store.flush_staged_stock_data().mutated_rows == 0
+    assert _flush_staged_stock_data(store).mutated_rows == 0
     store.close()
 
 
-def test_discard_staged_stock_data_clears_temp_rows_without_publishing(tmp_path: Path) -> None:
+def test_discard_staged_stock_data_clears_temp_rows_without_publishing(
+    tmp_path: Path,
+) -> None:
     store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
@@ -1571,7 +3233,7 @@ def test_discard_staged_stock_data_clears_temp_rows_without_publishing(tmp_path:
 
     store.discard_staged_stock_data()
 
-    assert store.flush_staged_stock_data().mutated_rows == 0
+    assert _flush_staged_stock_data(store).mutated_rows == 0
     assert store._conn.execute("SELECT COUNT(*) FROM stock_data_raw").fetchone() == (0,)
     store.close()
 
@@ -1583,18 +3245,42 @@ def test_topix_valid_to_invalid_transition_deletes_only_the_affected_key(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
-    store.publish_topix_data([
-        {"date": "2026-01-01", "open": 9.0, "high": 11.0, "low": 9.0, "close": 10.0},
-        {"date": "2026-01-02", "open": 10.0, "high": 12.0, "low": 9.0, "close": 11.0},
-    ])
+    store.publish_topix_data(
+        [
+            {
+                "date": "2026-01-01",
+                "open": 9.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.0,
+            },
+            {
+                "date": "2026-01-02",
+                "open": 10.0,
+                "high": 12.0,
+                "low": 9.0,
+                "close": 11.0,
+            },
+        ]
+    )
 
-    result = store.publish_topix_data([
-        {"date": "2026-01-02", "open": 10.0, "high": 10.0, "low": 10.0, "close": 10.0},
-    ])
+    result = store.publish_topix_data(
+        [
+            {
+                "date": "2026-01-02",
+                "open": 10.0,
+                "high": 10.0,
+                "low": 10.0,
+                "close": 10.0,
+            },
+        ]
+    )
 
     assert result.stats.deleted == 1
     assert result.deleted_keys == (("2026-01-02",),)
-    assert store._conn.execute("SELECT date FROM topix_data ORDER BY date").fetchall() == [("2026-01-01",)]
+    assert store._conn.execute(
+        "SELECT date FROM topix_data ORDER BY date"
+    ).fetchall() == [("2026-01-01",)]
     store.close()
 
 
@@ -1605,14 +3291,22 @@ def test_topix_preflight_deletes_existing_next_row_invalidated_by_prior_update(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
-    store.publish_topix_data([
-        {"date": "2026-01-01", "open": 8.0, "high": 10.0, "low": 8.0, "close": 9.0},
-        {"date": "2026-01-02", "open": 10.0, "high": 10.0, "low": 10.0, "close": 10.0},
-    ])
+    store.publish_topix_data(
+        [
+            {"date": "2026-01-01", "open": 8.0, "high": 10.0, "low": 8.0, "close": 9.0},
+            {
+                "date": "2026-01-02",
+                "open": 10.0,
+                "high": 10.0,
+                "low": 10.0,
+                "close": 10.0,
+            },
+        ]
+    )
 
-    result = store.publish_topix_data([
-        {"date": "2026-01-01", "open": 8.0, "high": 11.0, "low": 8.0, "close": 10.0}
-    ])
+    result = store.publish_topix_data(
+        [{"date": "2026-01-01", "open": 8.0, "high": 11.0, "low": 8.0, "close": 10.0}]
+    )
 
     assert result.stats.updated == 1
     assert result.stats.deleted == 1

@@ -1,14 +1,44 @@
-"""Focused Market v4 cutover responsibility module."""
+"""Focused Market v5 cutover responsibility module."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 import json
 from pathlib import Path
+from types import MappingProxyType
 from typing import cast, ContextManager, Protocol
 
 from src.infrastructure.db.market import managed_root as _managed_root
+
+
+type ImmutableJsonValue = (
+    None
+    | bool
+    | int
+    | float
+    | str
+    | tuple[ImmutableJsonValue, ...]
+    | Mapping[str, ImmutableJsonValue]
+)
+
+
+def _freeze_json_value(value: object) -> ImmutableJsonValue:
+    """Copy one canonical JSON value into a recursive immutable representation."""
+
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, Mapping):
+        frozen: dict[str, ImmutableJsonValue] = {}
+        for key, child in value.items():
+            if not isinstance(key, str):
+                raise TypeError("JSON object keys must be strings")
+            frozen[key] = _freeze_json_value(child)
+        return MappingProxyType(frozen)
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_json_value(child) for child in value)
+    raise TypeError("Value is not canonical JSON")
 
 
 def _canonical_json(value: object) -> str:
@@ -18,6 +48,32 @@ def _canonical_json(value: object) -> str:
         separators=(",", ":"),
         ensure_ascii=True,
     )
+
+
+class ActivationState(StrEnum):
+    """Only durable states in one Market v5 activation attempt."""
+
+    PREPARED = "prepared"
+    EXCHANGE_STARTED = "exchange_started"
+    ACTIVATED = "activated"
+    REPORTED = "reported"
+
+
+@dataclass(frozen=True)
+class MarketTreeIdentity:
+    """Exact path, directory, and payload identity for one Market tree."""
+
+    path: str
+    directory: Mapping[str, int]
+    payload: Mapping[str, ImmutableJsonValue]
+
+    def __post_init__(self) -> None:
+        directory = MappingProxyType(dict(self.directory))
+        payload = _freeze_json_value(self.payload)
+        if not isinstance(payload, Mapping):  # pragma: no cover - field type guards it
+            raise TypeError("Market tree payload identity must be a JSON object")
+        object.__setattr__(self, "directory", directory)
+        object.__setattr__(self, "payload", payload)
 
 
 class PromotionState(StrEnum):
@@ -103,7 +159,8 @@ class _PromotionJournalAuthorization:  # pyright: ignore[reportUnusedClass]
 class MarketSourceMetadata:
     schema_version: int | None
     adjustment_mode: str | None
-    adjusted_metrics_ready: bool = True
+    provider_vintage_ready: bool = True
+    provider_vintage: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -125,12 +182,37 @@ class SmokeConfig:
 
 
 @dataclass(frozen=True)
+class ActivationAttempt:
+    """Immutable arguments and tree identities bound to one activation."""
+
+    report_id: str
+    rehearsal_report_id: str
+    backup_id: str
+    code_version: str
+    config: SmokeConfig
+    source: MarketTreeIdentity
+    staged: MarketTreeIdentity
+    active_before: MarketTreeIdentity
+    backup: MarketTreeIdentity
+    expected_active: MarketTreeIdentity
+
+
+@dataclass(frozen=True)
+class ActivationJournalRecord:
+    """One canonical record from the sequential activation journal."""
+
+    sequence: int
+    state: ActivationState
+    attempt: ActivationAttempt
+
+
+@dataclass(frozen=True)
 class SmokeResult:
     schema_version: int
     adjustment_mode: str
     checks: tuple[str, ...]
     api_paths: tuple[str, ...]
-    lineage: dict[str, int]
+    lineage: dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -257,6 +339,8 @@ class RetainedPromotionReportExpectation:
 
 class AtomicExchange(Protocol):
     """Capability for atomically exchanging two managed directories."""
+
+    def require_capability(self) -> object: ...
 
     def exchange(
         self,

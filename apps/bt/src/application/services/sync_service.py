@@ -8,7 +8,7 @@ GenericJobManager を使用してバックグラウンド同期を管理する�
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
@@ -27,19 +27,14 @@ from src.application.services.market_maintenance_finalizer import (
     MarketMaintenanceFinalizer,
     finalize_market_operation_joined,
 )
-from src.application.services.adjusted_metrics_materialization_run import (
-    MaterializationProgress,
-    run_shielded_materialization,
-)
 from src.infrastructure.db.market.market_db import (
-    LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+    PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
     MARKET_SCHEMA_VERSION,
     METADATA_KEYS,
     MarketDb,
 )
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.application.contracts.market_data_plane import SyncProgress, SyncResult
-from src.application.contracts.market_data_plane import AdjustedMetricsMaterializeResult
 from src.application.services.generic_job_manager import GenericJobManager, JobInfo
 from src.application.services.sync_stream_manager import (
     SyncStreamEvent,
@@ -53,15 +48,16 @@ from src.application.services.sync_strategies import (
     get_strategy,
 )
 from src.shared.config.reliability import (
-    ADJUSTED_METRICS_MATERIALIZATION_TIMEOUT_MINUTES,
     INITIAL_SYNC_JOB_TIMEOUT_MINUTES,
     SYNC_JOB_TIMEOUT_MINUTES,
 )
+from src.shared.config.settings import get_settings
 
 
 class SyncServiceMarketDbLike(SyncMarketDbLike, Protocol):
     def ensure_schema(self) -> None: ...
     def is_legacy_stock_price_snapshot(self) -> bool: ...
+    def is_reset_before_sync_eligible(self) -> bool: ...
     def get_market_schema_version(self) -> int | None: ...
     def is_market_schema_current(self) -> bool: ...
 
@@ -79,6 +75,7 @@ type ResetMarketSnapshot = Callable[
     tuple[SyncServiceMarketDbLike, SyncServiceTimeSeriesStoreLike],
 ]
 type MarketFinalizerProvider = Callable[[], MarketMaintenanceFinalizer]
+type RecomputeAffectedStockCodes = Callable[[frozenset[str]], Awaitable[None]]
 
 
 class SyncMode(str, Enum):
@@ -86,6 +83,17 @@ class SyncMode(str, Enum):
     INITIAL = "initial"
     INCREMENTAL = "incremental"
     REPAIR = "repair"
+
+
+class IncompatibleMarketResetError(RuntimeError):
+    """Raised when resetBeforeSync targets a non-Market-v5 root."""
+
+
+_INCOMPATIBLE_MARKET_RESET_MESSAGE = (
+    "resetBeforeSync is maintenance for an already-compatible Market v5 root only. "
+    "Run bt market-cutover cutover for Market v4, older, malformed, or "
+    "adjustment-mode-incompatible roots."
+)
 
 
 @dataclass
@@ -99,23 +107,10 @@ class SyncJobData:
     )
 
 
-@dataclass
-class AdjustedMetricsMaterializeJobData:
-    mode: str = "full"
-    maintenance: maintenance_contracts.MarketMaintenanceRecord = field(
-        default_factory=maintenance_contracts.MarketMaintenanceRecord.never_run
-    )
-
-
 # Module-level manager instance
 sync_job_manager: GenericJobManager[SyncJobData, SyncProgress, SyncResult] = (
     GenericJobManager()
 )
-adjusted_metrics_materialize_job_manager: GenericJobManager[
-    AdjustedMetricsMaterializeJobData,
-    SyncProgress,
-    AdjustedMetricsMaterializeResult,
-] = GenericJobManager()
 _MAX_FETCH_DETAILS = 200
 
 
@@ -196,180 +191,8 @@ def _prepare_market_db_for_sync(market_db: SyncServiceMarketDbLike) -> None:
         raise RuntimeError(_legacy_stock_snapshot_message())
     market_db.set_sync_metadata(
         METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"],
-        LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+        PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
     )
-
-
-async def start_adjusted_metrics_materialization(
-    market_db: MarketDb,
-    *,
-    market_finalizer: MarketMaintenanceFinalizer
-    | MarketFinalizerProvider
-    | None = None,
-) -> (
-    JobInfo[
-        AdjustedMetricsMaterializeJobData,
-        SyncProgress,
-        AdjustedMetricsMaterializeResult,
-    ]
-    | None
-):
-    """Start a standalone full adjusted metrics materialization job."""
-    job = await adjusted_metrics_materialize_job_manager.create_job(
-        AdjustedMetricsMaterializeJobData()
-    )
-    if job is None:
-        return None
-
-    def on_progress(progress: MaterializationProgress) -> None:
-        pct = (
-            progress.completed_codes / progress.total_codes * 100
-            if progress.total_codes > 0
-            else 0
-        )
-        adjusted_metrics_materialize_job_manager.update_progress(
-            job.job_id,
-            SyncProgress(
-                stage=progress.stage,
-                current=progress.completed_codes,
-                total=progress.total_codes,
-                percentage=pct,
-                message=(
-                    f"Materializing code {progress.current_code}"
-                    if progress.current_code is not None
-                    else "Materializing adjusted metrics"
-                ),
-                completedCodes=progress.completed_codes,
-                totalCodes=progress.total_codes,
-                currentCode=progress.current_code,
-                publishedBasisCount=progress.published_basis_count,
-            ),
-        )
-
-    async def _run() -> None:
-        operation_outcome = maintenance_contracts.MarketOperationOutcome.SUCCEEDED
-        operation_error: str | None = None
-        response: AdjustedMetricsMaterializeResult | None = None
-        propagate_cancel = False
-        try:
-            result = await run_shielded_materialization(
-                AdjustedMetricsMaterializer(market_db),
-                timeout_seconds=ADJUSTED_METRICS_MATERIALIZATION_TIMEOUT_MINUTES * 60,
-                on_progress=on_progress,
-            )
-            response = AdjustedMetricsMaterializeResult(
-                success=True,
-                basisCount=result.basis_count,
-                readyBasisCount=result.ready_basis_count,
-                statementRows=result.statement_rows,
-                dailyValuationRows=result.daily_valuation_rows,
-                dailyTechnicalMetricRows=result.daily_technical_metric_rows,
-                dailyValuationLatestDate=result.daily_valuation_latest_date,
-                activePriceBasisDate=result.active_price_basis_date,
-                activeBasisVersion=result.active_basis_version,
-            )
-            adjusted_metrics_materialize_job_manager.update_progress(
-                job.job_id,
-                SyncProgress(
-                    stage="complete",
-                    current=result.completed_codes,
-                    total=result.total_codes,
-                    percentage=100,
-                    message="Adjusted and technical metrics materialization complete.",
-                    completedCodes=result.completed_codes,
-                    totalCodes=result.total_codes,
-                    currentCode=None,
-                    publishedBasisCount=result.published_basis_count,
-                ),
-            )
-        except asyncio.CancelledError:
-            operation_outcome = maintenance_contracts.MarketOperationOutcome.CANCELLED
-            propagate_cancel = (
-                not adjusted_metrics_materialize_job_manager.is_cancelled(job.job_id)
-            )
-        except asyncio.TimeoutError:
-            operation_outcome = maintenance_contracts.MarketOperationOutcome.TIMED_OUT
-            operation_error = (
-                "Adjusted metrics materialization timed out after "
-                f"{ADJUSTED_METRICS_MATERIALIZATION_TIMEOUT_MINUTES} minutes"
-            )
-        except Exception as e:
-            logger.exception(
-                f"Adjusted metrics materialization job {job.job_id} failed: {e}"
-            )
-            operation_outcome = maintenance_contracts.MarketOperationOutcome.FAILED
-            operation_error = str(e)
-
-        def commit_terminal(decision: MarketFinalizationDecision) -> None:
-            job.data.maintenance = decision.maintenance
-            if (
-                decision.terminal_outcome is maintenance_contracts.MarketOperationOutcome.SUCCEEDED
-                and adjusted_metrics_materialize_job_manager.is_cancelled(job.job_id)
-            ):
-                status = JobStatus.CANCELLED
-            elif decision.terminal_outcome is maintenance_contracts.MarketOperationOutcome.SUCCEEDED:
-                status = JobStatus.COMPLETED
-            elif decision.terminal_outcome is maintenance_contracts.MarketOperationOutcome.CANCELLED:
-                status = JobStatus.CANCELLED
-            else:
-                status = JobStatus.FAILED
-            adjusted_metrics_materialize_job_manager.finalize_job(
-                job.job_id,
-                status=status,
-                result=response,
-                error=decision.error,
-            )
-
-        if market_finalizer is not None:
-            resolved_finalizer = (
-                market_finalizer() if callable(market_finalizer) else market_finalizer
-            )
-            loop = asyncio.get_running_loop()
-            provisional_terminal: list[MarketFinalizationDecision] = []
-
-            def publish_from_worker(decision: MarketFinalizationDecision) -> None:
-                if len(provisional_terminal) != 1:
-                    raise RuntimeError(
-                        "Materialization terminal decision was not staged exactly once"
-                    )
-                committed = threading.Event()
-                publication_error: list[BaseException] = []
-
-                def publish_on_loop() -> None:
-                    try:
-                        commit_terminal(decision)
-                    except BaseException as exc:
-                        publication_error.append(exc)
-                    finally:
-                        committed.set()
-
-                loop.call_soon_threadsafe(publish_on_loop)
-                committed.wait()
-                if publication_error:
-                    raise publication_error[0]
-
-            await finalize_market_operation_joined(
-                resolved_finalizer,
-                operation_outcome=operation_outcome,
-                operation_error=operation_error,
-                stage_terminal=provisional_terminal.append,
-                publish_terminal=publish_from_worker,
-            )
-        else:
-            commit_terminal(
-                MarketFinalizationDecision(
-                    terminal_outcome=operation_outcome,
-                    maintenance=maintenance_contracts.MarketMaintenanceRecord.never_run(),
-                    error=operation_error,
-                )
-            )
-
-        if propagate_cancel:
-            raise asyncio.CancelledError
-
-    task = asyncio.create_task(_run())
-    job.task = task
-    return job
 
 
 async def start_sync(
@@ -383,6 +206,7 @@ async def start_sync(
     market_finalizer: MarketMaintenanceFinalizer
     | MarketFinalizerProvider
     | None = None,
+    recompute_affected_stock_codes: RecomputeAffectedStockCodes | None = None,
 ) -> JobInfo[SyncJobData, SyncProgress, SyncResult] | None:
     """Sync ジョブを作成して開始。アクティブジョブがある場合は None。"""
     if time_series_store is None:
@@ -392,6 +216,14 @@ async def start_sync(
             raise RuntimeError("resetBeforeSync is supported only for initial sync")
         if reset_market_snapshot is None:
             raise RuntimeError("resetBeforeSync requires a reset callback")
+        try:
+            reset_eligible = market_db.is_reset_before_sync_eligible()
+        except Exception as exc:  # noqa: BLE001 - normalize malformed roots
+            raise IncompatibleMarketResetError(
+                _INCOMPATIBLE_MARKET_RESET_MESSAGE
+            ) from exc
+        if not reset_eligible:
+            raise IncompatibleMarketResetError(_INCOMPATIBLE_MARKET_RESET_MESSAGE)
         resolved_mode = SyncMode.INITIAL.value
     else:
         _prepare_market_db_for_sync(market_db)
@@ -418,6 +250,12 @@ async def start_sync(
     async def _run() -> None:
         current_market_db = market_db
         current_time_series_store = time_series_store
+        stock_progress = {
+            "stockRowsAppended": 0,
+            "affectedStockCodes": 0,
+            "stockCodesReplaced": 0,
+            "stockRowsReplaced": 0,
+        }
 
         def on_fetch_detail(detail: dict[str, Any]) -> None:
             entry = {
@@ -444,9 +282,33 @@ async def start_sync(
                     total=total,
                     percentage=pct,
                     message=message,
+                    stockRowsAppended=stock_progress["stockRowsAppended"],
+                    affectedStockCodes=stock_progress["affectedStockCodes"],
+                    stockCodesReplaced=stock_progress["stockCodesReplaced"],
+                    stockRowsReplaced=stock_progress["stockRowsReplaced"],
                 ),
             )
             _publish_sync_job_event(job.job_id)
+
+        def on_stock_commit(
+            appended_rows: int,
+            affected_codes: int,
+            replaced_codes: int,
+            replaced_rows: int,
+        ) -> None:
+            stock_progress.update(
+                stockRowsAppended=appended_rows,
+                affectedStockCodes=affected_codes,
+                stockCodesReplaced=replaced_codes,
+                stockRowsReplaced=replaced_rows,
+            )
+            stored = sync_job_manager.get_job(job.job_id)
+            if stored is not None and stored.progress is not None:
+                sync_job_manager.update_progress(
+                    job.job_id,
+                    stored.progress.model_copy(update=stock_progress),
+                )
+                _publish_sync_job_event(job.job_id)
 
         operation_outcome = maintenance_contracts.MarketOperationOutcome.SUCCEEDED
         operation_error: str | None = None
@@ -468,40 +330,12 @@ async def start_sync(
                 on_progress("reset", 1, 1, "Reset complete. Starting initial sync...")
                 _prepare_market_db_for_sync(current_market_db)
 
-            async def materialize_adjusted_metrics() -> None:
-                def on_materialization_progress(
-                    progress: MaterializationProgress,
-                ) -> None:
-                    pct = (
-                        progress.completed_codes / progress.total_codes * 100
-                        if progress.total_codes > 0
-                        else 0
-                    )
-                    sync_job_manager.update_progress(
-                        job.job_id,
-                        SyncProgress(
-                            stage=progress.stage,
-                            current=progress.completed_codes,
-                            total=progress.total_codes,
-                            percentage=pct,
-                            message=(
-                                f"Materializing code {progress.current_code}"
-                                if progress.current_code is not None
-                                else "Materializing adjusted metrics"
-                            ),
-                            completedCodes=progress.completed_codes,
-                            totalCodes=progress.total_codes,
-                            currentCode=progress.current_code,
-                            publishedBasisCount=progress.published_basis_count,
-                        ),
-                    )
-                    _publish_sync_job_event(job.job_id)
-
-                await run_shielded_materialization(
-                    AdjustedMetricsMaterializer(cast(MarketDb, current_market_db)),
-                    timeout_seconds=ADJUSTED_METRICS_MATERIALIZATION_TIMEOUT_MINUTES
-                    * 60,
-                    on_progress=on_materialization_progress,
+            async def rebuild_current_basis(codes: frozenset[str]) -> None:
+                await asyncio.to_thread(
+                    AdjustedMetricsMaterializer(
+                        cast(MarketDb, current_market_db)
+                    ).rebuild_current_basis,
+                    codes,
                 )
 
             ctx = SyncContext(
@@ -512,16 +346,14 @@ async def start_sync(
                 on_progress=on_progress,
                 on_fetch_detail=on_fetch_detail,
                 enforce_bulk_for_stock_data=enforce_bulk_for_stock_data,
-                materialize_adjusted_metrics=(
-                    materialize_adjusted_metrics
-                    if resolved_mode
-                    in {
-                        SyncMode.INITIAL.value,
-                        SyncMode.INCREMENTAL.value,
-                        SyncMode.REPAIR.value,
-                    }
-                    else None
+                provider_plan=(
+                    str(getattr(jquants_client, "plan", "")).strip().lower()
+                    or get_settings().jquants_plan.strip().lower()
                 ),
+                recompute_affected_stock_codes=(
+                    recompute_affected_stock_codes or rebuild_current_basis
+                ),
+                on_stock_commit=on_stock_commit,
             )
             operation_result = await asyncio.wait_for(
                 strategy.execute(ctx), timeout=sync_timeout_minutes * 60

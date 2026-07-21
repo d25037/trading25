@@ -113,7 +113,7 @@ def test_second_same_process_writer_fails_fast_without_blocking(
     with pytest.raises(MarketOperationLeaseError, match="same process"):
         factory.open_existing(blocking=False)
     assert time.monotonic() - started < 0.5
-    assert first.handles.market_db.get_market_schema_version() == 4
+    assert first.handles.market_db.get_market_schema_version() == 5
 
     token = first.close_writable_handles()
     resources = first.reopen_read_only(token)
@@ -268,12 +268,12 @@ def test_reset_and_open_v4_holds_lease_until_handles_close_and_reopens_read_only
     factory = MarketWriterResourceFactory(data_root=data_root, market_root=market_root)
 
     session = factory.reset_and_open_v4()
-    assert session.handles.market_db.get_market_schema_version() == 4
+    assert session.handles.market_db.get_market_schema_version() == 5
     token = session.close_writable_handles()
     read_only = session.reopen_read_only(token)
     session.release_after_read_only_reopen(token)
     try:
-        assert read_only.market_db.get_market_schema_version() == 4
+        assert read_only.market_db.get_market_schema_version() == 5
         with pytest.raises(PermissionError):
             read_only.market_db.set_sync_metadata("x", "y")
     finally:
@@ -371,7 +371,7 @@ def test_open_existing_rejects_wrong_schema_before_writable_open(
     )
     connection.close()
 
-    with pytest.raises(MarketSourceIdentityError, match="schema v4"):
+    with pytest.raises(MarketSourceIdentityError, match="schema v5"):
         factory.open_existing()
 
 

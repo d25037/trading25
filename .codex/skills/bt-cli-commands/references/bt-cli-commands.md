@@ -2,7 +2,7 @@
 
 Generated from Typer command declarations. Do not edit manually.
 
-Total commands: **20**
+Total commands: **18**
 
 | Command |
 |---|
@@ -17,9 +17,7 @@ Total commands: **20**
 | `bt market-cutover backup` |
 | `bt market-cutover cutover` |
 | `bt market-cutover preflight` |
-| `bt market-cutover promote-retained` |
 | `bt market-cutover rehearse` |
-| `bt market-cutover rehearse-retained` |
 | `bt market-cutover restore` |
 | `bt market-cutover smoke` |
 | `bt market-maintain` |

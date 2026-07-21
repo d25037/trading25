@@ -1,4 +1,4 @@
-"""Market v4 cutover rehearsal failures tests."""
+"""Market v5 cutover rehearsal failures tests."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ import inspect
 import pytest
 
 import src.application.services.market_v4_cutover.full_rehearsal as full_rehearsal
-import src.application.services.market_v4_cutover.rehearsal as rehearsal
 from src.application.services.market_v4_cutover.contracts import (
     MarketSourceMetadata,
     SmokeConfig,
@@ -32,23 +31,11 @@ from tests.unit.server.services.market_v4_cutover_test_support import (
 
 def test_rehearsal_services_are_concrete_with_explicit_collaborators() -> None:
     assert hasattr(full_rehearsal, "FullRebuildRehearsalService")
-    assert hasattr(rehearsal, "RetainedRehearsalService")
     FullRebuildRehearsalService = full_rehearsal.FullRebuildRehearsalService
-    RetainedRehearsalService = rehearsal.RetainedRehearsalService
     assert FullRebuildRehearsalService.__bases__ == (object,)
-    assert RetainedRehearsalService.__bases__ == (object,)
     assert tuple(
         inspect.signature(FullRebuildRehearsalService).parameters
     ) == ("workspace", "evidence", "reports", "runtime_smoke")
-    assert tuple(
-        inspect.signature(RetainedRehearsalService).parameters
-    ) == (
-        "workspace",
-        "evidence",
-        "market_identity",
-        "reports",
-        "runtime_smoke",
-    )
 
 
 def test_rehearsal_failure_report_keeps_start_identity_and_original_error(
@@ -72,7 +59,7 @@ def test_rehearsal_failure_report_keeps_start_identity_and_original_error(
     runtime = FakeRuntime(apis=[FailingApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     code_version, _calls = _changing_code_version("deadbeef", "deadbeef-dirty")
@@ -88,7 +75,7 @@ def test_rehearsal_failure_report_keeps_start_identity_and_original_error(
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports/rehearsal-original-error/report.json"
+            / "operations/market-v5-cutover/reports/rehearsal-original-error/report.json"
         ).read_text()
     )
     assert runtime.stop_calls == 1
@@ -135,7 +122,7 @@ def test_rehearsal_cleanup_join_verdict_preserves_primary_error(
     runtime = UnjoinedRuntime(apis=[FailingApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
 
@@ -149,7 +136,7 @@ def test_rehearsal_cleanup_join_verdict_preserves_primary_error(
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports/rehearsal-unjoined-cleanup/report.json"
+            / "operations/market-v5-cutover/reports/rehearsal-unjoined-cleanup/report.json"
         ).read_text()
     )
     assert runtime.cancel_calls == 1
@@ -174,7 +161,7 @@ def test_rehearsal_cancel_failure_is_diagnostic_when_stop_proves_join(
     runtime = CancelFailingRuntime(apis=[FakeApi(invalid_lineage=True)])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
 
@@ -188,7 +175,7 @@ def test_rehearsal_cancel_failure_is_diagnostic_when_stop_proves_join(
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports/rehearsal-cancel-diagnostic/report.json"
+            / "operations/market-v5-cutover/reports/rehearsal-cancel-diagnostic/report.json"
         ).read_text()
     )
     assert runtime.cancel_calls == 1
@@ -198,6 +185,81 @@ def test_rehearsal_cancel_failure_is_diagnostic_when_stop_proves_join(
     assert report["cleanupErrorType"] == "OSError"
     assert "stopErrorType" not in report
     assert report["serverProcessJoined"] is True
+
+
+def test_rehearsal_interrupt_fences_unjoined_server_and_reports_deferred(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+
+    class LeaseHoldingUnjoinedRuntime(FakeRuntime):
+        retained_lease_fd = -1
+
+        def start(self, **kwargs: object) -> FakeApi:
+            api = super().start(**kwargs)  # type: ignore[arg-type]
+            self.retained_lease_fd = os.dup(int(kwargs["lease_fd"]))
+            return api
+
+        def stop(self, _api: FakeApi) -> None:
+            self.stop_calls += 1
+            raise RuntimeStopError(
+                "operator-interrupted rehearsal server remains alive",
+                process_joined=False,
+            )
+
+    runtime = LeaseHoldingUnjoinedRuntime(apis=[FakeApi()])
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=runtime,
+    )
+
+    def interrupt_rebuild(*_args: object, **_kwargs: object) -> object:
+        raise KeyboardInterrupt("operator interrupted rehearsal")
+
+    monkeypatch.setattr(service._runtime_smoke, "run_rebuild", interrupt_rebuild)
+    caught_error: BaseException | None = None
+    try:
+        service.rehearse(
+            "rehearsal-interrupt-unjoined",
+            SmokeConfig("7203", "production/smoke", "primeMarket"),
+            inherited_environment={},
+        )
+    except BaseException as exc:
+        caught_error = exc
+
+    assert isinstance(caught_error, CutoverSafetyError)
+    assert "rehearsal failed" in str(caught_error)
+    assert runtime.cancel_calls == 1
+    assert runtime.stop_calls == 1
+    report = json.loads(
+        (
+            data_root
+            / "operations/market-v5-cutover/reports/rehearsal-interrupt-unjoined/report.json"
+        ).read_text()
+    )
+    assert report["status"] == "stop_failed_cleanup_deferred"
+    assert report["errorType"] == "KeyboardInterrupt"
+    assert report["serverProcessJoined"] is False
+    rehearsal_root = (
+        data_root
+        / "operations/market-v5-cutover/rehearsals/rehearsal-interrupt-unjoined/root"
+    )
+    try:
+        with pytest.raises(CutoverSafetyError, match="operation lease"):
+            market_operation_lease.MarketOperationLease.acquire(
+                rehearsal_root,
+                exclusive=False,
+            )
+    finally:
+        os.close(runtime.retained_lease_fd)
+
+    with market_operation_lease.MarketOperationLease.acquire(
+        rehearsal_root,
+        exclusive=True,
+    ):
+        pass
 
 
 def test_rehearsal_report_preserves_bounded_redacted_terminal_job_diagnostic(
@@ -242,7 +304,7 @@ def test_rehearsal_report_preserves_bounded_redacted_terminal_job_diagnostic(
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports/rehearsal-job-diagnostic/report.json"
+            / "operations/market-v5-cutover/reports/rehearsal-job-diagnostic/report.json"
         ).read_text()
     )
     diagnostic = report["errorMessage"]
@@ -289,7 +351,7 @@ def test_rehearsal_startup_error_uses_embedded_join_verdict(
     runtime = StartupFailingRuntime()
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
 
@@ -303,7 +365,7 @@ def test_rehearsal_startup_error_uses_embedded_join_verdict(
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports"
+            / "operations/market-v5-cutover/reports"
             / f"rehearsal-startup-joined-{process_joined}/report.json"
         ).read_text()
     )
@@ -314,7 +376,7 @@ def test_rehearsal_startup_error_uses_embedded_join_verdict(
 
     rehearsal_root = (
         data_root
-        / "operations/market-v4-cutover/rehearsals"
+        / "operations/market-v5-cutover/rehearsals"
         / f"rehearsal-startup-joined-{process_joined}/root"
     )
     if not process_joined:
@@ -339,7 +401,7 @@ def test_rehearsal_identity_drift_cannot_publish_passed_report(tmp_path: Path) -
     runtime = FakeRuntime(apis=[FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     code_version, _calls = _changing_code_version("deadbeef", "deadbeef-dirty")
@@ -355,7 +417,7 @@ def test_rehearsal_identity_drift_cannot_publish_passed_report(tmp_path: Path) -
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports/rehearsal-code-drift/report.json"
+            / "operations/market-v5-cutover/reports/rehearsal-code-drift/report.json"
         ).read_text()
     )
     assert report["status"] == "failed"
@@ -381,7 +443,7 @@ def test_rehearsal_rejects_concurrent_strategy_edit_and_stale_report(
     runtime = EditingRuntime(apis=[FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     original_fingerprint = service.root_fingerprint(data_root)
@@ -396,7 +458,7 @@ def test_rehearsal_rejects_concurrent_strategy_edit_and_stale_report(
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports/raced-rehearsal/report.json"
+            / "operations/market-v5-cutover/reports/raced-rehearsal/report.json"
         ).read_text()
     )
     assert report["status"] == "failed"
@@ -420,7 +482,7 @@ def test_rehearsal_report_publish_failure_never_leaves_passed_evidence(
     runtime = FakeRuntime(apis=[FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     failed_once = False
@@ -441,7 +503,7 @@ def test_rehearsal_report_publish_failure_never_leaves_passed_evidence(
 
     report_path = (
         data_root
-        / f"operations/market-v4-cutover/reports/report-{failure_stage}/report.json"
+        / f"operations/market-v5-cutover/reports/report-{failure_stage}/report.json"
     )
     if report_path.exists():
         assert json.loads(report_path.read_text())["status"] != "passed"
@@ -449,7 +511,7 @@ def test_rehearsal_report_publish_failure_never_leaves_passed_evidence(
 
 
 @pytest.mark.parametrize("failure_stage", ["after_temp_fsync", "after_publish"])
-def test_active_report_publish_failure_restores_without_passed_evidence(
+def test_active_report_publish_failure_is_completed_by_exact_same_id_recovery(
     tmp_path: Path,
     failure_stage: str,
 ) -> None:
@@ -457,7 +519,7 @@ def test_active_report_publish_failure_restores_without_passed_evidence(
     runtime = FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()])
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
         runtime=runtime,
     )
     service.backup("before-report-failure")
@@ -475,20 +537,71 @@ def test_active_report_publish_failure_restores_without_passed_evidence(
             raise OSError(f"injected {stage}")
 
     service._workspace._report_publish_hook = inject
-    with pytest.raises(CutoverSafetyError, match="restored backup"):
+    report_id = f"active-{failure_stage}"
+    with pytest.raises(CutoverSafetyError, match="same-ID recovery"):
         service.cutover(
-            f"active-{failure_stage}",
+            report_id,
             rehearsal_report_id="passing-before-report-failure",
             backup_id="before-report-failure",
             config=SmokeConfig("7203", "production/smoke", "primeMarket"),
             inherited_environment={},
         )
 
-    assert (data_root / "market-timeseries/market.duckdb").read_bytes() == b"duckdb-v3"
+    active_market = data_root / "market-timeseries/market.duckdb"
+    quarantine_market = (
+        data_root
+        / f"operations/market-v5-cutover/quarantine/pre-cutover-{report_id}"
+        / "market.duckdb"
+    )
+    backup_market = (
+        data_root
+        / "operations/market-v5-cutover/backups/before-report-failure/payload"
+        / "market.duckdb"
+    )
+    journal_dir = (
+        data_root
+        / f"operations/market-v5-cutover/activation-journals/{report_id}"
+    )
+    assert active_market.read_bytes() != b"duckdb-v3"
+    assert quarantine_market.read_bytes() == b"duckdb-v3"
+    assert backup_market.read_bytes() == b"duckdb-v3"
+    assert [path.name for path in sorted(journal_dir.iterdir())] == [
+        "00000001-prepared.json",
+        "00000002-exchange_started.json",
+        "00000003-activated.json",
+    ]
     report_path = (
         data_root
-        / f"operations/market-v4-cutover/reports/active-{failure_stage}/report.json"
+        / f"operations/market-v5-cutover/reports/{report_id}/report.json"
     )
-    if report_path.exists():
-        assert json.loads(report_path.read_text())["status"] != "passed"
+    assert not report_path.exists()
     assert not list(report_path.parent.glob(".report.json.*.tmp"))
+
+    fresh = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi()]),
+    )
+    result = fresh.cutover(
+        report_id,
+        rehearsal_report_id="passing-before-report-failure",
+        backup_id="before-report-failure",
+        config=SmokeConfig("7203", "production/smoke", "primeMarket"),
+        inherited_environment={},
+    )
+
+    report = json.loads(report_path.read_text())
+    assert result.report_id == report_id
+    assert report["status"] == "passed"
+    assert report["reportId"] == report_id
+    assert report["rehearsalReportId"] == "passing-before-report-failure"
+    assert report["backupId"] == "before-report-failure"
+    assert active_market.read_bytes() != b"duckdb-v3"
+    assert quarantine_market.read_bytes() == b"duckdb-v3"
+    assert backup_market.read_bytes() == b"duckdb-v3"
+    assert [path.name for path in sorted(journal_dir.iterdir())] == [
+        "00000001-prepared.json",
+        "00000002-exchange_started.json",
+        "00000003-activated.json",
+        "00000004-reported.json",
+    ]

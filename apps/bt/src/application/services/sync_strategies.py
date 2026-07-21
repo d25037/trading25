@@ -29,6 +29,7 @@ from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
 from src.infrastructure.db.market.time_series_store import (
     TimeSeriesInspection,
 )
+from src.shared.provider_stock_window import ProviderStockStage
 from src.application.services.options_225 import (
     OPTIONS_225_SYNTHETIC_INDEX_CODE,
 )
@@ -77,6 +78,7 @@ from src.application.services.sync_fins_fetch import (
     _fetch_fins_summary_by_code,
 )
 from src.application.services.sync_fundamentals_data import (
+    recompute_changed_fundamentals as _recompute_changed_fundamentals,
     sync_fundamentals_incremental as _sync_fundamentals_incremental,
     sync_fundamentals_initial as _sync_fundamentals_initial,
 )
@@ -88,9 +90,11 @@ from src.application.services.sync_stock_master import (
     sync_daily_stock_master,
 )
 from src.application.services.sync_stock_data_fetch import (
+    StockDataIngestionSession,
     StockDataRestDateIngestionError,
     execute_stock_data_bulk_fetch,
     execute_stock_data_rest_date,
+    run_stock_data_ingestion_session,
 )
 from src.application.services.sync_options_225_data import (
     resolve_incremental_options_date_targets as _resolve_incremental_options_date_targets,
@@ -113,6 +117,9 @@ __all__ = (
 
 
 class SyncClientLike(Protocol):  # pragma: no cover
+    @property
+    def plan(self) -> str: ...
+
     async def get(
         self,
         path: str,
@@ -144,6 +151,7 @@ class SyncMarketDbLike(Protocol):  # pragma: no cover
     def reconcile_stock_master_derived_codes(self, codes: set[str]) -> Any: ...
     def get_stock_master_pending_frontier_dates(self) -> set[str]: ...
     def reconcile_stock_master_frontier(self, snapshot_date: str) -> Any: ...
+    def get_stock_master_codes_for_date(self, as_of_date: str) -> list[str]: ...
     def get_topix_dates(self, *, start_date: str | None = None, end_date: str | None = None) -> list[str]: ...
     def get_missing_stock_master_dates(self, *, limit: int | None = 20) -> list[str]: ...
     def get_fundamentals_target_codes(self) -> set[str]: ...
@@ -181,13 +189,23 @@ class SyncTimeSeriesStoreLike(Protocol):  # pragma: no cover
     ) -> TimeSeriesInspection: ...
 
     def publish_topix_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
-    def publish_stock_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
+    def publish_stock_data(
+        self, rows: list[dict[str, Any]], *, stage: ProviderStockStage
+    ) -> SemanticDeltaResult: ...
+    def detect_stock_provider_drift(
+        self, rows: list[dict[str, Any]]
+    ) -> frozenset[str]: ...
     def publish_indices_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
     def publish_options_225_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
     def publish_margin_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
     def publish_statements(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
     def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
-    def flush_staged_stock_data(self) -> SemanticDeltaResult: ...
+    def flush_staged_stock_data(
+        self,
+        *,
+        stage: ProviderStockStage,
+        exclude_codes: frozenset[str] = frozenset(),
+    ) -> SemanticDeltaResult: ...
     def discard_staged_stock_data(self) -> None: ...
     def index_topix_data(self) -> None: ...
     def index_stock_data(self) -> None: ...
@@ -210,7 +228,16 @@ class SyncContext:
     bulk_probe_disabled_endpoints: set[str] = field(default_factory=set)
     bulk_probe_failure_reason: str | None = None
     enforce_bulk_for_stock_data: bool = False
-    materialize_adjusted_metrics: Callable[[], Awaitable[Any]] | None = None
+    provider_plan: str | None = None
+    recompute_affected_stock_codes: (
+        Callable[[frozenset[str]], Awaitable[None]] | None
+    ) = None
+    changed_fundamentals_codes: set[str] = field(default_factory=set)
+    on_stock_commit: Callable[[int, int, int, int], None] | None = None
+    stock_rows_appended: int = 0
+    affected_stock_codes: int = 0
+    stock_codes_replaced: int = 0
+    stock_rows_replaced: int = 0
 
 
 class SyncStrategy(Protocol):  # pragma: no cover
@@ -231,6 +258,22 @@ def _select_bulk_candidates_from_dates(dates: list[str]) -> tuple[str | None, st
     if not normalized:
         return None, None
     return min(normalized).isoformat(), max(normalized).isoformat()
+
+
+async def _resolve_provider_stock_stage(
+    ctx: SyncContext,
+    *,
+    provider_as_of: str,
+) -> ProviderStockStage:
+    provider_codes = await asyncio.to_thread(
+        ctx.market_db.get_stock_master_codes_for_date,
+        provider_as_of,
+    )
+    return ProviderStockStage(
+        provider_plan=str(ctx.provider_plan or ""),
+        provider_as_of=provider_as_of,
+        provider_codes=frozenset(provider_codes),
+    )
 
 
 async def _ingest_indices_only_bulk_batch(
@@ -557,11 +600,30 @@ async def _sync_initial_stock_data_stage(
     ctx: SyncContext,
     *,
     trading_dates: list[str],
+    session: StockDataIngestionSession,
 ) -> dict[str, Any]:
     api_calls = 0
     stocks_updated = 0
     failed_dates: list[str] = []
     errors: list[str] = []
+    if not trading_dates:
+        await session.discard(ctx)
+        return {
+            "api_calls": 0,
+            "stocks_updated": 0,
+            "stock_rows_appended": 0,
+            "affected_stock_codes": 0,
+            "stock_codes_replaced": 0,
+            "stock_rows_replaced": 0,
+            "stock_recomputation_errors": [],
+            "failed_dates": [],
+            "errors": [],
+            "cancelled": False,
+        }
+    provider_stage = await _resolve_provider_stock_stage(
+        ctx,
+        provider_as_of=max(trading_dates, key=_date_sort_key),
+    )
     from_date, to_date = _select_bulk_candidates_from_dates(trading_dates)
     decision = await sync_fetch_planner._plan_fetch_method(
         ctx,
@@ -598,6 +660,7 @@ async def _sync_initial_stock_data_stage(
     bulk_result: BulkFetchResult | None = None
     bulk_outcome = await execute_stock_data_bulk_fetch(
         ctx,
+        session=session,
         decision=decision,
         target_dates=trading_dates,
         stage_name="stock_data_initial",
@@ -620,19 +683,45 @@ async def _sync_initial_stock_data_stage(
             used_rest_fallback=used_rest_fallback,
             fallback_reason=stock_bulk_fallback_reason,
             bulk_result=bulk_result,
+            session=session,
         )
         api_calls += rest_result["api_calls"]
         stocks_updated += rest_result["stocks_updated"]
         failed_dates.extend(rest_result["failed_dates"])
         errors.extend(rest_result["errors"])
         if rest_result["cancelled"]:
+            await session.discard(ctx)
             return {
                 "api_calls": api_calls,
                 "stocks_updated": stocks_updated,
+                "stock_rows_appended": 0,
+                "affected_stock_codes": 0,
+                "stock_codes_replaced": 0,
+                "stock_rows_replaced": 0,
+                "stock_recomputation_errors": [],
                 "failed_dates": failed_dates,
                 "errors": errors,
                 "cancelled": True,
             }
+
+    commit_outcome = await session.commit(ctx, stage=provider_stage)
+    api_calls += commit_outcome.api_calls
+    stocks_updated += (
+        commit_outcome.appended_rows + commit_outcome.replaced_rows
+    )
+    if commit_outcome.cancelled:
+        return {
+            "api_calls": api_calls,
+            "stocks_updated": stocks_updated,
+            "stock_rows_appended": commit_outcome.appended_rows,
+            "affected_stock_codes": len(commit_outcome.affected_codes),
+            "stock_codes_replaced": commit_outcome.replaced_codes,
+            "stock_rows_replaced": commit_outcome.replaced_rows,
+            "stock_recomputation_errors": [],
+            "failed_dates": failed_dates,
+            "errors": errors,
+            "cancelled": True,
+        }
 
     await sync_publish_helpers._index_stock_data_rows(
         ctx,
@@ -642,6 +731,11 @@ async def _sync_initial_stock_data_stage(
     return {
         "api_calls": api_calls,
         "stocks_updated": stocks_updated,
+        "stock_rows_appended": commit_outcome.appended_rows,
+        "affected_stock_codes": len(commit_outcome.affected_codes),
+        "stock_codes_replaced": commit_outcome.replaced_codes,
+        "stock_rows_replaced": commit_outcome.replaced_rows,
+        "stock_recomputation_errors": list(commit_outcome.recomputation_errors),
         "failed_dates": failed_dates,
         "errors": errors,
         "cancelled": False,
@@ -656,6 +750,7 @@ async def _sync_initial_stock_data_rest(
     used_rest_fallback: bool,
     fallback_reason: str | None,
     bulk_result: BulkFetchResult | None,
+    session: StockDataIngestionSession,
 ) -> dict[str, Any]:
     api_calls = 0
     stocks_updated = 0
@@ -691,7 +786,9 @@ async def _sync_initial_stock_data_rest(
                 f"Fetching /equities/bars/daily via REST: {i}/{len(trading_dates)} dates...",
             )
         try:
-            outcome = await execute_stock_data_rest_date(ctx, date=date)
+            outcome = await execute_stock_data_rest_date(
+                ctx, session=session, date=date
+            )
             api_calls += outcome.api_calls
             stage_api_calls += outcome.api_calls
             stocks_updated += outcome.stocks_updated
@@ -781,6 +878,11 @@ class InitialSyncStrategy:
     async def execute(self, ctx: SyncContext) -> SyncResult:
         total_calls = 0
         stocks_updated = 0
+        stock_rows_appended = 0
+        affected_stock_codes = 0
+        stock_codes_replaced = 0
+        stock_rows_replaced = 0
+        stock_recomputation_errors: list[str] = []
         dates_processed = 0
         fundamentals_updated = 0
         fundamentals_dates_processed = 0
@@ -788,44 +890,92 @@ class InitialSyncStrategy:
         errors: list[str] = []
         stock_rows: list[dict[str, Any]] = []
 
+        def _cancelled_result() -> SyncResult:
+            return _cancelled_sync_result(
+                total_calls,
+                ctx=ctx,
+                stocks_updated=stocks_updated,
+                stock_rows_appended=stock_rows_appended,
+                affected_stock_codes=affected_stock_codes,
+                stock_codes_replaced=stock_codes_replaced,
+                stock_rows_replaced=stock_rows_replaced,
+                stock_recomputation_errors=stock_recomputation_errors,
+                dates_processed=dates_processed,
+                fundamentals_updated=fundamentals_updated,
+                fundamentals_dates_processed=fundamentals_dates_processed,
+                failed_dates=failed_dates,
+            )
+
         try:
             ctx.on_progress("topix", 0, 8, "Fetching TOPIX data...")
             if ctx.cancelled.is_set():
-                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+                return _cancelled_result()
             topix_rows, topix_calls = await _sync_initial_topix_stage(ctx)
             total_calls += topix_calls
             dates_processed = len(topix_rows)
 
             ctx.on_progress("stock_master_daily", 1, 8, "Fetching daily stock master data...")
             if ctx.cancelled.is_set():
-                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+                return _cancelled_result()
             trading_dates = sorted({r["date"] for r in topix_rows})
             master_sync = await _sync_initial_stock_master_stage(ctx, trading_dates=trading_dates)
             total_calls += master_sync["api_calls"]
             stock_rows = master_sync["stock_rows"]
             errors.extend(master_sync["errors"])
             if master_sync["cancelled"]:
-                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+                return _cancelled_result()
 
             ctx.on_progress("fundamentals", 2, 8, "Fetching listed-market fundamentals (full)...")
             if ctx.cancelled.is_set():
-                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+                return _cancelled_result()
             fundamentals_sync = await _sync_initial_fundamentals_stage(ctx, stock_rows=stock_rows)
             total_calls += fundamentals_sync["api_calls"]
             fundamentals_updated += fundamentals_sync["updated"]
             fundamentals_dates_processed += fundamentals_sync["dates_processed"]
             errors.extend(fundamentals_sync["errors"])
             if fundamentals_sync["cancelled"]:
-                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+                return _cancelled_result()
 
             ctx.on_progress("stock_data", 3, 8, "Fetching daily stock prices...")
-            stock_sync = await _sync_initial_stock_data_stage(ctx, trading_dates=trading_dates)
+            stock_sync = await run_stock_data_ingestion_session(
+                ctx,
+                lambda session: _sync_initial_stock_data_stage(
+                    ctx,
+                    trading_dates=trading_dates,
+                    session=session,
+                ),
+            )
             total_calls += stock_sync["api_calls"]
             stocks_updated += stock_sync["stocks_updated"]
+            stock_rows_appended += stock_sync["stock_rows_appended"]
+            affected_stock_codes += stock_sync["affected_stock_codes"]
+            stock_codes_replaced += stock_sync["stock_codes_replaced"]
+            stock_rows_replaced += stock_sync["stock_rows_replaced"]
+            stock_recomputation_errors.extend(
+                stock_sync["stock_recomputation_errors"]
+            )
             failed_dates.extend(stock_sync["failed_dates"])
             errors.extend(stock_sync["errors"])
             if stock_sync["cancelled"]:
-                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+                return _cancelled_result()
+            if stock_recomputation_errors:
+                errors.extend(stock_recomputation_errors)
+                return SyncResult(
+                    success=False,
+                    totalApiCalls=total_calls,
+                    stocksUpdated=stocks_updated,
+                    stockRowsAppended=stock_rows_appended,
+                    affectedStockCodes=affected_stock_codes,
+                    stockCodesReplaced=stock_codes_replaced,
+                    stockRowsReplaced=stock_rows_replaced,
+                    stockRecomputationErrors=stock_recomputation_errors,
+                    datesProcessed=dates_processed,
+                    fundamentalsUpdated=fundamentals_updated,
+                    fundamentalsDatesProcessed=fundamentals_dates_processed,
+                    failedDates=failed_dates,
+                    errors=errors,
+                )
+            await _recompute_changed_fundamentals(ctx)
 
             ctx.on_progress("indices", 4, 8, "Fetching index data...")
             indices_strategy = IndicesOnlySyncStrategy(include_options=False)
@@ -845,32 +995,28 @@ class InitialSyncStrategy:
             total_calls += int(options_sync["api_calls"])
             errors.extend(cast(list[str], options_sync["errors"]))
             if bool(options_sync["cancelled"]):
-                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+                return _cancelled_result()
 
             ctx.on_progress("margin", 6, 8, "Fetching margin data...")
             margin_sync = await _sync_initial_margin_stage(ctx, stock_rows=stock_rows, topix_rows=topix_rows)
             total_calls += margin_sync["api_calls"]
             errors.extend(margin_sync["errors"])
             if margin_sync["cancelled"]:
-                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+                return _cancelled_result()
 
-            if ctx.materialize_adjusted_metrics is not None:
-                ctx.on_progress(
-                    "adjusted_metrics_pit",
-                    7,
-                    9,
-                    "Materializing event-time adjusted metrics and valuation...",
-                )
-                await ctx.materialize_adjusted_metrics()
-
-            ctx.on_progress("finalize", 8, 9, "Finalizing sync...")
+            ctx.on_progress("finalize", 7, 8, "Finalizing sync...")
             await _finalize_initial_sync_metadata(ctx, failed_dates=failed_dates)
 
-            ctx.on_progress("complete", 9, 9, "Sync complete!")
+            ctx.on_progress("complete", 8, 8, "Sync complete!")
             return SyncResult(
                 success=len(errors) == 0,
                 totalApiCalls=total_calls,
                 stocksUpdated=stocks_updated,
+                stockRowsAppended=stock_rows_appended,
+                affectedStockCodes=affected_stock_codes,
+                stockCodesReplaced=stock_codes_replaced,
+                stockRowsReplaced=stock_rows_replaced,
+                stockRecomputationErrors=stock_recomputation_errors,
                 datesProcessed=dates_processed,
                 fundamentalsUpdated=fundamentals_updated,
                 fundamentalsDatesProcessed=fundamentals_dates_processed,
@@ -880,7 +1026,27 @@ class InitialSyncStrategy:
         except sync_fetch_planner.BulkFetchRequiredError:
             raise
         except Exception as e:
-            return SyncResult(success=False, totalApiCalls=total_calls, errors=[str(e)])
+            return SyncResult(
+                success=False,
+                totalApiCalls=total_calls,
+                stocksUpdated=stocks_updated,
+                stockRowsAppended=max(stock_rows_appended, ctx.stock_rows_appended),
+                affectedStockCodes=max(
+                    affected_stock_codes, ctx.affected_stock_codes
+                ),
+                stockCodesReplaced=max(
+                    stock_codes_replaced, ctx.stock_codes_replaced
+                ),
+                stockRowsReplaced=max(
+                    stock_rows_replaced, ctx.stock_rows_replaced
+                ),
+                stockRecomputationErrors=stock_recomputation_errors,
+                datesProcessed=dates_processed,
+                fundamentalsUpdated=fundamentals_updated,
+                fundamentalsDatesProcessed=fundamentals_dates_processed,
+                failedDates=failed_dates,
+                errors=[*errors, str(e)],
+            )
 
 
 async def _sync_incremental_stock_data_stage(
@@ -889,6 +1055,7 @@ async def _sync_incremental_stock_data_stage(
     topix_rows: list[dict[str, Any]],
     anchor: str | None,
     inspection: TimeSeriesInspection,
+    session: StockDataIngestionSession,
     refresh_missing_stock_dates: bool = False,
 ) -> dict[str, Any]:
     api_calls = 0
@@ -904,6 +1071,23 @@ async def _sync_incremental_stock_data_stage(
         topix_rows=topix_rows,
         anchor=anchor,
         inspection=target_inspection,
+    )
+    if not stock_target_dates:
+        return {
+            "api_calls": 0,
+            "stocks_updated": 0,
+            "stock_rows_appended": 0,
+            "affected_stock_codes": 0,
+            "stock_codes_replaced": 0,
+            "stock_rows_replaced": 0,
+            "stock_recomputation_errors": [],
+            "stock_target_dates": [],
+            "errors": [],
+            "cancelled": False,
+        }
+    provider_stage = await _resolve_provider_stock_stage(
+        ctx,
+        provider_as_of=max(stock_target_dates, key=_date_sort_key),
     )
     from_date_new, to_date_new = _select_bulk_candidates_from_dates(stock_target_dates)
     decision = await sync_fetch_planner._plan_fetch_method(
@@ -941,6 +1125,7 @@ async def _sync_incremental_stock_data_stage(
     bulk_result: BulkFetchResult | None = None
     bulk_outcome = await execute_stock_data_bulk_fetch(
         ctx,
+        session=session,
         decision=decision,
         target_dates=stock_target_dates,
         stage_name="stock_data_incremental",
@@ -963,18 +1148,44 @@ async def _sync_incremental_stock_data_stage(
             used_rest_fallback=used_rest_fallback,
             fallback_reason=bulk_fallback_reason,
             bulk_result=bulk_result,
+            session=session,
         )
         api_calls += rest_result["api_calls"]
         stocks_updated += rest_result["stocks_updated"]
         errors.extend(rest_result["errors"])
         if rest_result["cancelled"]:
+            await session.discard(ctx)
             return {
                 "api_calls": api_calls,
                 "stocks_updated": stocks_updated,
+                "stock_rows_appended": 0,
+                "affected_stock_codes": 0,
+                "stock_codes_replaced": 0,
+                "stock_rows_replaced": 0,
+                "stock_recomputation_errors": [],
                 "stock_target_dates": stock_target_dates,
                 "errors": errors,
                 "cancelled": True,
             }
+
+    commit_outcome = await session.commit(ctx, stage=provider_stage)
+    api_calls += commit_outcome.api_calls
+    stocks_updated += (
+        commit_outcome.appended_rows + commit_outcome.replaced_rows
+    )
+    if commit_outcome.cancelled:
+        return {
+            "api_calls": api_calls,
+            "stocks_updated": stocks_updated,
+            "stock_rows_appended": commit_outcome.appended_rows,
+            "affected_stock_codes": len(commit_outcome.affected_codes),
+            "stock_codes_replaced": commit_outcome.replaced_codes,
+            "stock_rows_replaced": commit_outcome.replaced_rows,
+            "stock_recomputation_errors": [],
+            "stock_target_dates": stock_target_dates,
+            "errors": errors,
+            "cancelled": True,
+        }
 
     await sync_publish_helpers._index_stock_data_rows(
         ctx,
@@ -984,6 +1195,11 @@ async def _sync_incremental_stock_data_stage(
     return {
         "api_calls": api_calls,
         "stocks_updated": stocks_updated,
+        "stock_rows_appended": commit_outcome.appended_rows,
+        "affected_stock_codes": len(commit_outcome.affected_codes),
+        "stock_codes_replaced": commit_outcome.replaced_codes,
+        "stock_rows_replaced": commit_outcome.replaced_rows,
+        "stock_recomputation_errors": list(commit_outcome.recomputation_errors),
         "stock_target_dates": stock_target_dates,
         "errors": errors,
         "cancelled": False,
@@ -998,6 +1214,7 @@ async def _sync_incremental_stock_data_rest(
     used_rest_fallback: bool,
     fallback_reason: str | None,
     bulk_result: BulkFetchResult | None,
+    session: StockDataIngestionSession,
 ) -> dict[str, Any]:
     api_calls = 0
     stocks_updated = 0
@@ -1024,7 +1241,9 @@ async def _sync_incremental_stock_data_rest(
                 f"Fetching /equities/bars/daily via REST: {index}/{len(stock_target_dates)} dates...",
             )
         try:
-            outcome = await execute_stock_data_rest_date(ctx, date=date)
+            outcome = await execute_stock_data_rest_date(
+                ctx, session=session, date=date
+            )
             api_calls += outcome.api_calls
             stocks_updated += outcome.stocks_updated
         except StockDataRestDateIngestionError as e:
@@ -1126,10 +1345,31 @@ class IncrementalSyncStrategy:
     async def execute(self, ctx: SyncContext) -> SyncResult:
         total_calls = 0
         stocks_updated = 0
+        stock_rows_appended = 0
+        affected_stock_codes = 0
+        stock_codes_replaced = 0
+        stock_rows_replaced = 0
+        stock_recomputation_errors: list[str] = []
         fundamentals_updated = 0
         fundamentals_dates_processed = 0
         errors: list[str] = []
         stock_rows: list[dict[str, Any]] = []
+        stock_dates_processed = 0
+
+        def _cancelled_result() -> SyncResult:
+            return _cancelled_sync_result(
+                total_calls,
+                ctx=ctx,
+                stocks_updated=stocks_updated,
+                stock_rows_appended=stock_rows_appended,
+                affected_stock_codes=affected_stock_codes,
+                stock_codes_replaced=stock_codes_replaced,
+                stock_rows_replaced=stock_rows_replaced,
+                stock_recomputation_errors=stock_recomputation_errors,
+                dates_processed=stock_dates_processed,
+                fundamentals_updated=fundamentals_updated,
+                fundamentals_dates_processed=fundamentals_dates_processed,
+            )
 
         try:
             if not ctx.market_db.get_sync_metadata(METADATA_KEYS["LAST_SYNC_DATE"]):
@@ -1144,7 +1384,7 @@ class IncrementalSyncStrategy:
             # Step 1: TOPIX（増分）
             ctx.on_progress("topix", 0, 7, "Fetching incremental TOPIX data...")
             if ctx.cancelled.is_set():
-                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+                return _cancelled_result()
 
             # NOTE:
             # stock_data が一部日付で取りこぼされると topix_data より遅れる場合があるため、
@@ -1200,7 +1440,7 @@ class IncrementalSyncStrategy:
             # Step 2: 日次銘柄マスタ更新
             ctx.on_progress("stock_master_daily", 1, 7, "Updating daily stock master...")
             if ctx.cancelled.is_set():
-                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+                return _cancelled_result()
 
             missing_master_dates = await _resolve_incremental_stock_master_dates(ctx)
             master_sync = await sync_daily_stock_master(
@@ -1214,7 +1454,7 @@ class IncrementalSyncStrategy:
             stock_rows = master_sync["latest_rows"]
             errors.extend(master_sync["errors"])
             if master_sync["cancelled"]:
-                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+                return _cancelled_result()
             listed_market_target_rows = await asyncio.to_thread(
                 ctx.market_db.get_fundamentals_target_stock_rows
             )
@@ -1223,19 +1463,47 @@ class IncrementalSyncStrategy:
 
             # Step 3: 新しい日付の株価データ
             ctx.on_progress("stock_data", 2, 7, "Fetching new stock data...")
-            stock_sync = await _sync_incremental_stock_data_stage(
+            stock_sync = await run_stock_data_ingestion_session(
                 ctx,
-                topix_rows=topix_rows,
-                anchor=last_date,
-                inspection=inspection,
-                refresh_missing_stock_dates=bool(topix_rows),
+                lambda session: _sync_incremental_stock_data_stage(
+                    ctx,
+                    topix_rows=topix_rows,
+                    anchor=last_date,
+                    inspection=inspection,
+                    session=session,
+                    refresh_missing_stock_dates=bool(topix_rows),
+                ),
             )
             total_calls += stock_sync["api_calls"]
             stocks_updated += stock_sync["stocks_updated"]
+            stock_rows_appended += stock_sync["stock_rows_appended"]
+            affected_stock_codes += stock_sync["affected_stock_codes"]
+            stock_codes_replaced += stock_sync["stock_codes_replaced"]
+            stock_rows_replaced += stock_sync["stock_rows_replaced"]
+            stock_recomputation_errors.extend(
+                stock_sync["stock_recomputation_errors"]
+            )
             stock_target_dates = cast(list[str], stock_sync["stock_target_dates"])
+            stock_dates_processed = len(stock_target_dates)
             errors.extend(cast(list[str], stock_sync["errors"]))
             if stock_sync["cancelled"]:
-                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+                return _cancelled_result()
+            if stock_recomputation_errors:
+                errors.extend(stock_recomputation_errors)
+                return SyncResult(
+                    success=False,
+                    totalApiCalls=total_calls,
+                    stocksUpdated=stocks_updated,
+                    stockRowsAppended=stock_rows_appended,
+                    affectedStockCodes=affected_stock_codes,
+                    stockCodesReplaced=stock_codes_replaced,
+                    stockRowsReplaced=stock_rows_replaced,
+                    stockRecomputationErrors=stock_recomputation_errors,
+                    datesProcessed=len(stock_target_dates),
+                    fundamentalsUpdated=fundamentals_updated,
+                    fundamentalsDatesProcessed=fundamentals_dates_processed,
+                    errors=errors,
+                )
 
             indices_sync = await _sync_incremental_indices_stage(
                 ctx,
@@ -1248,7 +1516,7 @@ class IncrementalSyncStrategy:
             total_calls += indices_sync.api_calls
             errors.extend(indices_sync.errors)
             if indices_sync.cancelled:
-                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+                return _cancelled_result()
 
             # Step 5: N225 options（増分 + 欠損履歴補完）
             options_new_dates = await _resolve_incremental_options_date_targets(
@@ -1268,12 +1536,12 @@ class IncrementalSyncStrategy:
             total_calls += int(options_sync["api_calls"])
             errors.extend(cast(list[str], options_sync["errors"]))
             if bool(options_sync["cancelled"]):
-                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+                return _cancelled_result()
 
             # Step 6: listed markets fundamentals（増分: date 指定 + 欠損補完）
             ctx.on_progress("fundamentals", 5, 7, "Fetching incremental listed-market fundamentals...")
             if ctx.cancelled.is_set():
-                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+                return _cancelled_result()
 
             fundamentals_target_rows = _extract_listed_market_target_rows(listed_market_target_rows)
 
@@ -1288,7 +1556,8 @@ class IncrementalSyncStrategy:
             fundamentals_dates_processed += fundamentals_sync["dates_processed"]
             errors.extend(fundamentals_sync["errors"])
             if fundamentals_sync["cancelled"]:
-                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+                return _cancelled_result()
+            await _recompute_changed_fundamentals(ctx)
 
             margin_sync = await _sync_incremental_margin_stage(
                 ctx,
@@ -1302,26 +1571,22 @@ class IncrementalSyncStrategy:
             total_calls += margin_sync.api_calls
             errors.extend(margin_sync.errors)
             if margin_sync.cancelled:
-                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
-
-            if ctx.materialize_adjusted_metrics is not None:
-                ctx.on_progress(
-                    "adjusted_metrics_pit",
-                    7,
-                    8,
-                    "Materializing event-time adjusted metrics and valuation...",
-                )
-                await ctx.materialize_adjusted_metrics()
+                return _cancelled_result()
 
             # メタデータ更新
             now_iso = datetime.now(UTC).isoformat()
             await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["LAST_SYNC_DATE"], now_iso)
 
-            ctx.on_progress("complete", 8, 8, "Incremental sync complete!")
+            ctx.on_progress("complete", 7, 7, "Incremental sync complete!")
             return SyncResult(
                 success=len(errors) == 0,
                 totalApiCalls=total_calls,
                 stocksUpdated=stocks_updated,
+                stockRowsAppended=stock_rows_appended,
+                affectedStockCodes=affected_stock_codes,
+                stockCodesReplaced=stock_codes_replaced,
+                stockRowsReplaced=stock_rows_replaced,
+                stockRecomputationErrors=stock_recomputation_errors,
                 datesProcessed=len(stock_target_dates),
                 fundamentalsUpdated=fundamentals_updated,
                 fundamentalsDatesProcessed=fundamentals_dates_processed,
@@ -1330,7 +1595,25 @@ class IncrementalSyncStrategy:
         except sync_fetch_planner.BulkFetchRequiredError:
             raise
         except Exception as e:
-            return SyncResult(success=False, totalApiCalls=total_calls, errors=[str(e)])
+            return SyncResult(
+                success=False,
+                totalApiCalls=total_calls,
+                stocksUpdated=stocks_updated,
+                stockRowsAppended=max(stock_rows_appended, ctx.stock_rows_appended),
+                affectedStockCodes=max(
+                    affected_stock_codes, ctx.affected_stock_codes
+                ),
+                stockCodesReplaced=max(
+                    stock_codes_replaced, ctx.stock_codes_replaced
+                ),
+                stockRowsReplaced=max(
+                    stock_rows_replaced, ctx.stock_rows_replaced
+                ),
+                stockRecomputationErrors=stock_recomputation_errors,
+                fundamentalsUpdated=fundamentals_updated,
+                fundamentalsDatesProcessed=fundamentals_dates_processed,
+                errors=[*errors, str(e)],
+            )
 
 
 class RepairSyncStrategy:
@@ -1378,25 +1661,7 @@ class RepairSyncStrategy:
             else:
                 ctx.on_progress("fundamentals", 200, 200, "No listed-market fundamentals repair needed.")
 
-            if fundamentals_updated > 0:
-                if ctx.materialize_adjusted_metrics is None:
-                    raise RuntimeError(
-                        "adjusted_metrics_pit materializer is required after fundamentals repair"
-                    )
-                ctx.on_progress(
-                    "adjusted_metrics_pit",
-                    100,
-                    200,
-                    "Materializing repaired fundamentals",
-                )
-                await ctx.materialize_adjusted_metrics()
-            else:
-                ctx.on_progress(
-                    "adjusted_metrics_pit",
-                    200,
-                    200,
-                    "No statement changes; materialization skipped.",
-                )
+            await _recompute_changed_fundamentals(ctx)
 
             ctx.on_progress("complete", 200, 200, "Repair sync complete!")
             return SyncResult(
@@ -1417,8 +1682,48 @@ def _scale_repair_progress(current: int, total: int, *, base: int) -> int:
     return base + round(min(max(ratio, 0.0), 1.0) * 100)
 
 
-def _cancelled_sync_result(total_api_calls: int) -> SyncResult:
-    return SyncResult(success=False, totalApiCalls=total_api_calls, errors=["Cancelled"])
+def _cancelled_sync_result(
+    total_api_calls: int,
+    *,
+    ctx: SyncContext | None = None,
+    stocks_updated: int = 0,
+    stock_rows_appended: int = 0,
+    affected_stock_codes: int = 0,
+    stock_codes_replaced: int = 0,
+    stock_rows_replaced: int = 0,
+    stock_recomputation_errors: list[str] | None = None,
+    dates_processed: int = 0,
+    fundamentals_updated: int = 0,
+    fundamentals_dates_processed: int = 0,
+    failed_dates: list[str] | None = None,
+) -> SyncResult:
+    return SyncResult(
+        success=False,
+        totalApiCalls=total_api_calls,
+        stocksUpdated=stocks_updated,
+        stockRowsAppended=max(
+            stock_rows_appended,
+            ctx.stock_rows_appended if ctx is not None else 0,
+        ),
+        affectedStockCodes=max(
+            affected_stock_codes,
+            ctx.affected_stock_codes if ctx is not None else 0,
+        ),
+        stockCodesReplaced=max(
+            stock_codes_replaced,
+            ctx.stock_codes_replaced if ctx is not None else 0,
+        ),
+        stockRowsReplaced=max(
+            stock_rows_replaced,
+            ctx.stock_rows_replaced if ctx is not None else 0,
+        ),
+        stockRecomputationErrors=stock_recomputation_errors or [],
+        datesProcessed=dates_processed,
+        fundamentalsUpdated=fundamentals_updated,
+        fundamentalsDatesProcessed=fundamentals_dates_processed,
+        failedDates=failed_dates or [],
+        errors=["Cancelled"],
+    )
 
 
 async def _resolve_incremental_stock_date_targets(

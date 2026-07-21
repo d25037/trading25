@@ -4,6 +4,20 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { SyncStatusCard } from './SyncStatusCard';
 
+const syncProgressDefaults = {
+  affectedStockCodes: 0,
+  stockCodesReplaced: 0,
+  stockRowsAppended: 0,
+  stockRowsReplaced: 0,
+};
+
+const syncResultDefaults = {
+  affectedStockCodes: 0,
+  stockCodesReplaced: 0,
+  stockRowsAppended: 0,
+  stockRowsReplaced: 0,
+};
+
 function createJob(overrides: Partial<SyncJobResponse> = {}): SyncJobResponse {
   return {
     jobId: 'job-1',
@@ -12,6 +26,7 @@ function createJob(overrides: Partial<SyncJobResponse> = {}): SyncJobResponse {
     enforceBulkForStockData: false,
     startedAt: '2026-03-04T00:00:00Z',
     progress: {
+      ...syncProgressDefaults,
       stage: 'stock_data',
       current: 2,
       total: 5,
@@ -51,6 +66,7 @@ describe('SyncStatusCard', () => {
       <SyncStatusCard
         job={createJob({
           progress: {
+            ...syncProgressDefaults,
             stage: 'indices',
             current: 3,
             total: 5,
@@ -73,6 +89,7 @@ describe('SyncStatusCard', () => {
       <SyncStatusCard
         job={createJob({
           progress: {
+            ...syncProgressDefaults,
             stage: 'stock_data',
             current: 2,
             total: 5,
@@ -112,6 +129,7 @@ describe('SyncStatusCard', () => {
       <SyncStatusCard
         job={createJob({
           progress: {
+            ...syncProgressDefaults,
             stage: 'stock_data',
             current: 3,
             total: 5,
@@ -172,6 +190,7 @@ describe('SyncStatusCard', () => {
       <SyncStatusCard
         job={createJob({
           progress: {
+            ...syncProgressDefaults,
             stage: 'stock_data',
             current: 1,
             total: 5,
@@ -195,6 +214,7 @@ describe('SyncStatusCard', () => {
           status: 'completed',
           progress: undefined,
           result: {
+            ...syncResultDefaults,
             success: true,
             totalApiCalls: 55,
             stocksUpdated: 120,
@@ -228,6 +248,7 @@ describe('SyncStatusCard', () => {
           mode: 'repair',
           progress: undefined,
           result: {
+            ...syncResultDefaults,
             success: true,
             totalApiCalls: 12,
             stocksUpdated: 3,
@@ -255,6 +276,7 @@ describe('SyncStatusCard', () => {
           status: 'completed',
           progress: undefined,
           result: {
+            ...syncResultDefaults,
             success: false,
             totalApiCalls: 7,
             stocksUpdated: 1,
@@ -283,6 +305,7 @@ describe('SyncStatusCard', () => {
           status: 'completed',
           progress: undefined,
           result: {
+            ...syncResultDefaults,
             success: true,
             totalApiCalls: 5,
             stocksUpdated: 2,

@@ -8,7 +8,6 @@ GET    /api/db/sync/jobs/active      — 実行中 Sync ジョブ状態
 GET    /api/db/sync/jobs/{jobId}     — Sync ジョブ状態
 GET    /api/db/sync/jobs/{jobId}/stream — Sync SSE stream
 DELETE /api/db/sync/jobs/{jobId}     — Sync ジョブキャンセル
-POST   /api/db/adjusted-metrics/materialize — adjusted_metrics_pit recovery job 開始
 POST   /api/db/intraday/sync         — Intraday minute data sync
 POST   /api/db/stocks/refresh        — 銘柄データ再取得
 """
@@ -38,6 +37,9 @@ from src.application.services.margin_analytics_service import (
     create_market_margin_analytics_service,
 )
 from src.application.services.market_data_service import MarketDataService
+from src.application.services.adjusted_metrics_materializer import (
+    AdjustedMetricsMaterializer,
+)
 from src.application.services.roe_service import create_market_roe_service
 from src.shared.config.settings import get_settings
 from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
@@ -56,9 +58,7 @@ from src.infrastructure.db.market.time_series_store import (
     create_time_series_store,
 )
 from src.entrypoints.http.schemas.db import (
-    AdjustedMetricsMaterializeJobResponse,
     CreateSyncJobResponse,
-    CreateAdjustedMetricsMaterializeJobResponse,
     RefreshRequest,
     SyncFetchDetail,
     SyncFetchDetailsResponse,
@@ -74,11 +74,9 @@ from src.application.services import (
 )
 from src.application.services.generic_job_manager import JobInfo
 from src.application.services.sync_service import (
-    AdjustedMetricsMaterializeJobData,
+    IncompatibleMarketResetError,
     SyncJobData,
     SyncMode,
-    adjusted_metrics_materialize_job_manager,
-    start_adjusted_metrics_materialization,
     sync_job_manager,
     start_sync,
 )
@@ -87,6 +85,7 @@ from src.application.services.sync_stream_manager import (
     sync_stream_manager,
 )
 from src.infrastructure.data_access.clients import close_all_cached_data_access_clients
+from src.shared.provider_stock_window import validate_provider_plan
 
 router = APIRouter(tags=["Database"])
 _MARKET_RESOURCE_LOCK = threading.RLock()
@@ -545,11 +544,6 @@ def _resolve_time_series_store(
     summary="Start database sync job",
 )
 async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
-    if adjusted_metrics_materialize_job_manager.get_active_job() is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="Adjusted metrics materialization is already running",
-        )
     jquants_client = _get_jquants_client(request)
     sync_mode = SyncMode(body.mode)
     market_db: MarketDb
@@ -587,6 +581,8 @@ async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
                 f"{sync_mode.value}_sync",
             ),
         )
+    except IncompatibleMarketResetError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except asyncio.CancelledError:
         if not body.resetBeforeSync and isinstance(
             getattr(request.app.state, "market_writer_session", None),
@@ -840,160 +836,6 @@ async def cancel_sync_job(jobId: str) -> CancelJobResponse:
     return CancelJobResponse(success=True, jobId=jobId, message="Job cancelled")
 
 
-def _to_adjusted_metrics_materialize_job_response(
-    job: JobInfo[
-        AdjustedMetricsMaterializeJobData,
-        market_contracts.SyncProgress,
-        market_contracts.AdjustedMetricsMaterializeResult,
-    ],
-) -> AdjustedMetricsMaterializeJobResponse:
-    return AdjustedMetricsMaterializeJobResponse(
-        jobId=job.job_id,
-        status=job.status.value,
-        mode=job.data.mode,
-        maintenance=_job_maintenance(job.data),
-        progress=job.progress,
-        result=job.result,
-        startedAt=(job.started_at or job.created_at).isoformat(),
-        completedAt=job.completed_at.isoformat() if job.completed_at else None,
-        error=job.error,
-    )
-
-
-@router.post(
-    "/api/db/adjusted-metrics/materialize",
-    response_model=CreateAdjustedMetricsMaterializeJobResponse,
-    status_code=202,
-    summary="Start event-time PIT adjusted metrics materialization job",
-)
-async def start_adjusted_metrics_materialize_job(request: Request) -> JSONResponse:
-    if sync_job_manager.get_active_job() is not None:
-        raise HTTPException(status_code=409, detail="Database sync is already running")
-    if adjusted_metrics_materialize_job_manager.get_active_job() is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="Adjusted metrics materialization is already running",
-        )
-
-    try:
-        market_db, _time_series_store = _prepare_market_write_resources(request)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    try:
-        job = await start_adjusted_metrics_materialization(
-            market_db,
-            market_finalizer=lambda: _build_market_finalizer(
-                request,
-                "adjusted_metrics_materialization",
-            ),
-        )
-    except asyncio.CancelledError:
-        if isinstance(
-            getattr(request.app.state, "market_writer_session", None),
-            MarketWriterSession,
-        ):
-            await _finalize_direct_market_write(
-                request,
-                operation="adjusted_metrics_materialization",
-                operation_outcome=maintenance_contracts.MarketOperationOutcome.CANCELLED,
-                operation_error="Request cancelled while creating Market job",
-            )
-        raise
-    except Exception as exc:
-        if isinstance(
-            getattr(request.app.state, "market_writer_session", None),
-            MarketWriterSession,
-        ):
-            await _finalize_direct_market_write(
-                request,
-                operation="adjusted_metrics_materialization",
-                operation_outcome=maintenance_contracts.MarketOperationOutcome.FAILED,
-                operation_error=str(exc),
-            )
-        raise
-
-    if job is None:
-        await _finalize_direct_market_write(
-            request,
-            operation="adjusted_metrics_materialization",
-            operation_outcome=maintenance_contracts.MarketOperationOutcome.FAILED,
-            operation_error="Adjusted metrics materialization is already running",
-        )
-        raise HTTPException(
-            status_code=409,
-            detail="Adjusted metrics materialization is already running",
-        )
-
-    return JSONResponse(
-        status_code=202,
-        content=CreateAdjustedMetricsMaterializeJobResponse(
-            jobId=job.job_id,
-            status="pending",
-            mode=job.data.mode,
-        ).model_dump(),
-    )
-
-
-@router.get(
-    "/api/db/adjusted-metrics/materialize/jobs/active",
-    response_model=AdjustedMetricsMaterializeJobResponse | None,
-    summary="Get active adjusted metrics materialization job status",
-)
-def get_active_adjusted_metrics_materialize_job() -> (
-    AdjustedMetricsMaterializeJobResponse | None
-):
-    job = adjusted_metrics_materialize_job_manager.get_active_job()
-    if job is None:
-        return None
-    return _to_adjusted_metrics_materialize_job_response(job)
-
-
-@router.get(
-    "/api/db/adjusted-metrics/materialize/jobs/{jobId}",
-    response_model=AdjustedMetricsMaterializeJobResponse,
-    summary="Get adjusted metrics materialization job status",
-)
-def get_adjusted_metrics_materialize_job(
-    jobId: str,
-) -> AdjustedMetricsMaterializeJobResponse:
-    job = adjusted_metrics_materialize_job_manager.get_job(jobId)
-    if job is None:
-        raise HTTPException(status_code=404, detail=f"Job {jobId} not found")
-    return _to_adjusted_metrics_materialize_job_response(job)
-
-
-@router.delete(
-    "/api/db/adjusted-metrics/materialize/jobs/{jobId}",
-    response_model=CancelJobResponse,
-    summary="Cancel adjusted metrics materialization job",
-)
-async def cancel_adjusted_metrics_materialize_job(jobId: str) -> CancelJobResponse:
-    job = adjusted_metrics_materialize_job_manager.get_job(jobId)
-    if job is None:
-        raise HTTPException(status_code=404, detail=f"Job {jobId} not found")
-    if job.status not in (JobStatus.PENDING, JobStatus.RUNNING):
-        raise HTTPException(
-            status_code=400,
-            detail=(f"Job {jobId} cannot be cancelled (status: {job.status.value})"),
-        )
-    cancelled = await adjusted_metrics_materialize_job_manager.cancel_job(
-        jobId,
-        wait=True,
-    )
-    if not cancelled:
-        latest_job = adjusted_metrics_materialize_job_manager.get_job(jobId)
-        latest_status = latest_job.status.value if latest_job is not None else "unknown"
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"Job {jobId} was already finished while cancelling "
-                f"(status: {latest_status})"
-            ),
-        )
-    return CancelJobResponse(success=True, jobId=jobId, message="Job cancelled")
-
-
 # --- Refresh ---
 
 
@@ -1008,11 +850,6 @@ async def sync_intraday(
     if sync_job_manager.get_active_job() is not None:
         raise HTTPException(
             status_code=409, detail="Another sync job is already running"
-        )
-    if adjusted_metrics_materialize_job_manager.get_active_job() is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="Adjusted metrics materialization is already running",
         )
     _get_market_db(request)
     jquants_client = _get_jquants_client(request)
@@ -1065,11 +902,6 @@ async def refresh_stocks(request: Request, body: RefreshRequest) -> market_contr
         raise HTTPException(
             status_code=409, detail="Another sync job is already running"
         )
-    if adjusted_metrics_materialize_job_manager.get_active_job() is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="Adjusted metrics materialization is already running",
-        )
     _get_market_db(request)
     jquants_client = _get_jquants_client(request)
 
@@ -1091,12 +923,28 @@ async def refresh_stocks(request: Request, body: RefreshRequest) -> market_contr
                 ),
             )
 
+        provider_plan = validate_provider_plan(getattr(jquants_client, "plan", None))
+        inspection = await asyncio.to_thread(time_series_store.inspect)
+        provider_as_of = inspection.topix_max
+        if provider_as_of is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Stock refresh requires a local TOPIX provider frontier.",
+            )
         result = await stock_refresh_service.refresh_stocks(
             body.codes,
             market_db,
             time_series_store,
             jquants_client,
+            provider_plan=provider_plan,
+            provider_as_of=provider_as_of,
         )
+        refreshed_codes = [item.code for item in result.results if item.success]
+        if refreshed_codes:
+            await asyncio.to_thread(
+                AdjustedMetricsMaterializer(market_db).rebuild_current_basis,
+                refreshed_codes,
+            )
     except BaseException as exc:
         operation_error = exc
     decision = await _finalize_direct_market_write(

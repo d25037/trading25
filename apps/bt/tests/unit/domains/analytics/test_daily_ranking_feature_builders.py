@@ -325,18 +325,25 @@ def feature_connection() -> Any:
     conn.execute(
         """
         CREATE TABLE daily_valuation (
-            code VARCHAR, date DATE, basis_version VARCHAR, psr DOUBLE
+            code VARCHAR,
+            date DATE,
+            price_basis_date DATE,
+            psr DOUBLE,
+            fundamentals_adjustment_basis_date DATE,
+            source_fingerprint VARCHAR
         )
         """
     )
     conn.execute(
         """
         INSERT INTO daily_valuation
-        SELECT code, date, valuation_basis_id,
-               CASE code WHEN '1111' THEN NULL WHEN '2222' THEN 2.2 ELSE NULL END
+        SELECT code, date, date,
+               CASE code WHEN '1111' THEN NULL WHEN '2222' THEN 2.2 ELSE NULL END,
+               DATE '2024-03-10', 'fixture-current-' || code
         FROM feature_contract_g_0123456789abcdef_source
         UNION ALL
-        SELECT code, date, 'basis-latest', 999.0
+        SELECT code, date, DATE '2099-12-31', 999.0,
+               DATE '2099-12-31', 'fixture-poison-' || code
         FROM feature_contract_g_0123456789abcdef_source
         """
     )
@@ -363,25 +370,48 @@ def feature_connection() -> Any:
         """
         CREATE TABLE statement_metrics_adjusted (
             code VARCHAR,
+            statement_id VARCHAR,
             disclosed_date DATE,
+            disclosed_at VARCHAR,
             period_end DATE,
             period_type VARCHAR,
+            fundamentals_adjustment_basis_date DATE,
             adjusted_eps DOUBLE,
             adjusted_bps DOUBLE,
             adjusted_forecast_eps DOUBLE,
-            basis_version VARCHAR
+            source_fingerprint VARCHAR,
+            created_at VARCHAR
         )
         """
     )
     conn.execute(
         """
         INSERT INTO statement_metrics_adjusted VALUES
-            ('1111', DATE '2023-05-15', DATE '2023-03-31', 'FY', 25, 100, 30, 'basis-a'),
-            ('2222', DATE '2023-05-15', DATE '2023-03-31', 'FY', 2, 100, 3, 'basis-b'),
-            ('3333', DATE '2023-05-15', DATE '2023-03-31', 'FY', 0, 100, NULL, 'basis-c'),
-            ('1111', DATE '2023-05-15', DATE '2023-03-31', 'FY', 900, 100, 999, 'basis-latest'),
-            ('2222', DATE '2023-05-15', DATE '2023-03-31', 'FY', 900, 100, 999, 'basis-latest'),
-            ('3333', DATE '2023-05-15', DATE '2023-03-31', 'FY', 900, 100, 999, 'basis-latest')
+            ('1111', 'stmt-1111-fy', DATE '2023-05-15', '2023-05-15T15:00:00+09:00', DATE '2023-03-31', 'FY', DATE '2024-03-10', 25, 100, 30, 'fixture-current-1111', 'unit-fixture'),
+            ('2222', 'stmt-2222-fy', DATE '2023-05-15', '2023-05-15T15:00:00+09:00', DATE '2023-03-31', 'FY', DATE '2024-03-10', 2, 100, 3, 'fixture-current-2222', 'unit-fixture'),
+            ('3333', 'stmt-3333-fy', DATE '2023-05-15', '2023-05-15T15:00:00+09:00', DATE '2023-03-31', 'FY', DATE '2024-03-10', 0, 100, NULL, 'fixture-current-3333', 'unit-fixture'),
+            ('1111', 'stmt-1111-poison', DATE '2023-05-15', '2023-05-15T15:00:00+09:00', DATE '2023-03-31', 'FY', DATE '2099-12-31', 900, 100, 999, 'fixture-poison-1111', 'unit-fixture'),
+            ('2222', 'stmt-2222-poison', DATE '2023-05-15', '2023-05-15T15:00:00+09:00', DATE '2023-03-31', 'FY', DATE '2099-12-31', 900, 100, 999, 'fixture-poison-2222', 'unit-fixture'),
+            ('3333', 'stmt-3333-poison', DATE '2023-05-15', '2023-05-15T15:00:00+09:00', DATE '2023-03-31', 'FY', DATE '2099-12-31', 900, 100, 999, 'fixture-poison-3333', 'unit-fixture')
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE current_basis_fundamentals_state (
+            code VARCHAR,
+            fundamentals_adjustment_basis_date DATE,
+            source_fingerprint VARCHAR,
+            statement_count BIGINT,
+            materialized_at VARCHAR
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO current_basis_fundamentals_state VALUES
+            ('1111', DATE '2024-03-10', 'fixture-current-1111', 1, 'unit-fixture'),
+            ('2222', DATE '2024-03-10', 'fixture-current-2222', 1, 'unit-fixture'),
+            ('3333', DATE '2024-03-10', 'fixture-current-3333', 1, 'unit-fixture')
         """
     )
     conn.execute(
@@ -1815,15 +1845,18 @@ def test_fundamental_aliases_deduplicate_identical_payloads_without_amplificatio
     conn = feature_connection
     conn.execute(
         "INSERT INTO daily_valuation "
-        "SELECT code || '0', date, basis_version, psr FROM daily_valuation "
-        "WHERE code = '2222' AND basis_version = 'basis-b'"
+        "SELECT code || '0', date, price_basis_date, psr, "
+        "fundamentals_adjustment_basis_date, source_fingerprint "
+        "FROM daily_valuation "
+        "WHERE code = '2222' AND price_basis_date = date"
     )
     conn.execute(
         "INSERT INTO statement_metrics_adjusted "
-        "SELECT code || '0', disclosed_date, period_end, period_type, adjusted_eps, "
-        "adjusted_bps, adjusted_forecast_eps, basis_version "
+        "SELECT code || '0', statement_id, disclosed_date, disclosed_at, period_end, "
+        "period_type, fundamentals_adjustment_basis_date, adjusted_eps, "
+        "adjusted_bps, adjusted_forecast_eps, source_fingerprint, created_at "
         "FROM statement_metrics_adjusted "
-        "WHERE code = '1111' AND basis_version = 'basis-a'"
+        "WHERE code = '1111' AND source_fingerprint = 'fixture-current-1111'"
     )
     source = _relation_ref(conn)
 
@@ -1850,13 +1883,15 @@ def test_roe_alias_validation_filters_fy_before_comparing_exact_natural_keys(
     conn = feature_connection
     conn.execute(
         "INSERT INTO statement_metrics_adjusted VALUES "
-        "('1111', DATE '2023-05-15', DATE '2023-03-31', '1Q', "
-        "5, 100, 6, 'basis-a')"
+        "('1111', 'stmt-1111-fy', DATE '2023-05-15', "
+        "'2023-05-15T15:00:00+09:00', DATE '2023-03-31', '1Q', "
+        "DATE '2024-03-10', 5, 100, 6, 'fixture-current-1111', 'unit-fixture')"
     )
     conn.execute(
         "INSERT INTO statement_metrics_adjusted "
-        "SELECT '11110', disclosed_date, period_end, period_type, adjusted_eps, "
-        "adjusted_bps, adjusted_forecast_eps, basis_version "
+        "SELECT '11110', statement_id, disclosed_date, disclosed_at, period_end, "
+        "period_type, fundamentals_adjustment_basis_date, adjusted_eps, adjusted_bps, "
+        "adjusted_forecast_eps, source_fingerprint, created_at "
         "FROM statement_metrics_adjusted WHERE code = '1111'"
     )
     source = _relation_ref(conn)
@@ -1881,7 +1916,8 @@ def test_fundamental_aliases_reject_conflicting_payloads_deterministically(
     if family == "psr":
         conn.execute(
             "INSERT INTO daily_valuation VALUES "
-            "('22220', DATE '2024-01-01', 'basis-b', 77.0)"
+            "('22220', DATE '2024-01-01', DATE '2024-01-01', 77.0, "
+            "DATE '2024-03-10', 'fixture-current-2222')"
         )
         build = lambda: build_psr_features(  # noqa: E731
             conn, PsrFeaturesRequest(source=source, namespace="psr_alias_conflict")
@@ -1890,8 +1926,10 @@ def test_fundamental_aliases_reject_conflicting_payloads_deterministically(
     else:
         conn.execute(
             "INSERT INTO statement_metrics_adjusted VALUES "
-            "('11110', DATE '2023-05-15', DATE '2023-03-31', 'FY', "
-            "77, 100, 88, 'basis-a')"
+            "('11110', 'stmt-1111-fy', DATE '2023-05-15', "
+            "'2023-05-15T15:00:00+09:00', DATE '2023-03-31', 'FY', "
+            "DATE '2024-03-10', 77, 100, 88, 'fixture-current-1111', "
+            "'unit-fixture')"
         )
         build = lambda: build_roe_features(  # noqa: E731
             conn, RoeFeaturesRequest(source=source, namespace="roe_alias_conflict")
@@ -2063,7 +2101,8 @@ def test_legacy_wrapper_repeats_without_uuid_leaks_and_failure_is_atomic(
 
     conn.execute(
         "INSERT INTO daily_valuation VALUES "
-        "('22220', DATE '2024-01-01', 'basis-b', 77.0)"
+        "('22220', DATE '2024-01-01', DATE '2024-01-01', 77.0, "
+        "DATE '2024-03-10', 'fixture-current-2222')"
     )
     with pytest.raises(RuntimeError, match="conflicting"):
         publish_legacy_psr_features(conn)

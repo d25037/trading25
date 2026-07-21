@@ -10,7 +10,10 @@ from typing import Any
 from loguru import logger
 
 from src.application.services.options_225 import normalize_options_225_raw_row
-from src.application.services.stock_data_row_builder import build_stock_data_row
+from src.application.services.stock_data_row_builder import (
+    build_stock_data_row,
+    is_provider_no_trade_row,
+)
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
 
 _BULK_STOCK_KEY_ALIASES: dict[str, str] = {
@@ -26,6 +29,9 @@ _BULK_STOCK_KEY_ALIASES: dict[str, str] = {
     "close": "C",
     "vo": "Vo",
     "volume": "Vo",
+    "va": "Va",
+    "turnovervalue": "Va",
+    "turnover_value": "Va",
     "adjo": "AdjO",
     "adjopen": "AdjO",
     "adjh": "AdjH",
@@ -220,7 +226,9 @@ def normalize_bulk_margin_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any
     return _normalize_bulk_row_keys(rows, _BULK_MARGIN_KEY_ALIASES)
 
 
-def _normalize_bulk_stock_master_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _normalize_bulk_stock_master_rows(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     return _normalize_bulk_row_keys(rows, _BULK_STOCK_MASTER_KEY_ALIASES)
 
 
@@ -310,13 +318,6 @@ def _coerce_float_fast(value: Any) -> float | None:
     return None
 
 
-def _coerce_int_fast(value: Any) -> int | None:
-    parsed = _coerce_float_fast(value)
-    if parsed is None:
-        return None
-    return int(parsed)
-
-
 def _collect_sample_code(sample_codes: list[str], code: str) -> None:
     if code in sample_codes:
         return
@@ -337,7 +338,7 @@ def convert_stock_bulk_rows(
     date_cache: dict[str, str | None] = {}
     created_at = datetime.now(UTC).isoformat()
 
-    for row in data:
+    for row in normalize_bulk_stock_rows(data):
         code = normalize_stock_code(row.get("Code", row.get("code", "")))
         if not code:
             continue
@@ -360,12 +361,19 @@ def convert_stock_bulk_rows(
         if target_dates is not None and date_text not in target_dates:
             continue
 
-        open_value = _coerce_float_fast(row.get("O", row.get("open")))
-        high_value = _coerce_float_fast(row.get("H", row.get("high")))
-        low_value = _coerce_float_fast(row.get("L", row.get("low")))
-        close_value = _coerce_float_fast(row.get("C", row.get("close")))
-        volume_value = _coerce_int_fast(row.get("Vo", row.get("volume")))
-        if any(v is None for v in (open_value, high_value, low_value, close_value, volume_value)):
+        normalized_input = dict(row)
+        normalized_input["Date"] = date_text
+        converted = build_stock_data_row(
+            normalized_input,
+            normalized_code=code,
+            created_at=created_at,
+        )
+        if converted is None:
+            if not is_provider_no_trade_row(normalized_input):
+                raise ValueError(
+                    "incomplete provider daily row requires retry or full refresh: "
+                    f"{code} {date_text}"
+                )
             skipped += 1
             _collect_sample_code(sample_codes, code)
             continue
@@ -375,19 +383,7 @@ def convert_stock_bulk_rows(
             continue
         seen.add(row_key)
 
-        rows.append(
-            {
-                "code": code,
-                "date": date_text,
-                "open": open_value,
-                "high": high_value,
-                "low": low_value,
-                "close": close_value,
-                "volume": volume_value,
-                "adjustment_factor": _coerce_float_fast(row.get("AdjFactor")),
-                "created_at": created_at,
-            }
-        )
+        rows.append(converted)
 
     if skipped > 0:
         sample = ", ".join(sample_codes) if sample_codes else "unknown"
@@ -432,20 +428,25 @@ def convert_stock_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
         code = normalize_stock_code(str(d.get("Code", "") or ""))
         if not code:
             continue
-        rows.append({
-            "code": code,
-            "company_name": d.get("CoName", ""),
-            "company_name_english": d.get("CoNameEn"),
-            "market_code": d.get("Mkt", ""),
-            "market_name": d.get("MktNm", ""),
-            "sector_17_code": d.get("S17", ""),
-            "sector_17_name": d.get("S17Nm", ""),
-            "sector_33_code": d.get("S33", ""),
-            "sector_33_name": d.get("S33Nm", ""),
-            "scale_category": d.get("ScaleCat"),
-            "listed_date": d.get("ListedDate") or d.get("ListingDate") or d.get("listed_date") or "",
-            "created_at": datetime.now(UTC).isoformat(),
-        })
+        rows.append(
+            {
+                "code": code,
+                "company_name": d.get("CoName", ""),
+                "company_name_english": d.get("CoNameEn"),
+                "market_code": d.get("Mkt", ""),
+                "market_name": d.get("MktNm", ""),
+                "sector_17_code": d.get("S17", ""),
+                "sector_17_name": d.get("S17Nm", ""),
+                "sector_33_code": d.get("S33", ""),
+                "sector_33_name": d.get("S33Nm", ""),
+                "scale_category": d.get("ScaleCat"),
+                "listed_date": d.get("ListedDate")
+                or d.get("ListingDate")
+                or d.get("listed_date")
+                or "",
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        )
     return rows
 
 
@@ -483,10 +484,7 @@ def group_stock_master_bulk_rows_by_date(
 
 def convert_options_225_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
     created_at = datetime.now(UTC).isoformat()
-    return [
-        normalize_options_225_raw_row(item, created_at=created_at)
-        for item in data
-    ]
+    return [normalize_options_225_raw_row(item, created_at=created_at) for item in data]
 
 
 def convert_stock_data_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -499,8 +497,14 @@ def convert_stock_data_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for d in data:
         row = build_stock_data_row(d, created_at=created_at)
         if row is None:
-            skipped += 1
             code = normalize_stock_code(d.get("Code", ""))
+            date_text = _normalize_iso_date_text(d.get("Date"))
+            if code and date_text and not is_provider_no_trade_row(d):
+                raise ValueError(
+                    "incomplete provider daily row requires retry or full refresh: "
+                    f"{code} {date_text}"
+                )
+            skipped += 1
             if code and code not in sample_codes and len(sample_codes) < 5:
                 sample_codes.append(code)
             continue
@@ -522,6 +526,7 @@ def extract_list_items(
     preferred_keys: tuple[str, ...] = ("data",),
 ) -> list[dict[str, Any]]:
     """レスポンスの配列ペイロードをキー揺れ込みで取り出す。"""
+
     def _coerce_dict_items(value: Any) -> list[dict[str, Any]] | None:
         if not isinstance(value, list):
             return None
@@ -569,18 +574,23 @@ def convert_index_master_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]
         code = _extract_index_code(idx)
         if not code:
             continue
-        rows.append({
-            "code": code,
-            "name": idx.get("name") or idx.get("Name") or "",
-            "name_english": idx.get("name_english") or idx.get("nameEnglish"),
-            "category": idx.get("category") or idx.get("Category") or "",
-            "data_start_date": idx.get("data_start_date") or idx.get("dataStartDate"),
-            "created_at": created_at,
-        })
+        rows.append(
+            {
+                "code": code,
+                "name": idx.get("name") or idx.get("Name") or "",
+                "name_english": idx.get("name_english") or idx.get("nameEnglish"),
+                "category": idx.get("category") or idx.get("Category") or "",
+                "data_start_date": idx.get("data_start_date")
+                or idx.get("dataStartDate"),
+                "created_at": created_at,
+            }
+        )
     return rows
 
 
-def convert_indices_data_rows(data: list[dict[str, Any]], code: str | None) -> list[dict[str, Any]]:
+def convert_indices_data_rows(
+    data: list[dict[str, Any]], code: str | None
+) -> list[dict[str, Any]]:
     """JQuants 指数データ -> DB 行。日付欠損行はスキップ。"""
     rows: list[dict[str, Any]] = []
     created_at = datetime.now(UTC).isoformat()
@@ -598,19 +608,25 @@ def convert_indices_data_rows(data: list[dict[str, Any]], code: str | None) -> l
             skipped_missing_date += 1
             continue
 
-        rows.append({
-            "code": row_code,
-            "date": row_date,
-            "open": d.get("O", d.get("open")),
-            "high": d.get("H", d.get("high")),
-            "low": d.get("L", d.get("low")),
-            "close": d.get("C", d.get("close")),
-            "sector_name": d.get("SectorName", d.get("sector_name")),
-            "created_at": created_at,
-        })
+        rows.append(
+            {
+                "code": row_code,
+                "date": row_date,
+                "open": d.get("O", d.get("open")),
+                "high": d.get("H", d.get("high")),
+                "low": d.get("L", d.get("low")),
+                "close": d.get("C", d.get("close")),
+                "sector_name": d.get("SectorName", d.get("sector_name")),
+                "created_at": created_at,
+            }
+        )
 
     if skipped_missing_date > 0:
-        logger.warning("Skipped {} index rows with missing date (code={})", skipped_missing_date, code)
+        logger.warning(
+            "Skipped {} index rows with missing date (code={})",
+            skipped_missing_date,
+            code,
+        )
     if skipped_missing_code > 0:
         logger.warning("Skipped {} index rows with missing code", skipped_missing_code)
     return rows
@@ -640,7 +656,9 @@ def convert_margin_rows(
     skipped_missing_code = 0
 
     for item in data:
-        code = normalize_stock_code(item.get("Code") or item.get("code") or default_code or "")
+        code = normalize_stock_code(
+            item.get("Code") or item.get("code") or default_code or ""
+        )
         if not code:
             skipped_missing_code += 1
             continue

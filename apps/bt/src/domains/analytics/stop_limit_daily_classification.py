@@ -30,7 +30,7 @@ from src.domains.analytics.readonly_duckdb_support import (
     fetch_date_range,
     normalize_code_sql,
     open_readonly_analysis_connection,
-    require_market_v4_compatibility,
+    require_market_v5_compatibility,
 )
 from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
@@ -874,11 +874,10 @@ def run_stop_limit_daily_classification_research(
         db_path,
         snapshot_prefix="stop-limit-daily-classification-",
     ) as ctx:
-        require_market_v4_compatibility(
+        market_schema_version = require_market_v5_compatibility(
             ctx.connection,
             required_tables=("stock_data", "stock_master_daily"),
         )
-        market_schema_version = 4
         available_start_date, available_end_date = fetch_date_range(
             ctx.connection,
             table_name="stock_data",

@@ -25,6 +25,7 @@ from src.domains.analytics.ranking_trend_acceleration_conditional_lift import (
     run_ranking_trend_acceleration_conditional_lift_research,
     write_ranking_trend_acceleration_conditional_lift_bundle,
 )
+from src.shared.provider_stock_window import provider_stock_source_fingerprint
 from tests.unit.domains.analytics.test_ranking_sma5_count_long_evidence import (
     _build_sma5_count_long_db,
 )
@@ -80,8 +81,8 @@ def test_future_append_does_not_change_earlier_features_or_candidates(
     conn = duckdb.connect(str(db_path))
     try:
         conn.execute(
-            "INSERT INTO stock_data_raw VALUES "
-            "('1111', '2025-01-06', 999, 1000, 998, 999, 10000, 1.0)"
+            "INSERT INTO stock_data VALUES "
+            "('1111', '2025-01-06', 999, 1000, 998, 999, 10000)"
         )
         conn.execute(
             "INSERT INTO stock_master_daily "
@@ -110,7 +111,7 @@ def test_future_append_does_not_change_earlier_features_or_candidates(
     )
 
 
-def test_poisoned_stock_data_cannot_change_price_pit_study(tmp_path: Path) -> None:
+def test_poisoned_stock_data_fails_closed_price_pit_study(tmp_path: Path) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
     before = _run_fixture_research(db_path)
     conn = duckdb.connect(str(db_path))
@@ -128,21 +129,17 @@ def test_poisoned_stock_data_cannot_change_price_pit_study(tmp_path: Path) -> No
     finally:
         conn.close()
 
-    after = _run_fixture_research(db_path)
-
-    pd.testing.assert_frame_equal(
-        before.observation_sample_df.reset_index(drop=True),
-        after.observation_sample_df.reset_index(drop=True),
-    )
-    assert before.price_projection == after.price_projection
+    assert not before.observation_sample_df.empty
+    with pytest.raises(RuntimeError, match="provider vintage lineage"):
+        _execute_fixture_research(db_path)
 
 
 @pytest.mark.parametrize(
     ("failure", "message"),
     [
-        ("missing", "segment cardinality must be exactly one"),
-        ("overlap", "segment cardinality must be exactly one"),
-        ("invalid", "segment factor must be finite and positive"),
+        ("missing", "provider vintage lineage"),
+        ("overlap", "provider vintage lineage"),
+        ("invalid", "provider vintage lineage"),
     ],
 )
 def test_price_pit_study_fails_closed_on_invalid_lineage(
@@ -151,34 +148,27 @@ def test_price_pit_study_fails_closed_on_invalid_lineage(
     message: str,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
-    _mark_fixture_market_v4(db_path)
+    _upgrade_fixture_market_v5(db_path)
     conn = duckdb.connect(str(db_path))
     try:
-        basis_id = conn.execute(
-            "SELECT basis_id FROM stock_adjustment_bases WHERE code = '1111'"
-        ).fetchone()[0]
         if failure == "missing":
-            conn.execute(
-                "DELETE FROM stock_adjustment_basis_segments "
-                "WHERE code = '1111' AND basis_id = ?",
-                [basis_id],
-            )
+            conn.execute("DELETE FROM stock_provider_windows WHERE code = '1111'")
         elif failure == "overlap":
             conn.execute(
-                "INSERT INTO stock_adjustment_basis_segments VALUES (?, ?, ?, ?, ?)",
-                ["1111", basis_id, "2016-01-01", None, 1.0],
+                "INSERT INTO stock_provider_windows (code, coverage_start, coverage_end, "
+                "provider_plan, provider_as_of, source_fingerprint, updated_at) SELECT * "
+                "FROM stock_provider_windows WHERE code = '1111'"
             )
         else:
             conn.execute(
-                "UPDATE stock_adjustment_basis_segments SET cumulative_factor = 0.0 "
-                "WHERE code = '1111' AND basis_id = ?",
-                [basis_id],
+                "UPDATE stock_provider_windows SET source_fingerprint = repeat('0', 64) "
+                "WHERE code = '1111'"
             )
     finally:
         conn.close()
 
     with pytest.raises(RuntimeError, match=message):
-        _run_fixture_research(db_path)
+        _execute_fixture_research(db_path)
 
 
 def test_binary_lift_requires_two_symbols_on_both_sides_same_day() -> None:
@@ -858,12 +848,16 @@ def test_trend_observation_bundle_preserves_sparse_session_authoritative_outcome
     tmp_path: Path,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
-    _mark_fixture_market_v4(db_path)
+    _upgrade_fixture_market_v5(db_path)
     conn = duckdb.connect(str(db_path))
     try:
         conn.execute(
             "DELETE FROM stock_data_raw WHERE code = '1111' AND date = '2024-03-08'"
         )
+        conn.execute(
+            "DELETE FROM stock_data WHERE code = '1111' AND date = '2024-03-08'"
+        )
+        _refresh_fixture_provider_window(conn, "1111")
         conn.execute("DELETE FROM indices_data WHERE upper(code) = 'N225_UNDERPX'")
         conn.execute(
             "INSERT INTO indices_data "
@@ -987,7 +981,13 @@ def _observation(
 def _run_fixture_research(
     db_path: Path,
 ) -> RankingTrendAccelerationConditionalLiftResult:
-    _mark_fixture_market_v4(db_path)
+    _upgrade_fixture_market_v5(db_path)
+    return _execute_fixture_research(db_path)
+
+
+def _execute_fixture_research(
+    db_path: Path,
+) -> RankingTrendAccelerationConditionalLiftResult:
     return run_ranking_trend_acceleration_conditional_lift_research(
         db_path,
         start_date="2024-03-01",
@@ -1051,102 +1051,176 @@ def _build_mixed_market_db(db_path: Path) -> Path:
     return db_path
 
 
-def _mark_fixture_market_v4(db_path: Path) -> None:
+def _upgrade_fixture_market_v5(db_path: Path) -> None:
     conn = duckdb.connect(str(db_path))
     try:
+        conn.execute("CREATE OR REPLACE TABLE market_schema_version(version INTEGER)")
+        conn.execute("INSERT INTO market_schema_version VALUES (5)")
         conn.execute(
-            "CREATE TABLE IF NOT EXISTS market_schema_version(version INTEGER)"
+            "CREATE OR REPLACE TABLE sync_metadata(key VARCHAR, value VARCHAR)"
         )
-        if (
-            conn.execute("SELECT count(*) FROM market_schema_version").fetchone()[0]
-            == 0
-        ):
-            conn.execute("INSERT INTO market_schema_version VALUES (4)")
         conn.execute(
-            "CREATE TABLE IF NOT EXISTS sync_metadata(key VARCHAR, value VARCHAR)"
+            "INSERT INTO sync_metadata VALUES "
+            "('stock_price_adjustment_mode', 'provider_adjusted_v1')"
         )
-        if (
-            conn.execute(
-                "SELECT count(*) FROM sync_metadata "
-                "WHERE key = 'stock_price_adjustment_mode'"
-            ).fetchone()[0]
-            == 0
-        ):
-            conn.execute(
-                "INSERT INTO sync_metadata VALUES "
-                "('stock_price_adjustment_mode', 'local_projection_v2_event_time')"
-            )
         conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS stock_adjustment_bases (
-                code TEXT,
-                basis_id TEXT,
-                valid_from TEXT,
-                valid_to_exclusive TEXT,
-                adjustment_through_date TEXT,
-                source_fingerprint TEXT,
-                materialized_through_date TEXT,
-                status TEXT
+            CREATE OR REPLACE TABLE stock_data_raw AS
+            SELECT code, date, open, high, low, close, volume,
+                   close * volume AS turnover_value,
+                   1.0::DOUBLE AS adjustment_factor,
+                   open AS adjusted_open, high AS adjusted_high,
+                   low AS adjusted_low, close AS adjusted_close,
+                   volume AS adjusted_volume
+            FROM stock_data
+            """
+        )
+        conn.execute(
+            """
+            CREATE OR REPLACE TABLE stock_provider_windows (
+                code TEXT, coverage_start TEXT, coverage_end TEXT,
+                provider_plan TEXT, provider_as_of TEXT,
+                source_fingerprint TEXT, updated_at TEXT
             )
             """
         )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS stock_adjustment_basis_segments (
-                code TEXT,
-                basis_id TEXT,
-                source_date_from TEXT,
-                source_date_to_exclusive TEXT,
-                cumulative_factor DOUBLE
-            )
-            """
+        columns = (
+            "code", "date", "open", "high", "low", "close", "volume",
+            "turnover_value", "adjustment_factor", "adjusted_open",
+            "adjusted_high", "adjusted_low", "adjusted_close", "adjusted_volume",
         )
-        if (
-            conn.execute("SELECT count(*) FROM stock_adjustment_bases").fetchone()[0]
-            == 0
-        ):
-            first_date, last_date = conn.execute(
-                "SELECT min(date), max(date) FROM stock_data"
-            ).fetchone()
-            codes = [
-                str(row[0])
-                for row in conn.execute(
-                    "SELECT DISTINCT code FROM daily_valuation ORDER BY code"
-                ).fetchall()
-            ]
-            for code in codes:
-                basis_id = f"event-pit-v1:{code}:{first_date}"
-                conn.execute(
-                    "INSERT INTO stock_adjustment_bases VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    [
-                        code,
-                        basis_id,
-                        first_date,
-                        None,
-                        first_date,
-                        f"fixture-{code}",
-                        last_date,
-                        "ready",
-                    ],
-                )
-                conn.execute(
-                    "INSERT INTO stock_adjustment_basis_segments VALUES (?, ?, ?, ?, ?)",
-                    [code, basis_id, first_date, None, 1.0],
-                )
-                conn.execute(
-                    "UPDATE daily_valuation SET basis_version = ? WHERE code = ?",
-                    [basis_id, code],
-                )
-        tables = {
+        normalized_codes = [
             str(row[0])
             for row in conn.execute(
-                "SELECT table_name FROM information_schema.tables"
+                """
+                SELECT DISTINCT CASE
+                    WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                    THEN left(code, length(code) - 1) ELSE code END
+                FROM stock_data_raw ORDER BY 1
+                """
             ).fetchall()
-        }
-        if "stock_data_raw" not in tables:
+        ]
+        for code in normalized_codes:
+            raw_rows = conn.execute(
+                f"""
+                SELECT {', '.join(columns)} FROM stock_data_raw
+                WHERE CASE
+                    WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                    THEN left(code, length(code) - 1) ELSE code END = ?
+                ORDER BY date
+                """,
+                [code],
+            ).fetchall()
+            rows = [dict(zip(columns, row, strict=True)) for row in raw_rows]
+            for row in rows:
+                row["date"] = str(row["date"])
             conn.execute(
-                "CREATE TABLE stock_data_raw AS "
-                "SELECT *, 1.0::DOUBLE AS adjustment_factor FROM stock_data"
+                "INSERT INTO stock_provider_windows (code, coverage_start, coverage_end, "
+                "provider_plan, provider_as_of, source_fingerprint, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [
+                    code,
+                    rows[0]["date"],
+                    rows[-1]["date"],
+                    "premium",
+                    rows[-1]["date"],
+                    provider_stock_source_fingerprint(rows),
+                    rows[-1]["date"],
+                ],
             )
+        conn.execute(
+            """
+            CREATE OR REPLACE TABLE stock_adjustment_events (
+                code TEXT, date TEXT, adjustment_factor DOUBLE,
+                source_fingerprint TEXT
+            )
+            """
+        )
+        conn.execute(
+            "CREATE OR REPLACE TABLE current_basis_recompute_pending (code TEXT)"
+        )
+        conn.execute(
+            """
+            CREATE OR REPLACE TABLE current_basis_fundamentals_state AS
+            SELECT code, coverage_end AS fundamentals_adjustment_basis_date,
+                   'fixture-fundamentals-' || code AS source_fingerprint,
+                   0::BIGINT AS statement_count, 'unit-fixture' AS materialized_at
+            FROM stock_provider_windows
+            """
+        )
+        conn.execute(
+            """
+            CREATE OR REPLACE TABLE statements (
+                code TEXT, statement_id TEXT, disclosed_date DATE,
+                disclosed_at TEXT, period_end DATE, type_of_current_period TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE OR REPLACE TABLE statement_metrics_adjusted (
+                code TEXT, statement_id TEXT, disclosed_date DATE,
+                disclosed_at TEXT, period_end DATE, period_type TEXT,
+                fundamentals_adjustment_basis_date DATE,
+                source_fingerprint TEXT
+            )
+            """
+        )
+        conn.execute(
+            "ALTER TABLE daily_valuation ADD COLUMN IF NOT EXISTS price_basis_date TEXT"
+        )
+        conn.execute(
+            "ALTER TABLE daily_valuation ADD COLUMN IF NOT EXISTS "
+            "fundamentals_adjustment_basis_date TEXT"
+        )
+        conn.execute(
+            "ALTER TABLE daily_valuation ADD COLUMN IF NOT EXISTS source_fingerprint TEXT"
+        )
+        conn.execute(
+            "UPDATE daily_valuation SET price_basis_date = date, "
+            "fundamentals_adjustment_basis_date = state.fundamentals_adjustment_basis_date, "
+            "source_fingerprint = state.source_fingerprint "
+            "FROM current_basis_fundamentals_state state "
+            "WHERE daily_valuation.code = state.code"
+        )
     finally:
         conn.close()
+
+
+def _refresh_fixture_provider_window(
+    conn: duckdb.DuckDBPyConnection,
+    code: str,
+) -> None:
+    columns = (
+        "code", "date", "open", "high", "low", "close", "volume",
+        "turnover_value", "adjustment_factor", "adjusted_open",
+        "adjusted_high", "adjusted_low", "adjusted_close", "adjusted_volume",
+    )
+    raw_rows = conn.execute(
+        f"SELECT {', '.join(columns)} FROM stock_data_raw "
+        "WHERE code = ? ORDER BY date",
+        [code],
+    ).fetchall()
+    rows = [dict(zip(columns, row, strict=True)) for row in raw_rows]
+    for row in rows:
+        row["date"] = str(row["date"])
+    conn.execute(
+        "UPDATE stock_provider_windows SET coverage_start = ?, coverage_end = ?, "
+        "source_fingerprint = ? WHERE code = ?",
+        [
+            rows[0]["date"],
+            rows[-1]["date"],
+            provider_stock_source_fingerprint(rows),
+            code,
+        ],
+    )
+    conn.execute(
+        "UPDATE current_basis_fundamentals_state "
+        "SET fundamentals_adjustment_basis_date = ? WHERE code = ?",
+        [rows[-1]["date"], code],
+    )
+    conn.execute(
+        "UPDATE daily_valuation SET fundamentals_adjustment_basis_date = ? "
+        "WHERE code = ?",
+        [rows[-1]["date"], code],
+    )

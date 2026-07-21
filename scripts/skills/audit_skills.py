@@ -146,154 +146,50 @@ VERIFICATION_PATH_PREFIXES = (
 MARKET_CUTOVER_SKILLS = {"bt-database-management", "bt-market-sync-strategies"}
 ACTIVE_MARKET_CUTOVER_GUIDANCE_PATHS = (
     "AGENTS.md",
-    ".superpowers/sdd/task-6-report.md",
-    "docs/superpowers/plans/2026-07-17-repository-governance-modernization.md",
-    "docs/superpowers/specs/2026-07-17-repository-governance-modernization-design.md",
+    "docs/runbooks/market-v5-cutover.md",
 )
 MARKET_CUTOVER_REQUIRED_TERMS = (
     "bt market-cutover cutover",
-    "bt market-cutover promote-retained",
-    "noSync: true",
-    "noJQuants: true",
-    "same-attempt recovery",
-    "joined failure",
-    "unjoined child",
+    "schema v5",
+    "provider_adjusted_v1",
+    "full rebuild",
+    "immutable backup",
     "exact rollback",
-    "deferred fencing",
+    "Dataset",
+    "schemaVersion: 4",
+    "retained Market v4",
+    "ineligible",
 )
 MARKET_CUTOVER_REQUIRED_CLAUSES = (
     (
-        "exact promotion identities",
-        re.compile(r"exact report/payload/backup/quarantine identity"),
+        "full-rebuild-only cutover",
+        re.compile(r"full rebuild[^\n]*(?:唯一|only)|(?:唯一|only)[^\n]*full rebuild", re.IGNORECASE),
     ),
     (
-        "retained-report provenance source resolution",
-        re.compile(r"retained report provenance[^\n]*source root"),
+        "retained-v4 ineligibility",
+        re.compile(r"retained Market v4[^\n]*(?:ineligible|不適格|昇格しない)"),
     ),
     (
-        "command-local immutable backup and atomic exchange",
-        re.compile(
-            r"command 内で[^\n]*create-only immutable backup[^\n]*atomic exchange"
-        ),
-    ),
-    ("semantic smoke", re.compile(r"semantic smoke")),
-    ("server/worker join verdict", re.compile(r"server/worker join verdict")),
-    (
-        "process-local same-ID recovery",
-        re.compile(r"process-local[^\n]*same-ID recovery"),
+        "no in-place migration or dual read",
+        re.compile(r"(?:in-place migration|自動移行)[^\n]*(?:dual read|dual-read)"),
     ),
     (
-        "joined exact rollback",
-        re.compile(r"joined failure は exact rollback"),
+        "provider vintage and Dataset4 smoke",
+        re.compile(r"providerVintage[^\n]*(?:Dataset[^\n]*schemaVersion: 4|Dataset4)"),
     ),
     (
-        "unjoined dual-lease deferred fencing",
-        re.compile(r"unjoined child は両 lease を保持した deferred fencing"),
-    ),
-    (
-        "journal-bound same-ID cleanup",
-        re.compile(
-            r"post-commit cleanup staging は journal に束縛された same-ID recovery"
-        ),
+        "immutable backup atomic activation rollback",
+        re.compile(r"immutable backup[^\n]*atomic[^\n]*exact rollback"),
     ),
     (
         "operator non-mutation",
-        re.compile(
-            r"lock\s*/\s*journal\s*/\s*staging\s*を手動変更(?:せず|しない)"
-        ),
+        re.compile(r"operation lock\s*/\s*staging\s*を手動変更(?:せず|しない)"),
     ),
     (
-        "immutable backup and quarantine retention",
-        re.compile(r"immutable backup と quarantined v3 は成功後も保持"),
-    ),
-    (
-        "retained-promotion prohibited operations",
-        re.compile(
-            r"sync / reset / repair / stock refresh / intraday sync / "
-            r"adjusted-metric materialization / rebuild(?: / J-Quants call)? "
-            r"を(?:禁止する|実行せず)"
-        ),
-    ),
-    (
-        "retained-promotion J-Quants prohibition",
-        re.compile(r"(?:J-Quants call を禁止する|J-Quants option を追加しない)"),
+        "v5 operation namespace",
+        re.compile(r"operations/market-v5-cutover"),
     ),
 )
-
-
-def required_promote_retained_cli_shape(repo_root: Path) -> str:
-    source_path = repo_root / "apps/bt/src/entrypoints/cli/market_cutover.py"
-    tree = ast.parse(source_path.read_text())
-    for node in tree.body:
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        if not any(
-            isinstance(decorator, ast.Call)
-            and decorator.args
-            and isinstance(decorator.args[0], ast.Constant)
-            and decorator.args[0].value == "promote-retained"
-            for decorator in node.decorator_list
-        ):
-            continue
-
-        defaults = [None] * (len(node.args.args) - len(node.args.defaults)) + list(
-            node.args.defaults
-        )
-        parts = ["bt", "market-cutover", "promote-retained"]
-        for index, argument in enumerate(node.args.args):
-            default = defaults[index]
-            if not isinstance(default, ast.Call) or not default.args:
-                continue
-            if not (
-                isinstance(default.func, ast.Attribute)
-                and isinstance(default.func.value, ast.Name)
-                and default.func.value.id == "typer"
-                and isinstance(default.args[0], ast.Constant)
-                and default.args[0].value is Ellipsis
-            ):
-                continue
-            if default.func.attr == "Argument":
-                parts.append(argument.arg.upper())
-            elif default.func.attr == "Option":
-                option = next(
-                    (
-                        value.value
-                        for value in default.args[1:]
-                        if isinstance(value, ast.Constant)
-                        and isinstance(value.value, str)
-                        and value.value.startswith("--")
-                    ),
-                    None,
-                )
-                if option is None:
-                    raise ValueError(
-                        f"Required Typer option has no long name: {argument.arg}"
-                    )
-                parts.extend((option, "..."))
-        return " ".join(parts)
-    raise ValueError(f"Missing promote-retained Typer command: {source_path}")
-
-
-def _validate_promote_retained_cli_examples(
-    content: str,
-    source_file: Path,
-    repo_root: Path,
-) -> list[str]:
-    exact_shape = required_promote_retained_cli_shape(repo_root)
-    errors: list[str] = []
-    if exact_shape not in content:
-        errors.append(
-            f"Market cutover guidance is missing source-derived CLI shape "
-            f"{exact_shape!r}: {source_file}"
-        )
-    command_prefix = "bt market-cutover promote-retained REPORT_ID"
-    for example in CODE_SPAN_PATTERN.findall(content):
-        if example.startswith(command_prefix) and not example.startswith(exact_shape):
-            errors.append(
-                f"Found incomplete promote-retained CLI example: "
-                f"{source_file} -> {example}"
-            )
-    return errors
 
 
 def parse_frontmatter(content: str) -> dict[str, str] | None:
@@ -649,7 +545,7 @@ def validate_market_cutover_guidance(
     skill_file: Path,
     repo_root: Path | None = None,
 ) -> list[str]:
-    resolved_repo_root = repo_root or skill_file.parents[3]
+    del repo_root
     errors = [
         f"Market cutover guidance is missing {term!r}: {skill_file}"
         for term in MARKET_CUTOVER_REQUIRED_TERMS
@@ -660,49 +556,10 @@ def validate_market_cutover_guidance(
         for label, pattern in MARKET_CUTOVER_REQUIRED_CLAUSES
         if pattern.search(content) is None
     )
-    errors.extend(
-        _validate_promote_retained_cli_examples(
-            content,
-            skill_file,
-            resolved_repo_root,
-        )
-    )
-    operation_contradiction = re.compile(
-        r"(?:promote-retained|retained promotion)[^\n]{0,240}(?:"
-        r"(?:may|can|allow(?:s|ed)?|permit(?:s|ted)?|許可|実行できる)[^\n]{0,120}"
-        r"(?:sync|J-Quants|reset|repair|refresh|materialization|rebuild)|"
-        r"(?:sync|J-Quants|reset|repair|refresh|materialization|rebuild)[^\n]{0,120}"
-        r"(?:may|can|allow(?:s|ed)?|permit(?:s|ted)?|許可|実行できる))",
-        re.IGNORECASE,
-    )
-    manual_mutation_contradiction = re.compile(
-        r"(?:promote-retained|retained promotion)[^\n]{0,240}"
-        r"(?:"
-        r"(?:may|can|allow(?:s|ed)?|permit(?:s|ted)?|許可|実行できる)[^\n]{0,120}"
-        r"(?:manually|manual|手動)[^\n]{0,120}"
-        r"(?:clear|delete|remove|modify|edit|change|変更|削除|解除|lock|journal|staging)|"
-        r"(?:manually|manual|手動)[^\n]{0,120}"
-        r"(?:clear|delete|remove|modify|edit|change|変更|削除|解除|lock|journal|staging)"
-        r"[^\n]{0,120}(?:may|can|allow(?:s|ed)?|permit(?:s|ted)?|許可|実行できる)"
-        r")",
-        re.IGNORECASE,
-    )
-    japanese_affirmative_contradiction = re.compile(
-        r"(?:promote-retained|retained promotion)[^\n]{0,240}(?:"
-        r"sync\s*を実行する|J-Quants\s*を呼び出す|rebuild\s*する)",
-        re.IGNORECASE,
-    )
-    japanese_manual_mutation_contradiction = re.compile(
-        r"lock\s*/\s*journal\s*/\s*staging\s*を手動変更する",
-        re.IGNORECASE,
-    )
-    if (
-        operation_contradiction.search(content)
-        or manual_mutation_contradiction.search(content)
-        or japanese_affirmative_contradiction.search(content)
-        or japanese_manual_mutation_contradiction.search(content)
-    ):
-        errors.append(f"Found contradictory retained-promotion guidance: {skill_file}")
+    if "promote-retained" in content or "rehearse-retained" in content:
+        errors.append(f"Found obsolete retained-v4 CLI guidance: {skill_file}")
+    if re.search(r"operation lock\s*/\s*staging\s*を手動変更する", content):
+        errors.append(f"Found unsafe cutover artifact mutation guidance: {skill_file}")
     return errors
 
 
@@ -798,13 +655,9 @@ def main() -> int:
 
     for relative_path in ACTIVE_MARKET_CUTOVER_GUIDANCE_PATHS:
         guidance_file = repo_root / relative_path
-        errors.extend(
-            _validate_promote_retained_cli_examples(
-                guidance_file.read_text(),
-                guidance_file,
-                repo_root,
-            )
-        )
+        guidance = guidance_file.read_text()
+        if "promote-retained" in guidance or "rehearse-retained" in guidance:
+            errors.append(f"Found obsolete retained-v4 CLI guidance: {guidance_file}")
 
     errors.extend(validate_react_catalog(repo_root))
 

@@ -9,6 +9,7 @@ from src.application.services.fins_summary_mapper import convert_fins_summary_ro
 from src.application.services.ingestion_pipeline import validate_rows_required_fields
 from src.application.services import sync_publish_helpers
 from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
+from src.shared.provider_stock_window import ProviderStockStage
 from src.application.services.sync_row_converters import (
     convert_margin_rows as _convert_margin_rows,
     convert_stock_bulk_rows as _convert_stock_bulk_rows,
@@ -32,8 +33,13 @@ async def _ingest_stock_bulk_batch(
     return await asyncio.to_thread(ctx.time_series_store.stage_stock_data_rows, rows)
 
 
-async def _flush_staged_stock_bulk_rows(ctx: Any) -> SemanticDeltaResult:
-    return await asyncio.to_thread(ctx.time_series_store.flush_staged_stock_data)
+async def _flush_staged_stock_bulk_rows(
+    ctx: Any, *, stage: ProviderStockStage
+) -> SemanticDeltaResult:
+    return await asyncio.to_thread(
+        ctx.time_series_store.flush_staged_stock_data,
+        stage=stage,
+    )
 
 
 async def _discard_staged_stock_bulk_rows(ctx: Any) -> None:
@@ -59,8 +65,8 @@ async def _ingest_fins_bulk_batch(
         ]
     rows = validate_rows_required_fields(
         rows,
-        required_fields=("code", "disclosed_date"),
-        dedupe_keys=("code", "disclosed_date"),
+        required_fields=("code", "statement_id", "disclosed_date"),
+        dedupe_keys=("code", "statement_id"),
         stage="fundamentals",
     )
     if not rows:

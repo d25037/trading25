@@ -2,17 +2,25 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any
+import asyncio
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field, replace
+from typing import Any, TypeVar, cast
 
 from loguru import logger
 
-from src.application.services import sync_bulk_ingest_helpers, sync_fetch_planner, sync_publish_helpers
+from src.application.services import sync_fetch_planner, sync_publish_helpers
 from src.application.services.ingestion_pipeline import run_ingestion_batch, validate_rows_required_fields
 from src.application.services.jquants_bulk_service import BulkFetchResult, BulkFileInfo
 from src.application.services.sync_paginated_fetch import get_paginated_rows_with_call_count
 from src.application.services.sync_row_converters import build_target_date_set
+from src.application.services.stock_refresh_service import refresh_stocks
+from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
+from src.shared.provider_stock_window import ProviderStockStage
 from src.application.services.sync_row_converters import convert_stock_data_rows as _convert_stock_data_rows
+from src.application.services.sync_row_converters import (
+    convert_stock_bulk_rows as _convert_stock_bulk_rows,
+)
 
 
 @dataclass(frozen=True)
@@ -37,9 +45,241 @@ class StockDataRestDateIngestionError(RuntimeError):
         self.original = original
 
 
+class AffectedStockRefreshError(RuntimeError):
+    """Raised when any affected code cannot be fully refreshed."""
+
+
+@dataclass(frozen=True, slots=True)
+class StockDataCommitOutcome:
+    api_calls: int = 0
+    appended_rows: int = 0
+    affected_codes: frozenset[str] = frozenset()
+    replaced_codes: int = 0
+    replaced_rows: int = 0
+    recomputation_errors: tuple[str, ...] = ()
+    cancelled: bool = False
+
+
+_T = TypeVar("_T")
+
+
+@dataclass(slots=True)
+class StockDataIngestionSession:
+    """Stage all dates, then append normal rows and replace affected codes."""
+
+    affected_codes: set[str] = field(default_factory=set)
+    staged_rows: int = 0
+    _committed: bool = False
+    _finalized: bool = False
+
+    @property
+    def committed(self) -> bool:
+        return self._committed
+
+    @property
+    def finalized(self) -> bool:
+        return self._finalized
+
+    async def stage(self, ctx: Any, rows: list[dict[str, Any]]) -> None:
+        if self._finalized:
+            raise RuntimeError("Stock data ingestion session is already finalized")
+        result = await sync_publish_helpers._stage_stock_data_rows(ctx, rows)
+        self.affected_codes.update(result.affected_codes)
+        self.staged_rows += result.staged_rows
+
+    async def discard(self, ctx: Any) -> None:
+        await sync_publish_helpers._discard_staged_stock_data_rows(ctx)
+        self.affected_codes.clear()
+        self.staged_rows = 0
+
+    async def commit(
+        self, ctx: Any, *, stage: ProviderStockStage
+    ) -> StockDataCommitOutcome:
+        if self._finalized:
+            raise RuntimeError("Stock data ingestion session is already finalized")
+        affected_codes = frozenset(self.affected_codes)
+        api_calls = 0
+        replaced_codes = 0
+        replaced_rows = 0
+        if affected_codes:
+            ctx.on_progress(
+                "stock_data_refresh",
+                0,
+                len(affected_codes),
+                f"Refreshing {len(affected_codes)} affected stock provider windows...",
+            )
+
+            def _on_refresh_progress(
+                completed: int, total: int, message: str
+            ) -> None:
+                ctx.on_progress("stock_data_refresh", completed, total, message)
+
+            try:
+                response = await refresh_stocks(
+                    sorted(affected_codes),
+                    ctx.market_db,
+                    ctx.time_series_store,
+                    ctx.client,
+                    provider_plan=stage.provider_plan,
+                    provider_as_of=stage.provider_as_of,
+                    progress_callback=_on_refresh_progress,
+                    cancel_check=ctx.cancelled.is_set,
+                )
+            except asyncio.CancelledError as exc:
+                response = getattr(exc, "response", None)
+                await self._finalize_cancelled_commit(
+                    ctx,
+                    affected_codes=affected_codes,
+                    api_calls=response.totalApiCalls if response is not None else 0,
+                    replaced_codes=response.successCount if response is not None else 0,
+                    replaced_rows=(
+                        response.totalRecordsStored if response is not None else 0
+                    ),
+                )
+                raise
+            except BaseException:
+                await sync_publish_helpers._discard_staged_stock_data_rows(ctx)
+                raise
+            api_calls = response.totalApiCalls
+            replaced_codes = response.successCount
+            replaced_rows = response.totalRecordsStored
+            if "Cancelled" in response.errors or ctx.cancelled.is_set():
+                return await self._finalize_cancelled_commit(
+                    ctx,
+                    affected_codes=affected_codes,
+                    api_calls=api_calls,
+                    replaced_codes=replaced_codes,
+                    replaced_rows=replaced_rows,
+                )
+            if response.failedCount or response.errors:
+                await sync_publish_helpers._discard_staged_stock_data_rows(ctx)
+                detail = "; ".join(response.errors) or "affected stock refresh failed"
+                raise AffectedStockRefreshError(detail)
+
+        if ctx.cancelled.is_set():
+            return await self._finalize_cancelled_commit(
+                ctx,
+                affected_codes=affected_codes,
+                api_calls=api_calls,
+                replaced_codes=replaced_codes,
+                replaced_rows=replaced_rows,
+            )
+
+        append_result = await sync_publish_helpers._flush_staged_stock_data_rows(
+            ctx,
+            stage=stage,
+            exclude_codes=affected_codes,
+        )
+        outcome = StockDataCommitOutcome(
+            api_calls=api_calls,
+            appended_rows=append_result.stats.inserted,
+            affected_codes=affected_codes,
+            replaced_codes=replaced_codes,
+            replaced_rows=replaced_rows,
+        )
+        self._committed = True
+        self._finalized = True
+        self._record_committed_outcome(ctx, outcome)
+
+        recompute = getattr(ctx, "recompute_affected_stock_codes", None)
+        if affected_codes and callable(recompute):
+            try:
+                await cast(
+                    Callable[[frozenset[str]], Awaitable[None]], recompute
+                )(affected_codes)
+            except Exception as exc:  # noqa: BLE001 - report committed-price follow-up failure
+                outcome = replace(
+                    outcome,
+                    recomputation_errors=(
+                        f"Affected stock recomputation failed: {exc}",
+                    ),
+                )
+        self.affected_codes.clear()
+        self.staged_rows = 0
+        return outcome
+
+    async def _finalize_cancelled_commit(
+        self,
+        ctx: Any,
+        *,
+        affected_codes: frozenset[str],
+        api_calls: int,
+        replaced_codes: int,
+        replaced_rows: int,
+    ) -> StockDataCommitOutcome:
+        outcome = StockDataCommitOutcome(
+            api_calls=api_calls,
+            affected_codes=affected_codes,
+            replaced_codes=replaced_codes,
+            replaced_rows=replaced_rows,
+            cancelled=True,
+        )
+        self._record_committed_outcome(ctx, outcome)
+        await sync_publish_helpers._discard_staged_stock_data_rows(ctx)
+        self._committed = replaced_codes > 0
+        self._finalized = True
+        self.affected_codes.clear()
+        self.staged_rows = 0
+        return outcome
+
+    def _record_committed_outcome(
+        self, ctx: Any, outcome: StockDataCommitOutcome
+    ) -> None:
+        ctx.stock_rows_appended = outcome.appended_rows
+        ctx.affected_stock_codes = len(outcome.affected_codes)
+        ctx.stock_codes_replaced = outcome.replaced_codes
+        ctx.stock_rows_replaced = outcome.replaced_rows
+        on_stock_commit = getattr(ctx, "on_stock_commit", None)
+        if callable(on_stock_commit):
+            on_stock_commit(
+                outcome.appended_rows,
+                len(outcome.affected_codes),
+                outcome.replaced_codes,
+                outcome.replaced_rows,
+            )
+
+    async def finalize(self, ctx: Any) -> None:
+        """Discard every uncommitted staged row exactly once."""
+        if self._finalized:
+            return
+        try:
+            await self.discard(ctx)
+        finally:
+            self._finalized = True
+
+
+async def _finish_stock_data_session(
+    session: StockDataIngestionSession, ctx: Any
+) -> None:
+    """Join cleanup even if another cancellation arrives while finalizing."""
+    cleanup = asyncio.create_task(session.finalize(ctx))
+    deferred_cancellation: asyncio.CancelledError | None = None
+    while not cleanup.done():
+        try:
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError as exc:
+            deferred_cancellation = exc
+    cleanup.result()
+    if deferred_cancellation is not None:
+        raise deferred_cancellation
+
+
+async def run_stock_data_ingestion_session(
+    ctx: Any,
+    operation: Callable[[StockDataIngestionSession], Awaitable[_T]],
+) -> _T:
+    """Own a shared staging-table session through success, error, or cancellation."""
+    session = StockDataIngestionSession()
+    try:
+        return await operation(session)
+    finally:
+        await _finish_stock_data_session(session, ctx)
+
+
 async def execute_stock_data_bulk_fetch(
     ctx: Any,
     *,
+    session: StockDataIngestionSession,
     decision: Any,
     target_dates: list[str],
     stage_name: str,
@@ -52,8 +292,6 @@ async def execute_stock_data_bulk_fetch(
         return StockDataBulkFetchOutcome()
 
     stocks_updated = 0
-    active_file_key: str | None = None
-    has_staged_file = False
     try:
         sync_fetch_planner._emit_fetch_execution_progress(
             ctx,
@@ -70,28 +308,18 @@ async def execute_stock_data_bulk_fetch(
             batch_rows: list[dict[str, Any]],
             _file_info: BulkFileInfo,
         ) -> None:
-            nonlocal active_file_key, has_staged_file, stocks_updated
-            file_key = _file_info.key if _file_info is not None else "<unknown-file>"
-            if has_staged_file and file_key != active_file_key:
-                mutation = await sync_bulk_ingest_helpers._flush_staged_stock_bulk_rows(ctx)
-                stocks_updated += mutation.mutated_rows
-                has_staged_file = False
-            await sync_bulk_ingest_helpers._ingest_stock_bulk_batch(
-                ctx,
-                batch_rows=batch_rows,
+            del _file_info
+            rows = _convert_stock_bulk_rows(
+                batch_rows,
                 target_dates=target_date_set,
             )
-            active_file_key = file_key
-            has_staged_file = True
+            await session.stage(ctx, rows)
 
         bulk_result = await sync_fetch_planner._get_bulk_service(ctx).fetch_with_plan(
             decision.plan,
             on_rows_batch=_consume_stock_bulk_rows,
             accumulate_rows=False,
         )
-        if has_staged_file:
-            mutation = await sync_bulk_ingest_helpers._flush_staged_stock_bulk_rows(ctx)
-            stocks_updated += mutation.mutated_rows
         sync_fetch_planner._log_sync_fetch_execution(
             stage=stage_name,
             endpoint="/equities/bars/daily",
@@ -107,7 +335,7 @@ async def execute_stock_data_bulk_fetch(
             bulk_result=bulk_result,
         )
     except Exception as e:
-        await sync_bulk_ingest_helpers._discard_staged_stock_bulk_rows(ctx)
+        await session.discard(ctx)
         sync_fetch_planner._raise_if_bulk_rate_limited(e, stage_name=stage_name)
         if ctx.enforce_bulk_for_stock_data and len(target_dates) > 0:
             sync_fetch_planner._raise_stock_bulk_required_error(
@@ -127,7 +355,12 @@ async def execute_stock_data_bulk_fetch(
         )
 
 
-async def execute_stock_data_rest_date(ctx: Any, *, date: str) -> StockDataRestDateOutcome:
+async def execute_stock_data_rest_date(
+    ctx: Any,
+    *,
+    session: StockDataIngestionSession,
+    date: str,
+) -> StockDataRestDateOutcome:
     payload, page_calls = await get_paginated_rows_with_call_count(
         ctx.client,
         "/equities/bars/daily",
@@ -136,6 +369,12 @@ async def execute_stock_data_rest_date(ctx: Any, *, date: str) -> StockDataRestD
 
     async def _prefetched_stock_rows() -> list[dict[str, Any]]:
         return payload
+
+    async def _stage_stock_rows(
+        rows: list[dict[str, Any]],
+    ) -> SemanticDeltaResult:
+        await session.stage(ctx, rows)
+        return SemanticDeltaResult.empty(input_count=len(rows))
 
     try:
         batch = await run_ingestion_batch(
@@ -148,7 +387,7 @@ async def execute_stock_data_rest_date(ctx: Any, *, date: str) -> StockDataRestD
                 dedupe_keys=("code", "date"),
                 stage="stock_data",
             ),
-            publish=lambda rows: sync_publish_helpers._publish_stock_data_rows(ctx, rows),
+            publish=_stage_stock_rows,
         )
     except Exception as exc:
         raise StockDataRestDateIngestionError(exc, api_calls=page_calls) from exc

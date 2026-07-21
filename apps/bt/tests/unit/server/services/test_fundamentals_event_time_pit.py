@@ -110,7 +110,7 @@ def _statements() -> pd.DataFrame:
 
 
 def _pit_snapshot() -> FundamentalsPitSnapshot:
-    basis_id = "event-pit-v1:7203:2024-01-01"
+    provider_as_of = "2024-06-28T16:30:00+09:00"
     valuation = (
         {
             "code": "7203",
@@ -128,7 +128,8 @@ def _pit_snapshot() -> FundamentalsPitSnapshot:
             "forward_eps_disclosed_date": "2024-05-10",
             "forward_eps_source": "fy",
             "price_basis_date": "2024-06-28",
-            "basis_version": basis_id,
+            "fundamentals_adjustment_basis_date": "2024-06-28",
+            "provider_as_of": provider_as_of,
         },
         {
             "code": "7203",
@@ -146,7 +147,8 @@ def _pit_snapshot() -> FundamentalsPitSnapshot:
             "forward_eps_disclosed_date": "2024-05-10",
             "forward_eps_source": "fy",
             "price_basis_date": "2024-06-28",
-            "basis_version": basis_id,
+            "fundamentals_adjustment_basis_date": "2024-06-28",
+            "provider_as_of": provider_as_of,
         },
     )
     return FundamentalsPitSnapshot(
@@ -154,9 +156,10 @@ def _pit_snapshot() -> FundamentalsPitSnapshot:
         knowledge_cutoff_date=date(2024, 6, 30),
         effective_market_date=date(2024, 6, 28),
         stock_master_snapshot_date=date(2024, 6, 28),
-        basis_id=basis_id,
-        adjustment_through_date=date(2024, 6, 28),
-        materialized_through_date=date(2024, 6, 28),
+        fundamentals_adjustment_basis_date=date(2024, 6, 28),
+        provider_as_of=provider_as_of,
+        provider_coverage_start=date(2024, 1, 1),
+        provider_coverage_end=date(2024, 6, 28),
         stock_info=_stock_info(),
         statements=_statements(),
         adjusted_statement_metrics=(
@@ -166,7 +169,7 @@ def _pit_snapshot() -> FundamentalsPitSnapshot:
                 "adjusted_eps": 45.0,
                 "adjusted_bps": 450.0,
                 "adjusted_forecast_eps": 52.5,
-                "basis_version": basis_id,
+                "fundamentals_adjustment_basis_date": "2024-06-28",
             },
             {
                 "code": "7203",
@@ -174,7 +177,7 @@ def _pit_snapshot() -> FundamentalsPitSnapshot:
                 "adjusted_eps": 50.0,
                 "adjusted_bps": 500.0,
                 "adjusted_forecast_eps": 60.0,
-                "basis_version": basis_id,
+                "fundamentals_adjustment_basis_date": "2024-06-28",
             },
         ),
         daily_valuation=valuation,
@@ -202,8 +205,8 @@ def test_service_uses_only_one_pit_snapshot() -> None:
         ("get_fundamentals_pit_snapshot", "7203", date(2024, 6, 30))
     ]
     assert result.asOfDate == "2024-06-28"
-    assert result.priceBasisDate == "2024-06-28"
-    assert result.valuationBasisVersion == "event-pit-v1:7203:2024-01-01"
+    assert result.fundamentalsAdjustmentBasisDate == "2024-06-28"
+    assert result.providerAsOf == "2024-06-28T16:30:00+09:00"
     assert result.provenance.reference_date == "2024-06-30"
 
 

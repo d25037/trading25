@@ -1,8 +1,6 @@
 import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
-  AdjustedMetricsMaterializeJobResponse,
   CancelJobResponse,
-  CreateAdjustedMetricsMaterializeJobResponse,
   CreateSyncJobResponse,
   MarketRefreshResponse,
   MarketStatsResponse,
@@ -22,8 +20,6 @@ export const syncKeys = {
   active: () => ['sync-job-active'] as const,
   job: (jobId: string | null) => ['sync-job', jobId] as const,
   fetchDetails: (jobId: string | null) => ['sync-job-fetch-details', jobId] as const,
-  materializeActive: () => ['adjusted-metrics-materialize-job-active'] as const,
-  materializeJob: (jobId: string | null) => ['adjusted-metrics-materialize-job', jobId] as const,
   stats: (isSyncRunning: boolean) => ['db-stats', isSyncRunning ? 'running' : 'idle'] as const,
   validation: (isSyncRunning: boolean) => ['db-validation', isSyncRunning ? 'running' : 'idle'] as const,
 };
@@ -77,24 +73,12 @@ function startSync(request: StartSyncInput): Promise<CreateSyncJobResponse> {
   return apiPost<CreateSyncJobResponse>('/api/db/sync', wireRequest);
 }
 
-function startAdjustedMetricsMaterialize(): Promise<CreateAdjustedMetricsMaterializeJobResponse> {
-  return apiPost<CreateAdjustedMetricsMaterializeJobResponse>('/api/db/adjusted-metrics/materialize', {});
-}
-
 function fetchJobStatus(jobId: string): Promise<SyncJobResponse> {
   return apiGet<SyncJobResponse>(`/api/db/sync/jobs/${jobId}`);
 }
 
-function fetchAdjustedMetricsMaterializeJobStatus(jobId: string): Promise<AdjustedMetricsMaterializeJobResponse> {
-  return apiGet<AdjustedMetricsMaterializeJobResponse>(`/api/db/adjusted-metrics/materialize/jobs/${jobId}`);
-}
-
 function fetchActiveJobStatus(): Promise<SyncJobResponse | null> {
   return apiGet<SyncJobResponse | null>('/api/db/sync/jobs/active');
-}
-
-function fetchActiveAdjustedMetricsMaterializeJobStatus(): Promise<AdjustedMetricsMaterializeJobResponse | null> {
-  return apiGet<AdjustedMetricsMaterializeJobResponse | null>('/api/db/adjusted-metrics/materialize/jobs/active');
 }
 
 function fetchSyncFetchDetails(jobId: string): Promise<SyncFetchDetailsResponse> {
@@ -250,18 +234,6 @@ export function useStartSync() {
   });
 }
 
-export function useStartAdjustedMetricsMaterialize() {
-  return useMutation({
-    mutationFn: startAdjustedMetricsMaterialize,
-    onSuccess: (data) => {
-      logger.debug('Adjusted metrics materialization job started', { jobId: data.jobId });
-    },
-    onError: (error) => {
-      logger.error('Failed to start adjusted metrics materialization', { error: error.message });
-    },
-  });
-}
-
 export function useSyncSSE(jobId: string | null): SyncSSEState {
   const queryClient = useQueryClient();
   const streamUrl = jobId ? `/api/db/sync/jobs/${encodeURIComponent(jobId)}/stream` : null;
@@ -338,22 +310,6 @@ export function useSyncJobStatus(jobId: string | null, sseConnected = false) {
   });
 }
 
-export function useAdjustedMetricsMaterializeJobStatus(jobId: string | null) {
-  return useQuery({
-    queryKey: syncKeys.materializeJob(jobId),
-    queryFn: () => {
-      if (!jobId) throw new Error('Job ID required');
-      logger.debug('Polling adjusted metrics materialization job status', { jobId });
-      return fetchAdjustedMetricsMaterializeJobStatus(jobId);
-    },
-    enabled: !!jobId,
-    refetchInterval: (query) => {
-      return resolveSyncJobPollInterval(query.state.data?.status);
-    },
-    staleTime: 0,
-  });
-}
-
 export function useSyncFetchDetails(jobId: string | null, sseConnected = false) {
   return useQuery({
     queryKey: syncKeys.fetchDetails(jobId),
@@ -374,18 +330,6 @@ export function useActiveSyncJob(enabled = true) {
   return useQuery({
     queryKey: syncKeys.active(),
     queryFn: fetchActiveJobStatus,
-    enabled,
-    staleTime: 0,
-    refetchInterval: (query) => {
-      return resolveActiveSyncJobPollInterval(query.state.data?.status);
-    },
-  });
-}
-
-export function useActiveAdjustedMetricsMaterializeJob(enabled = true) {
-  return useQuery({
-    queryKey: syncKeys.materializeActive(),
-    queryFn: fetchActiveAdjustedMetricsMaterializeJobStatus,
     enabled,
     staleTime: 0,
     refetchInterval: (query) => {

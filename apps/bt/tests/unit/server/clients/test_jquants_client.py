@@ -232,7 +232,7 @@ class TestGetPaginated:
     @respx.mock
     @pytest.mark.asyncio
     async def test_max_pages_limit(self, client):
-        """max_pages による制限"""
+        """terminal page 前の max_pages 到達は partial rows を返さない。"""
         route = respx.get("https://api.jquants.com/v2/equities/master")
         route.side_effect = [
             httpx.Response(200, json={
@@ -241,8 +241,8 @@ class TestGetPaginated:
             })
             for i in range(5)
         ]
-        result = await client.get_paginated("/equities/master", max_pages=2)
-        assert len(result) == 2
+        with pytest.raises(JQuantsApiError, match="pagination incomplete"):
+            await client.get_paginated("/equities/master", max_pages=2)
         await client.close()
 
     @respx.mock

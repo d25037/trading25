@@ -8,13 +8,11 @@ metadata / reference data（stocks, sync_metadata, index_master）と
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 import os
 import threading
 from pathlib import Path
 from typing import Any, cast
 
-from src.infrastructure.db.market import adjustment_basis_queries as _adjustment_basis_queries
 from src.infrastructure.db.market import metadata_writers as _metadata_writers
 from src.infrastructure.db.market import stock_master_writers as _stock_master_writers
 from src.infrastructure.db.market import technical_metric_writers as _technical_metric_writers
@@ -23,10 +21,11 @@ from src.infrastructure.db.market.duckdb_connection import (
     connect_market_duckdb,
 )
 from src.infrastructure.db.market.market_schema import (
+    IncompatibleMarketSchemaError,
     INCOMPATIBLE_MARKET_SCHEMA_VERSION,
-    LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
     MARKET_SCHEMA_VERSION,
     METADATA_KEYS,
+    PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
     STATS_TABLES as _STATS_TABLES,
     ensure_market_schema,
 )
@@ -39,22 +38,16 @@ from src.infrastructure.db.market import stock_master_queries as _stock_master_q
 from src.infrastructure.db.market.valuation_queries import (
     get_adjusted_metrics_source_diagnostics as _get_adjusted_metrics_source_diagnostics,
     get_adjusted_metrics_snapshot as _get_adjusted_metrics_snapshot,
+    get_provider_vintage_snapshot as _get_provider_vintage_snapshot,
     get_adjusted_statement_metrics as _get_adjusted_statement_metrics,
-    get_adjusted_statement_metrics_for_basis as _get_adjusted_statement_metrics_for_basis,
     get_daily_valuation as _get_daily_valuation,
-    get_daily_valuation_for_basis as _get_daily_valuation_for_basis,
     get_daily_valuation_for_codes as _get_daily_valuation_for_codes,
 )
 from src.infrastructure.db.market.valuation_writers import (
-    AdjustedBasisMaterializationPlan,
-    AdjustedBasisPublishResult,
-    BasisSnapshot,
-    AdjustedMaterializationSource,
-    AdjustedMarketSessions,
-    load_adjusted_materialization_source as _load_adjusted_materialization_source,
-    load_adjusted_market_sessions as _load_adjusted_market_sessions,
-    load_basis_snapshots as _load_basis_snapshots,
-    publish_adjusted_basis_materialization as _publish_adjusted_basis_materialization,
+    CurrentBasisFundamentalsSource,
+    AdjustedRelationPublishResult,
+    load_current_basis_fundamentals_source as _load_current_basis_fundamentals_source,
+    publish_current_basis_statement_metrics as _publish_current_basis_statement_metrics,
 )
 from src.shared.utils.market_code_alias import expand_market_codes
 
@@ -69,10 +62,11 @@ _FUNDAMENTALS_TARGET_MARKET_CODES: tuple[str, ...] = (
 )
 
 __all__ = [
+    "IncompatibleMarketSchemaError",
     "INCOMPATIBLE_MARKET_SCHEMA_VERSION",
-    "LOCAL_STOCK_PRICE_ADJUSTMENT_MODE",
     "MARKET_SCHEMA_VERSION",
     "METADATA_KEYS",
+    "PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE",
     "MarketDb",
 ]
 
@@ -288,9 +282,20 @@ class MarketDb:
             return False
 
         adjustment_mode = self.get_stock_price_adjustment_mode()
-        if adjustment_mode != LOCAL_STOCK_PRICE_ADJUSTMENT_MODE:
+        if adjustment_mode != PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE:
             return True
         return raw_count <= 0 and stock_count > 0
+
+    def is_reset_before_sync_eligible(self) -> bool:
+        """Return whether this root may be reset as Market v5 maintenance."""
+        validation = self.validate_schema()
+        return (
+            self.get_market_schema_version() == MARKET_SCHEMA_VERSION
+            and self.get_stock_price_adjustment_mode()
+            == PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
+            and validation.get("valid") is True
+            and not self.is_legacy_stock_price_snapshot()
+        )
 
     def get_sync_metadata(self, key: str) -> str | None:
         """sync_metadata からキーの値を取得。"""
@@ -301,62 +306,6 @@ class MarketDb:
             [key],
         )
         return str(row[0]) if row and row[0] is not None else None
-
-    def load_raw_adjustment_points(
-        self,
-        codes: list[str] | None = None,
-    ) -> list[dict[str, Any]]:
-        """Load normalized raw adjustment facts from ``stock_data_raw`` only."""
-        return _adjustment_basis_queries.load_raw_adjustment_points(
-            self._fetchall_dicts,
-            codes,
-        )
-
-    def list_adjustment_materialization_codes(self) -> list[str]:
-        """Enumerate normalized raw/catalog codes without loading raw rows."""
-        return _adjustment_basis_queries.list_adjustment_materialization_codes(
-            self._fetchall
-        )
-
-    def get_ready_adjustment_basis(
-        self,
-        code: str,
-        effective_market_date: str,
-    ) -> dict[str, Any] | None:
-        """Resolve a ready basis by containing interval and coverage frontier."""
-        return _adjustment_basis_queries.get_ready_adjustment_basis(
-            self._fetchall_dicts,
-            code,
-            effective_market_date,
-        )
-
-    def get_adjustment_basis_segments(
-        self,
-        code: str,
-        basis_id: str,
-    ) -> list[dict[str, Any]]:
-        return _adjustment_basis_queries.get_adjustment_basis_segments(
-            self._fetchall_dicts,
-            code,
-            basis_id,
-        )
-
-    def get_basis_adjusted_stock_data(
-        self,
-        code: str,
-        basis_id: str,
-        *,
-        start: str | None = None,
-        end: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """Project basis-adjusted OHLCV exclusively from raw prices and segments."""
-        return _adjustment_basis_queries.get_basis_adjusted_stock_data(
-            self._fetchall_dicts,
-            code,
-            basis_id,
-            start=start,
-            end=end,
-        )
 
     def get_latest_trading_date(self) -> str | None:
         """topix_data の最新取引日を取得。"""
@@ -385,21 +334,6 @@ class MarketDb:
             self._table_exists, self._fetchall_dicts, code, as_of_date
         )
 
-    def get_adjusted_statement_metrics_for_basis(
-        self,
-        code: str,
-        *,
-        basis_id: str,
-        as_of_date: str | None = None,
-    ) -> list[dict[str, Any]]:
-        return _get_adjusted_statement_metrics_for_basis(
-            self._table_exists,
-            self._fetchall_dicts,
-            code,
-            basis_id=basis_id,
-            as_of_date=as_of_date,
-        )
-
     def get_daily_valuation(
         self,
         code: str,
@@ -410,23 +344,6 @@ class MarketDb:
         """Canonical daily valuation metrics を code/date range で取得。"""
         return _get_daily_valuation(
             self._table_exists, self._fetchall_dicts, code, start, end
-        )
-
-    def get_daily_valuation_for_basis(
-        self,
-        code: str,
-        *,
-        basis_id: str,
-        start: str | None = None,
-        end: str | None = None,
-    ) -> list[dict[str, Any]]:
-        return _get_daily_valuation_for_basis(
-            self._table_exists,
-            self._fetchall_dicts,
-            code,
-            basis_id=basis_id,
-            start=start,
-            end=end,
         )
 
     def get_daily_valuation_for_codes(
@@ -454,6 +371,10 @@ class MarketDb:
                 list(params) if params is not None else None,
             ),
         )
+
+    def get_provider_vintage_snapshot(self) -> dict[str, Any]:
+        """Recompute provider vintage from per-code publication ownership."""
+        return _get_provider_vintage_snapshot(self._table_exists, self._fetchall_dicts)
 
     def get_topix_dates(
         self,
@@ -794,27 +715,34 @@ class MarketDb:
             self._conn, self._lock, snapshot_date
         )
 
-    def load_basis_snapshots(self, code: str) -> dict[str, BasisSnapshot]:
-        """Load exact persisted basis graphs for differential planning."""
-        return _load_basis_snapshots(self._conn, self._lock, code)
+    def load_current_basis_fundamentals_source(
+        self, code: str
+    ) -> CurrentBasisFundamentalsSource | None:
+        return _load_current_basis_fundamentals_source(self._conn, self._lock, code)
 
-    def load_adjusted_materialization_source(
+    def list_current_basis_recompute_pending_codes(self) -> list[str]:
+        return [
+            str(row[0])
+            for row in self._fetchall(
+                "SELECT code FROM current_basis_recompute_pending ORDER BY code"
+            )
+        ]
+
+    def publish_current_basis_statement_metrics(
         self,
         code: str,
+        rows: list[dict[str, Any]],
         *,
-        market_sessions: Sequence[str] | None = None,
-        market_sessions_fingerprint: str | None = None,
-    ) -> AdjustedMaterializationSource:
-        return _load_adjusted_materialization_source(
+        expected_source_fingerprint: str,
+    ) -> AdjustedRelationPublishResult:
+        self._assert_writable()
+        return _publish_current_basis_statement_metrics(
             self._conn,
             self._lock,
             code,
-            market_sessions=market_sessions,
-            market_sessions_fingerprint=market_sessions_fingerprint,
+            rows,
+            expected_source_fingerprint=expected_source_fingerprint,
         )
-
-    def load_adjusted_market_sessions(self) -> AdjustedMarketSessions:
-        return _load_adjusted_market_sessions(self._conn, self._lock)
 
     def rebuild_daily_technical_metrics_from_stock_data(
         self,
@@ -826,18 +754,6 @@ class MarketDb:
             self._lock,
             self._table_exists,
         )
-
-    def publish_adjusted_basis_materialization(
-        self, plan: AdjustedBasisMaterializationPlan
-    ) -> AdjustedBasisPublishResult:
-        """Publish lineage, adjusted statements, and valuation atomically."""
-        self._assert_writable()
-        return self._commit_basis_publish(plan)
-
-    def _commit_basis_publish(
-        self, plan: AdjustedBasisMaterializationPlan
-    ) -> AdjustedBasisPublishResult:
-        return _publish_adjusted_basis_materialization(self._conn, self._lock, plan)
 
     def set_sync_metadata(self, key: str, value: str) -> None:
         """sync_metadata にキーバリューを設定（upsert）。"""
@@ -1122,12 +1038,12 @@ class MarketDb:
         return int(row[0] or 0) if row else 0
 
     def get_stocks_needing_refresh(self, limit: int | None = 20) -> list[str]:
-        """local projection 移行後は常に空を返す。"""
+        """Provider-adjusted price migration後は常に空を返す。"""
         del limit
         return []
 
     def get_stocks_needing_refresh_count(self) -> int:
-        """local projection 移行後は常に 0 を返す。"""
+        """Provider-adjusted price migration後は常に 0 を返す。"""
         return 0
 
     def get_stock_data_unique_date_count(self) -> int:

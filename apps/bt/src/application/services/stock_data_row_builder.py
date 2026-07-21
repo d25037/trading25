@@ -8,7 +8,7 @@ J-Quants の日足レスポンスを DuckDB stock_data_raw 行へ安全に変換
 from __future__ import annotations
 
 import math
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
@@ -26,7 +26,13 @@ def _coerce_date(value: Any) -> str | None:
     if value is None:
         return None
     text = str(value).strip()
-    return text if text else None
+    if not text:
+        return None
+    try:
+        parsed = date.fromisoformat(text)
+    except ValueError:
+        return None
+    return text if parsed.isoformat() == text else None
 
 
 def _coerce_float(value: Any) -> float | None:
@@ -51,9 +57,36 @@ def _coerce_float(value: Any) -> float | None:
 
 def _coerce_int(value: Any) -> int | None:
     f = _coerce_float(value)
-    if f is None:
+    if f is None or not f.is_integer():
         return None
     return int(f)
+
+
+def is_provider_no_trade_row(quote: dict[str, Any]) -> bool:
+    """Return whether the provider emitted an ordinary all-null daily quote."""
+    prices_are_null = all(
+        quote.get(key) is None
+        for key in (
+            "O",
+            "H",
+            "L",
+            "C",
+            "Vo",
+            "Va",
+            "AdjO",
+            "AdjH",
+            "AdjL",
+            "AdjC",
+            "AdjVo",
+        )
+    )
+    if not prices_are_null:
+        return False
+
+    factor_value = quote.get("AdjFactor")
+    if factor_value is None:
+        return True
+    return _coerce_float(factor_value) == 1.0
 
 
 def build_stock_data_row(
@@ -63,9 +96,11 @@ def build_stock_data_row(
     created_at: str | None = None,
 ) -> dict[str, Any] | None:
     """J-Quants 日足1件を stock_data_raw 行へ変換（欠損値がある場合は None）"""
-    code = normalized_code or normalize_stock_code(quote.get("Code", ""))
-    if not code:
+    payload_code = normalize_stock_code(quote.get("Code", ""))
+    requested_code = normalize_stock_code(normalized_code or "")
+    if not payload_code or (requested_code and payload_code != requested_code):
         return None
+    code = requested_code or payload_code
 
     date = _coerce_date(quote.get("Date"))
     if date is None:
@@ -76,11 +111,32 @@ def build_stock_data_row(
     low_value = _coerce_float(_pick_first(quote, "L"))
     close_value = _coerce_float(_pick_first(quote, "C"))
     volume_value = _coerce_int(_pick_first(quote, "Vo"))
-
-    if any(v is None for v in (open_value, high_value, low_value, close_value, volume_value)):
-        return None
-
+    turnover_value = _coerce_float(_pick_first(quote, "Va"))
     adjustment_factor = _coerce_float(quote.get("AdjFactor"))
+    adjusted_open = _coerce_float(quote.get("AdjO"))
+    adjusted_high = _coerce_float(quote.get("AdjH"))
+    adjusted_low = _coerce_float(quote.get("AdjL"))
+    adjusted_close = _coerce_float(quote.get("AdjC"))
+    adjusted_volume = _coerce_int(quote.get("AdjVo"))
+
+    required_values = (
+        open_value,
+        high_value,
+        low_value,
+        close_value,
+        volume_value,
+        turnover_value,
+        adjustment_factor,
+        adjusted_open,
+        adjusted_high,
+        adjusted_low,
+        adjusted_close,
+        adjusted_volume,
+    )
+    if any(value is None for value in required_values):
+        return None
+    if adjustment_factor is None or adjustment_factor <= 0:
+        return None
 
     return {
         "code": code,
@@ -90,6 +146,12 @@ def build_stock_data_row(
         "low": low_value,
         "close": close_value,
         "volume": volume_value,
+        "turnover_value": turnover_value,
         "adjustment_factor": adjustment_factor,
+        "adjusted_open": adjusted_open,
+        "adjusted_high": adjusted_high,
+        "adjusted_low": adjusted_low,
+        "adjusted_close": adjusted_close,
+        "adjusted_volume": adjusted_volume,
         "created_at": created_at or datetime.now(UTC).isoformat(),
     }

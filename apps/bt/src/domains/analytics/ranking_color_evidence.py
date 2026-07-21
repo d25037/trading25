@@ -47,12 +47,17 @@ DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
 PANEL_FEATURE_WARMUP_CALENDAR_DAYS = 365
 _REQUIRED_TABLES: tuple[str, ...] = (
     "stock_data_raw",
-    "stock_adjustment_bases",
-    "stock_adjustment_basis_segments",
+    "stock_data",
+    "stock_provider_windows",
+    "stock_adjustment_events",
+    "current_basis_recompute_pending",
+    "current_basis_fundamentals_state",
     "stock_master_daily",
     "topix_data",
     "indices_data",
     "daily_valuation",
+    "statements",
+    "statement_metrics_adjusted",
 )
 _NIKKEI_SYNTHETIC_INDEX_CODE = "N225_UNDERPX"
 _VALUATION_FEATURES: tuple[str, ...] = (

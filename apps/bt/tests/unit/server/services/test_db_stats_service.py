@@ -15,6 +15,7 @@ from src.shared.contracts.market_maintenance import (
 from src.infrastructure.db.market.market_maintenance_evidence import (
     write_market_maintenance_evidence,
 )
+from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 
 
@@ -23,9 +24,17 @@ class DummyMarketDb:
         self,
         fundamentals_target_codes: set[str] | None = None,
         metadata: dict[str, str] | None = None,
+        *,
+        reset_before_sync_eligible: bool = False,
+        schema_version: int = 3,
     ) -> None:
         self._fundamentals_target_codes = fundamentals_target_codes or set()
-        self._metadata = metadata or {"last_sync_date": "2026-03-01T00:00:00+00:00"}
+        self._metadata = metadata or {
+            "last_sync_date": "2026-03-01T00:00:00+00:00",
+            METADATA_KEYS["PROVIDER_PLAN"]: "standard",
+        }
+        self._reset_before_sync_eligible = reset_before_sync_eligible
+        self._schema_version = schema_version
 
     def is_initialized(self) -> bool:
         return True
@@ -37,10 +46,13 @@ class DummyMarketDb:
         return {"stocks": 2, "index_master": 1}
 
     def get_market_schema_version(self) -> int | None:
-        return 3
+        return self._schema_version
 
     def is_market_schema_current(self) -> bool:
-        return True
+        return self._schema_version == 5
+
+    def is_reset_before_sync_eligible(self) -> bool:
+        return self._reset_before_sync_eligible
 
     def get_stock_master_coverage(self) -> dict[str, Any]:
         return {
@@ -74,18 +86,58 @@ class DummyMarketDb:
 
     def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
         return {
-            "statementRows": 4,
+            "currentBasisStatementCount": 4,
+            "currentBasisStateCount": 2,
+            "invalidCurrentBasisStateCount": 0,
             "dailyValuationRows": 10,
             "dailyValuationLatestDate": "2026-02-27",
             "dailyValuationLatestCodeCount": 5,
             "dailyValuationPreviousCodeCount": 5,
-            "priceBasisDate": "2026-02-27",
-            "basisVersion": "adjusted-v1:2026-02-27",
-            "basisVersionCount": 1,
+            "fundamentalsAdjustmentBasisDate": "2026-02-27",
+            "providerWindowCount": 2,
+            "readyProviderWindowCount": 2,
+            "providerAsOf": "2026-02-27",
+            "effectiveCoverageStart": "2016-02-29",
+            "effectiveCoverageEnd": "2026-02-27",
+            "providerSourceFingerprint": "a" * 64,
+            "providerWindowCoherent": True,
+            "providerWindowFingerprintCount": 2,
+            "adjustmentEventCount": 3,
         }
 
     def get_adjusted_metrics_source_diagnostics(self) -> dict[str, int]:
         return {}
+
+    def get_provider_vintage_snapshot(self) -> dict[str, Any]:
+        snapshot = {
+            "providerPlan": "standard",
+            "providerAsOf": "2026-02-27",
+            "providerAsOfMin": "2026-02-27",
+            "providerAsOfMax": "2026-02-27",
+            "effectiveCoverageStart": "2016-02-29",
+            "effectiveCoverageEnd": "2026-02-27",
+            "providerSourceFingerprint": "a" * 64,
+            "providerWindowCoherent": True,
+            "providerWindowFingerprintCount": 2,
+        }
+        snapshot.update({
+            key: value
+            for key, value in self.get_adjusted_metrics_snapshot().items()
+            if key
+            in {
+                "providerAsOf",
+                "providerPlan",
+                "effectiveCoverageStart",
+                "effectiveCoverageEnd",
+                "providerSourceFingerprint",
+                "providerWindowCoherent",
+                "providerWindowFingerprintCount",
+            }
+        })
+        return snapshot
+
+    def get_adjustment_events_count(self) -> int:
+        return 3
 
 
 class DummyStore:
@@ -110,6 +162,27 @@ class DummyStore:
     def get_storage_stats(self) -> Any:
         self.storage_stats_calls += 1
         return self._storage_stats
+
+
+@pytest.mark.parametrize(
+    ("schema_version", "eligible"),
+    [(3, False), (5, True)],
+)
+def test_get_market_stats_exposes_reset_before_sync_eligibility(
+    schema_version: int,
+    eligible: bool,
+) -> None:
+    result = db_stats_service.get_market_stats(
+        market_db=DummyMarketDb(
+            reset_before_sync_eligible=eligible,
+            schema_version=schema_version,
+        ),
+        time_series_store=DummyStore(
+            TimeSeriesInspection(source="duckdb-parquet")
+        ),
+    )
+
+    assert result.schema_.resetBeforeSyncEligible is eligible
 
 
 def test_resolve_duckdb_size_bytes_returns_zero_when_path_is_missing() -> None:
@@ -263,15 +336,17 @@ def test_get_market_stats_handles_empty_ranges_and_fundamentals_target_codes() -
     assert result.margin.dateRange is None
     assert result.fundamentals.listedMarketCoverage.coverageRatio == 0
     assert result.fundamentals.listedMarketCoverage.issuerAliasCoveredCount == 0
-    assert result.adjustedMetrics.statementRows == 4
-    assert result.adjustedMetrics.dailyValuationRows == 10
-    assert result.adjustedMetrics.dailyValuationLatestDate == "2026-02-27"
-    assert result.adjustedMetrics.dailyValuationLatestCodeCount == 5
-    assert result.adjustedMetrics.dailyValuationPreviousCodeCount == 5
-    assert result.adjustedMetrics.priceBasisDate == "2026-02-27"
-    assert result.adjustedMetrics.basisVersion == "adjusted-v1:2026-02-27"
-    assert result.adjustedMetrics.basisVersionCount == 1
-    assert result.adjustedMetrics.status == "ready"
+    payload = result.model_dump(by_alias=True)
+    assert "adjustedMetrics" not in payload
+    assert result.providerVintage.currentBasisStatementCount == 4
+    assert result.providerVintage.currentBasisStateCount == 2
+    assert result.providerVintage.invalidCurrentBasisStateCount == 0
+    assert result.providerVintage.fundamentalsAdjustmentBasisDate == "2026-02-27"
+    assert result.providerVintage.providerWindowCount == 2
+    assert result.providerVintage.readyProviderWindowCount == 2
+    assert result.providerVintage.adjustmentEventCount == 3
+    assert result.providerVintage.status == "ready"
+    assert result.providerVintage.recoveryStage is None
     assert result.maintenance.evidenceStatus is MaintenanceEvidenceStatus.NEVER_RUN
 
 
@@ -306,20 +381,20 @@ def test_get_market_stats_reads_latest_failed_maintenance_sidecar(
     assert result.intradayFreshness.status == "idle"
 
 
-def test_get_market_stats_treats_adjusted_metrics_as_ready_when_valuation_coverage_is_current() -> (
+def test_get_market_stats_treats_provider_vintage_as_ready_when_current_basis_is_current() -> (
     None
 ):
     class CurrentCoverageMarketDb(DummyMarketDb):
         def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
             return {
-                "statementRows": 4,
+                "currentBasisStatementCount": 4,
                 "dailyValuationRows": 10,
                 "dailyValuationLatestDate": "2026-06-08",
                 "dailyValuationLatestCodeCount": 5,
                 "dailyValuationPreviousCodeCount": 5,
-                "priceBasisDate": "2026-06-05",
-                "basisVersion": "adjusted-v1:2026-06-05",
-                "basisVersionCount": 1,
+                "fundamentalsAdjustmentBasisDate": "2026-06-05",
+                "providerWindowCount": 2,
+                "readyProviderWindowCount": 2,
             }
 
     result = db_stats_service.get_market_stats(
@@ -336,25 +411,25 @@ def test_get_market_stats_treats_adjusted_metrics_as_ready_when_valuation_covera
         ),
     )
 
-    assert result.adjustedMetrics.status == "ready"
-    assert result.adjustedMetrics.dailyValuationLatestDate == "2026-06-08"
-    assert result.adjustedMetrics.priceBasisDate == "2026-06-05"
+    assert result.providerVintage.status == "ready"
+    assert result.providerVintage.fundamentalsAdjustmentBasisDate == "2026-06-05"
 
 
-def test_get_market_stats_marks_adjusted_metrics_stale_when_latest_valuation_coverage_is_sparse() -> (
+def test_get_market_stats_marks_provider_vintage_invalid_on_adjusted_price_mismatch() -> (
     None
 ):
     class SparseCoverageMarketDb(DummyMarketDb):
         def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
             return {
-                "statementRows": 4,
+                "currentBasisStatementCount": 4,
                 "dailyValuationRows": 10,
                 "dailyValuationLatestDate": "2026-06-08",
                 "dailyValuationLatestCodeCount": 9,
                 "dailyValuationPreviousCodeCount": 3691,
-                "priceBasisDate": "2026-06-05",
-                "basisVersion": "adjusted-v1:2026-06-05",
-                "basisVersionCount": 1,
+                "fundamentalsAdjustmentBasisDate": "2026-06-05",
+                "providerWindowCount": 2,
+                "readyProviderWindowCount": 2,
+                "providerAdjustedMismatchCount": 1,
             }
 
     result = db_stats_service.get_market_stats(
@@ -371,29 +446,27 @@ def test_get_market_stats_marks_adjusted_metrics_stale_when_latest_valuation_cov
         ),
     )
 
-    assert result.adjustedMetrics.status == "stale"
-    assert result.adjustedMetrics.dailyValuationLatestCodeCount == 9
-    assert result.adjustedMetrics.dailyValuationPreviousCodeCount == 3691
+    assert result.providerVintage.status == "invalid"
+    assert result.providerVintage.providerAdjustedMismatchCount == 1
+    assert result.providerVintage.recoveryStage == "market_db_sync"
 
 
-def test_get_market_stats_reports_retained_ready_basis_versions() -> None:
-    class RetainedBasisMarketDb(DummyMarketDb):
+def test_get_market_stats_reports_provider_window_readiness() -> None:
+    class ProviderWindowMarketDb(DummyMarketDb):
         def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
             return {
-                "statementRows": 4,
+                "currentBasisStatementCount": 4,
                 "dailyValuationRows": 10,
                 "dailyValuationLatestDate": "2026-02-27",
                 "dailyValuationLatestCodeCount": 5,
                 "dailyValuationPreviousCodeCount": 5,
-                "priceBasisDate": "2026-02-27",
-                "basisVersion": "adjusted-v1:2026-02-27",
-                "basisVersionCount": 3,
-                "retainedBasisCount": 3,
-                "readyBasisCount": 3,
+                "fundamentalsAdjustmentBasisDate": "2026-02-27",
+                "providerWindowCount": 3,
+                "readyProviderWindowCount": 3,
             }
 
     result = db_stats_service.get_market_stats(
-        market_db=RetainedBasisMarketDb(),
+        market_db=ProviderWindowMarketDb(),
         time_series_store=DummyStore(
             TimeSeriesInspection(
                 source="duckdb-parquet",
@@ -406,10 +479,123 @@ def test_get_market_stats_reports_retained_ready_basis_versions() -> None:
         ),
     )
 
-    assert result.adjustedMetrics.status == "ready"
-    assert result.adjustedMetrics.basisVersionCount == 3
-    assert result.adjustedMetrics.retainedBasisCount == 3
-    assert result.adjustedMetrics.readyBasisCount == 3
+    assert result.providerVintage.status == "ready"
+    assert result.providerVintage.providerWindowCount == 3
+    assert result.providerVintage.readyProviderWindowCount == 3
+
+
+def test_get_market_stats_exposes_provider_vintage_metadata_and_pending_recovery() -> None:
+    class PendingProviderMarketDb(DummyMarketDb):
+        def __init__(self) -> None:
+            super().__init__(
+                metadata={
+                    METADATA_KEYS["PROVIDER_PLAN"]: "standard",
+                    METADATA_KEYS["PROVIDER_AS_OF"]: "2026-07-20",
+                    METADATA_KEYS["PROVIDER_COVERAGE_START"]: "2016-07-20",
+                    METADATA_KEYS["PROVIDER_COVERAGE_END"]: "2026-07-18",
+                    METADATA_KEYS["PROVIDER_SOURCE_FINGERPRINT"]: "provider-sha256",
+                }
+            )
+
+        def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
+            return {
+                "currentBasisStatementCount": 4,
+                "currentBasisStateCount": 1,
+                "invalidCurrentBasisStateCount": 0,
+                "fundamentalsAdjustmentBasisDate": "2026-07-18",
+                "providerWindowCount": 2,
+                "readyProviderWindowCount": 1,
+                "pendingCurrentBasisCodeCount": 1,
+            }
+
+        def get_provider_vintage_snapshot(self) -> dict[str, Any]:
+            return {
+                "providerPlan": "standard",
+                "providerAsOf": "2026-07-20",
+                "providerAsOfMin": "2026-07-20",
+                "providerAsOfMax": "2026-07-20",
+                "effectiveCoverageStart": "2016-07-20",
+                "effectiveCoverageEnd": "2026-07-18",
+                "providerSourceFingerprint": "b" * 64,
+                "providerWindowCoherent": True,
+                "providerWindowFingerprintCount": 2,
+            }
+
+    result = db_stats_service.get_market_stats(
+        market_db=PendingProviderMarketDb(),
+        time_series_store=DummyStore(
+            TimeSeriesInspection(
+                source="duckdb-parquet",
+                stock_count=10,
+                stock_max="2026-07-18",
+                statements_count=4,
+                statement_codes={"1301", "7203"},
+            )
+        ),
+    )
+
+    vintage = result.providerVintage
+    assert vintage.providerPlan == "standard"
+    assert vintage.providerAsOf == "2026-07-20"
+    assert vintage.effectiveCoverage.model_dump() == {
+        "min": "2016-07-20",
+        "max": "2026-07-18",
+    }
+    assert vintage.sourceFingerprint == "b" * 64
+    assert vintage.pendingCurrentBasisCodeCount == 1
+    assert vintage.status == "pending"
+    assert vintage.recoveryStage == "market_db_sync"
+
+
+def test_get_market_stats_marks_incomplete_provider_vintage_metadata_invalid() -> None:
+    class MissingFingerprintMarketDb(DummyMarketDb):
+        def __init__(self) -> None:
+            super().__init__(
+                metadata={
+                    METADATA_KEYS["PROVIDER_PLAN"]: "standard",
+                    METADATA_KEYS["PROVIDER_AS_OF"]: "2026-07-20",
+                    METADATA_KEYS["PROVIDER_COVERAGE_START"]: "2016-07-20",
+                    METADATA_KEYS["PROVIDER_COVERAGE_END"]: "2026-07-18",
+                }
+            )
+
+    result = db_stats_service.get_market_stats(
+        market_db=MissingFingerprintMarketDb(),
+        time_series_store=DummyStore(
+            TimeSeriesInspection(
+                source="duckdb-parquet",
+                stock_count=10,
+                stock_max="2026-07-18",
+                statements_count=4,
+                statement_codes={"1301", "7203"},
+            )
+        ),
+    )
+
+    assert result.providerVintage.status == "ready"
+    assert result.providerVintage.sourceFingerprint == "a" * 64
+
+
+def test_get_market_stats_rejects_padded_provider_window_plan() -> None:
+    class PaddedPlanMarketDb(DummyMarketDb):
+        def get_provider_vintage_snapshot(self) -> dict[str, Any]:
+            snapshot = super().get_provider_vintage_snapshot()
+            snapshot["providerPlan"] = " standard "
+            return snapshot
+
+    result = db_stats_service.get_market_stats(
+        market_db=PaddedPlanMarketDb(),
+        time_series_store=DummyStore(
+            TimeSeriesInspection(
+                source="duckdb-parquet",
+                stock_count=10,
+                statements_count=4,
+            )
+        ),
+    )
+
+    assert result.providerVintage.status == "invalid"
+    assert result.providerVintage.recoveryStage == "market_db_sync"
 
 
 def test_get_market_stats_maps_source_diagnostics_to_public_counters_and_status() -> (
@@ -442,16 +628,13 @@ def test_get_market_stats_maps_source_diagnostics_to_public_counters_and_status(
         ),
     )
 
-    assert result.adjustedMetrics.sourceStatementKeyCount == 4
-    assert result.adjustedMetrics.expectedAdjustedStatementRows == 8
-    assert result.adjustedMetrics.missingAdjustedStatementRows == 1
-    assert result.adjustedMetrics.extraAdjustedStatementRows == 2
-    assert result.adjustedMetrics.staleAdjustedStatementRows == 3
-    assert result.adjustedMetrics.wrongBasisAdjustedStatementRows == 4
-    assert result.adjustedMetrics.missingDailyValuationRows == 5
-    assert result.adjustedMetrics.extraDailyValuationRows == 6
-    assert result.adjustedMetrics.wrongBasisDailyValuationRows == 7
-    assert result.adjustedMetrics.status == "invalid_lineage"
+    assert result.providerVintage.sourceStatementKeyCount == 4
+    assert result.providerVintage.expectedAdjustedStatementRows == 8
+    assert result.providerVintage.missingAdjustedStatementRows == 1
+    assert result.providerVintage.extraAdjustedStatementRows == 2
+    assert result.providerVintage.staleAdjustedStatementRows == 3
+    assert result.providerVintage.wrongBasisAdjustedStatementRows == 4
+    assert result.providerVintage.status == "invalid"
 
 
 def test_get_market_stats_includes_intraday_freshness_snapshot() -> None:

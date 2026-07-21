@@ -1,6 +1,6 @@
 ---
 name: bt-market-sync-strategies
-description: Use when bt の market sync、intraday minute ingest、J-Quants fetch strategy、または Market v4 cutover guidance を変更するとき。
+description: Use when bt の market sync、intraday minute ingest、J-Quants fetch strategy、または Market v5 cutover guidance を変更するとき。
 ---
 
 # bt-market-sync-strategies
@@ -27,25 +27,26 @@ description: Use when bt の market sync、intraday minute ingest、J-Quants fet
 
 ## Workflow
 
-1. active `market.duckdb` が schema v4 / `local_projection_v2_event_time` であることを確認する。J-Quants を使って staging を再構築する explicit full rebuild は `bt market-cutover cutover`、既存 retained rehearsal を再構築せず昇格する canonical path は `bt market-cutover promote-retained REPORT_ID --retained-report-id ... --backup-id ... --symbol ... --strategy ...` と明確に分ける。
+1. active `market.duckdb` が schema v5 / `provider_adjusted_v1` であることを確認する。Market v5 operator cutover は `bt market-cutover cutover` による full rebuild only（唯一の経路）とする。
 2. mode ごとの解決規則（`initial` / `incremental` / `repair`）を確認する。
 3. `incremental` では anchor、cold-start bootstrap、new date 抽出、`missing_stock_dates` backfill の順で判断する。
 4. fetch planner は date 指定 bulk を基本にし、bulk/rest fallback の理由を残す。
 5. 外部 API 側だけでなく、取得後の local DB 処理（DuckDB/metadata DB publish、relation-based upsert、`executemany` fallback、Parquet export、index/rebuild）まで同じ調査単位で確認する。UI 上の「fetch stuck」は DB publish/rebuild 中の progress 表示不足でも起きる。
-6. stock price は `Adj*` を永続 SoT にせず、raw `O/H/L/C/Vo + AdjFactor` を ingest して local projection で `stock_data` を再生成する。
+6. stock price は raw `O/H/L/C/Vo/Va + AdjFactor + Adj*` を `stock_data_raw` に保存し、provider `Adj*` をそのまま `stock_data` に publishする。通常日は append、factor/correction/drift codeだけ provider windowをatomic refreshする。
 7. minute bars は `/equities/bars/minute` から raw `O/H/L/C/Vo/Va` を `stock_data_minute_raw` へ保存し、daily `stock_data` / `topix_data` と SoT を混ぜない。
-8. OHLCV 欠損行、placeholder backfill、metadata 更新規約を確認する。
+8. OHLCV 欠損行、placeholder backfill、provider plan / as-of / coverage / source fingerprint metadata 更新規約を確認する。
+9. `providerVintage` と Dataset4（manifest payload `schemaVersion: 4`）の semantic smoke を cutover gate にする。
 
 ## Guardrails
 
 - 冪等性を壊さない（同日再取得で重複や欠落を作らない）。
 - `last_sync_date`、`failed_dates`、fundamentals 系 metadata の更新規約を維持する。
 - minute ingest は `LAST_INTRADAY_SYNC` と `stock_data_minute_raw` を SoT とし、daily table を minute freshness 判定に流用しない。
-- schema v3以前または adjustment mode が `local_projection_v2_event_time` でない `market.duckdb` は incompatible。自動移行、dual read、compatibility alias、`auto` / `incremental` / `repair` / stocks refresh での救済を追加しない。
+- schema v4以前または adjustment mode が `provider_adjusted_v1` でない `market.duckdb` は incompatible。in-place migration / 自動移行、dual read、compatibility alias、`auto` / `incremental` / `repair` / stocks refresh での救済を追加しない。
 - active root の再構築は `bt market-cutover cutover` で rehearsal pass と immutable backup を検証してから行う。単独の destructive reset を運用手順にしない。
-- retained promotion は retained report provenance から source root を解決し、`bt market-cutover promote-retained` の command 内で active v3 の create-only immutable backup を作成・検証して atomic exchange する。source path / force / copy fallback / J-Quants option を追加しない。sync / reset / repair / stock refresh / intraday sync / adjusted-metric materialization / rebuild を実行せず、成功 report の `noSync: true` / `noJQuants: true`、exact report/payload/backup/quarantine identity、semantic smoke、server/worker join verdict を検証する。
-- journal 継続 authorization は process-local。fresh service は同一 `REPORT_ID` / retained report ID / backup ID に束縛した dedicated same-attempt recovery（same-ID recovery）を先に行う。joined failure は exact rollback、unjoined child は両 lease を保持した deferred fencing とし、operator は lock / journal / staging を手動変更しない。
-- immutable backup と quarantined v3 は成功後も保持する。post-commit cleanup staging は journal に束縛された same-ID recovery だけが完了させる。
+- retained Market v4 は v5 candidate として ineligible（不適格）で、昇格しない。CLI / service に retained promotion surface を戻さない。
+- cutover は immutable backup を検証し、staged Market v5 を atomic activation し、失敗時は exact rollback する。
+- artifact identity は `operations/market-v5-cutover` を使い、operator は operation lock / staging を手動変更しない。
 - `auto` mode の解決規則（`last_sync_date` 有無で `initial|incremental`）を変更しない。
 - `repair` は listed-market fundamentals backfill など非 price warning の回復に限定し、adjustment refresh を復活させない。
 - `indices_data` は master 補完（placeholder backfill）前提を維持する。

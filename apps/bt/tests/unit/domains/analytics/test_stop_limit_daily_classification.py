@@ -33,7 +33,7 @@ def _create_market_tables(conn: duckdb.DuckDBPyConnection) -> None:
     )
     conn.execute(
         "INSERT INTO sync_metadata VALUES "
-        "('stock_price_adjustment_mode', 'local_projection_v2_event_time', NULL)"
+        "('stock_price_adjustment_mode', 'provider_adjusted_v1', NULL)"
     )
     conn.execute(
         """
@@ -71,7 +71,7 @@ def _create_market_tables(conn: duckdb.DuckDBPyConnection) -> None:
     )
     conn.execute(
         "INSERT INTO market_schema_version VALUES (?, ?, ?)",
-        [4, "2026-01-01T00:00:00", "test schema v4"],
+        [5, "2026-01-01T00:00:00", "test schema v5"],
     )
 
 
@@ -267,7 +267,7 @@ def test_resolve_standard_daily_limit_width_boundary_cases() -> None:
     assert resolve_standard_daily_limit_width(50_000_000) == 10_000_000
 
 
-def test_run_rejects_non_event_time_market_v4(tmp_path: Path) -> None:
+def test_run_rejects_unsupported_market_adjustment_mode(tmp_path: Path) -> None:
     db_path = tmp_path / "market.duckdb"
     _build_test_market_db(db_path)
     conn = duckdb.connect(str(db_path))
@@ -279,7 +279,7 @@ def test_run_rejects_non_event_time_market_v4(tmp_path: Path) -> None:
     finally:
         conn.close()
 
-    with pytest.raises(RuntimeError, match="resetBeforeSync=true"):
+    with pytest.raises(RuntimeError, match="market-cutover cutover"):
         run_stop_limit_daily_classification_research(str(db_path))
 
 
@@ -319,7 +319,7 @@ def test_run_stop_limit_daily_classification_research(tmp_path: Path) -> None:
     assert result.total_event_count == 6
     assert result.total_directional_event_count == 5
     assert result.total_outside_standard_band_count == 1
-    assert result.market_schema_version == 4
+    assert result.market_schema_version == 5
     assert result.universe_source == "stock_master_daily"
     assert result.unmapped_signal_date_market_event_count == 1
 

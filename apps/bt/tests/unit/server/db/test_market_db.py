@@ -11,7 +11,11 @@ import duckdb
 import pytest
 
 from src.infrastructure.db.market.market_db import MarketDb
+from src.infrastructure.db.market import market_schema
+from src.infrastructure.db.market.market_schema import METADATA_KEYS
+from src.infrastructure.db.market.time_series_store import DuckDbParquetTimeSeriesStore
 from tests.unit.server.db.market_writer_test_support import open_market_db
+from tests.unit.server.db.market_writer_test_support import open_time_series_store
 from tests.unit.server.db.market_writer_test_support import (
     publish_indices_data,
     publish_margin_data,
@@ -38,11 +42,20 @@ def _query_one(db_path: str, sql: str) -> tuple | None:
         conn.close()
 
 
+def _table_columns(db: MarketDb, table_name: str) -> set[str]:
+    return {
+        str(row[1])
+        for row in db._fetchall(f"PRAGMA table_info('{table_name}')")
+        if row and len(row) > 1
+    }
+
+
 def _open_versioned_market_db(
     tmp_path: Path,
     *,
     version: int,
     mode: str,
+    read_only: bool = False,
 ) -> MarketDb:
     db_path = str(tmp_path / f"market-v{version}.duckdb")
     conn = duckdb.connect(db_path)
@@ -75,7 +88,7 @@ def _open_versioned_market_db(
         )
     finally:
         conn.close()
-    return open_market_db(db_path)
+    return open_market_db(db_path, read_only=read_only)
 
 
 class TestMarketDbBasics:
@@ -94,11 +107,15 @@ class TestMarketDbBasics:
         assert stats["margin_data"] == 0
         assert stats["sync_metadata"] == 1
         assert stats["index_membership_daily"] == 0
-        assert market_db.get_market_schema_version() == 4
+        assert stats["stock_adjustment_events"] == 0
+        assert stats["stock_provider_windows"] == 0
+        assert market_db.get_market_schema_version() == 5
         assert market_db.is_market_schema_current() is True
-        assert market_db.get_stock_price_adjustment_mode() == "local_projection_v2_event_time"
-        assert market_db._table_exists("stock_adjustment_bases")
-        assert market_db._table_exists("stock_adjustment_basis_segments")
+        assert market_db.get_stock_price_adjustment_mode() == "provider_adjusted_v1"
+        assert market_db._table_exists("stock_adjustment_events")
+        assert market_db._table_exists("stock_provider_windows")
+        assert not market_db._table_exists("stock_adjustment_bases")
+        assert not market_db._table_exists("stock_adjustment_basis_segments")
 
         schema = market_db.validate_schema()
         assert schema["valid"] is True
@@ -113,6 +130,293 @@ class TestMarketDbBasics:
         assert "options_225_data" in schema["required_tables"]
         assert "margin_data" in schema["required_tables"]
         assert "sync_metadata" in schema["required_tables"]
+
+    def test_v5_price_and_adjustment_ledger_columns_are_exact(
+        self, market_db: MarketDb
+    ) -> None:
+        assert _table_columns(market_db, "stock_data_raw") == {
+            "code",
+            "date",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "turnover_value",
+            "adjustment_factor",
+            "adjusted_open",
+            "adjusted_high",
+            "adjusted_low",
+            "adjusted_close",
+            "adjusted_volume",
+            "created_at",
+        }
+        assert _table_columns(market_db, "stock_adjustment_events") == {
+            "code",
+            "date",
+            "adjustment_factor",
+            "source_fingerprint",
+            "created_at",
+        }
+        assert _table_columns(market_db, "stock_provider_windows") == {
+            "code",
+            "coverage_start",
+            "coverage_end",
+            "provider_plan",
+            "provider_as_of",
+            "source_fingerprint",
+            "updated_at",
+        }
+        provider_window_info = market_db._fetchall(
+            "PRAGMA table_info('stock_provider_windows')"
+        )
+        assert [row[1] for row in provider_window_info if row[5]] == ["code"]
+        assert all(bool(row[3]) for row in provider_window_info)
+        assert _table_columns(market_db, "current_basis_fundamentals_state") == {
+            "code",
+            "fundamentals_adjustment_basis_date",
+            "source_fingerprint",
+            "statement_count",
+            "materialized_at",
+        }
+        state_info = market_db._fetchall(
+            "PRAGMA table_info('current_basis_fundamentals_state')"
+        )
+        assert [row[1] for row in state_info if row[5]] == ["code"]
+        assert all(bool(row[3]) for row in state_info)
+        pk_rows = market_db._fetchall("PRAGMA table_info('stock_adjustment_events')")
+        assert [row[1] for row in sorted(pk_rows, key=lambda row: row[5]) if row[5]] == [
+            "code",
+            "date",
+        ]
+        raw_info = {
+            str(row[1]): bool(row[3])
+            for row in market_db._fetchall("PRAGMA table_info('stock_data_raw')")
+        }
+        assert all(
+            raw_info[column]
+            for column in ("code", "date", "open", "high", "low", "close", "volume")
+        )
+
+        for invalid_factor in (0.0, -1.0, 1.0):
+            with pytest.raises(duckdb.ConstraintException):
+                market_db._execute(
+                    """
+                    INSERT INTO stock_adjustment_events
+                        (code, date, adjustment_factor, source_fingerprint)
+                    VALUES ('7203', '2026-01-01', ?, 'fingerprint')
+                    """,
+                    [invalid_factor],
+                )
+
+    def test_v5_current_basis_statement_schema_and_valuation_view(
+        self, market_db: MarketDb
+    ) -> None:
+        assert _table_columns(market_db, "statement_metrics_adjusted") == {
+            "code",
+            "statement_id",
+            "disclosed_date",
+            "disclosed_at",
+            "period_end",
+            "period_type",
+            "fundamentals_adjustment_basis_date",
+            "raw_eps",
+            "adjusted_eps",
+            "raw_diluted_eps",
+            "adjusted_diluted_eps",
+            "raw_bps",
+            "adjusted_bps",
+            "raw_forecast_eps",
+            "adjusted_forecast_eps",
+            "raw_dividend_fy",
+            "adjusted_dividend_fy",
+            "raw_forecast_dividend_fy",
+            "adjusted_forecast_dividend_fy",
+            "raw_shares_outstanding",
+            "adjusted_shares_outstanding",
+            "raw_treasury_shares",
+            "adjusted_treasury_shares",
+            "adjustment_factor_cumulative",
+            "source_fingerprint",
+            "created_at",
+        }
+        pk_rows = market_db._fetchall("PRAGMA table_info('statement_metrics_adjusted')")
+        assert [row[1] for row in sorted(pk_rows, key=lambda row: row[5]) if row[5]] == [
+            "code",
+            "statement_id",
+        ]
+        relation = market_db._fetchone(
+            """
+            SELECT table_type
+            FROM information_schema.tables
+            WHERE table_name = 'daily_valuation'
+            """
+        )
+        assert relation == ("VIEW",)
+        assert "basis_version" not in _table_columns(market_db, "daily_valuation")
+        view_sql = market_db._fetchone(
+            "SELECT sql FROM duckdb_views() WHERE view_name = 'daily_valuation'"
+        )
+        assert view_sql is not None
+        assert "disclosed_at" in str(view_sql[0]).split("ASOF", maxsplit=1)[1]
+
+        market_db._execute(
+            """
+            INSERT INTO stock_data
+                (code, date, open, high, low, close, volume)
+            VALUES ('7203', '2026-02-10', 100, 110, 90, 105, 1000)
+            """
+        )
+        market_db._execute(
+            """
+            INSERT INTO statement_metrics_adjusted (
+                code, statement_id, disclosed_date, disclosed_at, period_end,
+                period_type, fundamentals_adjustment_basis_date, adjusted_eps,
+                adjustment_factor_cumulative, source_fingerprint
+            ) VALUES
+                ('7203', 'a-late', '2026-02-10', '2026-02-10T15:30:00+09:00',
+                 '2026-03-31', 'FY', '2026-02-10', 15, 1, 'late-fingerprint'),
+                ('7203', 'z-early', '2026-02-10', '2026-02-10T09:00:00+09:00',
+                 '2026-03-31', 'FY', '2026-02-10', 10, 1, 'early-fingerprint'),
+                ('7203', 'future', '2026-02-11', '2026-02-11T09:00:00+09:00',
+                 '2026-03-31', 'FY', '2026-02-11', 20, 1, 'future-fingerprint')
+            """
+        )
+        assert market_db._fetchone(
+            "SELECT statement_id, eps FROM daily_valuation WHERE code = '7203'"
+        ) == ("a-late", 15.0)
+
+    def test_v5_current_basis_recompute_pending_schema(self, market_db: MarketDb) -> None:
+        assert _table_columns(market_db, "current_basis_recompute_pending") == {
+            "code",
+            "reason",
+            "source_fingerprint",
+            "updated_at",
+        }
+        pk_rows = market_db._fetchall(
+            "PRAGMA table_info('current_basis_recompute_pending')"
+        )
+        assert [row[1] for row in pk_rows if row[5]] == ["code"]
+
+    def test_daily_valuation_resolves_each_metric_family_asof(
+        self, market_db: MarketDb
+    ) -> None:
+        market_db._execute(
+            """
+            INSERT INTO stock_data
+                (code, date, open, high, low, close, volume)
+            VALUES ('67580', '2026-02-10', 100, 110, 90, 105, 1000)
+            """
+        )
+        market_db._execute(
+            """
+            INSERT INTO statements (
+                code, statement_id, disclosed_date, disclosed_at,
+                period_start, period_end, type_of_current_period,
+                type_of_document
+            ) VALUES
+                ('67580', 'actual', '2026-02-09', '2026-02-09T09:00:00+09:00',
+                 '2025-04-01', '2026-03-31', 'FY', 'FinancialStatements'),
+                ('67580', 'revision', '2026-02-10', '2026-02-10T15:00:00+09:00',
+                 '2025-04-01', '2026-03-31', 'FY', 'EarnForecastRevision'),
+                ('6758', 'revision', '2026-02-10', '2026-02-10T15:00:00+09:00',
+                 '2025-04-01', '2026-03-31', 'FY', 'FinancialStatements')
+            """
+        )
+        market_db._execute(
+            """
+            INSERT INTO statement_metrics_adjusted (
+                code, statement_id, disclosed_date, disclosed_at, period_end,
+                period_type, fundamentals_adjustment_basis_date,
+                adjusted_eps, adjusted_bps, adjusted_forecast_eps,
+                adjusted_shares_outstanding, adjusted_treasury_shares,
+                adjustment_factor_cumulative, source_fingerprint
+            ) VALUES
+                ('6758', 'actual', '2026-02-09', '2026-02-09T09:00:00+09:00',
+                 '2026-03-31', 'FY', '2026-02-10', 10, 100, NULL,
+                 1000, 100, 1, 'state-fingerprint'),
+                ('6758', 'revision', '2026-02-10', '2026-02-10T15:00:00+09:00',
+                 '2026-03-31', 'FY', '2026-02-10', NULL, NULL, 20,
+                 NULL, NULL, 1, 'state-fingerprint')
+            """
+        )
+
+        row = market_db._fetchone(
+            """
+            SELECT eps, bps, forward_eps, per, forward_per, pbr,
+                   market_cap, free_float_market_cap, statement_id,
+                   forward_eps_disclosed_date, forward_eps_source
+            FROM daily_valuation
+            WHERE code = '67580' AND date = '2026-02-10'
+            """
+        )
+
+        assert row is not None
+        assert row[:8] == pytest.approx(
+            (10.0, 100.0, 20.0, 10.5, 5.25, 1.05, 105000.0, 94500.0),
+            rel=1e-9,
+        )
+        assert row[8:] == ("actual", "2026-02-10", "fy")
+
+    def test_reopen_refreshes_the_schema_v5_daily_valuation_view(
+        self, tmp_path: Path
+    ) -> None:
+        db_path = str(tmp_path / "refresh-view.duckdb")
+        initial = open_market_db(db_path)
+        initial._execute(
+            "CREATE OR REPLACE VIEW daily_valuation AS SELECT 'stale' AS marker"
+        )
+        initial.close()
+
+        reopened = open_market_db(db_path)
+        try:
+            columns = _table_columns(reopened, "daily_valuation")
+        finally:
+            reopened.close()
+
+        assert "marker" not in columns
+        assert {"eps", "bps", "forward_eps", "source_fingerprint"} <= columns
+
+    def test_v5_current_basis_state_rejects_negative_statement_count(
+        self, market_db: MarketDb
+    ) -> None:
+        with pytest.raises(duckdb.ConstraintException):
+            market_db._execute(
+                """
+                INSERT INTO current_basis_fundamentals_state VALUES (
+                    '7203', '2026-01-01', 'fingerprint', -1,
+                    '2026-01-01T00:00:00Z'
+                )
+                """
+            )
+
+    def test_statement_updatable_columns_include_disclosed_date_consistently(self) -> None:
+        assert "disclosed_date" in market_schema.STATEMENTS_UPDATABLE_COLUMNS
+        assert (
+            DuckDbParquetTimeSeriesStore._STATEMENT_UPDATABLE_COLUMNS  # noqa: SLF001
+            == market_schema.STATEMENTS_UPDATABLE_COLUMNS
+        )
+
+    def test_v5_provider_metadata_keys_are_canonical(self) -> None:
+        assert {
+            key: METADATA_KEYS[key]
+            for key in (
+                "PROVIDER_PLAN",
+                "PROVIDER_AS_OF",
+                "PROVIDER_COVERAGE_START",
+                "PROVIDER_COVERAGE_END",
+                "PROVIDER_SOURCE_FINGERPRINT",
+                "FUNDAMENTALS_ADJUSTMENT_BASIS_DATE",
+            )
+        } == {
+            "PROVIDER_PLAN": "provider_plan",
+            "PROVIDER_AS_OF": "provider_as_of",
+            "PROVIDER_COVERAGE_START": "provider_coverage_start",
+            "PROVIDER_COVERAGE_END": "provider_coverage_end",
+            "PROVIDER_SOURCE_FINGERPRINT": "provider_source_fingerprint",
+            "FUNDAMENTALS_ADJUSTMENT_BASIS_DATE": "fundamentals_adjustment_basis_date",
+        }
+        assert not hasattr(market_schema, "LOCAL_STOCK_PRICE_ADJUSTMENT_MODE")
 
     def test_pre_v3_existing_market_db_is_marked_incompatible(self, tmp_path: Path) -> None:
         db_path = str(tmp_path / "legacy-market.duckdb")
@@ -134,6 +438,7 @@ class TestMarketDbBasics:
             tmp_path,
             version=3,
             mode="local_projection_v1",
+            read_only=True,
         )
         try:
             assert db.get_market_schema_version() == 3
@@ -146,6 +451,122 @@ class TestMarketDbBasics:
             }
         finally:
             db.close()
+
+    def test_existing_v4_is_rejected_without_partial_upgrade(self, tmp_path: Path) -> None:
+        db = _open_versioned_market_db(
+            tmp_path,
+            version=4,
+            mode="local_projection_v2_event_time",
+            read_only=True,
+        )
+        try:
+            assert db.get_market_schema_version() == 4
+            assert db.is_market_schema_current() is False
+            assert db.get_stock_price_adjustment_mode() == "local_projection_v2_event_time"
+            assert not db._table_exists("stock_adjustment_events")
+            assert db._existing_table_names() == {
+                "market_schema_version",
+                "sync_metadata",
+            }
+        finally:
+            db.close()
+
+    def test_writable_market_db_rejects_v4_before_exposing_handle(
+        self, tmp_path: Path
+    ) -> None:
+        with pytest.raises(RuntimeError, match="schema version 4.*required version 5"):
+            _open_versioned_market_db(
+                tmp_path,
+                version=4,
+                mode="local_projection_v2_event_time",
+            )
+
+        db = MarketDb(str(tmp_path / "market-v4.duckdb"), read_only=True)
+        try:
+            assert db._existing_table_names() == {
+                "market_schema_version",
+                "sync_metadata",
+            }
+        finally:
+            db.close()
+
+    def test_daily_valuation_share_count_semantics(self, market_db: MarketDb) -> None:
+        market_db._execute(
+            """
+            INSERT INTO stock_data
+                (code, date, open, high, low, close, volume)
+            VALUES
+                ('1001', '2026-02-10', 100, 110, 90, 105, 1000),
+                ('1002', '2026-02-10', 100, 110, 90, 105, 1000),
+                ('1003', '2026-02-10', 100, 110, 90, 105, 1000)
+            """
+        )
+        market_db._execute(
+            """
+            INSERT INTO statement_metrics_adjusted (
+                code, statement_id, disclosed_date, disclosed_at, period_end,
+                period_type, fundamentals_adjustment_basis_date,
+                adjusted_shares_outstanding, adjusted_treasury_shares,
+                adjustment_factor_cumulative, source_fingerprint
+            ) VALUES
+                ('1001', 'normal', '2026-02-09', '2026-02-09T15:30:00+09:00',
+                 '2026-03-31', 'FY', '2026-02-10', 100, 20, 1, 'normal'),
+                ('1002', 'over-treasury', '2026-02-09', '2026-02-09T15:30:00+09:00',
+                 '2026-03-31', 'FY', '2026-02-10', 100, 120, 1, 'over'),
+                ('1003', 'missing', '2026-02-09', '2026-02-09T15:30:00+09:00',
+                 '2026-03-31', 'FY', '2026-02-10', NULL, 20, 1, 'missing')
+            """
+        )
+
+        assert market_db._fetchall(
+            """
+            SELECT code, market_cap, free_float_market_cap
+            FROM daily_valuation
+            ORDER BY code
+            """
+        ) == [
+            ("1001", 10_500.0, 8_400.0),
+            ("1002", 10_500.0, 0.0),
+            ("1003", None, None),
+        ]
+
+    def test_time_series_store_uses_v5_raw_and_statement_identity_columns(
+        self, tmp_path: Path
+    ) -> None:
+        store = open_time_series_store(
+            duckdb_path=str(tmp_path / "time-series.duckdb"),
+            parquet_dir=str(tmp_path / "parquet"),
+        )
+        try:
+            raw_columns = {
+                str(row[1])
+                for row in store._conn.execute(  # noqa: SLF001
+                    "PRAGMA table_info('stock_data_raw')"
+                ).fetchall()
+            }
+            statement_columns = {
+                str(row[1])
+                for row in store._conn.execute(  # noqa: SLF001
+                    "PRAGMA table_info('statements')"
+                ).fetchall()
+            }
+            assert {
+                "turnover_value",
+                "adjusted_open",
+                "adjusted_high",
+                "adjusted_low",
+                "adjusted_close",
+                "adjusted_volume",
+            }.issubset(raw_columns)
+            assert {
+                "statement_id",
+                "disclosure_number",
+                "disclosed_at",
+                "period_start",
+                "period_end",
+            }.issubset(statement_columns)
+        finally:
+            store.close()
 
     def test_stock_master_coverage_reports_v3_tables(self, market_db: MarketDb) -> None:
         market_db._execute(
@@ -598,7 +1019,7 @@ class TestMarketDbBasics:
         )
 
         assert market_db.is_initialized() is True
-        assert market_db.get_stock_price_adjustment_mode() == "local_projection_v2_event_time"
+        assert market_db.get_stock_price_adjustment_mode() == "provider_adjusted_v1"
 
     def test_is_initialized_prioritizes_explicit_metadata_flag(
         self, market_db: MarketDb
@@ -767,7 +1188,11 @@ class TestMarketDbUpserts:
             [
                 {
                     "code": "1899",
+                    "statement_id": "disc-1899-20260213",
                     "disclosed_date": "2026-02-13",
+                    "disclosed_at": "2026-02-13T15:30:00+09:00",
+                    "period_start": "2025-04-01",
+                    "period_end": "2026-03-31",
                     "type_of_current_period": "FY",
                     "type_of_document": "EarnForecastRevision",
                     "forecast_eps": 580.0,
@@ -778,7 +1203,11 @@ class TestMarketDbUpserts:
             [
                 {
                     "code": "1899",
+                    "statement_id": "disc-1899-20260213",
                     "disclosed_date": "2026-02-13",
+                    "disclosed_at": "2026-02-13T15:30:00+09:00",
+                    "period_start": "2025-04-01",
+                    "period_end": "2026-03-31",
                     "type_of_current_period": "FY",
                     "type_of_document": "DividendForecastRevision",
                     "dividend_fy": 200.0,
@@ -804,7 +1233,11 @@ class TestMarketDbUpserts:
             [
                 {
                     "code": "1899",
+                    "statement_id": "disc-1899-20260213",
                     "disclosed_date": "2026-02-13",
+                    "disclosed_at": "2026-02-13T15:30:00+09:00",
+                    "period_start": "2025-04-01",
+                    "period_end": "2026-03-31",
                     "type_of_current_period": "FY",
                     "type_of_document": "EarnForecastRevision",
                     "forecast_eps": 604.0,
@@ -1063,7 +1496,11 @@ class TestMarketDbFundamentals:
             [
                 {
                     "code": "7203",
+                    "statement_id": "disc-7203-20240510",
                     "disclosed_date": "2024-05-10",
+                    "disclosed_at": "2024-05-10T15:30:00+09:00",
+                    "period_start": "2023-04-01",
+                    "period_end": "2024-03-31",
                     "earnings_per_share": 100.0,
                     "profit": 1000.0,
                     "equity": 2000.0,
@@ -1071,7 +1508,11 @@ class TestMarketDbFundamentals:
                 },
                 {
                     "code": "9999",
+                    "statement_id": "disc-9999-20240509",
                     "disclosed_date": "2024-05-09",
+                    "disclosed_at": "2024-05-09T15:30:00+09:00",
+                    "period_start": "2023-04-01",
+                    "period_end": "2024-03-31",
                     "earnings_per_share": 10.0,
                     "profit": 100.0,
                     "equity": 200.0,

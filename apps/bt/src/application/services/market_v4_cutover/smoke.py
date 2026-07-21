@@ -1,10 +1,12 @@
-"""Focused Market v4 cutover responsibility module."""
+"""Focused Market v5 cutover semantic smoke."""
 
 from __future__ import annotations
 
 import hashlib
 import os
+from datetime import date
 from pathlib import Path
+import re
 import time
 from typing import cast
 from urllib.parse import quote
@@ -29,7 +31,6 @@ from .workspace import CutoverWorkspace
 
 _CREATE_JOB_RESPONSE_FIELDS: dict[str, tuple[str, str]] = {
     "/api/db/sync": ("sync", "jobId"),
-    "/api/db/adjusted-metrics/materialize": ("materialize", "jobId"),
     "/api/analytics/screening/jobs": ("screening", "job_id"),
     "/api/dataset": ("dataset", "jobId"),
 }
@@ -196,11 +197,11 @@ class RuntimeSmokeService:
             {
                 "schemaVersion": result.schema_version,
                 "stockPriceAdjustmentMode": result.adjustment_mode,
-                "adjustedMetrics": result.lineage,
+                "providerVintage": result.lineage,
             },
             (
                 {
-                    "name": "initial_sync_and_adjusted_metrics_pit",
+                    "name": "initial_sync_and_provider_vintage",
                     "status": "passed",
                     "durationSeconds": round(sync_duration, 6),
                 },
@@ -248,12 +249,16 @@ class RuntimeSmokeService:
             market_directory_fd=market_directory_fd,
             guard_lease_fd=guard_lease_fd,
         )
-        stats_adjusted, adjusted, zero_counters = self._validate_smoke_lineage(api)
+        stats_adjusted, adjusted, zero_counters = self._validate_smoke_lineage(
+            api,
+            direct_provider_vintage=metadata.provider_vintage,
+        )
         symbol, screening_job_id = self._smoke_analytics(api, config)
         dataset_name, dataset_job_id = self._smoke_dataset(
             api,
             config,
             operation_id=operation_id,
+            provider_vintage=stats_adjusted,
         )
         assert metadata.schema_version is not None
         assert metadata.adjustment_mode is not None
@@ -283,6 +288,7 @@ class RuntimeSmokeService:
                 f"/api/dataset/{dataset_name}/sample?count=1",
             ),
             lineage={
+                **stats_adjusted,
                 **{
                     key: int(cast(int | str, adjusted[key]))
                     for key in (
@@ -291,12 +297,17 @@ class RuntimeSmokeService:
                         *zero_counters,
                     )
                 },
-                "statementRows": int(cast(int | str, stats_adjusted["statementRows"])),
-                "dailyValuationRows": int(
-                    cast(int | str, stats_adjusted["dailyValuationRows"])
+                "currentBasisStatementCount": int(
+                    cast(int | str, stats_adjusted["currentBasisStatementCount"])
                 ),
-                "readyBasisCount": int(
-                    cast(int | str, stats_adjusted["readyBasisCount"])
+                "currentBasisStateCount": int(
+                    cast(int | str, stats_adjusted["currentBasisStateCount"])
+                ),
+                "providerWindowCount": int(
+                    cast(int | str, stats_adjusted["providerWindowCount"])
+                ),
+                "readyProviderWindowCount": int(
+                    cast(int | str, stats_adjusted["readyProviderWindowCount"])
                 ),
             },
         )
@@ -331,41 +342,146 @@ class RuntimeSmokeService:
                     )
                 finally:
                     os.close(inspected_fd)
-        if metadata.schema_version != 4:
+        if metadata.schema_version != 5:
             raise _managed_root.CutoverSafetyError(
-                f"Market schema must be exactly 4, got {metadata.schema_version!r}"
+                f"Market schema must be exactly 5, got {metadata.schema_version!r}"
             )
-        if metadata.adjustment_mode != "local_projection_v2_event_time":
+        if metadata.adjustment_mode != "provider_adjusted_v1":
             raise _managed_root.CutoverSafetyError(
-                "Market adjustment mode must be local_projection_v2_event_time"
+                "Market adjustment mode must be provider_adjusted_v1"
             )
         return metadata
 
     @staticmethod
+    def _is_iso_date(value: object) -> bool:
+        if not isinstance(value, str):
+            return False
+        try:
+            return date.fromisoformat(value).isoformat() == value
+        except ValueError:
+            return False
+
+    @staticmethod
+    def _is_ready_provider_vintage(payload: object) -> bool:
+        if not isinstance(payload, dict):
+            return False
+        provider_plan = payload.get("providerPlan")
+        provider_as_of = payload.get("providerAsOf")
+        provider_as_of_range = payload.get("providerAsOfRange")
+        effective_coverage = payload.get("effectiveCoverage")
+        source_fingerprint = payload.get("sourceFingerprint")
+        if (
+            payload.get("status") != "ready"
+            or payload.get("recoveryStage") is not None
+            or not isinstance(provider_plan, str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", provider_plan)
+            or not isinstance(source_fingerprint, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", source_fingerprint)
+            or not isinstance(provider_as_of_range, dict)
+            or not isinstance(effective_coverage, dict)
+        ):
+            return False
+        as_of_min = provider_as_of_range.get("min")
+        as_of_max = provider_as_of_range.get("max")
+        coverage_min = effective_coverage.get("min")
+        coverage_max = effective_coverage.get("max")
+        if not all(
+            RuntimeSmokeService._is_iso_date(value)
+            for value in (as_of_min, as_of_max, coverage_min, coverage_max)
+        ):
+            return False
+        assert isinstance(as_of_min, str)
+        assert isinstance(as_of_max, str)
+        assert isinstance(coverage_min, str)
+        assert isinstance(coverage_max, str)
+        if (
+            as_of_min > as_of_max
+            or coverage_min > coverage_max
+            or as_of_min < coverage_max
+            or provider_as_of != (as_of_min if as_of_min == as_of_max else None)
+        ):
+            return False
+        integer_fields = (
+            "providerWindowCount",
+            "readyProviderWindowCount",
+            "providerWindowFingerprintCount",
+            "invalidProviderWindowCount",
+            "adjustmentEventCount",
+            "adjustmentEventFingerprintCount",
+            "invalidAdjustmentEventCount",
+            "providerAdjustedMismatchCount",
+            "currentBasisStatementCount",
+            "currentBasisStateCount",
+            "invalidCurrentBasisStateCount",
+            "pendingCurrentBasisCodeCount",
+            "sourceStatementKeyCount",
+            "expectedAdjustedStatementRows",
+            "missingAdjustedStatementRows",
+            "extraAdjustedStatementRows",
+            "staleAdjustedStatementRows",
+            "wrongBasisAdjustedStatementRows",
+            "orphanAdjustedStatementRows",
+        )
+        if any(type(payload.get(field)) is not int for field in integer_fields):
+            return False
+        provider_window_count = int(cast(int, payload["providerWindowCount"]))
+        adjustment_event_count = int(cast(int, payload["adjustmentEventCount"]))
+        zero_counters = (
+            "invalidProviderWindowCount",
+            "invalidAdjustmentEventCount",
+            "providerAdjustedMismatchCount",
+            "invalidCurrentBasisStateCount",
+            "pendingCurrentBasisCodeCount",
+            "missingAdjustedStatementRows",
+            "extraAdjustedStatementRows",
+            "staleAdjustedStatementRows",
+            "wrongBasisAdjustedStatementRows",
+            "orphanAdjustedStatementRows",
+        )
+        return bool(
+            payload.get("providerWindowCoherent") is True
+            and provider_window_count > 0
+            and adjustment_event_count >= 0
+            and payload["readyProviderWindowCount"] == provider_window_count
+            and payload["providerWindowFingerprintCount"] == provider_window_count
+            and payload["adjustmentEventFingerprintCount"] == adjustment_event_count
+            and int(cast(int, payload["currentBasisStatementCount"])) > 0
+            and int(cast(int, payload["currentBasisStateCount"])) > 0
+            and int(cast(int, payload["sourceStatementKeyCount"])) > 0
+            and int(cast(int, payload["expectedAdjustedStatementRows"])) > 0
+            and RuntimeSmokeService._is_iso_date(
+                payload.get("fundamentalsAdjustmentBasisDate")
+            )
+            and all(payload[counter] == 0 for counter in zero_counters)
+        )
+
+    @staticmethod
     def _validate_smoke_lineage(
         api: ApiAdapter,
+        *,
+        direct_provider_vintage: dict[str, object] | None,
     ) -> tuple[dict[str, object], dict[str, object], tuple[str, ...]]:
         stats = api.request("GET", "/api/db/stats")
         schema = stats.get("schema")
         if not isinstance(schema, dict) or schema != {
-            "version": 4,
-            "requiredVersion": 4,
+            "version": 5,
+            "requiredVersion": 5,
             "current": True,
         }:
-            raise _managed_root.CutoverSafetyError("Market stats schema v4 gate failed")
-        stats_adjusted = stats.get("adjustedMetrics")
+            raise _managed_root.CutoverSafetyError("Market stats schema v5 gate failed")
+        stats_adjusted = stats.get("providerVintage")
+        if not isinstance(
+            stats_adjusted, dict
+        ) or not RuntimeSmokeService._is_ready_provider_vintage(stats_adjusted):
+            raise _managed_root.CutoverSafetyError(
+                "Market provider-vintage coverage is not ready"
+            )
         if (
-            not isinstance(stats_adjusted, dict)
-            or stats_adjusted.get("status") != "ready"
-            or not isinstance(stats_adjusted.get("statementRows"), int)
-            or int(stats_adjusted["statementRows"]) <= 0
-            or not isinstance(stats_adjusted.get("dailyValuationRows"), int)
-            or int(stats_adjusted["dailyValuationRows"]) <= 0
-            or not isinstance(stats_adjusted.get("readyBasisCount"), int)
-            or int(stats_adjusted["readyBasisCount"]) <= 0
+            direct_provider_vintage is None
+            or stats_adjusted != direct_provider_vintage
         ):
             raise _managed_root.CutoverSafetyError(
-                "Market adjusted-metric coverage is not ready"
+                "HTTP stats provider vintage does not match direct DuckDB identity"
             )
 
         validation = api.request("GET", "/api/db/validate")
@@ -373,30 +489,30 @@ class RuntimeSmokeService:
             raise _managed_root.CutoverSafetyError(
                 "Market validation did not report healthy"
             )
-        adjusted = validation.get("adjustedMetrics")
+        adjusted = validation.get("providerVintage")
         if not isinstance(adjusted, dict):
             raise _managed_root.CutoverSafetyError(
-                "Validation omitted adjusted-metric lineage"
+                "Validation omitted provider-vintage lineage"
             )
         zero_counters = (
+            "invalidProviderWindowCount",
+            "invalidAdjustmentEventCount",
+            "providerAdjustedMismatchCount",
+            "invalidCurrentBasisStateCount",
+            "pendingCurrentBasisCodeCount",
             "missingAdjustedStatementRows",
             "extraAdjustedStatementRows",
             "staleAdjustedStatementRows",
             "wrongBasisAdjustedStatementRows",
-            "missingDailyValuationRows",
-            "extraDailyValuationRows",
-            "wrongBasisDailyValuationRows",
+            "orphanAdjustedStatementRows",
         )
         if (
-            adjusted.get("status") != "ready"
-            or not isinstance(adjusted.get("sourceStatementKeyCount"), int)
-            or int(adjusted["sourceStatementKeyCount"]) <= 0
-            or not isinstance(adjusted.get("expectedAdjustedStatementRows"), int)
-            or int(adjusted["expectedAdjustedStatementRows"]) <= 0
+            not RuntimeSmokeService._is_ready_provider_vintage(adjusted)
             or any(adjusted.get(counter) != 0 for counter in zero_counters)
+            or adjusted != direct_provider_vintage
         ):
             raise _managed_root.CutoverSafetyError(
-                "Exact adjusted-metric lineage validation failed"
+                "HTTP validation provider vintage does not match direct DuckDB identity"
             )
         return stats_adjusted, adjusted, zero_counters
 
@@ -464,6 +580,7 @@ class RuntimeSmokeService:
         config: SmokeConfig,
         *,
         operation_id: str,
+        provider_vintage: dict[str, object],
     ) -> tuple[str, str]:
         dataset_name = f"cutover-smoke-{operation_id.replace('.', '-')}"
         dataset = api.request(
@@ -484,14 +601,33 @@ class RuntimeSmokeService:
         dataset_info = api.request("GET", f"/api/dataset/{dataset_name}/info")
         snapshot = dataset_info.get("snapshot")
         dataset_validation = dataset_info.get("validation")
-        if not isinstance(snapshot, dict) or snapshot != {
-            **snapshot,
-            "schemaVersion": 3,
-            "sourceMarketSchemaVersion": 4,
-            "stockPriceAdjustmentMode": "local_projection_v2_event_time",
-        }:
+        effective_coverage = provider_vintage.get("effectiveCoverage")
+        expected_snapshot = {
+            "schemaVersion": 4,
+            "sourceMarketSchemaVersion": 5,
+            "stockPriceAdjustmentMode": "provider_adjusted_v1",
+            "providerPlan": provider_vintage.get("providerPlan"),
+            "providerAsOf": provider_vintage.get("providerAsOf"),
+            "providerCoverageStart": (
+                effective_coverage.get("min")
+                if isinstance(effective_coverage, dict)
+                else None
+            ),
+            "providerCoverageEnd": (
+                effective_coverage.get("max")
+                if isinstance(effective_coverage, dict)
+                else None
+            ),
+            "providerSourceFingerprint": provider_vintage.get("sourceFingerprint"),
+            "fundamentalsAdjustmentBasisDate": provider_vintage.get(
+                "fundamentalsAdjustmentBasisDate"
+            ),
+        }
+        if not isinstance(snapshot, dict) or any(
+            snapshot.get(key) != value for key, value in expected_snapshot.items()
+        ):
             raise _managed_root.CutoverSafetyError(
-                "Dataset event-time lineage gate failed"
+                "Dataset provider-vintage gate failed"
             )
         if (
             not isinstance(dataset_validation, dict)

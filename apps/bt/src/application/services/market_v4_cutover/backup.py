@@ -1,8 +1,10 @@
-"""Focused Market v4 cutover responsibility module."""
+"""Focused Market v5 cutover responsibility module."""
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 from pathlib import Path
 import secrets
 import stat
@@ -12,10 +14,16 @@ from typing import cast, Protocol
 from src.infrastructure.db.market import managed_root as _managed_root
 
 from .contracts import (
+    ActivationAttempt,
+    ActivationState,
     BackupResult,
+    ImmutableJsonValue,
+    MarketTreeIdentity,
     MarketSourceMetadata,
     RestoreResult,
+    SmokeConfig,
 )
+from .activation_journal import ActivationJournalRepository
 from .workspace import CutoverWorkspace
 
 
@@ -38,6 +46,7 @@ class MarketBackupService:
 
     def _preflight_under_lease(self) -> MarketSourceMetadata:
         self._workspace._validate_active_roots()
+        self._workspace.atomic_exchange.require_capability()
         self._workspace.runtime.assert_quiescent(self._workspace.data_root)
         metadata = self._workspace._checkpoint(
             guard_lease_fd=self._workspace.active_lease_fd()
@@ -138,6 +147,7 @@ class MarketBackupService:
                     "schemaVersion": metadata.schema_version,
                     "stockPriceAdjustmentMode": metadata.adjustment_mode,
                 },
+                "activeMarketTreeSha256": self._tree_entries_sha256(entries),
                 "files": entries,
             }
             manifest_path = destination / "manifest.json"
@@ -227,6 +237,17 @@ class MarketBackupService:
         entries = manifest.get("files")
         if not isinstance(entries, list) or not entries:
             raise _managed_root.CutoverSafetyError("Backup manifest has no files")
+        if not all(isinstance(entry, dict) for entry in entries):
+            raise _managed_root.CutoverSafetyError(
+                "Backup manifest file entry is invalid"
+            )
+        typed_entries = cast(list[dict[str, object]], entries)
+        if manifest.get("activeMarketTreeSha256") != self._tree_entries_sha256(
+            typed_entries
+        ):
+            raise _managed_root.CutoverSafetyError(
+                "Backup manifest Market tree identity mismatch"
+            )
         expected_paths: set[str] = set()
         for entry in entries:
             if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
@@ -266,6 +287,240 @@ class MarketBackupService:
         if actual_paths != expected_paths:
             raise _managed_root.CutoverSafetyError("Backup file set mismatch")
         return BackupResult(backup_id)
+
+    @staticmethod
+    def _tree_entries_sha256(entries: list[dict[str, object]]) -> str:
+        canonical = [
+            {
+                "path": entry.get("path"),
+                "bytes": entry.get("bytes"),
+                "sha256": entry.get("sha256"),
+            }
+            for entry in sorted(entries, key=lambda item: str(item.get("path", "")))
+        ]
+        return hashlib.sha256(
+            json.dumps(
+                canonical,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            ).encode()
+        ).hexdigest()
+
+    def _market_tree_sha256(self, root: Path) -> str:
+        entries = []
+        for source in self._workspace._source_files(root):
+            relative = source.relative_to(root)
+            managed_relative = self._workspace._managed_relative(source)
+            source_stat = self._workspace.managed().stat(managed_relative)
+            entries.append(
+                {
+                    "path": relative.as_posix(),
+                    "bytes": source_stat.st_size,
+                    "sha256": self._workspace.managed().sha256(managed_relative),
+                }
+            )
+        if not entries:
+            raise _managed_root.CutoverSafetyError("Market tree is empty")
+        return self._tree_entries_sha256(entries)
+
+    def _market_tree_identity(
+        self,
+        root: Path,
+        *,
+        identity_path: str | None = None,
+        payload: dict[str, ImmutableJsonValue] | None = None,
+    ) -> MarketTreeIdentity:
+        """Capture one exact descriptor and payload identity under the active lease."""
+
+        root = self._workspace._assert_managed_directory(root)
+        root_fd = self._workspace.managed().open_dir(
+            self._workspace._managed_relative(root)
+        )
+        try:
+            root_stat = os.fstat(root_fd)
+            identity_payload = dict(payload or {})
+            identity_payload["marketTreeSha256"] = self._market_tree_sha256(root)
+            current_fd = self._workspace.managed().open_dir(
+                self._workspace._managed_relative(root)
+            )
+            try:
+                current_stat = os.fstat(current_fd)
+            finally:
+                os.close(current_fd)
+            if (root_stat.st_dev, root_stat.st_ino) != (
+                current_stat.st_dev,
+                current_stat.st_ino,
+            ):
+                raise _managed_root.CutoverSafetyError(
+                    "Market tree identity changed during capture"
+                )
+        finally:
+            os.close(root_fd)
+        return MarketTreeIdentity(
+            path=(
+                identity_path
+                if identity_path is not None
+                else root.relative_to(self._workspace.data_root).as_posix()
+            ),
+            directory={"device": root_stat.st_dev, "inode": root_stat.st_ino},
+            payload=identity_payload,
+        )
+
+    def _assert_market_tree_identity(
+        self,
+        root: Path,
+        expected: MarketTreeIdentity,
+    ) -> None:
+        actual = self._market_tree_identity(
+            root,
+            identity_path=expected.path,
+            payload=dict(expected.payload),
+        )
+        if actual != expected:
+            raise _managed_root.CutoverSafetyError(
+                f"Market tree identity mismatch: {expected.path}"
+            )
+
+    def _prepare_activation_attempt(
+        self,
+        *,
+        report_id: str,
+        rehearsal_report_id: str,
+        backup_id: str,
+        config: SmokeConfig,
+        code_version: str,
+        staged_market: Path,
+        evidence: dict[str, object],
+        backup_market_tree_sha256: str,
+    ) -> ActivationAttempt:
+        source = self._market_tree_identity(
+            staged_market,
+            payload=cast(
+                dict[str, ImmutableJsonValue],
+                {"schemaCoverage": evidence},
+            ),
+        )
+        staged = MarketTreeIdentity(source.path, source.directory, source.payload)
+        active_before = self._market_tree_identity(self._workspace.market_root)
+        backup = self._market_tree_identity(
+            self._workspace.backups_root / backup_id / "payload"
+        )
+        if any(
+            identity.payload.get("marketTreeSha256")
+            != backup_market_tree_sha256
+            for identity in (active_before, backup)
+        ):
+            raise _managed_root.CutoverSafetyError(
+                "Activation active or backup identity changed before journal prepare"
+            )
+        expected_active = MarketTreeIdentity(
+            self._workspace.market_root.relative_to(
+                self._workspace.data_root
+            ).as_posix(),
+            staged.directory,
+            staged.payload,
+        )
+        return ActivationAttempt(
+            report_id,
+            rehearsal_report_id,
+            backup_id,
+            code_version,
+            config,
+            source,
+            staged,
+            active_before,
+            backup,
+            expected_active,
+        )
+
+    def _prepare_journaled_activation(
+        self,
+        *,
+        journal: ActivationJournalRepository,
+        report_id: str,
+        rehearsal_report_id: str,
+        backup_id: str,
+        config: SmokeConfig,
+        code_version: str,
+        staging_root: Path,
+        evidence: dict[str, object],
+        backup_market_tree_sha256: str,
+    ) -> tuple[ActivationAttempt, Path, MarketTreeIdentity]:
+        if (
+            self._assert_active_matches_backup_under_lease(backup_id)
+            != backup_market_tree_sha256
+        ):
+            raise _managed_root.CutoverSafetyError(
+                "Selected backup identity changed before activation"
+            )
+        staged_market = staging_root / "market-timeseries"
+        quarantine = (
+            self._workspace.operations_root
+            / "quarantine"
+            / f"pre-cutover-{report_id}"
+        )
+        self._workspace._prepare_staged_activation(
+            staged_market,
+            quarantine=quarantine,
+        )
+        attempt = self._prepare_activation_attempt(
+            report_id=report_id,
+            rehearsal_report_id=rehearsal_report_id,
+            backup_id=backup_id,
+            config=config,
+            code_version=code_version,
+            staged_market=staged_market,
+            evidence=evidence,
+            backup_market_tree_sha256=backup_market_tree_sha256,
+        )
+        quarantine_identity = self._quarantine_identity(attempt, quarantine)
+        journal.append(attempt, ActivationState.PREPARED)
+        journal.append(attempt, ActivationState.EXCHANGE_STARTED)
+        return attempt, quarantine, quarantine_identity
+
+    def _quarantine_identity(
+        self,
+        attempt: ActivationAttempt,
+        quarantine: Path,
+    ) -> MarketTreeIdentity:
+        return MarketTreeIdentity(
+            quarantine.relative_to(self._workspace.data_root).as_posix(),
+            attempt.active_before.directory,
+            attempt.active_before.payload,
+        )
+
+    def _assert_activation_identities(
+        self,
+        attempt: ActivationAttempt,
+        quarantine: MarketTreeIdentity,
+    ) -> None:
+        self._assert_market_tree_identity(
+            self._workspace.market_root,
+            attempt.expected_active,
+        )
+        self._assert_market_tree_identity(
+            self._workspace.data_root / quarantine.path,
+            quarantine,
+        )
+
+    def _assert_active_matches_backup_under_lease(self, backup_id: str) -> str:
+        """Bind activation to the exact active tree captured by its backup."""
+
+        self._verify_backup_managed(backup_id)
+        manifest_path = self._workspace.backups_root / backup_id / "manifest.json"
+        manifest = json.loads(
+            self._workspace.managed()
+            .read_bytes(self._workspace._managed_relative(manifest_path))
+            .decode("utf-8")
+        )
+        expected = manifest.get("activeMarketTreeSha256")
+        actual = self._market_tree_sha256(self._workspace.market_root)
+        if not isinstance(expected, str) or actual != expected:
+            raise _managed_root.CutoverSafetyError(
+                "Active Market tree no longer exactly matches the selected backup"
+            )
+        return expected
 
     def restore(self, backup_id: str | None) -> RestoreResult:
         with self._workspace.exclusive_operation():
@@ -325,7 +580,6 @@ class MarketBackupService:
         self._verify_tree_copy(backup_payload, stage)
         self._workspace.managed().fsync_tree(self._workspace._managed_relative(stage))
         quarantine_relative: str | None = None
-        quarantine: Path | None = None
         try:
             self._workspace.managed().stat(
                 self._workspace._managed_relative(self._workspace.market_root)
@@ -342,46 +596,33 @@ class MarketBackupService:
             self._workspace._assert_managed_target_absent(quarantine)
             self._workspace._validate_active_roots()
             self._workspace._assert_managed_directory(quarantine_root)
-            self._workspace._secure_rename(self._workspace.market_root, quarantine)
-            quarantine_relative = quarantine.relative_to(
-                self._workspace.data_root
-            ).as_posix()
-        try:
             self._workspace._assert_managed_directory(stage)
-            self._workspace._secure_rename(stage, self._workspace.market_root)
-        except Exception as exc:
             try:
-                try:
-                    self._workspace.managed().stat(
-                        self._workspace._managed_relative(self._workspace.market_root)
-                    )
-                    failed_market_exists = True
-                except FileNotFoundError:
-                    failed_market_exists = False
-                if failed_market_exists:
-                    failed_stage = (
-                        self._workspace.operations_root
-                        / "quarantine"
-                        / (f"restore-stage-failed-{backup_id}-{time.time_ns()}")
-                    )
-                    self._workspace._assert_managed_target_absent(failed_stage)
-                    self._workspace._validate_active_roots()
-                    self._workspace._secure_rename(
-                        self._workspace.market_root, failed_stage
-                    )
-                if quarantine is not None:
-                    self._workspace._assert_managed_directory(quarantine.parent)
-                    self._workspace._assert_managed_directory(quarantine)
-                    self._workspace._secure_rename(
-                        quarantine, self._workspace.market_root
-                    )
-            except Exception as rollback_exc:
+                self._workspace.atomic_exchange.exchange(
+                    self._workspace.managed(),
+                    self._workspace._managed_relative(self._workspace.market_root),
+                    self._workspace._managed_relative(stage),
+                )
+            except Exception as exc:
                 raise _managed_root.CutoverSafetyError(
-                    "Restore activation failed and quarantine rollback failed"
-                ) from rollback_exc
-            raise _managed_root.CutoverSafetyError(
-                "Restore activation failed; original active tree was rolled back"
-            ) from exc
+                    "Atomic restore activation failed; original active tree is unchanged"
+                ) from exc
+            self._verify_tree_copy(backup_payload, self._workspace.market_root)
+            try:
+                self._workspace._secure_rename(stage, quarantine)
+            except Exception:
+                # The exact backup is already active. Preserve the displaced tree at
+                # its descriptor-confined staging path for operator diagnosis.
+                quarantine_relative = stage.relative_to(
+                    self._workspace.data_root
+                ).as_posix()
+            else:
+                quarantine_relative = quarantine.relative_to(
+                    self._workspace.data_root
+                ).as_posix()
+        else:
+            self._workspace._secure_rename(stage, self._workspace.market_root)
+            self._verify_tree_copy(backup_payload, self._workspace.market_root)
         self._verify_backup_managed(backup_id, require_current_root=False)
         return RestoreResult(backup_id, quarantine_relative)
 

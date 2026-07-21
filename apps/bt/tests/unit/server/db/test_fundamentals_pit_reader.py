@@ -8,23 +8,13 @@ import pytest
 
 from src.application.contracts.fundamentals_pit import FundamentalsPitSnapshotError
 from src.infrastructure.data_access import clients
-from src.infrastructure.data_access.clients import (
-    DirectMarketClient,
-    DirectMarketDataClient,
-)
-from tests.unit.server.db.market_writer_test_support import open_market_db
+from src.infrastructure.data_access.clients import DirectMarketClient, DirectMarketDataClient
 from src.infrastructure.db.market.market_reader import MarketDbReader
-
-
-_BASIS_COLUMNS = """
-    code, basis_id, valid_from, valid_to_exclusive,
-    adjustment_through_date, source_fingerprint,
-    materialized_through_date, status, created_at, updated_at
-"""
+from tests.unit.server.db.market_writer_test_support import open_market_db
 
 
 @pytest.fixture
-def v4_market(tmp_path: Path) -> Path:
+def v5_market(tmp_path: Path) -> Path:
     path = tmp_path / "market.duckdb"
     db = open_market_db(str(path))
     db.close()
@@ -64,99 +54,237 @@ def v4_market(tmp_path: Path) -> Path:
                 for code, name in (("72030", "Toyota"), ("6758", "Sony"))
             ],
         )
+
+        price_rows: list[tuple[object, ...]] = []
         raw_rows: list[tuple[object, ...]] = []
-        for code, close in (("72030", 200.0), ("6758", 100.0)):
-            for day_index in range(1, 61):
-                day = (date(2024, 4, 1) + timedelta(days=day_index - 1)).isoformat()
-                raw_rows.append(
-                    (code, day, close, close, close, close, 1000 + day_index, 1.0, None)
+        for code, close in (("7203", 200.0), ("6758", 100.0)):
+            for day_index in range(60):
+                day = (date(2024, 4, 1) + timedelta(days=day_index)).isoformat()
+                price_rows.append(
+                    (code, day, close, close, close, close, 1_000 + day_index, 1.0, None)
                 )
-            raw_rows.extend(
+                raw_rows.append(
+                    (
+                        code,
+                        day,
+                        close * 10,
+                        close * 10,
+                        close * 10,
+                        close * 10,
+                        100 + day_index,
+                        None,
+                        0.1,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                    )
+                )
+            price_rows.extend(
                 [
-                    (code, "2024-06-27", close, close, close, close, 2000, 1.0, None),
-                    (code, "2024-06-28", close, close, close, close, 2100, 1.0, None),
-                    (code, "2024-07-01", 9999.0, 9999.0, 9999.0, 9999.0, 1, 1.0, None),
+                    (code, "2024-06-27", close, close, close, close, 2_000, 1.0, None),
+                    (code, "2024-06-28", close, close, close, close, 2_100, 1.0, None),
+                    (code, "2024-07-01", 9_999.0, 9_999.0, 9_999.0, 9_999.0, 1, 1.0, None),
                 ]
             )
-        conn.executemany(
-            "INSERT INTO stock_data_raw VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", raw_rows
+        # A provider alias exists on the same date; the normalized 4-digit row wins.
+        price_rows.append(
+            ("72030", "2024-06-28", 777.0, 777.0, 777.0, 777.0, 7, 1.0, None)
         )
         conn.executemany(
-            f"INSERT INTO stock_adjustment_bases ({_BASIS_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-                (
-                    code,
-                    f"event-pit-v1:{code}:2024-06-28",
-                    "2024-06-28",
-                    None,
-                    "2024-06-28",
-                    f"fp-{code}",
-                    "2024-06-28",
-                    "ready",
-                    None,
-                    None,
-                )
-                for code in ("7203", "6758")
-            ],
+            """
+            INSERT INTO stock_data (
+                code, date, open, high, low, close, volume, adjustment_factor, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            price_rows,
         )
         conn.executemany(
-            "INSERT INTO stock_adjustment_basis_segments VALUES (?, ?, ?, ?, ?)",
+            """
+            INSERT INTO stock_data_raw (
+                code, date, open, high, low, close, volume, turnover_value,
+                adjustment_factor, adjusted_open, adjusted_high, adjusted_low,
+                adjusted_close, adjusted_volume, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            raw_rows,
+        )
+        conn.executemany(
+            """
+            INSERT INTO stock_provider_windows (
+                code, coverage_start, coverage_end, provider_plan, provider_as_of,
+                source_fingerprint, updated_at
+            ) VALUES (?, '2024-04-01', '2024-07-01', 'premium', ?, ?, '2024-07-01T17:00:00+09:00')
+            """,
             [
-                (code, f"event-pit-v1:{code}:2024-06-28", "2024-04-01", None, 1.0)
-                for code in ("7203", "6758")
+                ("7203", "2024-07-01", "provider-7203"),
+                ("6758", "2024-07-01", "provider-6758"),
             ],
         )
         conn.executemany(
             """
             INSERT INTO statements (
-                code, disclosed_date, type_of_document, type_of_current_period,
-                earnings_per_share, forecast_eps
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                code, statement_id, disclosed_date, disclosed_at,
+                period_start, period_end, type_of_document,
+                type_of_current_period, earnings_per_share, bps, forecast_eps,
+                shares_outstanding, treasury_shares
+            ) VALUES (?, ?, ?, ?, ?, ?, 'FinancialStatements', 'FY', ?, ?, ?, ?, ?)
             """,
             [
-                ("72030", "2024-05-10", "FinancialStatements", "FY", 50.0, 60.0),
-                ("7203", "2024-06-20", "FinancialStatements", "FY", None, 70.0),
-                ("7203", "2024-07-01", "FinancialStatements", "FY", 999.0, 999.0),
+                (
+                    "72030",
+                    "toyota-fy-2024",
+                    "2024-05-10",
+                    "2024-05-10T15:00:00+09:00",
+                    "2023-04-01",
+                    "2024-03-31",
+                    50.0,
+                    100.0,
+                    60.0,
+                    100_000_000.0,
+                    10_000_000.0,
+                ),
+                (
+                    "7203",
+                    "toyota-revision-2024",
+                    "2024-06-20",
+                    "2024-06-20T15:00:00+09:00",
+                    "2024-04-01",
+                    "2025-03-31",
+                    None,
+                    None,
+                    70.0,
+                    100_000_000.0,
+                    10_000_000.0,
+                ),
+                (
+                    "7203",
+                    "toyota-future",
+                    "2024-07-01",
+                    "2024-07-01T15:00:00+09:00",
+                    "2024-04-01",
+                    "2025-03-31",
+                    999.0,
+                    999.0,
+                    999.0,
+                    100_000_000.0,
+                    10_000_000.0,
+                ),
+                (
+                    "6758",
+                    "sony-fy-2024",
+                    "2024-05-09",
+                    "2024-05-09T15:00:00+09:00",
+                    "2023-04-01",
+                    "2024-03-31",
+                    25.0,
+                    50.0,
+                    30.0,
+                    80_000_000.0,
+                    5_000_000.0,
+                ),
             ],
         )
-        conn.execute(
+        conn.executemany(
             """
             INSERT INTO statement_metrics_adjusted (
-                code, disclosed_date, period_end, period_type, price_basis_date,
-                adjusted_eps, adjusted_forecast_eps, basis_version
-            ) VALUES
-                ('7203', '2024-05-10', '2024-03-31', 'FY', '2024-06-28', 50, 60, 'event-pit-v1:7203:2024-06-28'),
-                ('7203', '2024-06-20', '2025-03-31', 'FY', '2024-06-28', NULL, 70, 'event-pit-v1:7203:2024-06-28')
-            """
-        )
-        conn.execute(
-            """
-            INSERT INTO daily_valuation (
-                code, date, price_basis_date, close, eps, forward_eps,
-                free_float_market_cap, statement_disclosed_date,
-                forward_eps_disclosed_date, basis_version
-            )
-            SELECT normalized_code, date, '2024-06-28', close,
-                   CASE WHEN normalized_code = '7203' AND date >= '2024-05-10' THEN 50 END,
-                   CASE WHEN normalized_code = '7203' AND date >= '2024-05-10' THEN 60 END,
-                   CASE WHEN normalized_code = '7203' THEN 10000000000.0 ELSE 8000000000.0 END,
-                   CASE WHEN normalized_code = '7203' AND date >= '2024-05-10' THEN '2024-05-10' END,
-                   CASE WHEN normalized_code = '7203' AND date >= '2024-05-10' THEN '2024-05-10' END,
-                   'event-pit-v1:' || normalized_code || ':2024-06-28'
-            FROM (
-                SELECT CASE WHEN length(code) = 5 AND right(code, 1) = '0'
-                            THEN left(code, 4) ELSE code END AS normalized_code,
-                       date, close,
-                       ROW_NUMBER() OVER (
-                           PARTITION BY CASE WHEN length(code) = 5 AND right(code, 1) = '0'
-                                             THEN left(code, 4) ELSE code END, date
-                           ORDER BY length(code)
-                       ) AS rn
-                FROM stock_data_raw
-                WHERE date <= '2024-06-28'
-            ) AS raw
-            WHERE rn = 1
+                code, statement_id, disclosed_date, disclosed_at, period_end,
+                period_type, fundamentals_adjustment_basis_date, raw_eps,
+                adjusted_eps, raw_bps, adjusted_bps, raw_forecast_eps,
+                adjusted_forecast_eps, raw_shares_outstanding,
+                adjusted_shares_outstanding, raw_treasury_shares,
+                adjusted_treasury_shares, adjustment_factor_cumulative,
+                source_fingerprint, created_at
+            ) VALUES (?, ?, ?, ?, ?, 'FY', '2024-07-01', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1.0, ?, NULL)
             """,
+            [
+                (
+                    "7203",
+                    "toyota-fy-2024",
+                    "2024-05-10",
+                    "2024-05-10T15:00:00+09:00",
+                    "2024-03-31",
+                    50.0,
+                    50.0,
+                    100.0,
+                    100.0,
+                    60.0,
+                    60.0,
+                    100_000_000.0,
+                    100_000_000.0,
+                    10_000_000.0,
+                    10_000_000.0,
+                    "current-toyota",
+                ),
+                (
+                    "7203",
+                    "toyota-revision-2024",
+                    "2024-06-20",
+                    "2024-06-20T15:00:00+09:00",
+                    "2025-03-31",
+                    None,
+                    None,
+                    None,
+                    None,
+                    70.0,
+                    70.0,
+                    100_000_000.0,
+                    100_000_000.0,
+                    10_000_000.0,
+                    10_000_000.0,
+                    "current-toyota",
+                ),
+                (
+                    "7203",
+                    "toyota-future",
+                    "2024-07-01",
+                    "2024-07-01T15:00:00+09:00",
+                    "2025-03-31",
+                    999.0,
+                    999.0,
+                    999.0,
+                    999.0,
+                    999.0,
+                    999.0,
+                    100_000_000.0,
+                    100_000_000.0,
+                    10_000_000.0,
+                    10_000_000.0,
+                    "current-toyota",
+                ),
+                (
+                    "6758",
+                    "sony-fy-2024",
+                    "2024-05-09",
+                    "2024-05-09T15:00:00+09:00",
+                    "2024-03-31",
+                    25.0,
+                    25.0,
+                    50.0,
+                    50.0,
+                    30.0,
+                    30.0,
+                    80_000_000.0,
+                    80_000_000.0,
+                    5_000_000.0,
+                    5_000_000.0,
+                    "current-sony",
+                ),
+            ],
+        )
+        conn.executemany(
+            """
+            INSERT INTO current_basis_fundamentals_state (
+                code, fundamentals_adjustment_basis_date, source_fingerprint,
+                statement_count, materialized_at
+            ) VALUES (?, '2024-07-01', ?, ?, '2024-07-01T17:00:00+09:00')
+            """,
+            [
+                ("7203", "current-toyota", 3),
+                ("6758", "current-sony", 1),
+            ],
         )
     finally:
         conn.close()
@@ -165,9 +293,7 @@ def v4_market(tmp_path: Path) -> Path:
 
 def _reader_client(monkeypatch: pytest.MonkeyPatch, path: Path) -> DirectMarketClient:
     reader = MarketDbReader(str(path))
-    monkeypatch.setattr(
-        clients, "_resolve_market_reader", lambda snapshot_id=None: reader
-    )
+    monkeypatch.setattr(clients, "_resolve_market_reader", lambda snapshot_id=None: reader)
     return DirectMarketClient()
 
 
@@ -179,275 +305,113 @@ def _update(path: Path, sql: str) -> None:
         conn.close()
 
 
-def _add_large_prime_universe(path: Path, size: int = 30) -> None:
-    conn = duckdb.connect(str(path))
-    try:
-        conn.execute(
-            f"""
-            INSERT INTO stock_master_daily (
-                date, code, company_name, market_code, market_name,
-                sector_17_code, sector_17_name, sector_33_code,
-                sector_33_name, listed_date
-            )
-            SELECT '2024-06-28', CAST(code AS VARCHAR), 'Prime ' || code,
-                   '0111', 'Prime', '6', 'Auto', '3700', 'Transport', '2000-01-01'
-            FROM range(8000, {8000 + size}) AS codes(code)
-            """
-        )
-        conn.execute(
-            f"""
-            INSERT INTO stock_data_raw
-            SELECT CAST(code AS VARCHAR),
-                   strftime(DATE '2024-04-01' + day_index * INTERVAL 1 DAY, '%Y-%m-%d'),
-                   code, code, code, code, 1000 + day_index, 1.0, NULL
-            FROM range(8000, {8000 + size}) AS codes(code)
-            CROSS JOIN range(0, 60) AS days(day_index)
-            """
-        )
-        conn.execute(
-            f"""
-            INSERT INTO stock_data_raw
-            SELECT CAST(code AS VARCHAR), '2024-06-28',
-                   code, code, code, code, 2000, 1.0, NULL
-            FROM range(8000, {8000 + size}) AS codes(code)
-            """
-        )
-        conn.execute(
-            f"""
-            INSERT INTO stock_adjustment_bases
-            SELECT CAST(code AS VARCHAR),
-                   'event-pit-v1:' || code || ':2024-06-28',
-                   '2024-06-28', NULL, '2024-06-28', 'fp-' || code,
-                   '2024-06-28', 'ready', NULL, NULL
-            FROM range(8000, {8000 + size}) AS codes(code)
-            """
-        )
-        conn.execute(
-            f"""
-            INSERT INTO stock_adjustment_basis_segments
-            SELECT CAST(code AS VARCHAR),
-                   'event-pit-v1:' || code || ':2024-06-28',
-                   '2024-04-01', NULL, 1.0
-            FROM range(8000, {8000 + size}) AS codes(code)
-            """
-        )
-        conn.execute(
-            f"""
-            INSERT INTO daily_valuation (
-                code, date, price_basis_date, close, free_float_market_cap,
-                basis_version
-            )
-            SELECT CAST(code AS VARCHAR), '2024-06-28', '2024-06-28', code,
-                   code * 1000000,
-                   'event-pit-v1:' || code || ':2024-06-28'
-            FROM range(8000, {8000 + size}) AS codes(code)
-            """
-        )
-        conn.execute(
-            """
-            UPDATE stock_adjustment_bases
-            SET valid_to_exclusive = '2024-07-01'
-            WHERE code = '8000'
-            """
-        )
-        conn.execute(
-            """
-            INSERT INTO stock_adjustment_bases VALUES (
-                '8000', 'event-pit-v1:8000:2024-07-01', '2024-07-01', NULL,
-                '2024-07-01', 'fp-future', '2024-07-01', 'ready', NULL, NULL
-            )
-            """
-        )
-        conn.execute(
-            """
-            INSERT INTO stock_adjustment_basis_segments VALUES (
-                '8000', 'event-pit-v1:8000:2024-07-01',
-                '2024-04-01', NULL, 0.01
-            )
-            """
-        )
-        conn.execute(
-            """
-            INSERT INTO stock_data_raw VALUES (
-                '8000', '2024-07-01', 999999, 999999, 999999, 999999,
-                1, 0.01, NULL
-            )
-            """
-        )
-        conn.execute(
-            """
-            INSERT INTO stock_data VALUES (
-                '8000', '2024-06-28', 999999, 999999, 999999, 999999,
-                1, 1.0, NULL
-            )
-            """
-        )
-    finally:
-        conn.close()
-
-
-def _add_sparse_prime_history(path: Path) -> None:
-    conn = duckdb.connect(str(path))
-    try:
-        conn.execute(
-            """
-            INSERT INTO stock_master_daily (
-                date, code, company_name, market_code, market_name,
-                sector_17_code, sector_17_name, sector_33_code,
-                sector_33_name, listed_date
-            ) VALUES (
-                '2024-06-28', '9000', 'Sparse Prime', '0111', 'Prime',
-                '6', 'Auto', '3700', 'Transport', '2000-01-01'
-            )
-            """
-        )
-        conn.execute(
-            """
-            INSERT INTO stock_data_raw
-            SELECT '9000',
-                   strftime(DATE '2024-06-28' - (59 - observation) * INTERVAL 10 DAY, '%Y-%m-%d'),
-                   10, 10, 10, 10, observation + 1, 1.0, NULL
-            FROM range(0, 60) AS observations(observation)
-            """
-        )
-        conn.execute(
-            """
-            INSERT INTO stock_data_raw VALUES (
-                '9000', '2024-07-01', 999999, 999999, 999999, 999999,
-                1, 0.5, NULL
-            )
-            """
-        )
-        conn.execute(
-            """
-            INSERT INTO stock_adjustment_bases VALUES (
-                '9000', 'event-pit-v1:9000:2022-01-01', '2022-01-01', NULL,
-                '2022-01-01', 'fp-sparse', '2024-06-28', 'ready', NULL, NULL
-            )
-            """
-        )
-        conn.execute(
-            """
-            INSERT INTO stock_adjustment_basis_segments VALUES (
-                '9000', 'event-pit-v1:9000:2022-01-01',
-                '2022-01-01', NULL, 1.0
-            )
-            """
-        )
-        conn.execute(
-            """
-            INSERT INTO daily_valuation (
-                code, date, price_basis_date, close, free_float_market_cap,
-                basis_version
-            ) VALUES (
-                '9000', '2024-06-28', '2022-01-01', 10, 9000000000,
-                'event-pit-v1:9000:2022-01-01'
-            )
-            """
-        )
-    finally:
-        conn.close()
-
-
-def test_snapshot_resolves_weekend_to_one_basis_and_exact_master(
-    monkeypatch: pytest.MonkeyPatch, v4_market: Path
+def test_snapshot_resolves_weekend_with_provider_metadata_and_exact_master(
+    monkeypatch: pytest.MonkeyPatch, v5_market: Path
 ) -> None:
-    snapshot = _reader_client(monkeypatch, v4_market).get_fundamentals_pit_snapshot(
-        "7203", date.fromisoformat("2024-06-30")
+    snapshot = _reader_client(monkeypatch, v5_market).get_fundamentals_pit_snapshot(
+        "72030", date(2024, 6, 30)
     )
 
     assert snapshot.requested_cutoff_date == date(2024, 6, 30)
     assert snapshot.knowledge_cutoff_date == date(2024, 6, 30)
     assert snapshot.effective_market_date == date(2024, 6, 28)
-    assert snapshot.basis_id == "event-pit-v1:7203:2024-06-28"
-    assert snapshot.stock_info.code[:4] == "7203"
     assert snapshot.stock_master_snapshot_date == date(2024, 6, 28)
-    assert snapshot.statements.index.max().date() == date(2024, 6, 20)
-    assert set(snapshot.statements["forecastEps"].dropna()) == {60.0, 70.0}
-    assert {row["period_end"] for row in snapshot.adjusted_statement_metrics} == {
-        "2024-03-31",
-        "2025-03-31",
+    assert snapshot.fundamentals_adjustment_basis_date == date(2024, 7, 1)
+    assert snapshot.provider_as_of == "2024-07-01"
+    assert snapshot.provider_coverage_start == date(2024, 4, 1)
+    assert snapshot.provider_coverage_end == date(2024, 7, 1)
+    assert snapshot.stock_info.code == "72030"
+    assert {row["statement_id"] for row in snapshot.adjusted_statement_metrics} == {
+        "toyota-fy-2024",
+        "toyota-revision-2024",
     }
-    assert snapshot.ohlcv.index.max().date() == date(2024, 6, 28)
     assert set(snapshot.prime_liquidity_panel["code"]) == {"6758", "7203"}
-    assert set(snapshot.prime_liquidity_panel["basis_id"]) == {
-        "event-pit-v1:6758:2024-06-28",
-        "event-pit-v1:7203:2024-06-28",
+    assert "basis_id" not in snapshot.prime_liquidity_panel.columns
+
+
+def test_snapshot_daily_valuation_equals_canonical_asof_relation(
+    monkeypatch: pytest.MonkeyPatch, v5_market: Path
+) -> None:
+    snapshot = _reader_client(monkeypatch, v5_market).get_fundamentals_pit_snapshot(
+        "7203", date(2024, 6, 30)
+    )
+    conn = duckdb.connect(str(v5_market), read_only=True)
+    try:
+        expected = conn.execute(
+            """
+            SELECT date, close, eps, forward_eps, per, forward_per, statement_id
+            FROM daily_valuation
+            WHERE code = '7203' AND date <= '2024-06-28'
+            ORDER BY date
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+
+    actual = [
+        (
+            row["date"],
+            row["close"],
+            row["eps"],
+            row["forward_eps"],
+            row["per"],
+            row["forward_per"],
+            row["statement_id"],
+        )
+        for row in snapshot.daily_valuation
+    ]
+    assert actual == expected
+
+
+def test_snapshot_uses_provider_adjusted_price_and_four_digit_dedupe(
+    monkeypatch: pytest.MonkeyPatch, v5_market: Path
+) -> None:
+    snapshot = _reader_client(monkeypatch, v5_market).get_fundamentals_pit_snapshot(
+        "72030", date(2024, 6, 30)
+    )
+
+    assert snapshot.ohlcv.loc["2024-06-28", "Close"] == 200.0
+    assert snapshot.ohlcv.loc["2024-06-28", "Close"] not in {777.0, 2_000.0}
+    assert snapshot.daily_valuation[-1]["close"] == 200.0
+
+
+def test_snapshot_never_leaks_future_statement_or_adjusted_metric(
+    monkeypatch: pytest.MonkeyPatch, v5_market: Path
+) -> None:
+    snapshot = _reader_client(monkeypatch, v5_market).get_fundamentals_pit_snapshot(
+        "7203", date(2024, 6, 30)
+    )
+
+    assert snapshot.statements.index.max().date() == date(2024, 6, 20)
+    assert {row["statement_id"] for row in snapshot.adjusted_statement_metrics} == {
+        "toyota-fy-2024",
+        "toyota-revision-2024",
     }
-    assert set(snapshot.prime_liquidity_panel["stock_master_snapshot_date"]) == {
-        "2024-06-28"
-    }
+    assert all(row["statement_id"] != "toyota-future" for row in snapshot.daily_valuation)
+    assert all(row["forward_eps"] != 999.0 for row in snapshot.daily_valuation)
 
 
-def test_snapshot_rejects_future_nested_provenance(
-    monkeypatch: pytest.MonkeyPatch, v4_market: Path
+def test_snapshot_accepts_suspended_symbol_and_uses_latest_prior_observation(
+    monkeypatch: pytest.MonkeyPatch, v5_market: Path
 ) -> None:
     _update(
-        v4_market,
-        "UPDATE daily_valuation SET forward_eps_disclosed_date = '2024-07-01' WHERE code = '7203'",
+        v5_market,
+        "DELETE FROM stock_data WHERE code IN ('7203', '72030') AND date = '2024-06-28'",
     )
-
-    with pytest.raises(FundamentalsPitSnapshotError) as exc_info:
-        _reader_client(monkeypatch, v4_market).get_fundamentals_pit_snapshot(
-            "7203", date(2024, 6, 30)
-        )
-    assert exc_info.value.reason == "pit_snapshot_inconsistent"
-
-
-def test_snapshot_rejects_future_prime_peer_nested_provenance(
-    monkeypatch: pytest.MonkeyPatch, v4_market: Path
-) -> None:
-    _update(
-        v4_market,
-        "UPDATE daily_valuation SET forward_sales_disclosed_date = '2024-07-01' "
-        "WHERE code = '6758' AND date = '2024-06-28'",
-    )
-
-    with pytest.raises(FundamentalsPitSnapshotError) as exc_info:
-        _reader_client(monkeypatch, v4_market).get_fundamentals_pit_snapshot(
-            "7203", date(2024, 6, 30)
-        )
-    assert exc_info.value.reason == "pit_snapshot_inconsistent"
-
-
-def test_snapshot_rejects_prime_peer_provenance_without_source_disclosure(
-    monkeypatch: pytest.MonkeyPatch, v4_market: Path
-) -> None:
-    _update(
-        v4_market,
-        "UPDATE daily_valuation SET statement_disclosed_date = '2024-05-10' "
-        "WHERE code = '6758' AND date = '2024-06-28'",
-    )
-
-    with pytest.raises(FundamentalsPitSnapshotError) as exc_info:
-        _reader_client(monkeypatch, v4_market).get_fundamentals_pit_snapshot(
-            "7203", date(2024, 6, 30)
-        )
-    assert exc_info.value.reason == "pit_snapshot_inconsistent"
-
-
-def test_snapshot_accepts_suspended_requested_symbol_with_global_basis_coverage(
-    monkeypatch: pytest.MonkeyPatch, v4_market: Path
-) -> None:
-    _update(v4_market, "DELETE FROM stock_data_raw WHERE code = '72030' AND date = '2024-06-28'")
-    _update(v4_market, "DELETE FROM daily_valuation WHERE code = '7203' AND date = '2024-06-28'")
-
-    snapshot = _reader_client(monkeypatch, v4_market).get_fundamentals_pit_snapshot(
+    snapshot = _reader_client(monkeypatch, v5_market).get_fundamentals_pit_snapshot(
         "7203", date(2024, 6, 30)
     )
 
     assert snapshot.effective_market_date == date(2024, 6, 28)
-    assert snapshot.materialized_through_date == date(2024, 6, 28)
     assert snapshot.ohlcv.index.max().date() == date(2024, 6, 27)
+    assert snapshot.daily_valuation[-1]["date"] == "2024-06-27"
 
 
-def test_snapshot_accepts_suspended_prime_peer_without_exact_price_observation(
-    monkeypatch: pytest.MonkeyPatch, v4_market: Path
+def test_snapshot_accepts_suspended_prime_peer_without_exact_price(
+    monkeypatch: pytest.MonkeyPatch, v5_market: Path
 ) -> None:
-    _update(v4_market, "DELETE FROM stock_data_raw WHERE code = '6758' AND date = '2024-06-28'")
-    _update(v4_market, "DELETE FROM daily_valuation WHERE code = '6758' AND date = '2024-06-28'")
-
-    snapshot = _reader_client(monkeypatch, v4_market).get_fundamentals_pit_snapshot(
+    _update(v5_market, "DELETE FROM stock_data WHERE code = '6758' AND date = '2024-06-28'")
+    snapshot = _reader_client(monkeypatch, v5_market).get_fundamentals_pit_snapshot(
         "7203", date(2024, 6, 30)
     )
 
@@ -455,35 +419,52 @@ def test_snapshot_accepts_suspended_prime_peer_without_exact_price_observation(
 
 
 @pytest.mark.parametrize(
-    "mutation",
-    [
-        "DELETE FROM statement_metrics_adjusted WHERE code = '7203' AND disclosed_date = '2024-06-20'",
-        "DELETE FROM daily_valuation WHERE code = '7203' AND date = '2024-06-27'",
-        "DELETE FROM daily_valuation WHERE code = '7203'",
-    ],
-)
-def test_snapshot_rejects_incomplete_adjusted_metric_or_valuation_coverage(
-    monkeypatch: pytest.MonkeyPatch, v4_market: Path, mutation: str
-) -> None:
-    _update(v4_market, mutation)
-
-    with pytest.raises(FundamentalsPitSnapshotError) as exc_info:
-        _reader_client(monkeypatch, v4_market).get_fundamentals_pit_snapshot(
-            "7203", date(2024, 6, 30)
-        )
-    assert exc_info.value.reason == "pit_snapshot_inconsistent"
-
-
-@pytest.mark.parametrize(
     ("mutation", "reason"),
     [
+        ("DELETE FROM stock_provider_windows WHERE code = '7203'", "provider_window_required"),
         (
-            "DELETE FROM stock_adjustment_bases WHERE code = '7203'",
-            "historical_adjustment_basis_required",
+            "UPDATE stock_provider_windows SET provider_plan = '' WHERE code = '7203'",
+            "provider_window_required",
         ),
         (
-            "UPDATE stock_adjustment_bases SET materialized_through_date = '2024-06-27' WHERE code = '7203'",
-            "historical_adjustment_basis_required",
+            "INSERT INTO current_basis_recompute_pending VALUES ('7203', 'provider_refresh', 'pending-fp', '2024-07-01')",
+            "current_adjusted_metrics_required",
+        ),
+        (
+            "INSERT INTO current_basis_recompute_pending VALUES ('72030', 'provider_refresh', 'pending-fp', '2024-07-01')",
+            "current_adjusted_metrics_required",
+        ),
+        (
+            "DELETE FROM statement_metrics_adjusted WHERE statement_id = 'toyota-revision-2024'",
+            "current_adjusted_metrics_required",
+        ),
+        (
+            "UPDATE statement_metrics_adjusted SET fundamentals_adjustment_basis_date = '2024-06-30' WHERE code = '7203'",
+            "current_adjusted_metrics_required",
+        ),
+        (
+            "DELETE FROM current_basis_fundamentals_state WHERE code = '7203'",
+            "current_adjusted_metrics_required",
+        ),
+        (
+            "UPDATE current_basis_fundamentals_state SET fundamentals_adjustment_basis_date = '2024-06-30' WHERE code = '7203'",
+            "current_adjusted_metrics_required",
+        ),
+        (
+            "UPDATE current_basis_fundamentals_state SET source_fingerprint = 'stale' WHERE code = '7203'",
+            "current_adjusted_metrics_required",
+        ),
+        (
+            "UPDATE current_basis_fundamentals_state SET statement_count = 2 WHERE code = '7203'",
+            "current_adjusted_metrics_required",
+        ),
+        (
+            "UPDATE current_basis_fundamentals_state SET materialized_at = '' WHERE code = '7203'",
+            "current_adjusted_metrics_required",
+        ),
+        (
+            "DELETE FROM statement_metrics_adjusted WHERE statement_id = 'toyota-future'",
+            "current_adjusted_metrics_required",
         ),
         (
             "DELETE FROM stock_master_daily WHERE date = '2024-06-28'",
@@ -493,62 +474,72 @@ def test_snapshot_rejects_incomplete_adjusted_metric_or_valuation_coverage(
             "DELETE FROM stock_master_daily WHERE date = '2024-06-28' AND code = '72030'",
             "stock_not_listed_as_of",
         ),
-        (
-            "UPDATE statement_metrics_adjusted SET basis_version = 'other' WHERE code = '7203'",
-            "pit_snapshot_inconsistent",
-        ),
-        (
-            "UPDATE stock_adjustment_bases SET source_fingerprint = '' WHERE code = '7203'",
-            "pit_snapshot_inconsistent",
-        ),
-        (
-            "UPDATE daily_valuation SET statement_disclosed_date = '2024-04-01' WHERE code = '7203'",
-            "pit_snapshot_inconsistent",
-        ),
     ],
 )
-def test_snapshot_fails_closed_with_typed_reason(
+def test_snapshot_fails_closed_with_v5_recovery_reason(
     monkeypatch: pytest.MonkeyPatch,
-    v4_market: Path,
+    v5_market: Path,
     mutation: str,
     reason: str,
 ) -> None:
-    _update(v4_market, mutation)
+    _update(v5_market, mutation)
 
     with pytest.raises(FundamentalsPitSnapshotError) as exc_info:
-        _reader_client(monkeypatch, v4_market).get_fundamentals_pit_snapshot(
+        _reader_client(monkeypatch, v5_market).get_fundamentals_pit_snapshot(
             "7203", date(2024, 6, 30)
         )
     assert exc_info.value.reason == reason
+    assert "market_db_sync" in str(exc_info.value) or reason in {
+        "stock_master_snapshot_required",
+        "stock_not_listed_as_of",
+    }
 
 
-def test_snapshot_excludes_future_valuation_and_ohlcv_sentinels(
-    monkeypatch: pytest.MonkeyPatch, v4_market: Path
+def test_snapshot_requires_state_when_raw_and_metric_relations_are_both_empty(
+    monkeypatch: pytest.MonkeyPatch,
+    v5_market: Path,
 ) -> None:
-    _update(
-        v4_market,
-        """
-        INSERT INTO daily_valuation (
-            code, date, price_basis_date, close, basis_version
-        ) VALUES (
-            '7203', '2024-07-01', '2024-06-28', 9999,
-            'event-pit-v1:7203:2024-06-28'
-        )
-        """,
-    )
+    _update(v5_market, "DELETE FROM statements WHERE code IN ('7203', '72030')")
+    _update(v5_market, "DELETE FROM statement_metrics_adjusted WHERE code = '7203'")
+    _update(v5_market, "DELETE FROM current_basis_fundamentals_state WHERE code = '7203'")
 
-    snapshot = _reader_client(monkeypatch, v4_market).get_fundamentals_pit_snapshot(
-        "7203", date(2024, 6, 30)
-    )
-    assert max(row["date"] for row in snapshot.daily_valuation) == "2024-06-28"
-    assert snapshot.ohlcv.index.max().date() == date(2024, 6, 28)
-    assert 9999.0 not in snapshot.ohlcv["Close"].to_list()
+    with pytest.raises(FundamentalsPitSnapshotError) as exc_info:
+        _reader_client(monkeypatch, v5_market).get_fundamentals_pit_snapshot(
+            "7203", date(2024, 6, 30)
+        )
+
+    assert exc_info.value.reason == "current_adjusted_metrics_required"
+    assert "market_db_sync" in str(exc_info.value)
+
+
+def test_snapshot_fails_closed_when_prime_peer_provider_window_is_missing(
+    monkeypatch: pytest.MonkeyPatch, v5_market: Path
+) -> None:
+    _update(v5_market, "DELETE FROM stock_provider_windows WHERE code = '6758'")
+
+    with pytest.raises(FundamentalsPitSnapshotError) as exc_info:
+        _reader_client(monkeypatch, v5_market).get_fundamentals_pit_snapshot(
+            "7203", date(2024, 6, 30)
+        )
+    assert exc_info.value.reason == "provider_window_required"
+
+
+def test_snapshot_fails_closed_when_prime_peers_have_mixed_provider_plans(
+    monkeypatch: pytest.MonkeyPatch, v5_market: Path
+) -> None:
+    _update(v5_market, "UPDATE stock_provider_windows SET provider_plan = 'free' WHERE code = '6758'")
+
+    with pytest.raises(FundamentalsPitSnapshotError) as exc_info:
+        _reader_client(monkeypatch, v5_market).get_fundamentals_pit_snapshot(
+            "7203", date(2024, 6, 30)
+        )
+    assert exc_info.value.reason == "provider_window_required"
 
 
 def test_snapshot_without_cutoff_uses_current_global_market_frontier(
-    monkeypatch: pytest.MonkeyPatch, v4_market: Path
+    monkeypatch: pytest.MonkeyPatch, v5_market: Path
 ) -> None:
-    snapshot = _reader_client(monkeypatch, v4_market).get_fundamentals_pit_snapshot(
+    snapshot = _reader_client(monkeypatch, v5_market).get_fundamentals_pit_snapshot(
         "7203", None
     )
     assert snapshot.requested_cutoff_date is None
@@ -567,56 +558,3 @@ def test_market_data_client_exposes_only_snapshot_delegate(
         lambda symbol, cutoff: sentinel,
     )
     assert adapter.get_fundamentals_pit_snapshot("7203", date(2024, 6, 30)) is sentinel
-
-
-def test_prime_panel_query_count_is_constant_for_large_universe(
-    monkeypatch: pytest.MonkeyPatch, v4_market: Path
-) -> None:
-    _add_large_prime_universe(v4_market)
-    reader = MarketDbReader(str(v4_market))
-    query_count = 0
-    original_query = reader.query
-    original_query_one = reader.query_one
-
-    def counted_query(sql: str, params: tuple[object, ...] = ()):
-        nonlocal query_count
-        query_count += 1
-        return original_query(sql, params)
-
-    def counted_query_one(sql: str, params: tuple[object, ...] = ()):
-        nonlocal query_count
-        query_count += 1
-        return original_query_one(sql, params)
-
-    monkeypatch.setattr(reader, "query", counted_query)
-    monkeypatch.setattr(reader, "query_one", counted_query_one)
-    monkeypatch.setattr(
-        clients, "_resolve_market_reader", lambda snapshot_id=None: reader
-    )
-
-    snapshot = DirectMarketClient().get_fundamentals_pit_snapshot(
-        "7203", date(2024, 6, 30)
-    )
-
-    assert query_count <= 14
-    assert len(snapshot.prime_liquidity_panel) == 32
-    row = snapshot.prime_liquidity_panel.set_index("code").loc["8000"]
-    assert row["basis_id"] == "event-pit-v1:8000:2024-06-28"
-    assert row["close"] == 8000.0
-    assert row["close"] != 999999.0
-
-
-def test_prime_panel_uses_true_trailing_observations_beyond_270_days(
-    monkeypatch: pytest.MonkeyPatch, v4_market: Path
-) -> None:
-    _add_sparse_prime_history(v4_market)
-
-    snapshot = _reader_client(monkeypatch, v4_market).get_fundamentals_pit_snapshot(
-        "7203", date(2024, 6, 30)
-    )
-
-    row = snapshot.prime_liquidity_panel.set_index("code").loc["9000"]
-    assert row["basis_id"] == "event-pit-v1:9000:2022-01-01"
-    assert row["close"] == 10.0
-    assert row["adv20_jpy"] == pytest.approx(505.0)
-    assert row["adv60_jpy"] == pytest.approx(305.0)

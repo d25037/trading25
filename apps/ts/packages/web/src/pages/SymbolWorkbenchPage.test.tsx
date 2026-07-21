@@ -644,16 +644,16 @@ describe('SymbolWorkbenchPage', () => {
     expect(screen.getByText(/Loading chart data/i)).toBeInTheDocument();
   });
 
-  it('shows typed fundamentals recovery guidance without starting a mutation', () => {
+  it('shows normal sync guidance for a typed provider-vintage recovery without starting a mutation', () => {
     const fundamentalsError = new HttpRequestError('Fundamentals PIT snapshot is inconsistent.', 'http', {
       status: 409,
       correlationId: 'corr-1',
       details: [
         { field: 'reason', message: 'pit_snapshot_inconsistent' },
-        { field: 'recovery', message: 'adjusted_metrics_pit' },
+        { field: 'recovery', message: 'market_db_sync' },
       ],
       reason: 'pit_snapshot_inconsistent',
-      recovery: 'adjusted_metrics_pit',
+      recovery: 'market_db_sync',
     });
     mockUseMultiTimeframeChart.mockReturnValue({
       chartData: {
@@ -681,10 +681,8 @@ describe('SymbolWorkbenchPage', () => {
     expect(screen.getAllByText('Fundamentals PIT snapshot is inconsistent.')).toHaveLength(1);
     expect(screen.getAllByRole('alert')).toHaveLength(1);
     expect(screen.getByText(/corr-1/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open adjusted metrics recovery' })).toHaveAttribute(
-      'href',
-      '/market-db#adjusted-metrics'
-    );
+    expect(screen.getByRole('link', { name: 'Open Market DB sync' })).toHaveAttribute('href', '/market-db');
+    expect(screen.queryByText(/adjusted metrics recovery/i)).not.toBeInTheDocument();
     expect(mockUseRefreshStocks().mutate).not.toHaveBeenCalled();
   });
 
@@ -721,7 +719,7 @@ describe('SymbolWorkbenchPage', () => {
   });
 
   it('does not infer fundamentals recovery from backend message text', () => {
-    const fundamentalsError = new HttpRequestError('Run adjusted_metrics_pit to recover.', 'http', {
+    const fundamentalsError = new HttpRequestError('Run the maintenance action to recover.', 'http', {
       status: 409,
       correlationId: 'corr-2',
     });
@@ -737,7 +735,7 @@ describe('SymbolWorkbenchPage', () => {
 
     renderSymbolWorkbenchPage();
 
-    expect(screen.getByText('Run adjusted_metrics_pit to recover.')).toBeInTheDocument();
+    expect(screen.getByText('Run the maintenance action to recover.')).toBeInTheDocument();
     expect(screen.getByText(/corr-2/)).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Open adjusted metrics recovery' })).not.toBeInTheDocument();
   });

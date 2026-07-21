@@ -4,6 +4,7 @@ from pathlib import Path
 
 import duckdb
 import pandas as pd
+import pytest
 
 from src.domains.analytics.market_bubble_footprint import (
     BubbleFootprintResult,
@@ -15,9 +16,28 @@ from src.domains.analytics.market_bubble_footprint import (
     write_bubble_footprint_bundle,
     write_rerating_bubble_regime_bundle,
 )
+from src.domains.analytics.market_bubble_footprint_monitor import (
+    _build_market_bubble_footprint_as_of_frame,
+)
 
-from daily_ranking_market_v4_fixture import (
-    upgrade_daily_ranking_fixture_to_market_v4,
+from daily_ranking_market_v5_fixture import (
+    refresh_daily_ranking_provider_window,
+    upgrade_daily_ranking_fixture_to_market_v5,
+)
+
+_EXPECTED_BUBBLE_REQUIRED_TABLES = (
+    "stock_data_raw",
+    "stock_data",
+    "stock_provider_windows",
+    "stock_adjustment_events",
+    "current_basis_fundamentals_state",
+    "current_basis_recompute_pending",
+    "stock_master_daily",
+    "daily_valuation",
+    "statements",
+    "statement_metrics_adjusted",
+    "topix_data",
+    "indices_data",
 )
 
 
@@ -36,6 +56,7 @@ def test_market_bubble_footprint_classifies_monthly_market_regimes(
     )
 
     assert isinstance(result, BubbleFootprintResult)
+    assert result.required_tables == _EXPECTED_BUBBLE_REQUIRED_TABLES
     assert result.latest_snapshot_date == "2024-12-31"
     assert not result.footprint_df.empty
     assert not result.latest_snapshot_df.empty
@@ -80,6 +101,140 @@ def test_market_bubble_footprint_classifies_monthly_market_regimes(
     assert bundle.results_db_path.exists()
 
 
+def test_market_bubble_footprint_rejects_poisoned_stock_data(tmp_path: Path) -> None:
+    db_path = _build_bubble_footprint_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+    conn.execute("UPDATE stock_data SET close = close * 50.0")
+    conn.close()
+
+    with pytest.raises(RuntimeError, match="provider vintage lineage"):
+        run_market_bubble_footprint_research(
+            db_path,
+            start_date="2024-01-31",
+            end_date="2024-12-31",
+            return_horizons=(20, 60),
+            market_scopes=("prime",),
+            frequency="monthly",
+        )
+
+
+def test_live_market_bubble_footprint_rejects_poisoned_stock_data(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_bubble_footprint_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+    conn.execute("UPDATE stock_data SET close = close * 50.0")
+    conn.close()
+
+    with pytest.raises(RuntimeError, match="provider vintage lineage"):
+        _build_market_bubble_footprint_as_of_frame(
+            str(db_path),
+            baseline=pd.DataFrame(),
+            markets=("prime",),
+            date="2024-12-31",
+        )
+
+
+def test_market_bubble_footprint_ignores_stale_future_price_basis_valuation(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_bubble_footprint_db(tmp_path / "market.duckdb")
+    kwargs = {
+        "start_date": "2024-01-31",
+        "end_date": "2024-12-31",
+        "return_horizons": (60,),
+        "market_scopes": ("prime",),
+        "frequency": "monthly",
+    }
+    baseline = run_market_bubble_footprint_research(db_path, **kwargs)
+    baseline_share = float(
+        baseline.latest_snapshot_df.iloc[0]["expensive_mcap_share_pct"]
+    )
+    conn = duckdb.connect(str(db_path))
+    conn.execute(
+        """
+        INSERT INTO daily_valuation
+        SELECT * REPLACE (
+            '2099-12-31' AS price_basis_date,
+            1e18 AS market_cap,
+            8e17 AS free_float_market_cap,
+            999.0 AS forward_per,
+            99.0 AS pbr
+        )
+        FROM daily_valuation
+        WHERE code = '1000' AND date = '2024-12-31'
+        """
+    )
+    conn.close()
+
+    stale = run_market_bubble_footprint_research(db_path, **kwargs)
+
+    assert float(
+        stale.latest_snapshot_df.iloc[0]["expensive_mcap_share_pct"]
+    ) == pytest.approx(baseline_share)
+
+
+def test_live_market_bubble_footprint_rejects_duplicate_current_valuation(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_bubble_footprint_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+    conn.execute(
+        """
+        INSERT INTO daily_valuation
+        SELECT * FROM daily_valuation
+        WHERE code = '1000' AND date = '2024-12-31'
+        """
+    )
+    conn.close()
+
+    with pytest.raises(RuntimeError, match="lineage"):
+        _build_market_bubble_footprint_as_of_frame(
+            str(db_path),
+            baseline=pd.DataFrame(),
+            markets=("prime",),
+            date="2024-12-31",
+        )
+
+
+def test_rerating_bubble_regime_rejects_split_valuation_witness(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_bubble_footprint_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+    conn.execute(
+        """
+        INSERT INTO daily_valuation
+        SELECT * REPLACE ('2099-12-31' AS price_basis_date)
+        FROM daily_valuation
+        WHERE code = '1000' AND date = '2024-10-31'
+        """
+    )
+    conn.execute(
+        """
+        UPDATE daily_valuation
+        SET source_fingerprint = repeat('0', 64)
+        WHERE code = '1000' AND date = '2024-10-31'
+          AND price_basis_date = date
+        """
+    )
+    conn.close()
+
+    with pytest.raises(RuntimeError, match="lineage"):
+        run_rerating_bubble_regime_forward_response_research(
+            db_path,
+            start_date="2024-01-31",
+            end_date="2024-10-31",
+            signal_horizons=(20,),
+            footprint_horizons=(60,),
+            market_scopes=("prime",),
+            frequency="monthly",
+            min_observations=1,
+            severe_loss_threshold_pct=-10.0,
+            observation_sample_limit=100,
+        )
+
+
 def test_rerating_bubble_regime_forward_response_joins_footprint_regime(
     tmp_path: Path,
 ) -> None:
@@ -99,6 +254,7 @@ def test_rerating_bubble_regime_forward_response_joins_footprint_regime(
     )
 
     assert isinstance(result, ReratingBubbleRegimeResult)
+    assert result.required_tables == _EXPECTED_BUBBLE_REQUIRED_TABLES
     assert not result.rerating_bubble_regime_df.empty
     assert not result.regime_transition_df.empty
     assert not result.observation_sample_df.empty
@@ -133,7 +289,7 @@ def test_rerating_bubble_regime_forward_response_joins_footprint_regime(
     assert bundle.results_db_path.exists()
 
 
-def test_rerating_bubble_regime_ignores_poisoned_stock_data(tmp_path: Path) -> None:
+def test_rerating_bubble_regime_rejects_poisoned_stock_data(tmp_path: Path) -> None:
     db_path = _build_bubble_footprint_db(tmp_path / "market.duckdb")
     kwargs = {
         "start_date": "2024-01-31",
@@ -146,7 +302,7 @@ def test_rerating_bubble_regime_ignores_poisoned_stock_data(tmp_path: Path) -> N
         "severe_loss_threshold_pct": -10.0,
         "observation_sample_limit": 100,
     }
-    baseline = run_rerating_bubble_regime_forward_response_research(db_path, **kwargs)
+    run_rerating_bubble_regime_forward_response_research(db_path, **kwargs)
     conn = duckdb.connect(str(db_path))
     conn.execute(
         "UPDATE stock_data SET "
@@ -155,16 +311,11 @@ def test_rerating_bubble_regime_ignores_poisoned_stock_data(tmp_path: Path) -> N
     )
     conn.close()
 
-    poisoned = run_rerating_bubble_regime_forward_response_research(db_path, **kwargs)
-
-    pd.testing.assert_frame_equal(baseline.footprint_df, poisoned.footprint_df)
-    pd.testing.assert_frame_equal(
-        baseline.rerating_bubble_regime_df,
-        poisoned.rerating_bubble_regime_df,
-    )
+    with pytest.raises(RuntimeError, match="provider vintage lineage"):
+        run_rerating_bubble_regime_forward_response_research(db_path, **kwargs)
 
 
-def test_rerating_bubble_regime_keeps_each_snapshot_on_its_issued_price_basis(
+def test_rerating_bubble_regime_keeps_equivalent_provider_split_adjustment(
     tmp_path: Path,
 ) -> None:
     db_path = _build_bubble_footprint_db(tmp_path / "market.duckdb")
@@ -180,7 +331,7 @@ def test_rerating_bubble_regime_keeps_each_snapshot_on_its_issued_price_basis(
         "observation_sample_limit": 100,
     }
     baseline = run_rerating_bubble_regime_forward_response_research(db_path, **kwargs)
-    _add_equivalent_split_basis(db_path, code="1000", valid_from="2024-07-01")
+    _add_equivalent_provider_split(db_path, code="1000", event_date="2024-07-01")
 
     split = run_rerating_bubble_regime_forward_response_research(db_path, **kwargs)
 
@@ -196,68 +347,36 @@ def test_rerating_bubble_regime_keeps_each_snapshot_on_its_issued_price_basis(
     ).all()
 
 
-def _add_equivalent_split_basis(
+def _add_equivalent_provider_split(
     db_path: Path,
     *,
     code: str,
-    valid_from: str,
+    event_date: str,
 ) -> None:
     conn = duckdb.connect(str(db_path))
-    old_basis = str(
-        conn.execute(
-            "SELECT basis_id FROM stock_adjustment_bases WHERE code = ?",
-            [code],
-        ).fetchone()[0]
-    )
-    new_basis = f"event-pit-v1:{code}:{valid_from}"
-    conn.execute(
-        "UPDATE stock_adjustment_bases SET valid_to_exclusive = ? "
-        "WHERE code = ? AND basis_id = ?",
-        [valid_from, code, old_basis],
-    )
-    conn.execute(
-        """
-        INSERT INTO stock_adjustment_bases
-        SELECT ?, ?, CAST(? AS DATE), NULL, CAST(? AS DATE),
-               'split-fixture', max(date), 'ready'
-        FROM stock_data_raw
-        WHERE code = ?
-        """,
-        [code, new_basis, valid_from, valid_from, code],
-    )
-    conn.execute(
-        """
-        INSERT INTO stock_adjustment_basis_segments VALUES
-            (?, ?, (SELECT min(date) FROM stock_data_raw WHERE code = ?),
-             CAST(? AS DATE), 0.5),
-            (?, ?, CAST(? AS DATE), NULL, 1.0)
-        """,
-        [code, new_basis, code, valid_from, code, new_basis, valid_from],
-    )
-    conn.execute(
-        """
-        INSERT INTO daily_valuation
-        SELECT code, date, price_basis_date,
-               close * 0.5, eps * 0.5, bps * 0.5, forward_eps * 0.5,
-               per, forward_per, pbr, market_cap, free_float_market_cap,
-               ?, p_op, forward_p_op
-        FROM daily_valuation
-        WHERE code = ? AND basis_version = ?
-        """,
-        [new_basis, code, old_basis],
-    )
     conn.execute(
         """
         UPDATE stock_data_raw
-        SET open = open * 0.5,
-            high = high * 0.5,
-            low = low * 0.5,
-            close = close * 0.5,
-            volume = volume * 2,
-            adjustment_factor = 0.5
-        WHERE code = ? AND date >= CAST(? AS DATE)
+        SET open = adjusted_open / 0.5,
+            high = adjusted_high / 0.5,
+            low = adjusted_low / 0.5,
+            close = adjusted_close / 0.5,
+            volume = CAST(round(adjusted_volume * 0.5) AS BIGINT),
+            turnover_value = (adjusted_close / 0.5)
+                * CAST(round(adjusted_volume * 0.5) AS BIGINT)
+        WHERE code = ? AND date < CAST(? AS DATE)
         """,
-        [code, valid_from],
+        [code, event_date],
+    )
+    conn.execute(
+        "UPDATE stock_data_raw SET adjustment_factor = 0.5 "
+        "WHERE code = ? AND date = CAST(? AS DATE)",
+        [code, event_date],
+    )
+    fingerprint = refresh_daily_ranking_provider_window(conn, code=code)
+    conn.execute(
+        "INSERT INTO stock_adjustment_events VALUES (?, ?, 0.5, ?)",
+        [code, event_date, fingerprint],
     )
     conn.close()
 
@@ -409,6 +528,6 @@ def _build_bubble_footprint_db(db_path: Path) -> Path:
         "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         valuation_rows,
     )
-    upgrade_daily_ranking_fixture_to_market_v4(conn)
+    upgrade_daily_ranking_fixture_to_market_v5(conn)
     conn.close()
     return db_path

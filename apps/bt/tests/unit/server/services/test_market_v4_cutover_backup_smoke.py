@@ -1,4 +1,4 @@
-"""Market v4 cutover backup smoke tests."""
+"""Market v5 cutover backup smoke tests."""
 
 from __future__ import annotations
 
@@ -25,6 +25,8 @@ from tests.unit.server.services.market_v4_cutover_test_support import (
     _market_root,
     _service,
     _changing_code_version,
+    _ready_provider_vintage_payload,
+    _TestAtomicExchange,
 )
 
 
@@ -148,9 +150,10 @@ def test_backup_is_recursive_checksummed_and_immutable(tmp_path: Path) -> None:
 
     result = service.backup("backup-001")
 
-    backup_dir = data_root / "operations/market-v4-cutover/backups/backup-001"
+    backup_dir = data_root / "operations/market-v5-cutover/backups/backup-001"
     manifest = json.loads((backup_dir / "manifest.json").read_text())
     assert result.backup_id == "backup-001"
+    assert len(manifest["activeMarketTreeSha256"]) == 64
     assert [entry["path"] for entry in manifest["files"]] == [
         "market.duckdb",
         "parquet/stock_data/part.parquet",
@@ -164,6 +167,19 @@ def test_backup_is_recursive_checksummed_and_immutable(tmp_path: Path) -> None:
     assert service.verify_backup("backup-001").backup_id == "backup-001"
 
 
+def test_backup_exactness_rejects_active_tree_content_drift(tmp_path: Path) -> None:
+    data_root = _market_root(tmp_path)
+    service = _service(data_root)
+    service.backup("exact-active")
+    (data_root / "market-timeseries/market.duckdb").write_bytes(b"changed-after-backup")
+
+    with service._workspace.exclusive_operation():
+        with pytest.raises(CutoverSafetyError, match="no longer exactly matches"):
+            service._backups._assert_active_matches_backup_under_lease(
+                "exact-active"
+            )
+
+
 def test_backup_manifest_uses_operation_start_code_identity(tmp_path: Path) -> None:
     data_root = _market_root(tmp_path)
     code_version, calls = _changing_code_version("deadbeef", "deadbeef-dirty")
@@ -175,7 +191,7 @@ def test_backup_manifest_uses_operation_start_code_identity(tmp_path: Path) -> N
     manifest = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/backups/captured-identity/manifest.json"
+            / "operations/market-v5-cutover/backups/captured-identity/manifest.json"
         ).read_text()
     )
     assert manifest["codeVersion"] == "deadbeef"
@@ -187,7 +203,7 @@ def test_backup_fails_for_existing_destination_symlink_and_checksum_mismatch(
 ) -> None:
     data_root = _market_root(tmp_path)
     service = _service(data_root)
-    backup_parent = data_root / "operations/market-v4-cutover/backups"
+    backup_parent = data_root / "operations/market-v5-cutover/backups"
     (backup_parent / "existing").mkdir(parents=True)
     with pytest.raises(CutoverSafetyError, match="already exists"):
         service.backup("existing")
@@ -217,7 +233,7 @@ def test_backup_rejects_redirected_operation_component_without_external_writes(
     if redirected_component == "operations":
         (data_root / "operations").symlink_to(external, target_is_directory=True)
     else:
-        cutover_root = data_root / "operations/market-v4-cutover"
+        cutover_root = data_root / "operations/market-v5-cutover"
         cutover_root.mkdir(parents=True)
         (cutover_root / "backups").symlink_to(external, target_is_directory=True)
 
@@ -246,20 +262,52 @@ def test_restore_requires_explicit_verified_backup_and_preserves_it(
     assert (market / "market.duckdb").read_bytes() == b"duckdb-v3"
     assert market.stat().st_mode & 0o200
     assert (market / "market.duckdb").stat().st_mode & 0o200
-    assert (data_root / "operations/market-v4-cutover/backups/before").exists()
+    assert (data_root / "operations/market-v5-cutover/backups/before").exists()
     assert result.quarantine_path is not None
     assert (
         data_root / result.quarantine_path / "market.duckdb"
     ).read_bytes() == b"failed-v4"
 
 
-def test_smoke_requires_market_v4_exact_lineage_and_semantic_api_parity(
+def test_restore_exchanges_verified_stage_with_active_atomically(tmp_path: Path) -> None:
+    data_root = _market_root(tmp_path)
+
+    class RecordingAtomicExchange(_TestAtomicExchange):
+        def __init__(self) -> None:
+            self.exchanges: list[tuple[Path, Path]] = []
+
+        def exchange(self, managed_root, left: Path, right: Path) -> None:
+            self.exchanges.append((left, right))
+            super().exchange(managed_root, left, right)
+
+    atomic = RecordingAtomicExchange()
+    service = _service(data_root, atomic_exchange=atomic)
+    service.backup("atomic-restore")
+    market = data_root / "market-timeseries"
+    (market / "market.duckdb").write_bytes(b"failed-v5")
+
+    result = service.restore("atomic-restore")
+
+    assert atomic.exchanges == [
+        (
+            Path("market-timeseries"),
+            Path("market-timeseries.restore-atomic-restore"),
+        )
+    ]
+    assert (market / "market.duckdb").read_bytes() == b"duckdb-v3"
+    assert result.quarantine_path is not None
+    assert (data_root / result.quarantine_path / "market.duckdb").read_bytes() == (
+        b"failed-v5"
+    )
+
+
+def test_smoke_requires_market_v5_exact_lineage_and_semantic_api_parity(
     tmp_path: Path,
 ) -> None:
     data_root = _market_root(tmp_path)
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
     )
     config = SmokeConfig(
         symbol="7203", strategy="production/smoke", dataset_preset="primeMarket"
@@ -268,8 +316,8 @@ def test_smoke_requires_market_v4_exact_lineage_and_semantic_api_parity(
     api = FakeApi()
     result = service.smoke(api, config, operation_id="smoke-001")
 
-    assert result.schema_version == 4
-    assert result.adjustment_mode == "local_projection_v2_event_time"
+    assert result.schema_version == 5
+    assert result.adjustment_mode == "provider_adjusted_v1"
     assert result.checks == (
         "market_metadata",
         "adjusted_metrics_lineage",
@@ -280,17 +328,98 @@ def test_smoke_requires_market_v4_exact_lineage_and_semantic_api_parity(
     )
     assert ("GET", "/api/analytics/screening/jobs/screen-1", None) in api.calls
 
-    with pytest.raises(CutoverSafetyError, match="adjusted-metric lineage"):
+    with pytest.raises(CutoverSafetyError, match="provider vintage"):
         service.smoke(FakeApi(invalid_lineage=True), config, operation_id="smoke-002")
     with pytest.raises(CutoverSafetyError, match="Fundamentals GET/POST parity"):
         service.smoke(FakeApi(parity=False), config, operation_id="smoke-003")
+
+
+def test_smoke_cross_binds_http_lineage_to_direct_duckdb_identity(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    direct = _ready_provider_vintage_payload()
+    direct["sourceFingerprint"] = "b" * 64
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(
+            MarketSourceMetadata(5, "provider_adjusted_v1", True, direct)
+        ),
+    )
+
+    with pytest.raises(CutoverSafetyError, match="direct DuckDB identity"):
+        service.smoke(
+            FakeApi(),
+            SmokeConfig("7203", "production/smoke", "primeMarket"),
+            operation_id="misdirected-api",
+        )
+
+
+def test_smoke_accepts_exact_provider_vintage_model_without_fake_fields(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+    )
+    provider_vintage = _ready_provider_vintage_payload()
+
+    assert "dailyValuationRows" not in provider_vintage
+    assert "missingDailyValuationRows" not in provider_vintage
+    assert "extraDailyValuationRows" not in provider_vintage
+    assert "wrongBasisDailyValuationRows" not in provider_vintage
+
+    result = service.smoke(
+        FakeApi(provider_vintage=provider_vintage),
+        SmokeConfig("7203", "production/smoke", "primeMarket"),
+        operation_id="smoke-provider-vintage-model",
+    )
+
+    assert result.lineage["providerWindowCount"] == 2
+    assert result.lineage["currentBasisStateCount"] == 2
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    [
+        ("schemaVersion", 3),
+        ("sourceMarketSchemaVersion", 4),
+        ("stockPriceAdjustmentMode", "local_projection_v2_event_time"),
+        ("providerPlan", "premium"),
+        ("providerAsOf", "2026-07-17"),
+        ("providerCoverageStart", "2020-01-01"),
+        ("providerCoverageEnd", "2026-07-17"),
+        ("providerSourceFingerprint", "f" * 64),
+        ("fundamentalsAdjustmentBasisDate", "2026-07-17"),
+    ],
+)
+def test_smoke_rejects_dataset_without_exact_market_v5_provider_vintage(
+    tmp_path: Path,
+    field: str,
+    bad_value: object,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+    )
+    api = FakeApi()
+    api.dataset_snapshot[field] = bad_value
+
+    with pytest.raises(CutoverSafetyError, match="Dataset provider-vintage gate"):
+        service.smoke(
+            api,
+            SmokeConfig("7203", "production/smoke", "primeMarket"),
+            operation_id=f"dataset-vintage-{field}",
+        )
 
 
 def test_smoke_reads_adjustment_mode_directly_from_duckdb(tmp_path: Path) -> None:
     data_root = _market_root(tmp_path)
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v1")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "local_projection_v1")),
     )
     with pytest.raises(CutoverSafetyError, match="adjustment mode"):
         service.smoke(
@@ -305,7 +434,7 @@ def test_smoke_uses_operation_scoped_create_only_dataset(tmp_path: Path) -> None
     api = FakeApi()
     service = _service(
         data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
     )
 
     service.smoke(
@@ -346,7 +475,7 @@ def test_standalone_smoke_worker_unjoined_transfers_shared_guard_lease(
             )
 
     duckdb = GuardHoldingDuckDb(
-        MarketSourceMetadata(4, "local_projection_v2_event_time")
+        MarketSourceMetadata(5, "provider_adjusted_v1")
     )
     service = _service(data_root, duckdb=duckdb)
 

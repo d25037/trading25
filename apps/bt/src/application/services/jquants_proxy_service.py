@@ -289,7 +289,9 @@ class JQuantsProxyService:
             data.append(
                 StatementItem(
                     DiscDate=stmt.get("DiscDate", ""),
+                    DiscTime=stmt.get("DiscTime"),
                     Code=str(stmt.get("Code", ""))[:4],
+                    DiscNo=stmt.get("DiscNo"),
                     CurPerType=stmt.get("CurPerType", ""),
                     CurPerSt=stmt.get("CurPerSt", ""),
                     CurPerEn=stmt.get("CurPerEn", ""),
@@ -322,7 +324,9 @@ class JQuantsProxyService:
             data.append(
                 RawStatementItem(
                     DiscDate=stmt.get("DiscDate", ""),
+                    DiscTime=stmt.get("DiscTime"),
                     Code=str(stmt.get("Code", ""))[:4],
+                    DiscNo=stmt.get("DiscNo"),
                     DocType=stmt.get("DocType"),
                     CurPerType=stmt.get("CurPerType", ""),
                     CurPerSt=stmt.get("CurPerSt", ""),

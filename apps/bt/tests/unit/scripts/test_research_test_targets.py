@@ -148,7 +148,7 @@ def test_shared_daily_ranking_market_fixture_maps_to_exact_consumers() -> None:
     targets = module.pytest_targets_for_research_changes(
         [
             "apps/bt/tests/unit/domains/analytics/"
-            "daily_ranking_market_v4_fixture.py"
+            "daily_ranking_market_v5_fixture.py"
         ]
     )
 

@@ -8,381 +8,442 @@ import os
 from pathlib import Path
 
 import pytest
-import duckdb
 
 from fastapi.testclient import TestClient
 
 from src.entrypoints.http.app import create_app
-from tests.unit.server.db.market_writer_test_support import open_market_db
+from src.infrastructure.db.market.market_db import MarketDb
+from src.infrastructure.db.market.market_schema import (
+    MARKET_SCHEMA_VERSION,
+    METADATA_KEYS,
+    PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
+)
+from src.shared.provider_stock_window import ProviderStockStage
+from tests.unit.server.db.market_writer_test_support import (
+    open_market_db,
+    open_time_series_store,
+)
 
 
 def _build_market_timeseries_dir(base_dir: Path) -> str:
     base_dir.mkdir(parents=True, exist_ok=True)
     duckdb_path = base_dir / "market.duckdb"
-    conn = duckdb.connect(str(duckdb_path))
-
-    conn.execute("""
-        CREATE TABLE market_schema_version (
-            version INTEGER PRIMARY KEY,
-            applied_at TEXT NOT NULL,
-            notes TEXT
-        )
-    """)
-    conn.execute(
-        "INSERT INTO market_schema_version VALUES (4, '2026-07-16T00:00:00', 'test fixture')"
-    )
-    conn.execute("""
-        CREATE TABLE sync_metadata (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL,
-            updated_at TEXT
-        )
-    """)
-    conn.execute(
-        """
-        INSERT INTO sync_metadata VALUES (
-            'stock_price_adjustment_mode',
-            'local_projection_v2_event_time',
-            '2026-07-16T00:00:00'
-        )
-        """
-    )
-    conn.execute("""
-        CREATE TABLE stocks (
-            code TEXT PRIMARY KEY,
-            company_name TEXT NOT NULL,
-            company_name_english TEXT,
-            market_code TEXT NOT NULL,
-            market_name TEXT NOT NULL,
-            sector_17_code TEXT NOT NULL,
-            sector_17_name TEXT NOT NULL,
-            sector_33_code TEXT NOT NULL,
-            sector_33_name TEXT NOT NULL,
-            scale_category TEXT,
-            listed_date TEXT NOT NULL,
-            created_at TEXT,
-            updated_at TEXT
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE stock_master_daily (
-            date TEXT NOT NULL,
-            code TEXT NOT NULL,
-            company_name TEXT NOT NULL,
-            company_name_english TEXT,
-            market_code TEXT NOT NULL,
-            market_name TEXT NOT NULL,
-            sector_17_code TEXT NOT NULL,
-            sector_17_name TEXT NOT NULL,
-            sector_33_code TEXT NOT NULL,
-            sector_33_name TEXT NOT NULL,
-            scale_category TEXT,
-            listed_date TEXT NOT NULL,
-            created_at TEXT,
-            updated_at TEXT
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE index_membership_daily (
-            date TEXT NOT NULL,
-            index_code TEXT NOT NULL,
-            code TEXT NOT NULL,
-            created_at TEXT,
-            PRIMARY KEY (date, index_code, code)
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE stock_data (
-            code TEXT NOT NULL,
-            date TEXT NOT NULL,
-            open DOUBLE NOT NULL,
-            high DOUBLE NOT NULL,
-            low DOUBLE NOT NULL,
-            close DOUBLE NOT NULL,
-            volume BIGINT NOT NULL,
-            adjustment_factor DOUBLE,
-            created_at TEXT,
-            PRIMARY KEY (code, date)
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE stock_data_minute_raw (
-            code TEXT NOT NULL,
-            date TEXT NOT NULL,
-            time TEXT NOT NULL,
-            open DOUBLE NOT NULL,
-            high DOUBLE NOT NULL,
-            low DOUBLE NOT NULL,
-            close DOUBLE NOT NULL,
-            volume BIGINT NOT NULL,
-            turnover_value DOUBLE,
-            created_at TEXT,
-            PRIMARY KEY (code, date, time)
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE topix_data (
-            date TEXT PRIMARY KEY,
-            open DOUBLE NOT NULL,
-            high DOUBLE NOT NULL,
-            low DOUBLE NOT NULL,
-            close DOUBLE NOT NULL,
-            created_at TEXT
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE index_master (
-            code TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            name_english TEXT,
-            category TEXT NOT NULL,
-            data_start_date TEXT
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE indices_data (
-            code TEXT NOT NULL,
-            date TEXT NOT NULL,
-            open DOUBLE,
-            high DOUBLE,
-            low DOUBLE,
-            close DOUBLE,
-            sector_name TEXT,
-            created_at TEXT,
-            PRIMARY KEY (code, date)
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE options_225_data (
-            code TEXT NOT NULL,
-            date TEXT NOT NULL,
-            whole_day_open DOUBLE,
-            whole_day_high DOUBLE,
-            whole_day_low DOUBLE,
-            whole_day_close DOUBLE,
-            night_session_open DOUBLE,
-            night_session_high DOUBLE,
-            night_session_low DOUBLE,
-            night_session_close DOUBLE,
-            day_session_open DOUBLE,
-            day_session_high DOUBLE,
-            day_session_low DOUBLE,
-            day_session_close DOUBLE,
-            volume DOUBLE,
-            open_interest DOUBLE,
-            turnover_value DOUBLE,
-            contract_month TEXT,
-            strike_price DOUBLE,
-            only_auction_volume DOUBLE,
-            emergency_margin_trigger_division TEXT,
-            put_call_division TEXT,
-            last_trading_day TEXT,
-            special_quotation_day TEXT,
-            settlement_price DOUBLE,
-            theoretical_price DOUBLE,
-            base_volatility DOUBLE,
-            underlying_price DOUBLE,
-            implied_volatility DOUBLE,
-            interest_rate DOUBLE,
-            created_at TEXT,
-            PRIMARY KEY (code, date)
-        )
-    """)
-
-    conn.execute(
-        "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("72030", "トヨタ自動車", "TOYOTA MOTOR", "prime", "プライム", "S17_1", "輸送用機器", "S33_1", "輸送用機器", "TOPIX Large70", "1949-05-16", None, None),
-    )
-    conn.execute(
-        "INSERT INTO stock_master_daily VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("2024-01-15", "72030", "トヨタ自動車（履歴）", "TOYOTA MOTOR HIST", "prime", "プライム", "S17_1", "輸送用機器", "S33_1", "輸送用機器", "TOPIX Core30", "1949-05-16", None, None),
-    )
-    conn.execute(
-        "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("67580", "ソニーグループ", "SONY GROUP", "prime", "プライム", "S17_2", "電気機器", "S33_2", "電気機器", "TOPIX Large70", "1958-12-01", None, None),
-    )
-    conn.execute(
-        "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("99840", "テスト銘柄", "TEST STOCK", "standard", "スタンダード", "S17_3", "情報通信", "S33_3", "情報通信", None, "2020-01-01", None, None),
-    )
-    conn.execute("CREATE VIEW stocks_latest AS SELECT * FROM stocks")
-
-    for code in ("72030", "67580"):
-        for i, date_value in enumerate(("2024-01-15", "2024-01-16", "2024-01-17")):
-            base = 2500.0 + i * 10 if code == "72030" else 13000.0 + i * 50
-            conn.execute(
-                "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (code, date_value, base, base + 20, base - 10, base + 5, 1000000 + i * 100, 1.0, None),
-            )
-    conn.execute(
-        "INSERT INTO index_membership_daily VALUES (?, ?, ?, ?)",
-        ("2024-01-15", "TOPIX500", "72030", None),
-    )
-
-    conn.executemany(
-        "INSERT INTO stock_data_minute_raw VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [
-            ("7203", "2024-01-16", "09:00", 2500.0, 2505.0, 2495.0, 2502.0, 1000, 2502000.0, None),
-            ("72030", "2024-01-16", "09:00", 2500.0, 2505.0, 2495.0, 2502.0, 1000, 2502000.0, None),
-            ("7203", "2024-01-16", "09:01", 2502.0, 2508.0, 2500.0, 2506.0, 800, 2004800.0, None),
-            ("9984", "2024-01-16", "15:30", 7000.0, 7010.0, 6990.0, 7005.0, 500, 3502500.0, None),
-        ],
-    )
-
-    for date_value in ("2024-01-15", "2024-01-16", "2024-01-17"):
-        conn.execute(
-            "INSERT INTO topix_data VALUES (?, ?, ?, ?, ?, ?)",
-            (date_value, 2500.0, 2520.0, 2480.0, 2510.0, None),
-        )
-
-    conn.execute(
-        "INSERT INTO index_master VALUES (?, ?, ?, ?, ?)",
-        ("0000", "TOPIX", "TOPIX", "topix", "2008-05-07"),
-    )
-    conn.execute(
-        "INSERT INTO index_master VALUES (?, ?, ?, ?, ?)",
-        ("0001", "電気機器", "Electric Appliances", "sector33", "2010-01-04"),
-    )
-    conn.execute(
-        "INSERT INTO index_master VALUES (?, ?, ?, ?, ?)",
-        ("N225_UNDERPX", "日経平均", "Nikkei 225 (UnderPx derived)", "synthetic", "2024-01-16"),
-    )
-
-    for date_value in ("2024-01-15", "2024-01-16", "2024-01-17"):
-        conn.execute(
-            "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            ("0000", date_value, 2500.0, 2520.0, 2480.0, 2510.0, None, None),
-        )
-        conn.execute(
-            "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            ("0001", date_value, 1200.0, 1220.0, 1190.0, 1210.0, "電気機器", None),
-        )
-    conn.execute(
-        "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        ("N225_UNDERPX", "2024-01-16", 36100.0, 36100.0, 36100.0, 36100.0, "日経平均", None),
-    )
-    conn.execute(
-        "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        ("N225_UNDERPX", "2024-01-17", 36250.0, 36250.0, 36250.0, 36250.0, "日経平均", None),
-    )
-
-    conn.executemany(
-        """
-        INSERT INTO options_225_data VALUES
-        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        [
-            (
-                "131040018",
-                "2024-01-16",
-                10.0,
-                12.0,
-                9.0,
-                11.0,
-                9.0,
-                11.0,
-                8.0,
-                10.0,
-                10.0,
-                12.0,
-                9.0,
-                11.0,
-                100.0,
-                250.0,
-                110000.0,
-                "2024-04",
-                32000.0,
-                0.0,
-                None,
-                "1",
-                "2024-04-11",
-                "2024-04-12",
-                11.0,
-                10.5,
-                18.0,
-                36100.0,
-                22.0,
-                0.5,
-                None,
-            ),
-            (
-                "131040018",
-                "2024-01-17",
-                12.0,
-                13.0,
-                11.0,
-                12.5,
-                11.0,
-                12.0,
-                10.0,
-                11.0,
-                12.0,
-                13.0,
-                11.0,
-                12.5,
-                120.0,
-                260.0,
-                130000.0,
-                "2024-04",
-                32000.0,
-                0.0,
-                None,
-                "1",
-                "2024-04-11",
-                "2024-04-12",
-                12.0,
-                11.5,
-                18.5,
-                36250.0,
-                23.0,
-                0.5,
-                None,
-            ),
-            (
-                "141040018",
-                "2024-01-17",
-                20.0,
-                21.0,
-                18.0,
-                19.5,
-                19.0,
-                20.0,
-                18.0,
-                19.0,
-                20.0,
-                21.0,
-                18.0,
-                19.5,
-                90.0,
-                180.0,
-                175000.0,
-                "2024-04",
-                36000.0,
-                0.0,
-                None,
-                "2",
-                "2024-04-11",
-                "2024-04-12",
-                19.0,
-                19.2,
-                17.5,
-                36250.0,
-                19.0,
-                0.5,
-                None,
-            ),
-        ],
-    )
-
-    conn.close()
     market_db = open_market_db(str(duckdb_path))
-    market_db.close()
-    return str(base_dir)
+    try:
+        market_db.upsert_stocks(
+            [
+                {
+                    "code": "72030",
+                    "company_name": "トヨタ自動車",
+                    "company_name_english": "TOYOTA MOTOR",
+                    "market_code": "prime",
+                    "market_name": "プライム",
+                    "sector_17_code": "S17_1",
+                    "sector_17_name": "輸送用機器",
+                    "sector_33_code": "S33_1",
+                    "sector_33_name": "輸送用機器",
+                    "scale_category": "TOPIX Large70",
+                    "listed_date": "1949-05-16",
+                },
+                {
+                    "code": "67580",
+                    "company_name": "ソニーグループ",
+                    "company_name_english": "SONY GROUP",
+                    "market_code": "prime",
+                    "market_name": "プライム",
+                    "sector_17_code": "S17_2",
+                    "sector_17_name": "電気機器",
+                    "sector_33_code": "S33_2",
+                    "sector_33_name": "電気機器",
+                    "scale_category": "TOPIX Large70",
+                    "listed_date": "1958-12-01",
+                },
+                {
+                    "code": "99840",
+                    "company_name": "テスト銘柄",
+                    "company_name_english": "TEST STOCK",
+                    "market_code": "standard",
+                    "market_name": "スタンダード",
+                    "sector_17_code": "S17_3",
+                    "sector_17_name": "情報通信",
+                    "sector_33_code": "S33_3",
+                    "sector_33_name": "情報通信",
+                    "scale_category": None,
+                    "listed_date": "2020-01-01",
+                },
+            ]
+        )
+        market_db.publish_stock_master_daily_rows(
+            [
+                {
+                    "date": "2024-01-15",
+                    "code": "72030",
+                    "company_name": "トヨタ自動車（履歴）",
+                    "company_name_english": "TOYOTA MOTOR HIST",
+                    "market_code": "prime",
+                    "market_name": "プライム",
+                    "sector_17_code": "S17_1",
+                    "sector_17_name": "輸送用機器",
+                    "sector_33_code": "S33_1",
+                    "sector_33_name": "輸送用機器",
+                    "scale_category": "TOPIX Core30",
+                    "listed_date": "1949-05-16",
+                }
+            ],
+            derive=False,
+        )
+        market_db.upsert_index_master(
+            [
+                {
+                    "code": "0000",
+                    "name": "TOPIX",
+                    "name_english": "TOPIX",
+                    "category": "topix",
+                    "data_start_date": "2008-05-07",
+                },
+                {
+                    "code": "0001",
+                    "name": "電気機器",
+                    "name_english": "Electric Appliances",
+                    "category": "sector33",
+                    "data_start_date": "2010-01-04",
+                },
+                {
+                    "code": "N225_UNDERPX",
+                    "name": "日経平均",
+                    "name_english": "Nikkei 225 (UnderPx derived)",
+                    "category": "synthetic",
+                    "data_start_date": "2024-01-16",
+                },
+            ]
+        )
 
+        store = open_time_series_store(
+            duckdb_path=str(duckdb_path),
+            parquet_dir=str(base_dir / "parquet"),
+        )
+        try:
+            stock_rows = []
+            for code in ("72030", "67580"):
+                for offset, date_value in enumerate(
+                    ("2024-01-15", "2024-01-16", "2024-01-17")
+                ):
+                    base = (
+                        2500.0 + offset * 10
+                        if code == "72030"
+                        else 13000.0 + offset * 50
+                    )
+                    volume = 1_000_000 + offset * 100
+                    stock_rows.append(
+                        {
+                            "code": code,
+                            "date": date_value,
+                            "open": base,
+                            "high": base + 20,
+                            "low": base - 10,
+                            "close": base + 5,
+                            "volume": volume,
+                            "turnover_value": (base + 5) * volume,
+                            "adjustment_factor": 1.0,
+                            "adjusted_open": base,
+                            "adjusted_high": base + 20,
+                            "adjusted_low": base - 10,
+                            "adjusted_close": base + 5,
+                            "adjusted_volume": volume,
+                        }
+                    )
+            store.publish_stock_data(
+                stock_rows,
+                stage=ProviderStockStage(
+                    provider_plan="premium",
+                    provider_as_of=max(str(row["date"]) for row in stock_rows),
+                    provider_codes=frozenset(str(row["code"]) for row in stock_rows),
+                ),
+            )
+            store.publish_stock_minute_data(
+                [
+                    {
+                        "code": "7203",
+                        "date": "2024-01-16",
+                        "time": "09:00",
+                        "open": 2500.0,
+                        "high": 2505.0,
+                        "low": 2495.0,
+                        "close": 2502.0,
+                        "volume": 1000,
+                        "turnover_value": 2502000.0,
+                    },
+                    {
+                        "code": "72030",
+                        "date": "2024-01-16",
+                        "time": "09:00",
+                        "open": 2500.0,
+                        "high": 2505.0,
+                        "low": 2495.0,
+                        "close": 2502.0,
+                        "volume": 1000,
+                        "turnover_value": 2502000.0,
+                    },
+                    {
+                        "code": "7203",
+                        "date": "2024-01-16",
+                        "time": "09:01",
+                        "open": 2502.0,
+                        "high": 2508.0,
+                        "low": 2500.0,
+                        "close": 2506.0,
+                        "volume": 800,
+                        "turnover_value": 2004800.0,
+                    },
+                    {
+                        "code": "9984",
+                        "date": "2024-01-16",
+                        "time": "15:30",
+                        "open": 7000.0,
+                        "high": 7010.0,
+                        "low": 6990.0,
+                        "close": 7005.0,
+                        "volume": 500,
+                        "turnover_value": 3502500.0,
+                    },
+                ]
+            )
+            store.publish_topix_data(
+                [
+                    {
+                        "date": date_value,
+                        "open": 2500.0,
+                        "high": 2520.0,
+                        "low": 2480.0,
+                        "close": 2510.0,
+                    }
+                    for date_value in (
+                        "2024-01-15",
+                        "2024-01-16",
+                        "2024-01-17",
+                    )
+                ]
+            )
+            store.publish_indices_data(
+                [
+                    *[
+                        {
+                            "code": "0000",
+                            "date": date_value,
+                            "open": 2500.0,
+                            "high": 2520.0,
+                            "low": 2480.0,
+                            "close": 2510.0,
+                            "sector_name": None,
+                        }
+                        for date_value in (
+                            "2024-01-15",
+                            "2024-01-16",
+                            "2024-01-17",
+                        )
+                    ],
+                    *[
+                        {
+                            "code": "0001",
+                            "date": date_value,
+                            "open": 1200.0,
+                            "high": 1220.0,
+                            "low": 1190.0,
+                            "close": 1210.0,
+                            "sector_name": "電気機器",
+                        }
+                        for date_value in (
+                            "2024-01-15",
+                            "2024-01-16",
+                            "2024-01-17",
+                        )
+                    ],
+                    {
+                        "code": "N225_UNDERPX",
+                        "date": "2024-01-16",
+                        "open": 36100.0,
+                        "high": 36100.0,
+                        "low": 36100.0,
+                        "close": 36100.0,
+                        "sector_name": "日経平均",
+                    },
+                    {
+                        "code": "N225_UNDERPX",
+                        "date": "2024-01-17",
+                        "open": 36250.0,
+                        "high": 36250.0,
+                        "low": 36250.0,
+                        "close": 36250.0,
+                        "sector_name": "日経平均",
+                    },
+                ]
+            )
+            store.publish_options_225_data(
+                [
+                    {
+                        "code": "131040018",
+                        "date": "2024-01-16",
+                        "whole_day_open": 10.0,
+                        "whole_day_high": 12.0,
+                        "whole_day_low": 9.0,
+                        "whole_day_close": 11.0,
+                        "night_session_open": 9.0,
+                        "night_session_high": 11.0,
+                        "night_session_low": 8.0,
+                        "night_session_close": 10.0,
+                        "day_session_open": 10.0,
+                        "day_session_high": 12.0,
+                        "day_session_low": 9.0,
+                        "day_session_close": 11.0,
+                        "volume": 100,
+                        "open_interest": 250,
+                        "turnover_value": 110000.0,
+                        "contract_month": "2024-04",
+                        "strike_price": 32000.0,
+                        "only_auction_volume": 0,
+                        "emergency_margin_trigger_division": None,
+                        "put_call_division": "1",
+                        "last_trading_day": "2024-04-11",
+                        "special_quotation_day": "2024-04-12",
+                        "settlement_price": 11.0,
+                        "theoretical_price": 10.5,
+                        "base_volatility": 18.0,
+                        "underlying_price": 36100.0,
+                        "implied_volatility": 22.0,
+                        "interest_rate": 0.5,
+                    },
+                    {
+                        "code": "131040018",
+                        "date": "2024-01-17",
+                        "whole_day_open": 12.0,
+                        "whole_day_high": 13.0,
+                        "whole_day_low": 11.0,
+                        "whole_day_close": 12.5,
+                        "night_session_open": 11.0,
+                        "night_session_high": 12.0,
+                        "night_session_low": 10.0,
+                        "night_session_close": 11.0,
+                        "day_session_open": 12.0,
+                        "day_session_high": 13.0,
+                        "day_session_low": 11.0,
+                        "day_session_close": 12.5,
+                        "volume": 120,
+                        "open_interest": 260,
+                        "turnover_value": 130000.0,
+                        "contract_month": "2024-04",
+                        "strike_price": 32000.0,
+                        "only_auction_volume": 0,
+                        "emergency_margin_trigger_division": None,
+                        "put_call_division": "1",
+                        "last_trading_day": "2024-04-11",
+                        "special_quotation_day": "2024-04-12",
+                        "settlement_price": 12.0,
+                        "theoretical_price": 11.5,
+                        "base_volatility": 18.5,
+                        "underlying_price": 36250.0,
+                        "implied_volatility": 23.0,
+                        "interest_rate": 0.5,
+                    },
+                    {
+                        "code": "141040018",
+                        "date": "2024-01-17",
+                        "whole_day_open": 20.0,
+                        "whole_day_high": 21.0,
+                        "whole_day_low": 18.0,
+                        "whole_day_close": 19.5,
+                        "night_session_open": 19.0,
+                        "night_session_high": 20.0,
+                        "night_session_low": 18.0,
+                        "night_session_close": 19.0,
+                        "day_session_open": 20.0,
+                        "day_session_high": 21.0,
+                        "day_session_low": 18.0,
+                        "day_session_close": 19.5,
+                        "volume": 90,
+                        "open_interest": 180,
+                        "turnover_value": 175000.0,
+                        "contract_month": "2024-04",
+                        "strike_price": 36000.0,
+                        "only_auction_volume": 0,
+                        "emergency_margin_trigger_division": None,
+                        "put_call_division": "2",
+                        "last_trading_day": "2024-04-11",
+                        "special_quotation_day": "2024-04-12",
+                        "settlement_price": 19.0,
+                        "theoretical_price": 19.2,
+                        "base_volatility": 17.5,
+                        "underlying_price": 36250.0,
+                        "implied_volatility": 19.0,
+                        "interest_rate": 0.5,
+                    },
+                ]
+            )
+            store.index_stock_data()
+            store.index_stock_minute_data()
+            store.index_topix_data()
+            store.index_indices_data()
+            store.index_options_225_data()
+        finally:
+            store.close()
+    finally:
+        market_db.close()
+    return str(base_dir)
 
 @pytest.fixture(scope="module")
 def market_data_timeseries_dir(tmp_path_factory):
     return _build_market_timeseries_dir(tmp_path_factory.mktemp("market-data-routes") / "market-timeseries")
+
+
+def test_market_data_fixture_uses_v5_provider_adjusted_contract(
+    market_data_timeseries_dir: str,
+) -> None:
+    market_db = open_market_db(
+        str(Path(market_data_timeseries_dir) / "market.duckdb"),
+        read_only=True,
+    )
+    try:
+        assert market_db.get_market_schema_version() == MARKET_SCHEMA_VERSION
+        assert market_db.get_stock_price_adjustment_mode() == (
+            PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
+        )
+        assert market_db.get_sync_metadata(METADATA_KEYS["PROVIDER_PLAN"]) == (
+            "premium"
+        )
+        assert market_db._count_rows("stock_data_raw") == 6
+        assert market_db._count_rows("stock_data") == 6
+        assert market_db._count_rows("stock_provider_windows") == 2
+        assert market_db._fetchone(
+            """
+            SELECT COUNT(*)
+            FROM stock_data_raw AS raw
+            JOIN stock_data AS consumer USING (code, date)
+            WHERE raw.adjusted_open IS DISTINCT FROM consumer.open
+               OR raw.adjusted_high IS DISTINCT FROM consumer.high
+               OR raw.adjusted_low IS DISTINCT FROM consumer.low
+               OR raw.adjusted_close IS DISTINCT FROM consumer.close
+               OR raw.adjusted_volume IS DISTINCT FROM consumer.volume
+            """
+        ) == (0,)
+    finally:
+        market_db.close()
+
+
+def test_market_data_fixture_releases_writer_after_setup_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_root = tmp_path / "market-timeseries"
+
+    def fail_seed(_self: MarketDb, _rows: list[dict[str, object]]) -> None:
+        raise RuntimeError("injected fixture seed failure")
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(MarketDb, "upsert_stocks", fail_seed)
+        with pytest.raises(RuntimeError, match="injected fixture seed failure"):
+            _build_market_timeseries_dir(market_root)
+
+    probe = open_market_db(str(market_root / "market.duckdb"))
+    probe.close()
 
 
 @pytest.fixture(scope="module")

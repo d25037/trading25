@@ -33,7 +33,7 @@
 
 ### Caveats
 - 旧 baseline の数値は下の既存セクションに残るが、`Published Readout` より優先しない。
-- 再実行する場合は Market schema v4 / `local_projection_v2_event_time` を必須とし、signal-date membership、`stock_master_daily` / `index_membership_daily`、event-time basis lineage の source を README に明記する。旧 schema v3 run は historical provenance に限る。
+- 再実行する場合は Market schema v5 / `provider_adjusted_v1` を必須とし、signal-date membership、`stock_master_daily` / `index_membership_daily`、provider-window/current-basis lineage の source を README に明記する。旧 schema v3 run は historical provenance に限る。
 
 ### Source Artifacts
 - Experiment: `market-behavior/1357-nt-ratio-topix-hedge`

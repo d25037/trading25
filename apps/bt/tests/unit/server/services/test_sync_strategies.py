@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from datetime import date, datetime, timedelta
 from typing import Any, Awaitable, Callable
 from zoneinfo import ZoneInfo
@@ -10,6 +11,7 @@ from unittest.mock import AsyncMock
 import pytest
 import httpx
 
+from src.application.services.adjusted_metrics_materializer import AdjustedMetricsMaterializer
 from src.application.services.jquants_bulk_service import BulkFetchPlan, BulkFetchResult, BulkFileInfo
 from src.application.services.sync_fetch_planner import (
     BulkFetchRequiredError,
@@ -42,12 +44,15 @@ from src.application.services.sync_row_converters import (
     group_stock_master_bulk_rows_by_date,
 )
 from src.application.services.sync_paginated_fetch import get_paginated_rows_with_call_count
+from src.application.services import sync_stock_data_fetch, sync_strategies
+from src.application.services.sync_bulk_ingest_helpers import _ingest_fins_bulk_batch
 from src.application.services.sync_stock_data_fetch import (
     execute_stock_data_bulk_fetch,
     StockDataRestDateIngestionError,
     execute_stock_data_rest_date,
 )
 from src.application.services.sync_fundamentals_data import (
+    recompute_changed_fundamentals,
     _sync_fundamentals_backfill_codes,
     sync_fundamentals_initial,
 )
@@ -70,6 +75,7 @@ from src.infrastructure.db.market.stock_master_writers import (
 from src.infrastructure.db.market.time_series_store import (
     TimeSeriesInspection,
 )
+from src.shared.provider_stock_window import ProviderStockStage
 from src.infrastructure.external_api.clients.jquants_client import JQuantsApiError
 from src.application.services.sync_strategies import (
     IncrementalSyncStrategy,
@@ -98,6 +104,59 @@ from src.application.services.sync_strategies import (
     _to_jquants_date_param,
     get_strategy,
 )
+
+
+def _provider_daily_quote(
+    code: str,
+    date_value: str,
+    *,
+    base: float = 10.0,
+    factor: float = 1.0,
+    adjusted_multiplier: float = 1.0,
+) -> dict[str, Any]:
+    return {
+        "Code": code,
+        "Date": date_value,
+        "O": base,
+        "H": base + 2.0,
+        "L": base - 1.0,
+        "C": base + 1.0,
+        "Vo": 100,
+        "Va": 1_000.0,
+        "AdjFactor": factor,
+        "AdjO": base * adjusted_multiplier,
+        "AdjH": (base + 2.0) * adjusted_multiplier,
+        "AdjL": (base - 1.0) * adjusted_multiplier,
+        "AdjC": (base + 1.0) * adjusted_multiplier,
+        "AdjVo": round(100 / adjusted_multiplier),
+    }
+
+
+def _normalized_provider_daily_row(
+    code: str,
+    date_value: str,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    rows = _convert_stock_bulk_rows(
+        [_provider_daily_quote(code, date_value, **kwargs)],
+        target_dates={date_value},
+    )
+    assert len(rows) == 1
+    return rows[0]
+
+
+def _complete_provider_quote(row: dict[str, Any]) -> dict[str, Any]:
+    completed = dict(row)
+    raw_values = [completed.get(key) for key in ("O", "H", "L", "C", "Vo")]
+    if all(value is not None for value in raw_values):
+        completed.setdefault("Va", float(completed["C"]) * int(completed["Vo"]))
+        completed.setdefault("AdjFactor", 1.0)
+        completed.setdefault("AdjO", completed["O"])
+        completed.setdefault("AdjH", completed["H"])
+        completed.setdefault("AdjL", completed["L"])
+        completed.setdefault("AdjC", completed["C"])
+        completed.setdefault("AdjVo", completed["Vo"])
+    return completed
 
 
 class DummyMarketDb:
@@ -150,6 +209,15 @@ class DummyMarketDb:
 
     def get_latest_indices_data_dates(self) -> dict[str, str]:
         return dict(self.latest_indices_data_dates)
+
+    def get_stock_master_codes_for_date(self, snapshot_date: str) -> list[str]:
+        return sorted(
+            {
+                str(row["code"])
+                for row in self.stock_master_daily_rows
+                if row.get("date") == snapshot_date and row.get("code")
+            }
+        )
 
     def get_topix_dates(
         self,
@@ -493,16 +561,16 @@ class DummyMarketDb:
 
     def upsert_statements(self, rows: list[dict[str, Any]]) -> int:
         upserted: dict[tuple[str, str], dict[str, Any]] = {
-            (str(row["code"]), str(row["disclosed_date"])): dict(row)
+            (str(row["code"]), str(row["statement_id"])): dict(row)
             for row in self.statements_rows
-            if row.get("code") and row.get("disclosed_date")
+            if row.get("code") and row.get("statement_id")
         }
         for row in rows:
             code = str(row.get("code", "")).strip()
-            disclosed_date = str(row.get("disclosed_date", "")).strip()
-            if not code or not disclosed_date:
+            statement_id = str(row.get("statement_id", "")).strip()
+            if not code or not statement_id:
                 continue
-            key = (code, disclosed_date)
+            key = (code, statement_id)
             existing = upserted.get(key, {})
             merged = dict(existing)
             for column, value in row.items():
@@ -671,19 +739,92 @@ class DummyTimeSeriesStore:
     def publish_topix_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         return self._mutation(self._market_db.upsert_topix_data(rows))
 
-    def publish_stock_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+    def publish_stock_data(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        stage: ProviderStockStage,
+    ) -> SemanticDeltaResult:
+        del stage
         return self._mutation(self._market_db.upsert_stock_data(rows))
+
+    def detect_stock_provider_drift(
+        self, rows: list[dict[str, Any]]
+    ) -> frozenset[str]:
+        existing = {
+            (str(row.get("code")), str(row.get("date"))): row
+            for row in self._market_db.stock_rows
+        }
+        affected: set[str] = set()
+        drift_columns = (
+            "adjustment_factor",
+            "adjusted_open",
+            "adjusted_high",
+            "adjusted_low",
+            "adjusted_close",
+            "adjusted_volume",
+        )
+        for row in rows:
+            code = str(row.get("code", ""))
+            if float(row.get("adjustment_factor", 1.0)) != 1.0:
+                affected.add(code)
+                continue
+            current = existing.get((code, str(row.get("date", ""))))
+            if current is not None and any(
+                current.get(column) != row.get(column) for column in drift_columns
+            ):
+                affected.add(code)
+        return frozenset(affected)
 
     def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         self._staged_stock_rows.extend(rows)
         return SemanticDeltaResult.empty(input_count=len(rows))
 
-    def flush_staged_stock_data(self) -> SemanticDeltaResult:
+    def flush_staged_stock_data(
+        self,
+        *,
+        stage: ProviderStockStage,
+        exclude_codes: frozenset[str] = frozenset(),
+    ) -> SemanticDeltaResult:
+        existing_keys = {
+            (str(row.get("code")), str(row.get("date")))
+            for row in self._market_db.stock_rows
+        }
         rows, self._staged_stock_rows = self._staged_stock_rows, []
-        return self.publish_stock_data(rows)
+        append_rows = [
+            row
+            for row in rows
+            if str(row.get("code")) not in exclude_codes
+            and (str(row.get("code")), str(row.get("date"))) not in existing_keys
+        ]
+        return self.publish_stock_data(
+            append_rows,
+            stage=stage,
+        )
 
     def discard_staged_stock_data(self) -> None:
         self._staged_stock_rows.clear()
+
+    def replace_stock_provider_window(
+        self,
+        code: str,
+        rows: list[dict[str, Any]],
+        coverage: dict[str, str],
+        metadata: dict[str, str],
+    ) -> SemanticDeltaResult:
+        del coverage, metadata
+        before = len(self._market_db.stock_rows)
+        self._market_db.stock_rows = [
+            row
+            for row in self._market_db.stock_rows
+            if str(row.get("code")) != code
+        ]
+        self._market_db.upsert_stock_data(rows)
+        return self._mutation(max(before, len(rows)))
+
+    def has_pending_index(self, table_name: str) -> bool:
+        del table_name
+        return True
 
     def publish_indices_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         return self._mutation(self._market_db.upsert_indices_data(rows))
@@ -759,7 +900,9 @@ def _build_ctx(
     bulk_service: Any = None,
     bulk_probe_disabled: bool = True,
     enforce_bulk_for_stock_data: bool = False,
-    materialize_adjusted_metrics: Callable[[], Awaitable[Any]] | None = None,
+    recompute_affected_stock_codes: (
+        Callable[[frozenset[str]], Awaitable[None]] | None
+    ) = None,
 ) -> SyncContext:
     resolved_cancelled = cancelled or asyncio.Event()
     resolved_on_progress = on_progress or (lambda *_: None)
@@ -773,7 +916,21 @@ def _build_ctx(
         bulk_service=bulk_service,
         bulk_probe_disabled=bulk_probe_disabled,
         enforce_bulk_for_stock_data=enforce_bulk_for_stock_data,
-        materialize_adjusted_metrics=materialize_adjusted_metrics,
+        provider_plan=str(getattr(client, "plan", "free")),
+        recompute_affected_stock_codes=recompute_affected_stock_codes,
+    )
+
+
+def _provider_stage_for_test(
+    ctx: SyncContext | None = None,
+    *,
+    provider_as_of: str = "2026-03-01",
+    provider_codes: frozenset[str] = frozenset({"7203", "6758", "9984", "131A"}),
+) -> ProviderStockStage:
+    return ProviderStockStage(
+        provider_plan=ctx.provider_plan if ctx is not None else "premium",
+        provider_as_of=provider_as_of,
+        provider_codes=provider_codes,
     )
 
 
@@ -956,7 +1113,7 @@ class DummyClient:
             if self.daily_quotes is not None:
                 rows: list[dict[str, Any]] = []
                 for quote in self.daily_quotes:
-                    row = dict(quote)
+                    row = _complete_provider_quote(quote)
                     if "Date" not in row:
                         row["Date"] = params["date"] if params else ""
                     rows.append(row)
@@ -964,7 +1121,7 @@ class DummyClient:
             date_value = params["date"] if params else ""
             if date_value in self.daily_error_dates:
                 raise RuntimeError("daily fetch failed")
-            return [{"Code": "72030", "Date": date_value, "O": 1, "H": 2, "L": 1, "C": 2, "Vo": 1000}]
+            return [_provider_daily_quote("72030", date_value)]
         return []
 
     @staticmethod
@@ -1472,7 +1629,7 @@ def test_bulk_rate_limit_classifier_handles_cycles_without_false_positive() -> N
 @pytest.mark.asyncio
 async def test_execute_stock_data_rest_date_preserves_api_calls_on_publish_failure() -> None:
     class FailingStockDataStore(DummyTimeSeriesStore):
-        def publish_stock_data(self, rows: list[dict[str, Any]]) -> int:
+        def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> int:
             del rows
             raise RuntimeError("publish failed")
 
@@ -1483,9 +1640,10 @@ async def test_execute_stock_data_rest_date_preserves_api_calls_on_publish_failu
         market_db=market_db,
         time_series_store=FailingStockDataStore(market_db),
     )
+    session = sync_stock_data_fetch.StockDataIngestionSession()
 
     with pytest.raises(StockDataRestDateIngestionError) as exc_info:
-        await execute_stock_data_rest_date(ctx, date="2026-02-10")
+        await execute_stock_data_rest_date(ctx, session=session, date="2026-02-10")
 
     assert exc_info.value.api_calls == 1
     assert str(exc_info.value) == "publish failed"
@@ -2181,7 +2339,7 @@ class InitialSyncClient:
             date_value = (params or {}).get("date", "")
             if date_value in self._fail_stock_dates:
                 raise RuntimeError("daily quotes unavailable")
-            return [{"Code": "72030", "Date": date_value, "O": 1, "H": 2, "L": 1, "C": 2, "Vo": 1000}]
+            return [_provider_daily_quote("72030", str(date_value))]
         if path == "/markets/margin-interest":
             code = str((params or {}).get("code", "")) or "72030"
             return [
@@ -2372,9 +2530,14 @@ class _StagedStockDataStore(DummyTimeSeriesStore):
         self.flush_calls = 0
         self.discard_calls = 0
 
-    def publish_stock_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+    def publish_stock_data(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        stage: ProviderStockStage,
+    ) -> SemanticDeltaResult:
         self.publish_calls += 1
-        return super().publish_stock_data(rows)
+        return super().publish_stock_data(rows, stage=stage)
 
     def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         batch = list(rows)
@@ -2385,19 +2548,827 @@ class _StagedStockDataStore(DummyTimeSeriesStore):
         )
         return SemanticDeltaResult.empty(input_count=len(rows))
 
-    def flush_staged_stock_data(self) -> SemanticDeltaResult:
+    def detect_stock_provider_drift(
+        self, rows: list[dict[str, Any]]
+    ) -> frozenset[str]:
+        return frozenset(
+            str(row["code"])
+            for row in rows
+            if float(row.get("adjustment_factor", 1.0)) != 1.0
+        )
+
+    def flush_staged_stock_data(
+        self,
+        *,
+        stage: ProviderStockStage,
+        exclude_codes: frozenset[str] = frozenset(),
+    ) -> SemanticDeltaResult:
+        del stage
         self.flush_calls += 1
-        staged_rows = [row for batch in self.pending_stage_batches for row in batch]
+        existing_keys = {
+            (str(row["code"]), str(row["date"])) for row in self._market_db.stock_rows
+        }
+        staged_rows = [
+            row
+            for batch in self.pending_stage_batches
+            for row in batch
+            if str(row["code"]) not in exclude_codes
+            and (str(row["code"]), str(row["date"])) not in existing_keys
+        ]
         self.pending_stage_batches.clear()
-        return self._mutation(self._market_db.upsert_stock_data(staged_rows))
+        staged_by_key = {
+            (str(row["code"]), str(row["date"])): row for row in staged_rows
+        }
+        self._market_db.upsert_stock_data(list(staged_by_key.values()))
+        inserted = len(staged_by_key)
+        return SemanticDeltaResult(
+            stats=MarketMutationStats(
+                input=len(staged_rows),
+                inserted=inserted,
+                updated=0,
+                unchanged=len(staged_rows) - inserted,
+                deleted=0,
+            ),
+            inserted_keys=tuple(staged_by_key),
+            affected_dates=frozenset(key[1] for key in staged_by_key),
+            affected_codes=frozenset(key[0] for key in staged_by_key),
+        )
 
     def discard_staged_stock_data(self) -> None:
         self.discard_calls += 1
         self.pending_stage_batches.clear()
 
 
+class _BlockingStagedStockDataStore(_StagedStockDataStore):
+    def __init__(self, market_db: DummyMarketDb) -> None:
+        super().__init__(market_db)
+        self.stage_started = threading.Event()
+        self.release_stage = threading.Event()
+        self._stage_lock = threading.Lock()
+
+    def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+        with self._stage_lock:
+            self.stage_started.set()
+            assert self.release_stage.wait(timeout=2)
+            return super().stage_stock_data_rows(rows)
+
+    def discard_staged_stock_data(self) -> None:
+        with self._stage_lock:
+            super().discard_staged_stock_data()
+
+
+class _UnserializedBlockingStageStore(_StagedStockDataStore):
+    """Expose late worker completion if the async adapter fails to join it."""
+
+    def __init__(self, market_db: DummyMarketDb) -> None:
+        super().__init__(market_db)
+        self.stage_started = threading.Event()
+        self.release_stage = threading.Event()
+
+    def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+        self.stage_started.set()
+        assert self.release_stage.wait(timeout=2)
+        return super().stage_stock_data_rows(rows)
+
+
+class _UnserializedBlockingReplacementStore(_StagedStockDataStore):
+    """Block provider replacement without depending on the store process lock."""
+
+    def __init__(self, market_db: DummyMarketDb) -> None:
+        super().__init__(market_db)
+        self.replacement_started = threading.Event()
+        self.release_replacement = threading.Event()
+        self.replacement_codes: list[str] = []
+
+    def replace_stock_provider_window(
+        self,
+        code: str,
+        rows: list[dict[str, Any]],
+        coverage: dict[str, str],
+        metadata: dict[str, str],
+    ) -> SemanticDeltaResult:
+        self.replacement_codes.append(code)
+        self.replacement_started.set()
+        assert self.release_replacement.wait(timeout=2)
+        return super().replace_stock_provider_window(code, rows, coverage, metadata)
+
+
+class _CompleteWindowClient:
+    plan = "light"
+
+    def __init__(
+        self,
+        rows_by_code: dict[str, list[dict[str, Any]]],
+        *,
+        error: Exception | None = None,
+    ) -> None:
+        self._rows_by_code = rows_by_code
+        self._error = error
+        self.calls: list[tuple[str, dict[str, str] | None, int]] = []
+
+    async def get_paginated_with_meta(
+        self,
+        path: str,
+        params: dict[str, str] | None = None,
+        max_pages: int = 10,
+    ) -> tuple[list[dict[str, Any]], int]:
+        self.calls.append((path, params, max_pages))
+        if self._error is not None:
+            raise self._error
+        return list(self._rows_by_code.get(str((params or {}).get("code", "")), [])), 2
+
+
 @pytest.mark.asyncio
-async def test_execute_stock_data_bulk_fetch_flushes_each_file_before_staging_next() -> None:
+async def test_stock_ingestion_session_appends_only_new_normal_rows(
+    tmp_path: Any,
+) -> None:
+    session_type = getattr(sync_stock_data_fetch, "StockDataIngestionSession", None)
+    assert session_type is not None
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    store.publish_topix_data(
+        [
+            {"date": "2026-02-10", "open": 1, "high": 1, "low": 1, "close": 1},
+            {"date": "2026-02-11", "open": 2, "high": 2, "low": 2, "close": 2},
+        ]
+    )
+    baseline = _normalized_provider_daily_row("72030", "2026-02-10")
+    store.publish_stock_data([baseline], stage=_provider_stage_for_test())
+    ctx = _build_ctx(
+        client=_CompleteWindowClient({}),
+        market_db=DummyMarketDb(),
+        time_series_store=store,
+    )
+    session = session_type()
+    raw_only_correction = dict(baseline, open=99.0)
+
+    await session.stage(ctx, [raw_only_correction])
+    await session.stage(
+        ctx,
+        [_normalized_provider_daily_row("67580", "2026-02-11", base=20.0)],
+    )
+    outcome = await session.commit(
+        ctx, stage=_provider_stage_for_test(ctx, provider_as_of="2026-02-11")
+    )
+
+    assert outcome.appended_rows == 1
+    assert outcome.affected_codes == frozenset()
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT open FROM stock_data_raw WHERE code = '7203' AND date = '2026-02-10'"
+    ).fetchone() == (10.0,)
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT COUNT(*) FROM stock_data_raw WHERE code = '6758'"
+    ).fetchone() == (1,)
+    store.close()
+
+
+@pytest.mark.asyncio
+async def test_stock_ingestion_session_refreshes_only_affected_code_with_observed_coverage(
+    tmp_path: Any,
+) -> None:
+    session_type = getattr(sync_stock_data_fetch, "StockDataIngestionSession", None)
+    assert session_type is not None
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    store.publish_topix_data(
+        [
+            {"date": "2026-02-10", "open": 1, "high": 1, "low": 1, "close": 1},
+            {"date": "2026-02-11", "open": 2, "high": 2, "low": 2, "close": 2},
+        ]
+    )
+    baseline = _normalized_provider_daily_row("72030", "2026-02-10")
+    store.replace_stock_provider_window(
+        "7203",
+        [baseline],
+        {"start": "2026-02-10", "end": "2026-02-10"},
+        {
+            "provider_plan": "free",
+            "provider_as_of": "2026-02-10",
+            "provider_source_fingerprint": "0" * 64,
+        },
+    )
+    full_window = [
+        _provider_daily_quote(
+            "72030", "2026-02-10", adjusted_multiplier=0.5
+        ),
+        _provider_daily_quote("72030", "2026-02-11", base=20.0, factor=0.5),
+    ]
+    client = _CompleteWindowClient({"72030": full_window})
+    recomputed: list[frozenset[str]] = []
+    ctx = _build_ctx(client=client, market_db=DummyMarketDb(), time_series_store=store)
+    setattr(
+        ctx,
+        "recompute_affected_stock_codes",
+        lambda codes: _record_affected_codes(recomputed, codes),
+    )
+    session = session_type()
+
+    await session.stage(
+        ctx,
+        [
+            _normalized_provider_daily_row(
+                "72030", "2026-02-11", base=20.0, factor=0.5
+            ),
+            _normalized_provider_daily_row("67580", "2026-02-11", base=30.0),
+        ],
+    )
+    outcome = await session.commit(
+        ctx, stage=_provider_stage_for_test(ctx, provider_as_of="2026-02-11")
+    )
+
+    assert outcome.affected_codes == frozenset({"7203"})
+    assert outcome.replaced_codes == 1
+    assert outcome.appended_rows == 1
+    assert client.calls == [
+        ("/equities/bars/daily", {"code": "72030", "to": "2026-02-11"}, 10_000)
+    ]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT coverage_start, coverage_end, provider_as_of "
+        "FROM stock_provider_windows WHERE code = '7203'"
+    ).fetchone() == ("2026-02-10", "2026-02-11", "2026-02-11")
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT value FROM sync_metadata WHERE key = 'provider_plan'"
+    ).fetchone() == ("light",)
+    assert recomputed == [frozenset({"7203"})]
+    store.close()
+
+
+async def _record_affected_codes(
+    recorded: list[frozenset[str]], codes: frozenset[str]
+) -> None:
+    recorded.append(codes)
+
+
+@pytest.mark.asyncio
+async def test_stock_ingestion_session_pagination_failure_preserves_snapshot_and_window(
+    tmp_path: Any,
+) -> None:
+    session_type = getattr(sync_stock_data_fetch, "StockDataIngestionSession", None)
+    error_type = getattr(sync_stock_data_fetch, "AffectedStockRefreshError", None)
+    assert session_type is not None
+    assert error_type is not None
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    store.publish_topix_data(
+        [
+            {"date": "2026-02-10", "open": 1, "high": 1, "low": 1, "close": 1},
+            {"date": "2026-02-11", "open": 2, "high": 2, "low": 2, "close": 2},
+        ]
+    )
+    baseline = _normalized_provider_daily_row("72030", "2026-02-10")
+    store.replace_stock_provider_window(
+        "7203",
+        [baseline],
+        {"start": "2026-02-10", "end": "2026-02-10"},
+        {
+            "provider_plan": "free",
+            "provider_as_of": "2026-02-10",
+            "provider_source_fingerprint": "0" * 64,
+        },
+    )
+    client = _CompleteWindowClient(
+        {}, error=RuntimeError("pagination incomplete after 10000 pages")
+    )
+    ctx = _build_ctx(client=client, market_db=DummyMarketDb(), time_series_store=store)
+    session = session_type()
+    await session.stage(
+        ctx,
+        [
+            _normalized_provider_daily_row(
+                "72030", "2026-02-11", base=20.0, factor=0.5
+            ),
+            _normalized_provider_daily_row("67580", "2026-02-11", base=30.0),
+        ],
+    )
+
+    with pytest.raises(error_type, match="pagination incomplete"):
+        await session.commit(ctx, stage=_provider_stage_for_test(ctx))
+
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT date, open FROM stock_data_raw ORDER BY code, date"
+    ).fetchall() == [("2026-02-10", 10.0)]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT coverage_start, coverage_end, provider_as_of, source_fingerprint "
+        "FROM stock_provider_windows WHERE code = '7203'"
+    ).fetchone() == ("2026-02-10", "2026-02-10", "2026-02-10", "0" * 64)
+    store.close()
+
+
+@pytest.mark.asyncio
+async def test_stock_ingestion_session_does_not_depend_on_stale_topix_inspection() -> None:
+    class _InspectionFailureStore(_StagedStockDataStore):
+        def inspect(self, **_kwargs: Any) -> TimeSeriesInspection:
+            raise RuntimeError("provider refresh inspection failed")
+
+    market_db = DummyMarketDb()
+    store = _InspectionFailureStore(market_db)
+    ctx = _build_ctx(
+        client=_CompleteWindowClient({}),
+        market_db=market_db,
+        time_series_store=store,
+    )
+    session = sync_stock_data_fetch.StockDataIngestionSession()
+    await session.stage(
+        ctx,
+        [_normalized_provider_daily_row("72030", "2026-02-11", factor=0.5)],
+    )
+
+    with pytest.raises(
+        sync_stock_data_fetch.AffectedStockRefreshError,
+        match="No publishable rows",
+    ):
+        await session.commit(ctx, stage=_provider_stage_for_test(ctx))
+
+    assert store.discard_calls == 1
+    assert store.pending_stage_batches == []
+
+
+async def _publish_one_row_in_owned_stock_session(
+    ctx: SyncContext,
+    row: dict[str, Any],
+) -> sync_stock_data_fetch.StockDataCommitOutcome:
+    runner = getattr(sync_stock_data_fetch, "run_stock_data_ingestion_session", None)
+    assert callable(runner)
+
+    async def _operation(
+        session: sync_stock_data_fetch.StockDataIngestionSession,
+    ) -> sync_stock_data_fetch.StockDataCommitOutcome:
+        await session.stage(ctx, [row])
+        return await session.commit(ctx, stage=_provider_stage_for_test(ctx))
+
+    return await runner(ctx, _operation)
+
+
+@pytest.mark.asyncio
+async def test_stock_session_task_cancel_waits_for_cleanup_and_next_sync_cannot_flush_stale_rows() -> None:
+    runner = getattr(sync_stock_data_fetch, "run_stock_data_ingestion_session", None)
+    assert callable(runner)
+    market_db = DummyMarketDb()
+    store = _BlockingStagedStockDataStore(market_db)
+    ctx = _build_ctx(
+        client=_CompleteWindowClient({}),
+        market_db=market_db,
+        time_series_store=store,
+    )
+    stale_row = _normalized_provider_daily_row("72030", "2026-02-10")
+
+    async def _stage_stale(
+        session: sync_stock_data_fetch.StockDataIngestionSession,
+    ) -> None:
+        await session.stage(ctx, [stale_row])
+
+    task = asyncio.create_task(runner(ctx, _stage_stale))
+    assert await asyncio.to_thread(store.stage_started.wait, 1)
+    task.cancel()
+    await asyncio.sleep(0.05)
+    assert not task.done()
+    store.release_stage.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    next_row = _normalized_provider_daily_row("67580", "2026-02-11")
+    outcome = await _publish_one_row_in_owned_stock_session(ctx, next_row)
+
+    assert outcome.appended_rows == 1
+    assert [(row["code"], row["date"]) for row in market_db.stock_rows] == [
+        ("6758", "2026-02-11")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_stock_session_task_cancel_joins_staging_worker_before_discard() -> None:
+    runner = getattr(sync_stock_data_fetch, "run_stock_data_ingestion_session", None)
+    assert callable(runner)
+    market_db = DummyMarketDb()
+    store = _UnserializedBlockingStageStore(market_db)
+    ctx = _build_ctx(
+        client=_CompleteWindowClient({}),
+        market_db=market_db,
+        time_series_store=store,
+    )
+
+    async def _stage_stale(
+        session: sync_stock_data_fetch.StockDataIngestionSession,
+    ) -> None:
+        await session.stage(
+            ctx,
+            [_normalized_provider_daily_row("72030", "2026-02-10")],
+        )
+
+    task = asyncio.create_task(runner(ctx, _stage_stale))
+    assert await asyncio.to_thread(store.stage_started.wait, 1)
+    task.cancel()
+    await asyncio.sleep(0.05)
+    assert not task.done()
+    store.release_stage.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert store.discard_calls == 1
+    assert store.pending_stage_batches == []
+
+
+@pytest.mark.asyncio
+async def test_stock_session_wait_for_timeout_cleans_before_next_sync() -> None:
+    runner = getattr(sync_stock_data_fetch, "run_stock_data_ingestion_session", None)
+    assert callable(runner)
+    market_db = DummyMarketDb()
+    store = _BlockingStagedStockDataStore(market_db)
+    ctx = _build_ctx(
+        client=_CompleteWindowClient({}),
+        market_db=market_db,
+        time_series_store=store,
+    )
+    stale_row = _normalized_provider_daily_row("72030", "2026-02-10")
+
+    async def _stage_stale(
+        session: sync_stock_data_fetch.StockDataIngestionSession,
+    ) -> None:
+        await session.stage(ctx, [stale_row])
+
+    asyncio.get_running_loop().call_later(0.05, store.release_stage.set)
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(runner(ctx, _stage_stale), timeout=0.01)
+
+    next_row = _normalized_provider_daily_row("67580", "2026-02-11")
+    outcome = await _publish_one_row_in_owned_stock_session(ctx, next_row)
+
+    assert outcome.appended_rows == 1
+    assert [(row["code"], row["date"]) for row in market_db.stock_rows] == [
+        ("6758", "2026-02-11")
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("drift_kind", ["corrected_factor", "adjusted_value"])
+async def test_stock_session_refreshes_existing_provider_drift_and_excludes_it_from_append(
+    tmp_path: Any,
+    drift_kind: str,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    store.publish_topix_data(
+        [{"date": "2026-02-10", "open": 1, "high": 1, "low": 1, "close": 1}]
+    )
+    baseline = _normalized_provider_daily_row(
+        "72030",
+        "2026-02-10",
+        factor=0.5 if drift_kind == "corrected_factor" else 1.0,
+        adjusted_multiplier=0.5 if drift_kind == "corrected_factor" else 1.0,
+    )
+    store.publish_stock_data([baseline], stage=_provider_stage_for_test())
+    incoming = dict(baseline)
+    if drift_kind == "corrected_factor":
+        incoming["adjustment_factor"] = 0.25
+    else:
+        incoming["adjusted_close"] = float(incoming["adjusted_close"]) + 0.5
+    replacement_quote = _provider_daily_quote(
+        "72030",
+        "2026-02-10",
+        base=30.0,
+    )
+    client = _CompleteWindowClient({"72030": [replacement_quote]})
+    ctx = _build_ctx(
+        client=client,
+        market_db=DummyMarketDb(),
+        time_series_store=store,
+    )
+    session = sync_stock_data_fetch.StockDataIngestionSession()
+    await session.stage(
+        ctx,
+        [
+            incoming,
+            _normalized_provider_daily_row("67580", "2026-02-10", base=20.0),
+        ],
+    )
+
+    outcome = await session.commit(
+        ctx, stage=_provider_stage_for_test(ctx, provider_as_of="2026-02-10")
+    )
+
+    assert outcome.affected_codes == frozenset({"7203"})
+    assert outcome.replaced_codes == 1
+    assert outcome.appended_rows == 1
+    assert client.calls == [
+        ("/equities/bars/daily", {"code": "72030", "to": "2026-02-10"}, 10_000)
+    ]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT open FROM stock_data_raw WHERE code = '7203'"
+    ).fetchone() == (30.0,)
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT COUNT(*) FROM stock_data_raw WHERE code = '6758'"
+    ).fetchone() == (1,)
+    store.close()
+
+
+@pytest.mark.asyncio
+async def test_stock_session_reports_recompute_failure_after_publishing_price_counters() -> None:
+    market_db = DummyMarketDb()
+    market_db.topix_rows = [
+        {"date": "2026-02-10", "open": 1, "high": 1, "low": 1, "close": 1}
+    ]
+    store = _StagedStockDataStore(market_db)
+    published: list[tuple[int, int, int, int]] = []
+
+    async def _fail_recompute(_codes: frozenset[str]) -> None:
+        raise RuntimeError("targeted recompute failed")
+
+    ctx = _build_ctx(
+        client=_CompleteWindowClient(
+            {"72030": [_provider_daily_quote("72030", "2026-02-10")]}
+        ),
+        market_db=market_db,
+        time_series_store=store,
+        recompute_affected_stock_codes=_fail_recompute,
+    )
+    ctx.on_stock_commit = lambda *counts: published.append(counts)
+    session = sync_stock_data_fetch.StockDataIngestionSession()
+    await session.stage(
+        ctx,
+        [
+            _normalized_provider_daily_row("72030", "2026-02-10", factor=0.5),
+            _normalized_provider_daily_row("67580", "2026-02-10", base=20.0),
+        ],
+    )
+
+    outcome = await session.commit(ctx, stage=_provider_stage_for_test(ctx))
+
+    assert outcome.appended_rows == 1
+    assert outcome.affected_codes == frozenset({"7203"})
+    assert outcome.replaced_codes == 1
+    assert outcome.recomputation_errors == (
+        "Affected stock recomputation failed: targeted recompute failed",
+    )
+    assert published[-1] == (1, 1, 1, outcome.replaced_rows)
+    assert session.committed is True
+    assert session.finalized is True
+
+
+@pytest.mark.asyncio
+async def test_stock_session_cooperative_cancel_during_only_replacement_skips_normal_append() -> None:
+    market_db = DummyMarketDb()
+    market_db.topix_rows = [
+        {"date": "2026-02-10", "open": 1, "high": 1, "low": 1, "close": 1}
+    ]
+    store = _UnserializedBlockingReplacementStore(market_db)
+    cancelled = asyncio.Event()
+    ctx = _build_ctx(
+        client=_CompleteWindowClient(
+            {"72030": [_provider_daily_quote("72030", "2026-02-10")]}
+        ),
+        market_db=market_db,
+        time_series_store=store,
+        cancelled=cancelled,
+    )
+    session = sync_stock_data_fetch.StockDataIngestionSession()
+    await session.stage(
+        ctx,
+        [
+            _normalized_provider_daily_row("72030", "2026-02-10", factor=0.5),
+            _normalized_provider_daily_row("67580", "2026-02-10", base=20.0),
+        ],
+    )
+
+    task = asyncio.create_task(session.commit(ctx, stage=_provider_stage_for_test(ctx)))
+    assert await asyncio.to_thread(store.replacement_started.wait, 1)
+    cancelled.set()
+    store.release_replacement.set()
+    outcome = await task
+
+    assert outcome.cancelled is True
+    assert outcome.appended_rows == 0
+    assert outcome.affected_codes == frozenset({"7203"})
+    assert outcome.replaced_codes == 1
+    assert store.flush_calls == 0
+    assert store.discard_calls == 1
+    assert "6758" not in {str(row["code"]) for row in market_db.stock_rows}
+
+
+@pytest.mark.asyncio
+async def test_stock_session_partial_cooperative_cancel_keeps_detected_and_replaced_counts() -> None:
+    market_db = DummyMarketDb()
+    market_db.topix_rows = [
+        {"date": "2026-02-10", "open": 1, "high": 1, "low": 1, "close": 1}
+    ]
+    store = _UnserializedBlockingReplacementStore(market_db)
+    cancelled = asyncio.Event()
+    committed_progress: list[tuple[int, int, int, int]] = []
+    ctx = _build_ctx(
+        client=_CompleteWindowClient(
+            {
+                "67580": [_provider_daily_quote("67580", "2026-02-10")],
+                "72030": [_provider_daily_quote("72030", "2026-02-10")],
+            }
+        ),
+        market_db=market_db,
+        time_series_store=store,
+        cancelled=cancelled,
+    )
+    ctx.on_stock_commit = lambda *counts: committed_progress.append(counts)
+    session = sync_stock_data_fetch.StockDataIngestionSession()
+    await session.stage(
+        ctx,
+        [
+            _normalized_provider_daily_row("72030", "2026-02-10", factor=0.5),
+            _normalized_provider_daily_row("67580", "2026-02-10", factor=0.5),
+            _normalized_provider_daily_row("99840", "2026-02-10", base=30.0),
+        ],
+    )
+
+    task = asyncio.create_task(session.commit(ctx, stage=_provider_stage_for_test(ctx)))
+    assert await asyncio.to_thread(store.replacement_started.wait, 1)
+    cancelled.set()
+    store.release_replacement.set()
+    outcome = await task
+
+    assert outcome.cancelled is True
+    assert outcome.affected_codes == frozenset({"6758", "7203"})
+    assert outcome.replaced_codes == 1
+    assert len(store.replacement_codes) == 1
+    assert store.flush_calls == 0
+    assert ctx.affected_stock_codes == 2
+    assert ctx.stock_codes_replaced == 1
+    assert committed_progress == [(0, 2, 1, outcome.replaced_rows)]
+    assert "9984" not in {str(row["code"]) for row in market_db.stock_rows}
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_preserves_committed_stock_counters_when_later_stage_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _stock_stage(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {
+            "api_calls": 3,
+            "stocks_updated": 6,
+            "stock_rows_appended": 4,
+            "affected_stock_codes": 1,
+            "stock_codes_replaced": 1,
+            "stock_rows_replaced": 2,
+            "stock_recomputation_errors": [],
+            "stock_target_dates": ["2026-02-10"],
+            "errors": [],
+            "cancelled": False,
+        }
+
+    async def _fail_later_stage(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("indices stage failed")
+
+    monkeypatch.setattr(sync_strategies, "_sync_incremental_stock_data_stage", _stock_stage)
+    monkeypatch.setattr(sync_strategies, "_sync_incremental_indices_stage", _fail_later_stage)
+    market_db = DummyMarketDb()
+    result = await IncrementalSyncStrategy().execute(
+        _build_ctx(client=DummyClient(), market_db=market_db)
+    )
+
+    assert result.success is False
+    assert result.stockRowsAppended == 4
+    assert result.affectedStockCodes == 1
+    assert result.stockCodesReplaced == 1
+    assert result.stockRowsReplaced == 2
+    assert result.errors == ["indices stage failed"]
+
+
+@pytest.mark.asyncio
+async def test_initial_sync_late_cancellation_preserves_stock_commit_checkpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    committed_progress: list[tuple[int, int, int, int]] = []
+
+    async def _stock_stage(ctx: SyncContext, **_kwargs: Any) -> dict[str, Any]:
+        ctx.stock_rows_appended = 7
+        ctx.affected_stock_codes = 2
+        ctx.stock_codes_replaced = 2
+        ctx.stock_rows_replaced = 5
+        assert ctx.on_stock_commit is not None
+        ctx.on_stock_commit(7, 2, 2, 5)
+        return {
+            "api_calls": 3,
+            "stocks_updated": 6,
+            "stock_rows_appended": 4,
+            "affected_stock_codes": 1,
+            "stock_codes_replaced": 1,
+            "stock_rows_replaced": 2,
+            "stock_recomputation_errors": [],
+            "failed_dates": [],
+            "errors": [],
+            "cancelled": False,
+        }
+
+    async def _cancel_options(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {"api_calls": 1, "errors": [], "cancelled": True}
+
+    monkeypatch.setattr(sync_strategies, "_sync_initial_stock_data_stage", _stock_stage)
+    monkeypatch.setattr(sync_strategies, "_sync_options_225_dates", _cancel_options)
+    ctx = _build_ctx(
+        client=InitialSyncClient(topix_dates=["2026-02-10"]),
+        market_db=DummyMarketDb(),
+    )
+    ctx.on_stock_commit = lambda *counts: committed_progress.append(counts)
+
+    result = await InitialSyncStrategy().execute(ctx)
+
+    assert result.success is False
+    assert result.errors == ["Cancelled"]
+    assert result.stockRowsAppended == 7
+    assert result.affectedStockCodes == 2
+    assert result.stockCodesReplaced == 2
+    assert result.stockRowsReplaced == 5
+    assert committed_progress == [(7, 2, 2, 5)]
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_late_cancellation_preserves_stock_commit_checkpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    committed_progress: list[tuple[int, int, int, int]] = []
+
+    async def _stock_stage(ctx: SyncContext, **_kwargs: Any) -> dict[str, Any]:
+        ctx.stock_rows_appended = 7
+        ctx.affected_stock_codes = 2
+        ctx.stock_codes_replaced = 2
+        ctx.stock_rows_replaced = 5
+        assert ctx.on_stock_commit is not None
+        ctx.on_stock_commit(7, 2, 2, 5)
+        return {
+            "api_calls": 3,
+            "stocks_updated": 6,
+            "stock_rows_appended": 4,
+            "affected_stock_codes": 1,
+            "stock_codes_replaced": 1,
+            "stock_rows_replaced": 2,
+            "stock_recomputation_errors": [],
+            "stock_target_dates": ["2026-02-10"],
+            "errors": [],
+            "cancelled": False,
+        }
+
+    async def _cancel_indices(*_args: Any, **_kwargs: Any) -> Any:
+        return sync_strategies._SyncStageOutcome(
+            api_calls=1,
+            errors=[],
+            cancelled=True,
+        )
+
+    monkeypatch.setattr(sync_strategies, "_sync_incremental_stock_data_stage", _stock_stage)
+    monkeypatch.setattr(sync_strategies, "_sync_incremental_indices_stage", _cancel_indices)
+    ctx = _build_ctx(client=DummyClient(), market_db=DummyMarketDb())
+    ctx.on_stock_commit = lambda *counts: committed_progress.append(counts)
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success is False
+    assert result.errors == ["Cancelled"]
+    assert result.stockRowsAppended == 7
+    assert result.affectedStockCodes == 2
+    assert result.stockCodesReplaced == 2
+    assert result.stockRowsReplaced == 5
+    assert committed_progress == [(7, 2, 2, 5)]
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_reports_stock_recomputation_failure_separately(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recompute_error = "Affected stock recomputation failed: targeted recompute failed"
+
+    async def _stock_stage(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {
+            "api_calls": 3,
+            "stocks_updated": 6,
+            "stock_rows_appended": 4,
+            "affected_stock_codes": 1,
+            "stock_codes_replaced": 1,
+            "stock_rows_replaced": 2,
+            "stock_recomputation_errors": [recompute_error],
+            "stock_target_dates": ["2026-02-10"],
+            "errors": [],
+            "cancelled": False,
+        }
+
+    monkeypatch.setattr(sync_strategies, "_sync_incremental_stock_data_stage", _stock_stage)
+    result = await IncrementalSyncStrategy().execute(
+        _build_ctx(client=DummyClient(), market_db=DummyMarketDb())
+    )
+
+    assert result.success is False
+    assert result.stockRowsAppended == 4
+    assert result.affectedStockCodes == 1
+    assert result.stockCodesReplaced == 1
+    assert result.stockRowsReplaced == 2
+    assert result.stockRecomputationErrors == [recompute_error]
+    assert result.errors == [recompute_error]
+
+
+@pytest.mark.asyncio
+async def test_execute_stock_data_bulk_fetch_defers_append_until_all_files_are_staged() -> None:
     plan = BulkFetchPlan(
         endpoint="/equities/bars/daily",
         files=[
@@ -2424,8 +3395,8 @@ async def test_execute_stock_data_bulk_fetch_flushes_each_file_before_staging_ne
     bulk_service = _ChunkedPlanAndFetchBulkService(
         plan=plan,
         chunks=[
-            [{"Date": "2026-02-10", "Code": "7203", "O": 1, "H": 2, "L": 1, "C": 2, "Vo": 100}],
-            [{"Date": "2026-02-11", "Code": "7203", "O": 2, "H": 3, "L": 2, "C": 3, "Vo": 200}],
+            [_provider_daily_quote("7203", "2026-02-10")],
+            [_provider_daily_quote("7203", "2026-02-11", base=20.0)],
         ],
     )
     market_db = DummyMarketDb()
@@ -2444,9 +3415,11 @@ async def test_execute_stock_data_bulk_fetch_flushes_each_file_before_staging_ne
         plan=plan,
         reason="bulk_estimate_lower",
     )
+    session = sync_stock_data_fetch.StockDataIngestionSession()
 
     outcome = await execute_stock_data_bulk_fetch(
         ctx,
+        session=session,
         decision=decision,
         target_dates=["2026-02-10", "2026-02-11"],
         stage_name="stock_data_incremental",
@@ -2456,12 +3429,15 @@ async def test_execute_stock_data_bulk_fetch_flushes_each_file_before_staging_ne
         fallback_log_message="bulk failed: {}",
     )
 
-    assert outcome.stocks_updated == 2
+    assert outcome.stocks_updated == 0
     assert store.publish_calls == 0
     assert [len(batch) for batch in store.stage_batches] == [1, 1]
-    assert store.flush_calls == 2
-    assert store.max_pending_stage_batches == 1
-    assert store.pending_stage_batches == []
+    assert store.flush_calls == 0
+    assert store.max_pending_stage_batches == 2
+    assert len(store.pending_stage_batches) == 2
+    committed = await session.commit(ctx, stage=_provider_stage_for_test(ctx))
+    assert committed.appended_rows == 2
+    assert store.flush_calls == 1
     assert [row["date"] for row in market_db.stock_rows] == ["2026-02-10", "2026-02-11"]
 
 
@@ -2485,8 +3461,8 @@ async def test_execute_stock_data_bulk_fetch_keeps_same_file_chunks_in_one_flush
     bulk_service = _ChunkedPlanAndFetchBulkService(
         plan=plan,
         chunks=[
-            [{"Date": "2026-02-10", "Code": "7203", "O": 1, "H": 2, "L": 1, "C": 1, "Vo": 100}],
-            [{"Date": "2026-02-10", "Code": "7203", "O": 1, "H": 2, "L": 1, "C": 2, "Vo": 100}],
+            [_provider_daily_quote("7203", "2026-02-10")],
+            [_provider_daily_quote("7203", "2026-02-10", base=20.0)],
         ],
     )
     market_db = DummyMarketDb()
@@ -2505,9 +3481,11 @@ async def test_execute_stock_data_bulk_fetch_keeps_same_file_chunks_in_one_flush
         plan=plan,
         reason="bulk_estimate_lower",
     )
+    session = sync_stock_data_fetch.StockDataIngestionSession()
 
     outcome = await execute_stock_data_bulk_fetch(
         ctx,
+        session=session,
         decision=decision,
         target_dates=["2026-02-10"],
         stage_name="stock_data_incremental",
@@ -2518,9 +3496,12 @@ async def test_execute_stock_data_bulk_fetch_keeps_same_file_chunks_in_one_flush
     )
 
     assert outcome.used_rest_fallback is False
-    assert store.flush_calls == 1
+    assert store.flush_calls == 0
     assert [len(batch) for batch in store.stage_batches] == [1, 1]
-    assert market_db.stock_rows[0]["close"] == 2.0
+    committed = await session.commit(ctx, stage=_provider_stage_for_test(ctx))
+    assert committed.appended_rows == 1
+    assert store.flush_calls == 1
+    assert market_db.stock_rows[0]["close"] == 21.0
 
 
 @pytest.mark.asyncio
@@ -2543,14 +3524,17 @@ async def test_execute_stock_data_bulk_fetch_replay_is_zero_delta_across_same_fi
         estimated_cache_misses=1,
     )
     chunks = [
-        [{"Date": "2026-02-10", "Code": "7203", "O": 1, "H": 2, "L": 1, "C": 1, "Vo": 100}],
-        [{"Date": "2026-02-10", "Code": "7203", "O": 1, "H": 2, "L": 1, "C": 2, "Vo": 100}],
+        [_provider_daily_quote("7203", "2026-02-10", base=20.0)],
+        [_provider_daily_quote("7203", "2026-02-10", base=20.0)],
     ]
     store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
-    store.publish_stock_data(_convert_stock_bulk_rows(chunks[-1], target_dates={"2026-02-10"}))
+    store.publish_stock_data(
+        _convert_stock_bulk_rows(chunks[-1], target_dates={"2026-02-10"}),
+        stage=_provider_stage_for_test(provider_as_of="2026-02-10"),
+    )
     market_db = DummyMarketDb()
     ctx = _build_ctx(
         client=_PlanOnlyClient("premium"),
@@ -2566,9 +3550,11 @@ async def test_execute_stock_data_bulk_fetch_replay_is_zero_delta_across_same_fi
         plan=plan,
         reason="bulk_estimate_lower",
     )
+    session = sync_stock_data_fetch.StockDataIngestionSession()
 
     outcome = await execute_stock_data_bulk_fetch(
         ctx,
+        session=session,
         decision=decision,
         target_dates=["2026-02-10"],
         stage_name="stock_data_incremental",
@@ -2579,9 +3565,11 @@ async def test_execute_stock_data_bulk_fetch_replay_is_zero_delta_across_same_fi
     )
 
     assert outcome.stocks_updated == 0
+    committed = await session.commit(ctx, stage=_provider_stage_for_test(ctx))
+    assert committed.appended_rows == 0
     assert store._conn.execute(
         "SELECT close FROM stock_data_raw WHERE code = '7203' AND date = '2026-02-10'"
-    ).fetchone() == (2.0,)
+    ).fetchone() == (21.0,)
     store.close()
 
 
@@ -2607,7 +3595,7 @@ async def test_execute_stock_data_bulk_fetch_discards_partial_file_on_failure() 
         async def fetch_with_plan(self, _plan: Any, *, on_rows_batch: Any, accumulate_rows: bool) -> Any:
             del accumulate_rows
             await on_rows_batch(
-                [{"Date": "2026-02-10", "Code": "7203", "O": 1, "H": 2, "L": 1, "C": 2, "Vo": 100}],
+                [_provider_daily_quote("7203", "2026-02-10", base=20.0)],
                 file_info,
             )
             raise RuntimeError("partial file failed")
@@ -2628,9 +3616,11 @@ async def test_execute_stock_data_bulk_fetch_discards_partial_file_on_failure() 
         plan=plan,
         reason="bulk_estimate_lower",
     )
+    session = sync_stock_data_fetch.StockDataIngestionSession()
 
     outcome = await execute_stock_data_bulk_fetch(
         ctx,
+        session=session,
         decision=decision,
         target_dates=["2026-02-10"],
         stage_name="stock_data_incremental",
@@ -5061,16 +6051,12 @@ async def test_initial_sync_success_path_without_failed_dates() -> None:
         def index_stock_data(self) -> None:
             events.append("stock_indexed")
 
-    async def _materialize() -> None:
-        events.append("adjusted_metrics_pit")
-
     ctx = _build_ctx(
         client=client,
         market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda stage, *_: events.append(stage),
         time_series_store=EventStore(market_db),
-        materialize_adjusted_metrics=_materialize,
     )
 
     result = await InitialSyncStrategy().execute(ctx)
@@ -5079,8 +6065,8 @@ async def test_initial_sync_success_path_without_failed_dates() -> None:
     assert result.failedDates == []
     assert result.stocksUpdated == len(topix_dates)
     assert market_db.metadata[METADATA_KEYS["FAILED_DATES"]] == "[]"
-    assert events.index("stock_indexed") < events.index("adjusted_metrics_pit")
-    assert events.index("adjusted_metrics_pit") < events.index("complete")
+    assert "adjusted_metrics_pit" not in events
+    assert events.index("stock_indexed") < events.index("complete")
 
 
 @pytest.mark.asyncio
@@ -5094,7 +6080,7 @@ async def test_initial_sync_stock_data_uses_bulk_when_selected(
         results_by_endpoint={
             "/equities/bars/daily": BulkFetchResult(
                 rows=[
-                    {"Code": "72030", "Date": value, "O": 1, "H": 2, "L": 1, "C": 2, "Vo": 1000}
+                    _provider_daily_quote("72030", value)
                     for value in topix_dates
                 ],
                 api_calls=2,
@@ -5355,16 +6341,12 @@ async def test_incremental_sync_without_anchor_date_and_with_stock_master_update
         def index_stock_data(self) -> None:
             events.append("stock_indexed")
 
-    async def _materialize() -> None:
-        events.append("adjusted_metrics_pit")
-
     ctx = _build_ctx(
         client=client,
         market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda stage, *_: events.append(stage),
         time_series_store=EventStore(market_db),
-        materialize_adjusted_metrics=_materialize,
     )
 
     result = await IncrementalSyncStrategy().execute(ctx)
@@ -5372,8 +6354,8 @@ async def test_incremental_sync_without_anchor_date_and_with_stock_master_update
     assert result.success
     assert len(market_db.stocks_rows) == 1
     assert any(path == "/indices/bars/daily/topix" and params == {} for path, params in client.calls)
-    assert events.index("stock_indexed") < events.index("adjusted_metrics_pit")
-    assert events.index("adjusted_metrics_pit") < events.index("complete")
+    assert "adjusted_metrics_pit" not in events
+    assert events.index("stock_indexed") < events.index("complete")
 
 
 @pytest.mark.asyncio
@@ -6382,17 +7364,11 @@ async def test_repair_sync_backfills_fundamentals_without_stock_refresh(
     )
 
     events: list[str] = []
-    materialize_calls = 0
 
     class EventStore(DummyTimeSeriesStore):
         def publish_statements(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
             events.append("fundamentals_published")
             return super().publish_statements(rows)
-
-    async def _materialize() -> None:
-        nonlocal materialize_calls
-        materialize_calls += 1
-        events.append("adjusted_metrics_pit")
 
     ctx = _build_ctx(
         client=client,
@@ -6400,7 +7376,6 @@ async def test_repair_sync_backfills_fundamentals_without_stock_refresh(
         cancelled=asyncio.Event(),
         on_progress=lambda stage, *_: events.append(stage),
         time_series_store=EventStore(market_db),
-        materialize_adjusted_metrics=_materialize,
     )
 
     result = await RepairSyncStrategy().execute(ctx)
@@ -6411,18 +7386,16 @@ async def test_repair_sync_backfills_fundamentals_without_stock_refresh(
     assert market_db.stock_rows == []
     assert {row["code"] for row in market_db.statements_rows} == {"7203"}
     assert "fundamentals" in events
-    assert materialize_calls == 1
-    assert events.index("fundamentals_published") < events.index("adjusted_metrics_pit")
-    assert events.index("adjusted_metrics_pit") < events.index("complete")
+    assert "adjusted_metrics_pit" not in events
+    assert events.index("fundamentals_published") < events.index("complete")
 
 
 @pytest.mark.asyncio
-async def test_repair_sync_skips_materialization_when_fundamentals_publish_zero_rows(
+async def test_repair_sync_has_no_all_basis_stage_when_fundamentals_publish_zero_rows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     market_db = DummyMarketDb()
     market_db._fundamentals_target_codes = {"7203"}
-    materialize_calls = 0
     progress_events: list[tuple[str, int, int, str]] = []
 
     async def _sync_without_updates(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
@@ -6434,10 +7407,6 @@ async def test_repair_sync_skips_materialization_when_fundamentals_publish_zero_
             "cancelled": False,
         }
 
-    async def _materialize() -> None:
-        nonlocal materialize_calls
-        materialize_calls += 1
-
     monkeypatch.setattr(
         "src.application.services.sync_strategies._sync_fundamentals_incremental",
         _sync_without_updates,
@@ -6448,24 +7417,101 @@ async def test_repair_sync_skips_materialization_when_fundamentals_publish_zero_
         on_progress=lambda stage, current, total, message: progress_events.append(
             (stage, current, total, message)
         ),
-        materialize_adjusted_metrics=_materialize,
     )
 
     result = await RepairSyncStrategy().execute(ctx)
 
     assert result.success
     assert result.fundamentalsUpdated == 0
-    assert materialize_calls == 0
-    assert (
-        "adjusted_metrics_pit",
-        200,
-        200,
-        "No statement changes; materialization skipped.",
-    ) in progress_events
+    assert all(stage != "adjusted_metrics_pit" for stage, *_ in progress_events)
+
+
+def _seed_pending_current_basis_recompute(market_db: MarketDb) -> None:
+    market_db._execute(
+        """
+        INSERT INTO stock_provider_windows (
+            code, coverage_start, coverage_end, provider_plan, provider_as_of,
+            source_fingerprint, updated_at
+        ) VALUES ('7203', '2024-01-01', '2024-12-30', 'premium', '2024-12-30',
+                  'window-fp', '2025-01-01T00:00:00Z')
+        """
+    )
+    market_db._execute(
+        """
+        INSERT INTO statements (
+            code, statement_id, disclosed_date, disclosed_at,
+            period_start, period_end, earnings_per_share,
+            type_of_current_period, type_of_document
+        ) VALUES ('7203', 'disclosure-1', '2024-05-10',
+                  '2024-05-10T15:30:00+09:00', '2023-04-01', '2024-03-31',
+                  100, 'FY', 'FYFinancialStatements')
+        """
+    )
+    market_db._execute(
+        """
+        INSERT INTO current_basis_recompute_pending
+            (code, reason, source_fingerprint, updated_at)
+        VALUES ('7203', 'statement_change', 'statement-fp', '2025-01-01T00:00:00Z')
+        """
+    )
 
 
 @pytest.mark.asyncio
-async def test_repair_sync_requires_materializer_after_fundamentals_publish(
+async def test_repair_zero_targets_retries_and_clears_durable_pending(tmp_path) -> None:
+    market_db = open_market_db(str(tmp_path / "repair-pending.duckdb"))
+    try:
+        _seed_pending_current_basis_recompute(market_db)
+
+        async def recompute(codes: frozenset[str]) -> None:
+            AdjustedMetricsMaterializer(market_db).rebuild_current_basis(codes)
+
+        ctx = _build_ctx(
+            client=DummyClient(),
+            market_db=market_db,  # type: ignore[arg-type]
+            recompute_affected_stock_codes=recompute,
+        )
+
+        result = await RepairSyncStrategy().execute(ctx)
+
+        assert result.success
+        assert market_db._fetchone(
+            "SELECT COUNT(*) FROM current_basis_recompute_pending"
+        ) == (0,)
+        assert market_db._fetchone(
+            "SELECT COUNT(*) FROM statement_metrics_adjusted WHERE code = '7203'"
+        ) == (1,)
+    finally:
+        market_db.close()
+
+
+@pytest.mark.asyncio
+async def test_repair_zero_targets_keeps_pending_when_recompute_fails(tmp_path) -> None:
+    market_db = open_market_db(str(tmp_path / "repair-pending-failure.duckdb"))
+    try:
+        _seed_pending_current_basis_recompute(market_db)
+
+        async def fail_recompute(_codes: frozenset[str]) -> None:
+            raise RuntimeError("injected pending retry failure")
+
+        ctx = _build_ctx(
+            client=DummyClient(),
+            market_db=market_db,  # type: ignore[arg-type]
+            recompute_affected_stock_codes=fail_recompute,
+        )
+
+        result = await RepairSyncStrategy().execute(ctx)
+
+        assert not result.success
+        assert result.errors == ["injected pending retry failure"]
+        assert market_db._fetchone(
+            "SELECT COUNT(*) FROM current_basis_recompute_pending"
+        ) == (1,)
+    finally:
+        market_db.close()
+
+
+@pytest.mark.asyncio
+async def test_repair_sync_completes_without_all_basis_materializer_after_publish(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     market_db = DummyMarketDb()
@@ -6488,69 +7534,9 @@ async def test_repair_sync_requires_materializer_after_fundamentals_publish(
 
     result = await RepairSyncStrategy().execute(ctx)
 
-    assert not result.success
-    assert result.fundamentalsUpdated == 0
-    assert result.errors == [
-        "adjusted_metrics_pit materializer is required after fundamentals repair"
-    ]
-
-
-@pytest.mark.asyncio
-async def test_repair_sync_fails_when_adjusted_metrics_materialization_fails(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    market_db = DummyMarketDb()
-    market_db._fundamentals_target_codes = {"7203"}
-
-    async def _sync_with_update(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
-        return {
-            "api_calls": 1,
-            "updated": 1,
-            "dates_processed": 1,
-            "errors": [],
-            "cancelled": False,
-        }
-
-    async def _materialize() -> None:
-        raise RuntimeError("PIT materialization failed")
-
-    monkeypatch.setattr(
-        "src.application.services.sync_strategies._sync_fundamentals_incremental",
-        _sync_with_update,
-    )
-    ctx = _build_ctx(
-        client=DummyClient(),
-        market_db=market_db,
-        materialize_adjusted_metrics=_materialize,
-    )
-
-    result = await RepairSyncStrategy().execute(ctx)
-
-    assert not result.success
-    assert result.errors == ["PIT materialization failed"]
-
-
-@pytest.mark.asyncio
-async def test_incremental_sync_fails_when_adjusted_metrics_pit_fails() -> None:
-    market_db = DummyMarketDb(
-        latest_trading_date=None,
-        latest_stock_data_date=None,
-        latest_indices_data_dates={},
-    )
-
-    async def _materialize() -> None:
-        raise RuntimeError("PIT materialization failed")
-
-    ctx = _build_ctx(
-        client=DummyClient(),
-        market_db=market_db,
-        materialize_adjusted_metrics=_materialize,
-    )
-
-    result = await IncrementalSyncStrategy().execute(ctx)
-
-    assert result.success is False
-    assert result.errors == ["PIT materialization failed"]
+    assert result.success
+    assert result.fundamentalsUpdated == 1
+    assert result.errors == []
 
 
 @pytest.mark.asyncio
@@ -6721,10 +7707,18 @@ def test_data_conversion_helpers_handle_aliases_and_invalid_rows() -> None:
 def test_convert_stock_bulk_rows_skips_invalid_dates_and_dedupes() -> None:
     rows = _convert_stock_bulk_rows(
         [
-            {"Code": "72030", "Date": "20260210", "O": "1", "H": "2", "L": "1", "C": "2", "Vo": "100"},
-            {"Code": "72030", "Date": "20260210", "O": "9", "H": "9", "L": "9", "C": "9", "Vo": "999"},
-            {"Code": "72030", "Date": "20260230", "O": "1", "H": "2", "L": "1", "C": "2", "Vo": "100"},
-            {"Code": "72030", "Date": "2026-13-01", "O": "1", "H": "2", "L": "1", "C": "2", "Vo": "100"},
+            _complete_provider_quote(
+                {"Code": "72030", "Date": "20260210", "O": "1", "H": "2", "L": "1", "C": "2", "Vo": "100"}
+            ),
+            _complete_provider_quote(
+                {"Code": "72030", "Date": "20260210", "O": "9", "H": "9", "L": "9", "C": "9", "Vo": "999"}
+            ),
+            _complete_provider_quote(
+                {"Code": "72030", "Date": "20260230", "O": "1", "H": "2", "L": "1", "C": "2", "Vo": "100"}
+            ),
+            _complete_provider_quote(
+                {"Code": "72030", "Date": "2026-13-01", "O": "1", "H": "2", "L": "1", "C": "2", "Vo": "100"}
+            ),
         ],
         target_dates={"2026-02-10"},
     )
@@ -7020,9 +8014,112 @@ async def test_publish_helpers_return_empty_delta_when_rows_empty() -> None:
     )
 
     assert (await _publish_topix_rows(ctx, [])).mutated_rows == 0
-    assert (await _publish_stock_data_rows(ctx, [])).mutated_rows == 0
+    assert (
+        await _publish_stock_data_rows(
+            ctx,
+            [],
+            stage=_provider_stage_for_test(ctx),
+        )
+    ).mutated_rows == 0
     assert (await _publish_indices_rows(ctx, [])).mutated_rows == 0
     assert (await _publish_statement_rows(ctx, [])).mutated_rows == 0
+
+
+@pytest.mark.asyncio
+async def test_stock_session_propagates_explicit_provider_lineage_frontier() -> None:
+    market_db = DummyMarketDb()
+    captured: list[ProviderStockStage] = []
+
+    class CapturingStore(DummyTimeSeriesStore):
+        def flush_staged_stock_data(
+            self,
+            *,
+            stage: ProviderStockStage,
+            exclude_codes: frozenset[str] = frozenset(),
+        ) -> SemanticDeltaResult:
+            captured.append(stage)
+            rows, self._staged_stock_rows = self._staged_stock_rows, []
+            append_rows = [
+                row for row in rows if str(row.get("code")) not in exclude_codes
+            ]
+            return self._mutation(self._market_db.upsert_stock_data(append_rows))
+
+    store = CapturingStore(market_db)
+    ctx = _build_ctx(
+        client=DummyClient(),
+        market_db=market_db,
+        time_series_store=store,
+    )
+    session = sync_stock_data_fetch.StockDataIngestionSession()
+    await session.stage(
+        ctx,
+        [_normalized_provider_daily_row("72030", "2026-02-10")],
+    )
+    stage = ProviderStockStage(
+        provider_plan="premium",
+        provider_as_of="2026-02-12",
+        provider_codes=frozenset({"7203", "6758"}),
+    )
+
+    await session.commit(ctx, stage=stage)
+
+    assert captured == [stage]
+
+
+@pytest.mark.asyncio
+async def test_statement_publish_accumulates_changed_codes_for_one_recompute() -> None:
+    market_db = DummyMarketDb()
+    store = DummyTimeSeriesStore(market_db)
+    store.publish_statements = lambda _rows: SemanticDeltaResult(
+        stats=MarketMutationStats(input=2, inserted=2, updated=0, unchanged=0, deleted=0),
+        affected_codes=frozenset({"7203", "6758"}),
+    )
+    recomputed: list[frozenset[str]] = []
+
+    async def recompute(codes: frozenset[str]) -> None:
+        recomputed.append(codes)
+
+    ctx = _build_ctx(
+        client=DummyClient(),
+        market_db=market_db,
+        time_series_store=store,
+        recompute_affected_stock_codes=recompute,
+    )
+
+    await _publish_statement_rows(ctx, [{"statement_id": "a"}, {"statement_id": "b"}])
+    await recompute_changed_fundamentals(ctx)
+
+    assert recomputed == [frozenset({"6758", "7203"})]
+    assert ctx.changed_fundamentals_codes == set()
+
+
+@pytest.mark.asyncio
+async def test_fundamentals_bulk_keeps_distinct_same_day_statement_ids() -> None:
+    market_db = DummyMarketDb()
+    ctx = _build_ctx(client=DummyClient(), market_db=market_db)
+    common = {
+        "Code": "72030",
+        "DiscDate": "2026-02-10",
+        "DiscTime": "15:30:00",
+        "CurPerSt": "2025-04-01",
+        "CurPerEn": "2026-03-31",
+        "CurPerType": "FY",
+    }
+
+    mutation = await _ingest_fins_bulk_batch(
+        ctx,
+        batch_rows=[
+            {**common, "DiscNo": "earnings", "DocType": "EarnForecastRevision"},
+            {**common, "DiscNo": "dividend", "DocType": "DividendForecastRevision"},
+        ],
+        allowed_codes={"7203"},
+    )
+
+    assert mutation.stats.inserted == 2
+    assert {row["statement_id"] for row in market_db.statements_rows} == {
+        "earnings",
+        "dividend",
+    }
 
 
 @pytest.mark.asyncio

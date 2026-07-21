@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import duckdb
 import pandas as pd
 import pytest
 
@@ -31,6 +32,7 @@ from src.application.services.screening_statement_loader import (
 )
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.data_access.loaders.statements_loaders import transform_statements_df
+from tests.unit.server.db.market_writer_test_support import open_market_db
 
 
 class DummyReader:
@@ -46,41 +48,85 @@ class DummyReader:
         return self.rows
 
 
-def test_screening_adjusted_metrics_select_reference_date_basis(tmp_path) -> None:
-    import duckdb
-
-    db_path = tmp_path / "screening-bases.duckdb"
+def _create_screening_current_basis_fixture(
+    db_path: Any,
+    metrics: list[tuple[str, str, str, str, str, float]],
+) -> None:
     conn = duckdb.connect(str(db_path))
     conn.execute("""
-        CREATE TABLE stock_adjustment_bases (
-            code TEXT, basis_id TEXT, valid_from TEXT, valid_to_exclusive TEXT,
-            adjustment_through_date TEXT, source_fingerprint TEXT,
-            materialized_through_date TEXT, status TEXT
+        CREATE TABLE stock_provider_windows (
+            code TEXT PRIMARY KEY, coverage_start TEXT, coverage_end TEXT,
+            provider_plan TEXT, provider_as_of TEXT,
+            source_fingerprint TEXT, updated_at TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE current_basis_recompute_pending (
+            code TEXT PRIMARY KEY, reason TEXT, source_fingerprint TEXT,
+            updated_at TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE current_basis_fundamentals_state (
+            code TEXT PRIMARY KEY, fundamentals_adjustment_basis_date TEXT,
+            source_fingerprint TEXT, statement_count BIGINT,
+            materialized_at TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE statements (
+            code TEXT, statement_id TEXT, disclosed_date TEXT,
+            disclosed_at TEXT, period_end TEXT, type_of_current_period TEXT,
+            PRIMARY KEY (code, statement_id)
         )
     """)
     conn.execute("""
         CREATE TABLE statement_metrics_adjusted (
-            code TEXT, disclosed_date TEXT, period_end TEXT, period_type TEXT,
-            adjusted_eps DOUBLE,
-            adjusted_bps DOUBLE, adjusted_forecast_eps DOUBLE,
-            adjusted_dividend_fy DOUBLE, basis_version TEXT
+            code TEXT, statement_id TEXT, disclosed_date TEXT,
+            disclosed_at TEXT, period_end TEXT, period_type TEXT,
+            adjusted_eps DOUBLE, adjusted_bps DOUBLE,
+            adjusted_forecast_eps DOUBLE, adjusted_dividend_fy DOUBLE,
+            fundamentals_adjustment_basis_date TEXT,
+            source_fingerprint TEXT,
+            PRIMARY KEY (code, statement_id)
         )
     """)
-    conn.executemany(
-        "INSERT INTO stock_adjustment_bases VALUES (?, ?, ?, ?, ?, 'fp', ?, 'ready')",
-        [
-            ("7203", "event-pit-v1:7203:2024-01-04", "2024-01-04", "2024-06-28", "2024-01-04", "2024-06-27"),
-            ("7203", "event-pit-v1:7203:2024-06-28", "2024-06-28", None, "2024-06-28", "2024-07-31"),
-        ],
+    conn.execute(
+        "INSERT INTO stock_provider_windows (code, coverage_start, coverage_end, "
+        "provider_plan, provider_as_of, source_fingerprint, updated_at) VALUES "
+        "('7203', '2024-01-04', '2024-07-31', "
+        "'premium', '2024-07-31', 'provider-fp', '2024-07-31')"
     )
-    conn.executemany(
-        "INSERT INTO statement_metrics_adjusted VALUES ('7203', '2024-05-10', '2024-03-31', 'FY', ?, 1000, 120, 30, ?)",
-        [
-            (100.0, "event-pit-v1:7203:2024-01-04"),
-            (999.0, "event-pit-v1:7203:2024-06-28"),
-        ],
+    conn.execute(
+        "INSERT INTO current_basis_fundamentals_state VALUES (?, ?, ?, ?, ?)",
+        ("7203", "2024-07-31", "current-fp", len(metrics), "2024-07-31"),
     )
+    for statement_id, disclosed_date, disclosed_at, period_end, period_type, eps in metrics:
+        conn.execute(
+            "INSERT INTO statements VALUES (?, ?, ?, ?, ?, ?)",
+            ("7203", statement_id, disclosed_date, disclosed_at, period_end, period_type),
+        )
+        conn.execute(
+            """
+            INSERT INTO statement_metrics_adjusted VALUES (
+                ?, ?, ?, ?, ?, ?, ?, 1000, 120, 30,
+                '2024-07-31', 'current-fp'
+            )
+            """,
+            ("7203", statement_id, disclosed_date, disclosed_at, period_end, period_type, eps),
+        )
     conn.close()
+
+
+def test_screening_adjusted_metrics_use_current_provider_basis_without_future_leak(tmp_path) -> None:
+    db_path = tmp_path / "screening-bases.duckdb"
+    _create_screening_current_basis_fixture(
+        db_path,
+        [
+            ("bounded", "2024-05-10", "2024-05-10T15:00:00+09:00", "2024-03-31", "FY", 100.0),
+            ("future-at", "2024-06-27", "2024-06-28T00:01:00+09:00", "2024-03-31", "FY", 999.0),
+        ],
+    )
 
     reader = MarketDbReader(str(db_path))
     try:
@@ -93,47 +139,26 @@ def test_screening_adjusted_metrics_select_reference_date_basis(tmp_path) -> Non
     finally:
         reader.close()
 
-    assert {row["basis_version"] for row in rows} == {
-        "event-pit-v1:7203:2024-01-04"
-    }
+    assert "basis_version" not in rows[0]
+    assert rows[0]["fundamentals_adjustment_basis_date"] == "2024-07-31"
     assert rows[0]["adjusted_eps"] == pytest.approx(100.0)
+    assert rows[0]["statement_id"] == "bounded"
+    assert rows[0]["disclosed_at"] == "2024-05-10T15:00:00+09:00"
+    assert rows[0]["source_fingerprint"] == "current-fp"
+    assert len(rows) == 1
 
 
 def test_screening_adjusted_metrics_preserve_same_day_materialization_keys(
     tmp_path,
 ) -> None:
-    import duckdb
-
     db_path = tmp_path / "screening-same-day.duckdb"
-    conn = duckdb.connect(str(db_path))
-    conn.execute("""
-        CREATE TABLE stock_adjustment_bases (
-            code TEXT, basis_id TEXT, valid_from TEXT, valid_to_exclusive TEXT,
-            adjustment_through_date TEXT, source_fingerprint TEXT,
-            materialized_through_date TEXT, status TEXT
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE statement_metrics_adjusted (
-            code TEXT, disclosed_date TEXT, period_end TEXT, period_type TEXT,
-            adjusted_eps DOUBLE, adjusted_bps DOUBLE,
-            adjusted_forecast_eps DOUBLE, adjusted_dividend_fy DOUBLE,
-            basis_version TEXT
-        )
-    """)
-    basis_id = "event-pit-v1:7203:2024-01-04"
-    conn.execute(
-        "INSERT INTO stock_adjustment_bases VALUES ('7203', ?, '2024-01-04', NULL, '2024-01-04', 'fp', '2024-06-27', 'ready')",
-        (basis_id,),
-    )
-    conn.executemany(
-        "INSERT INTO statement_metrics_adjusted VALUES ('7203', '2024-05-10', ?, ?, ?, 1000, 120, 30, ?)",
+    _create_screening_current_basis_fixture(
+        db_path,
         [
-            ("2024-03-31", "FY", 100.0, basis_id),
-            ("2024-06-30", "Q1", 25.0, basis_id),
+            ("document-a", "2024-05-10", "2024-05-10T15:00:00+09:00", "2024-03-31", "FY", 100.0),
+            ("document-b", "2024-05-10", "2024-05-10T16:00:00+09:00", "2024-03-31", "FY", 25.0),
         ],
     )
-    conn.close()
 
     reader = MarketDbReader(str(db_path))
     try:
@@ -143,26 +168,63 @@ def test_screening_adjusted_metrics_preserve_same_day_materialization_keys(
     finally:
         reader.close()
 
-    assert {
-        (row["disclosed_date"], row["period_end"], row["period_type"], row["adjusted_eps"])
-        for row in rows
-    } == {
-        ("2024-05-10", "2024-03-31", "FY", 100.0),
-        ("2024-05-10", "2024-06-30", "Q1", 25.0),
-    }
+    assert [(row["statement_id"], row["adjusted_eps"]) for row in rows] == [
+        ("document-a", 100.0),
+        ("document-b", 25.0),
+    ]
 
 
-def test_screening_adjusted_override_pairs_same_day_rows_by_full_key() -> None:
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "UPDATE statement_metrics_adjusted SET fundamentals_adjustment_basis_date = '2024-07-30'",
+        "UPDATE statement_metrics_adjusted SET source_fingerprint = 'stale'",
+        "UPDATE statement_metrics_adjusted SET statement_id = 'orphan' WHERE statement_id = 'bounded'",
+        "UPDATE statement_metrics_adjusted SET disclosed_date = '2024-01-01'",
+        "UPDATE statement_metrics_adjusted SET disclosed_at = '2024-01-01T00:00:00+09:00'",
+        "UPDATE statement_metrics_adjusted SET period_end = '1999-12-31'",
+        "UPDATE statement_metrics_adjusted SET period_type = 'Q1'",
+    ],
+)
+def test_screening_adjusted_metrics_fail_closed_on_stale_provenance(
+    tmp_path: Any,
+    mutation: str,
+) -> None:
+    db_path = tmp_path / "screening-stale.duckdb"
+    _create_screening_current_basis_fixture(
+        db_path,
+        [("bounded", "2024-05-10", "2024-05-10T15:00:00+09:00", "2024-03-31", "FY", 100.0)],
+    )
+    conn = duckdb.connect(str(db_path))
+    conn.execute(mutation)
+    conn.close()
+
+    reader = MarketDbReader(str(db_path))
+    try:
+        with pytest.raises(ValueError, match="market_db_sync"):
+            query_adjusted_statement_metric_rows(
+                reader,
+                ["7203"],
+                start_date=None,
+                end_date="2024-06-27",
+            )
+    finally:
+        reader.close()
+
+
+def test_screening_adjusted_override_pairs_same_day_rows_by_statement_identity() -> None:
     disclosed = pd.Timestamp("2024-05-10")
     raw = pd.DataFrame(
         [
             {
+                "statementId": "doc-fy",
                 "typeOfCurrentPeriod": "FY", "periodEnd": "2024-03-31",
                 "earningsPerShare": 1.0, "profit": 1.0, "equity": 10.0,
                 "totalAssets": 20.0, "sales": 10.0, "operatingProfit": 1.0,
             },
             {
-                "typeOfCurrentPeriod": "Q1", "periodEnd": "2024-06-30",
+                "statementId": "doc-q1",
+                "typeOfCurrentPeriod": "FY", "periodEnd": "2024-03-31",
                 "earningsPerShare": 2.0, "profit": 1.0, "equity": 10.0,
                 "totalAssets": 20.0, "sales": 10.0, "operatingProfit": 1.0,
             },
@@ -171,8 +233,8 @@ def test_screening_adjusted_override_pairs_same_day_rows_by_full_key() -> None:
     )
     adjusted = pd.DataFrame(
         [
-            {"periodEnd": "2024-03-31", "periodType": "FY", "adjustedEps": 100.0},
-            {"periodEnd": "2024-06-30", "periodType": "Q1", "adjustedEps": 25.0},
+            {"statementId": "doc-fy", "periodEnd": "2024-03-31", "periodType": "FY", "adjustedEps": 100.0},
+            {"statementId": "doc-q1", "periodEnd": "2024-03-31", "periodType": "FY", "adjustedEps": 25.0},
         ],
         index=pd.DatetimeIndex([disclosed, disclosed]),
     )
@@ -715,7 +777,10 @@ def test_attach_statements_merges_revision(monkeypatch: pytest.MonkeyPatch) -> N
     daily_index = {"7203": index}
     base_row = {
         "code": "7203",
+        "statement_id": "doc-1",
         "disclosed_date": "2026-01-01",
+        "disclosed_at": "2026-01-01T15:00:00+09:00",
+        "period_end": "2026-01-01",
         "earnings_per_share": 1.0,
         "profit": 1.0,
         "equity": 1.0,
@@ -753,10 +818,13 @@ def test_attach_statements_merges_revision(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(
         "src.application.services.screening_statement_loader.query_adjusted_statement_metric_rows",
         lambda *_args, **_kwargs: [{
-            "code": "7203", "disclosed_date": "2026-01-01",
+            "code": "7203", "statement_id": "doc-1",
+            "disclosed_date": "2026-01-01",
+            "disclosed_at": "2026-01-01T15:00:00+09:00",
             "period_end": "2026-01-01", "period_type": "FY",
             "adjusted_eps": 1.0, "adjusted_bps": 3.0,
             "adjusted_forecast_eps": 2.0, "adjusted_dividend_fy": 8.0,
+            "source_fingerprint": "current-fp",
         }],
     )
     monkeypatch.setattr(
@@ -798,7 +866,10 @@ def test_attach_statements_skips_merge_when_revision_missing(monkeypatch: pytest
     base_rows = [
         {
             "code": "7203",
+            "statement_id": "doc-1",
             "disclosed_date": "2026-01-01",
+            "disclosed_at": "2026-01-01T15:00:00+09:00",
+            "period_end": "2026-01-01",
             "earnings_per_share": 1.0,
             "profit": 1.0,
             "equity": 1.0,
@@ -835,10 +906,13 @@ def test_attach_statements_skips_merge_when_revision_missing(monkeypatch: pytest
     monkeypatch.setattr(
         "src.application.services.screening_statement_loader.query_adjusted_statement_metric_rows",
         lambda *_args, **_kwargs: [{
-            "code": "7203", "disclosed_date": "2026-01-01",
+            "code": "7203", "statement_id": "doc-1",
+            "disclosed_date": "2026-01-01",
+            "disclosed_at": "2026-01-01T15:00:00+09:00",
             "period_end": "2026-01-01", "period_type": "FY",
             "adjusted_eps": 1.0, "adjusted_bps": 3.0,
             "adjusted_forecast_eps": 2.0, "adjusted_dividend_fy": 8.0,
+            "source_fingerprint": "current-fp",
         }],
     )
     monkeypatch.setattr(
@@ -866,7 +940,10 @@ def test_attach_statements_fails_closed_when_exact_adjusted_row_is_missing(
     index = pd.to_datetime(["2026-01-01"])
     row = {
         "code": "7203",
+        "statement_id": "doc-1",
         "disclosed_date": "2026-01-01",
+        "disclosed_at": "2026-01-01T15:00:00+09:00",
+        "period_end": "2026-01-01",
         "earnings_per_share": 1.0,
         "profit": 1.0,
         "equity": 1.0,
@@ -881,7 +958,7 @@ def test_attach_statements_fails_closed_when_exact_adjusted_row_is_missing(
         lambda *_args, **_kwargs: [],
     )
 
-    with pytest.raises(ValueError, match="adjusted_metrics_pit"):
+    with pytest.raises(ValueError, match="market_db_sync"):
         attach_statements(
             DummyReader(),
             {"7203": {}},
@@ -908,26 +985,40 @@ def test_attach_statements_fails_closed_when_same_day_period_sibling_is_missing(
     monkeypatch.setattr(
         "src.application.services.screening_statement_loader.query_statements_rows",
         lambda *_args, **_kwargs: [
-            {**base, "type_of_current_period": "FY"},
-            {**base, "type_of_current_period": "Q1"},
+            {
+                **base,
+                "statement_id": "doc-1",
+                "disclosed_at": "2026-01-01T15:00:00+09:00",
+                "period_end": "2026-01-01",
+                "type_of_current_period": "FY",
+            },
+            {
+                **base,
+                "statement_id": "doc-2",
+                "disclosed_at": "2026-01-01T16:00:00+09:00",
+                "period_end": "2026-01-01",
+                "type_of_current_period": "Q1",
+            },
         ],
     )
     monkeypatch.setattr(
         "src.application.services.screening_statement_loader.query_adjusted_statement_metric_rows",
         lambda *_args, **_kwargs: [{
             "code": "7203",
+            "statement_id": "doc-1",
             "disclosed_date": "2026-01-01",
+            "disclosed_at": "2026-01-01T15:00:00+09:00",
             "period_end": "2026-01-01",
             "period_type": "FY",
             "adjusted_eps": 1.0,
             "adjusted_bps": 3.0,
             "adjusted_forecast_eps": 2.0,
             "adjusted_dividend_fy": 8.0,
-            "basis_version": "event-pit-v1:7203:2025-01-01",
+            "source_fingerprint": "current-fp",
         }],
     )
 
-    with pytest.raises(ValueError, match="adjusted_metrics_pit"):
+    with pytest.raises(ValueError, match="market_db_sync"):
         attach_statements(
             DummyReader(),
             {"7203": {}},
@@ -948,7 +1039,10 @@ def test_attach_statements_overlays_adjusted_metric_sot(
     rows = [
         {
             "code": "7203",
+            "statement_id": "doc-1",
             "disclosed_date": "2026-01-01",
+            "disclosed_at": "2026-01-01T15:00:00+09:00",
+            "period_end": "2026-01-01",
             "earnings_per_share": 100.0,
             "profit": 1.0,
             "equity": 1.0,
@@ -978,13 +1072,16 @@ def test_attach_statements_overlays_adjusted_metric_sot(
     adjusted_rows = [
         {
             "code": "7203",
+            "statement_id": "doc-1",
             "disclosed_date": "2026-01-01",
+            "disclosed_at": "2026-01-01T15:00:00+09:00",
             "period_end": "2026-01-01",
             "period_type": "FY",
             "adjusted_eps": 50.0,
             "adjusted_bps": 500.0,
             "adjusted_forecast_eps": 60.0,
             "adjusted_dividend_fy": 15.0,
+            "source_fingerprint": "current-fp",
         }
     ]
 
@@ -1022,7 +1119,10 @@ def test_attach_statements_collects_transform_error(monkeypatch: pytest.MonkeyPa
     rows = [
         {
             "code": "7203",
+            "statement_id": "doc-1",
             "disclosed_date": "2026-01-01",
+            "disclosed_at": "2026-01-01T15:00:00+09:00",
+            "period_end": "2026-01-01",
             "earnings_per_share": 1.0,
             "profit": 1.0,
             "equity": 1.0,
@@ -1054,10 +1154,13 @@ def test_attach_statements_collects_transform_error(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(
         "src.application.services.screening_statement_loader.query_adjusted_statement_metric_rows",
         lambda *_args, **_kwargs: [{
-            "code": "7203", "disclosed_date": "2026-01-01",
+            "code": "7203", "statement_id": "doc-1",
+            "disclosed_date": "2026-01-01",
+            "disclosed_at": "2026-01-01T15:00:00+09:00",
             "period_end": "2026-01-01", "period_type": "FY",
             "adjusted_eps": 1.0, "adjusted_bps": 3.0,
             "adjusted_forecast_eps": 2.0, "adjusted_dividend_fy": 8.0,
+            "source_fingerprint": "current-fp",
         }],
     )
     monkeypatch.setattr(
@@ -1089,11 +1192,16 @@ def test_query_statements_rows_builds_filters() -> None:
         actual_only=True,
     )
     sql, params = reader.calls[0]
-    assert "disclosed_date >= ?" in sql
-    assert "disclosed_date <= ?" in sql
+    assert "disclosed_at >= ?" in sql
+    assert "disclosed_at <= ?" in sql
     assert "type_of_current_period IN" in sql
     assert "earnings_per_share IS NOT NULL" in sql
-    assert params[0:4] == ("7203", "72030", "2026-01-01", "2026-01-31")
+    assert params[0:4] == (
+        "7203",
+        "72030",
+        "2026-01-01T00:00:00+09:00",
+        "2026-01-31T23:59:59.999999+09:00",
+    )
     assert "1Q" in params and "Q1" in params
 
 
@@ -1113,6 +1221,42 @@ def test_query_statements_rows_queries_alternate_code_forms() -> None:
     assert params == ("7203", "72030")
 
 
+def test_query_statements_rows_prefers_four_digit_alias_identity(tmp_path: Any) -> None:
+    db_path = tmp_path / "screening-raw-alias.duckdb"
+    market_db = open_market_db(str(db_path))
+    market_db._execute(
+        """
+        INSERT INTO statements (
+            code, statement_id, disclosed_date, disclosed_at,
+            period_start, period_end, type_of_current_period,
+            type_of_document, earnings_per_share
+        ) VALUES
+            ('7203', 'same-doc', '2026-01-10', '2026-01-10T15:00:00+09:00',
+             '2025-04-01', '2026-03-31', 'FY', 'FinancialStatements', 10),
+            ('72030', 'same-doc', '2026-01-10', '2026-01-10T15:00:00+09:00',
+             '2025-04-01', '2026-03-31', 'FY', 'FinancialStatements', 999)
+        """
+    )
+    market_db.close()
+
+    reader = MarketDbReader(str(db_path))
+    try:
+        rows = query_statements_rows(
+            reader,
+            ["72030"],
+            start_date=None,
+            end_date="2026-01-31",
+            period_type="FY",
+            actual_only=True,
+        )
+    finally:
+        reader.close()
+
+    assert len(rows) == 1
+    assert rows[0]["code"] == "7203"
+    assert rows[0]["earnings_per_share"] == pytest.approx(10.0)
+
+
 def test_query_statements_rows_without_optional_filters() -> None:
     reader = DummyReader()
     query_statements_rows(
@@ -1124,8 +1268,8 @@ def test_query_statements_rows_without_optional_filters() -> None:
         actual_only=False,
     )
     sql, params = reader.calls[0]
-    assert "disclosed_date >= ?" not in sql
-    assert "disclosed_date <= ?" not in sql
+    assert "disclosed_at >= ?" not in sql
+    assert "disclosed_at <= ?" not in sql
     assert "type_of_current_period IN" not in sql
     assert "earnings_per_share IS NOT NULL" not in sql
     assert params == ("7203", "72030")
@@ -1150,7 +1294,10 @@ def test_group_statement_rows_and_ohlc_helpers() -> None:
         [
             {
                 "code": "72030",
+                "statement_id": "doc-1",
                 "disclosed_date": "2026-01-01",
+                "disclosed_at": "2026-01-01T15:00:00+09:00",
+                "period_end": "2026-01-01",
                 "earnings_per_share": 1.0,
                 "profit": 1.0,
                 "equity": 1.0,

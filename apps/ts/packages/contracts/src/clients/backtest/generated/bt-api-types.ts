@@ -1285,58 +1285,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/db/adjusted-metrics/materialize": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Start event-time PIT adjusted metrics materialization job */
-        post: operations["start_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/db/adjusted-metrics/materialize/jobs/{jobId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get adjusted metrics materialization job status */
-        get: operations["get_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs__jobId__get"];
-        put?: never;
-        post?: never;
-        /** Cancel adjusted metrics materialization job */
-        delete: operations["cancel_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs__jobId__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/db/adjusted-metrics/materialize/jobs/active": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get active adjusted metrics materialization job status */
-        get: operations["get_active_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs_active_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/db/intraday/sync": {
         parameters: {
             query?: never;
@@ -1515,9 +1463,9 @@ export interface paths {
          *     **Data Sources**:
          *     - Financial statements: local `market.duckdb`
          *     - Valuation/per-share summary: local `daily_valuation` in `market.duckdb`
-         *     - Historical adjustment basis, exact stock-master snapshot, and PIT-consistent
-         *       adjusted metrics are required; unavailable PIT inputs return 409 with
-         *       `adjusted_metrics_pit` recovery guidance.
+         *     - Provider vintage, exact stock-master snapshot, and PIT-consistent current-basis
+         *       fundamentals are required; unavailable inputs return 409 with normal
+         *       `market_db_sync` recovery guidance.
          *
          *     **Response includes**:
          *     - `data`: Array of fundamental data points sorted by date (descending)
@@ -2920,175 +2868,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** AdjustedMetricsMaterializeJobResponse */
-        AdjustedMetricsMaterializeJobResponse: {
-            /** Completedat */
-            completedAt?: string | null;
-            /** Error */
-            error?: string | null;
-            /** Jobid */
-            jobId: string;
-            maintenance?: components["schemas"]["MarketMaintenanceRecord"];
-            /**
-             * Mode
-             * @default full
-             */
-            mode: string;
-            progress?: components["schemas"]["SyncProgress"] | null;
-            result?: components["schemas"]["AdjustedMetricsMaterializeResult"] | null;
-            /** Startedat */
-            startedAt: string;
-            /** Status */
-            status: string;
-        };
-        /** AdjustedMetricsMaterializeResult */
-        AdjustedMetricsMaterializeResult: {
-            /** Activebasisversion */
-            activeBasisVersion: string | null;
-            /** Activepricebasisdate */
-            activePriceBasisDate: string | null;
-            /** Basiscount */
-            basisCount: number;
-            /** Dailytechnicalmetricrows */
-            dailyTechnicalMetricRows: number;
-            /** Dailyvaluationlatestdate */
-            dailyValuationLatestDate: string | null;
-            /** Dailyvaluationrows */
-            dailyValuationRows: number;
-            /** Readybasiscount */
-            readyBasisCount: number;
-            /** Statementrows */
-            statementRows: number;
-            /** Success */
-            success: boolean;
-        };
-        /** AdjustedMetricsStats */
-        AdjustedMetricsStats: {
-            /** Activecoveragefrontier */
-            activeCoverageFrontier?: string | null;
-            /** Basisversion */
-            basisVersion?: string | null;
-            /**
-             * Basisversioncount
-             * @default 0
-             */
-            basisVersionCount: number;
-            /**
-             * Dailytechnicalmetricrows
-             * @default 0
-             */
-            dailyTechnicalMetricRows: number;
-            /**
-             * Dailyvaluationlatestcodecount
-             * @default 0
-             */
-            dailyValuationLatestCodeCount: number;
-            /** Dailyvaluationlatestdate */
-            dailyValuationLatestDate?: string | null;
-            /**
-             * Dailyvaluationpreviouscodecount
-             * @default 0
-             */
-            dailyValuationPreviousCodeCount: number;
-            /**
-             * Dailyvaluationrows
-             * @default 0
-             */
-            dailyValuationRows: number;
-            /**
-             * Expectedadjustedstatementrows
-             * @default 0
-             */
-            expectedAdjustedStatementRows: number;
-            /**
-             * Extraadjustedstatementrows
-             * @default 0
-             */
-            extraAdjustedStatementRows: number;
-            /**
-             * Extradailyvaluationrows
-             * @default 0
-             */
-            extraDailyValuationRows: number;
-            /**
-             * Invalidbasiscount
-             * @default 0
-             */
-            invalidBasisCount: number;
-            /**
-             * Missingadjustedstatementrows
-             * @default 0
-             */
-            missingAdjustedStatementRows: number;
-            /**
-             * Missingdailyvaluationrows
-             * @default 0
-             */
-            missingDailyValuationRows: number;
-            /**
-             * Orphanadjustedstatementrows
-             * @default 0
-             */
-            orphanAdjustedStatementRows: number;
-            /**
-             * Orphandailyvaluationrows
-             * @default 0
-             */
-            orphanDailyValuationRows: number;
-            /**
-             * Overlappingbasiscount
-             * @default 0
-             */
-            overlappingBasisCount: number;
-            /** Pricebasisdate */
-            priceBasisDate?: string | null;
-            /**
-             * Readybasiscount
-             * @default 0
-             */
-            readyBasisCount: number;
-            /**
-             * Retainedbasiscount
-             * @default 0
-             */
-            retainedBasisCount: number;
-            /**
-             * Sourcestatementkeycount
-             * @default 0
-             */
-            sourceStatementKeyCount: number;
-            /**
-             * Staleadjustedstatementrows
-             * @default 0
-             */
-            staleAdjustedStatementRows: number;
-            /**
-             * Statementrows
-             * @default 0
-             */
-            statementRows: number;
-            /**
-             * Status
-             * @default empty_source
-             * @enum {string}
-             */
-            status: "ready" | "missing" | "stale" | "incomplete_coverage" | "invalid_lineage" | "empty_source";
-            /**
-             * Undercoveredactivebasiscount
-             * @default 0
-             */
-            underCoveredActiveBasisCount: number;
-            /**
-             * Wrongbasisadjustedstatementrows
-             * @default 0
-             */
-            wrongBasisAdjustedStatementRows: number;
-            /**
-             * Wrongbasisdailyvaluationrows
-             * @default 0
-             */
-            wrongBasisDailyValuationRows: number;
-        };
         /** AdjustmentEvent */
         AdjustmentEvent: {
             /** Adjustmentfactor */
@@ -3923,26 +3702,6 @@ export interface components {
              */
             timeframe: string;
         };
-        /** CreateAdjustedMetricsMaterializeJobResponse */
-        CreateAdjustedMetricsMaterializeJobResponse: {
-            /** Jobid */
-            jobId: string;
-            /**
-             * Message
-             * @default Adjusted metrics materialization job started
-             */
-            message: string;
-            /**
-             * Mode
-             * @default full
-             */
-            mode: string;
-            /**
-             * Status
-             * @default pending
-             */
-            status: string;
-        };
         /** CreateSyncJobResponse */
         CreateSyncJobResponse: {
             /** Estimatedapicalls */
@@ -4016,11 +3775,6 @@ export interface components {
          */
         DailyValuationDataPoint: {
             /**
-             * Basisversion
-             * @description Adjusted valuation materialization basis version
-             */
-            basisVersion?: string | null;
-            /**
              * Bps
              * @description Adjusted BPS used for valuation
              */
@@ -4091,6 +3845,11 @@ export interface components {
              */
             freeFloatMarketCap?: number | null;
             /**
+             * Fundamentalsadjustmentbasisdate
+             * @description Fundamentals adjustment basis date for this valuation row
+             */
+            fundamentalsAdjustmentBasisDate?: string | null;
+            /**
              * Marketcap
              * @description Market cap at this date using shares outstanding (JPY)
              */
@@ -4111,10 +3870,10 @@ export interface components {
              */
             pOp?: number | null;
             /**
-             * Pricebasisdate
-             * @description Adjusted price basis date for this valuation row
+             * Providerasof
+             * @description Provider snapshot timestamp for this valuation row
              */
-            priceBasisDate?: string | null;
+            providerAsOf?: string | null;
             /**
              * Psr
              * @description PSR at this date
@@ -4360,28 +4119,58 @@ export interface components {
             createdAt?: string | null;
             dateRange?: components["schemas"]["DatasetSnapshotDateRange"] | null;
             /**
+             * Fundamentalsadjustmentbasisdate
+             * @description Pinned current fundamentals adjustment basis date
+             */
+            fundamentalsAdjustmentBasisDate: string;
+            /**
              * Preset
              * @description Preset name used
              */
             preset?: string | null;
             /**
+             * Providerasof
+             * @description Pinned provider data vintage
+             */
+            providerAsOf: string;
+            /**
+             * Providercoverageend
+             * @description Effective provider coverage end
+             */
+            providerCoverageEnd: string;
+            /**
+             * Providercoveragestart
+             * @description Effective provider coverage start
+             */
+            providerCoverageStart: string;
+            /**
+             * Providerplan
+             * @description Pinned provider plan
+             */
+            providerPlan: string;
+            /**
+             * Providersourcefingerprint
+             * @description Immutable provider source fingerprint
+             */
+            providerSourceFingerprint: string;
+            /**
              * Schemaversion
              * @description Dataset manifest payload schema version
              * @constant
              */
-            schemaVersion: 3;
+            schemaVersion: 4;
             /**
              * Sourcemarketschemaversion
              * @description Source Market schema version
              * @constant
              */
-            sourceMarketSchemaVersion: 4;
+            sourceMarketSchemaVersion: 5;
             /**
              * Stockpriceadjustmentmode
              * @description Source stock price adjustment mode
              * @constant
              */
-            stockPriceAdjustmentMode: "local_projection_v2_event_time";
+            stockPriceAdjustmentMode: "provider_adjusted_v1";
             /**
              * Stockswithquotes
              * @description Stocks with OHLCV data
@@ -5353,6 +5142,11 @@ export interface components {
              */
             forecastEpsLookbackFyCount: number;
             /**
+             * Fundamentalsadjustmentbasisdate
+             * @description Fundamentals adjustment basis date used by daily valuation
+             */
+            fundamentalsAdjustmentBasisDate?: string | null;
+            /**
              * Lastupdated
              * @description Last updated timestamp (ISO 8601)
              */
@@ -5363,12 +5157,12 @@ export interface components {
             latestMetricsSource?: components["schemas"]["LatestMetricsSource"] | null;
             /** @description Prime-only free-float liquidity diagnostic for Symbol Workbench */
             liquidityProfile?: components["schemas"]["LiquidityProfile"] | null;
-            /**
-             * Pricebasisdate
-             * @description Adjusted price basis date used by daily valuation
-             */
-            priceBasisDate?: string | null;
             provenance: components["schemas"]["DataProvenance"];
+            /**
+             * Providerasof
+             * @description Provider snapshot timestamp used by daily valuation
+             */
+            providerAsOf?: string | null;
             /**
              * Symbol
              * @description Stock code
@@ -5379,11 +5173,6 @@ export interface components {
              * @description Rolling period used for market cap to trading value ratio
              */
             tradingValuePeriod: number;
-            /**
-             * Valuationbasisversion
-             * @description Adjusted valuation materialization basis version
-             */
-            valuationBasisVersion?: string | null;
         };
         /** FundamentalsStats */
         FundamentalsStats: {
@@ -7394,9 +7183,14 @@ export interface components {
             current: boolean;
             /**
              * Requiredversion
-             * @default 4
+             * @default 5
              */
             requiredVersion: number;
+            /**
+             * Resetbeforesynceligible
+             * @default false
+             */
+            resetBeforeSyncEligible: boolean;
             /** Version */
             version?: number | null;
         };
@@ -7439,7 +7233,6 @@ export interface components {
         };
         /** MarketStatsResponse */
         MarketStatsResponse: {
-            adjustedMetrics?: components["schemas"]["AdjustedMetricsStats"];
             /** Databasesize */
             databaseSize: number;
             fundamentals: components["schemas"]["FundamentalsStats"];
@@ -7456,6 +7249,7 @@ export interface components {
             maintenance?: components["schemas"]["MarketMaintenanceRecord"];
             margin: components["schemas"]["MarginStats"];
             options225: components["schemas"]["Options225Stats"];
+            providerVintage?: components["schemas"]["ProviderVintageStats"];
             schema?: components["schemas"]["MarketSchemaStats"];
             stockData: components["schemas"]["StockDataStats"];
             stockMaster?: components["schemas"]["StockMasterCoverageStats"];
@@ -7492,7 +7286,6 @@ export interface components {
         };
         /** MarketValidationResponse */
         MarketValidationResponse: {
-            adjustedMetrics?: components["schemas"]["AdjustedMetricsStats"];
             /** Adjustmentevents */
             adjustmentEvents?: components["schemas"]["AdjustmentEvent"][];
             /**
@@ -7529,6 +7322,7 @@ export interface components {
             lastUpdated: string;
             margin: components["schemas"]["MarginValidation"];
             options225: components["schemas"]["Options225Validation"];
+            providerVintage?: components["schemas"]["ProviderVintageStats"];
             /** Recommendations */
             recommendations?: string[];
             sampleWindows: components["schemas"]["ValidationSampleWindows"];
@@ -8497,6 +8291,127 @@ export interface components {
             /** Name */
             name?: string | null;
         };
+        /** ProviderVintageStats */
+        ProviderVintageStats: {
+            /**
+             * Adjustmenteventcount
+             * @default 0
+             */
+            adjustmentEventCount: number;
+            /**
+             * Adjustmenteventfingerprintcount
+             * @default 0
+             */
+            adjustmentEventFingerprintCount: number;
+            /**
+             * Currentbasisstatecount
+             * @default 0
+             */
+            currentBasisStateCount: number;
+            /**
+             * Currentbasisstatementcount
+             * @default 0
+             */
+            currentBasisStatementCount: number;
+            effectiveCoverage?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            /**
+             * Expectedadjustedstatementrows
+             * @default 0
+             */
+            expectedAdjustedStatementRows: number;
+            /**
+             * Extraadjustedstatementrows
+             * @default 0
+             */
+            extraAdjustedStatementRows: number;
+            /** Fundamentalsadjustmentbasisdate */
+            fundamentalsAdjustmentBasisDate?: string | null;
+            /**
+             * Invalidadjustmenteventcount
+             * @default 0
+             */
+            invalidAdjustmentEventCount: number;
+            /**
+             * Invalidcurrentbasisstatecount
+             * @default 0
+             */
+            invalidCurrentBasisStateCount: number;
+            /**
+             * Invalidproviderwindowcount
+             * @default 0
+             */
+            invalidProviderWindowCount: number;
+            /**
+             * Missingadjustedstatementrows
+             * @default 0
+             */
+            missingAdjustedStatementRows: number;
+            /**
+             * Orphanadjustedstatementrows
+             * @default 0
+             */
+            orphanAdjustedStatementRows: number;
+            /**
+             * Pendingcurrentbasiscodecount
+             * @default 0
+             */
+            pendingCurrentBasisCodeCount: number;
+            /**
+             * Provideradjustedmismatchcount
+             * @default 0
+             */
+            providerAdjustedMismatchCount: number;
+            /** Providerasof */
+            providerAsOf?: string | null;
+            providerAsOfRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            /** Providerplan */
+            providerPlan?: string | null;
+            /**
+             * Providerwindowcoherent
+             * @default false
+             */
+            providerWindowCoherent: boolean;
+            /**
+             * Providerwindowcount
+             * @default 0
+             */
+            providerWindowCount: number;
+            /**
+             * Providerwindowfingerprintcount
+             * @default 0
+             */
+            providerWindowFingerprintCount: number;
+            /**
+             * Readyproviderwindowcount
+             * @default 0
+             */
+            readyProviderWindowCount: number;
+            /** Recoverystage */
+            recoveryStage?: "market_db_sync" | null;
+            /** Sourcefingerprint */
+            sourceFingerprint?: string | null;
+            /**
+             * Sourcestatementkeycount
+             * @default 0
+             */
+            sourceStatementKeyCount: number;
+            /**
+             * Staleadjustedstatementrows
+             * @default 0
+             */
+            staleAdjustedStatementRows: number;
+            /**
+             * Status
+             * @default empty_source
+             * @enum {string}
+             */
+            status: "ready" | "missing" | "stale" | "pending" | "invalid" | "empty_source";
+            /**
+             * Wrongbasisadjustedstatementrows
+             * @default 0
+             */
+            wrongBasisAdjustedStatementRows: number;
+        };
         /** PublishedReadoutSection */
         PublishedReadoutSection: {
             /** Items */
@@ -8688,6 +8603,10 @@ export interface components {
             DEPS?: number | null;
             /** Discdate */
             DiscDate: string;
+            /** Discno */
+            DiscNo?: string | null;
+            /** Disctime */
+            DiscTime?: string | null;
             /** Divann */
             DivAnn?: number | null;
             /** Divfy */
@@ -10204,6 +10123,10 @@ export interface components {
             CurPerType: string;
             /** Discdate */
             DiscDate: string;
+            /** Discno */
+            DiscNo?: string | null;
+            /** Disctime */
+            DiscTime?: string | null;
             /** Eps */
             EPS?: number | null;
             /** Feps */
@@ -11347,20 +11270,40 @@ export interface components {
         };
         /** SyncProgress */
         SyncProgress: {
+            /**
+             * Affectedstockcodes
+             * @default 0
+             */
+            affectedStockCodes: number;
             /** Completedcodes */
             completedCodes?: number | null;
             /** Current */
             current: number;
+            /** Currentbasisstatementcount */
+            currentBasisStatementCount?: number | null;
             /** Currentcode */
             currentCode?: string | null;
             /** Message */
             message: string;
             /** Percentage */
             percentage: number;
-            /** Publishedbasiscount */
-            publishedBasisCount?: number | null;
             /** Stage */
             stage: string;
+            /**
+             * Stockcodesreplaced
+             * @default 0
+             */
+            stockCodesReplaced: number;
+            /**
+             * Stockrowsappended
+             * @default 0
+             */
+            stockRowsAppended: number;
+            /**
+             * Stockrowsreplaced
+             * @default 0
+             */
+            stockRowsReplaced: number;
             /** Total */
             total: number;
             /** Totalcodes */
@@ -11389,6 +11332,11 @@ export interface components {
         /** SyncResult */
         SyncResult: {
             /**
+             * Affectedstockcodes
+             * @default 0
+             */
+            affectedStockCodes: number;
+            /**
              * Datesprocessed
              * @default 0
              */
@@ -11407,6 +11355,23 @@ export interface components {
              * @default 0
              */
             fundamentalsUpdated: number;
+            /**
+             * Stockcodesreplaced
+             * @default 0
+             */
+            stockCodesReplaced: number;
+            /** Stockrecomputationerrors */
+            stockRecomputationErrors?: string[];
+            /**
+             * Stockrowsappended
+             * @default 0
+             */
+            stockRowsAppended: number;
+            /**
+             * Stockrowsreplaced
+             * @default 0
+             */
+            stockRowsReplaced: number;
             /**
              * Stocksupdated
              * @default 0
@@ -16191,216 +16156,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    start_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CreateAdjustedMetricsMaterializeJobResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    get_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs__jobId__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                jobId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdjustedMetricsMaterializeJobResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    cancel_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs__jobId__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                jobId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CancelJobResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    get_active_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs_active_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdjustedMetricsMaterializeJobResponse"] | null;
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Internal Server Error */

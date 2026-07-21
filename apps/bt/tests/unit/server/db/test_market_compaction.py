@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 import shutil
 
@@ -7,6 +9,9 @@ import duckdb
 import pytest
 
 import src.infrastructure.db.market.market_compaction as compaction_module
+from src.application.services.adjusted_metrics_materializer import (
+    AdjustedMetricsMaterializer,
+)
 from src.infrastructure.db.market.market_compaction import (
     HARD_FREE_BYTES,
     SOFT_FREE_BYTES,
@@ -21,8 +26,10 @@ from src.infrastructure.db.market.market_compaction import (
 from src.infrastructure.db.market.atomic_exchange import PlatformAtomicExchange
 from src.infrastructure.db.market.managed_root import ManagedRootError, ManagedRootFd
 from src.infrastructure.db.market.market_writer_resources import (
+    MarketWriterSession,
     MarketWriterResourceFactory,
 )
+from src.shared.provider_stock_window import ProviderStockStage
 
 
 def _snapshot(
@@ -137,6 +144,109 @@ def _closed_v4_session(tmp_path: Path):
     )
     token = session.close_writable_handles()
     return session, token, session.authorize_maintenance(token)
+
+
+def _cleanup_writer_session_for_test(session: MarketWriterSession) -> None:
+    if session._process_lock is None:
+        return
+    if session.fenced:
+        if not session._handles_closed:
+            session.handles.close()
+            session._handles_closed = True
+        session.lease.release()
+        session._process_lock.release()
+        session._process_lock = None
+        return
+    token = session.close_writable_handles()
+    read_only = session.reopen_read_only(token)
+    try:
+        session.release_after_read_only_reopen(token)
+    finally:
+        read_only.close()
+
+
+@contextmanager
+def _managed_closed_v4_session(tmp_path: Path):
+    session, token, authority = _closed_v4_session(tmp_path)
+    try:
+        yield session, token, authority
+    finally:
+        _cleanup_writer_session_for_test(session)
+
+
+@contextmanager
+def _managed_v5_writer_session(tmp_path: Path) -> Iterator[MarketWriterSession]:
+    data_root = tmp_path / "data"
+    session = MarketWriterResourceFactory(
+        data_root=data_root,
+        market_root=data_root / "market-timeseries",
+    ).reset_and_open_v4()
+    try:
+        yield session
+    finally:
+        _cleanup_writer_session_for_test(session)
+
+
+@contextmanager
+def _managed_existing_writer_session(
+    factory: MarketWriterResourceFactory,
+) -> Iterator[MarketWriterSession]:
+    session = factory.open_existing()
+    try:
+        yield session
+    finally:
+        _cleanup_writer_session_for_test(session)
+
+
+def _seed_healthy_v5_current_basis(session: MarketWriterSession) -> None:
+    session.handles.time_series_store.publish_stock_data(
+        [
+            {
+                "code": "7203",
+                "date": "2024-12-30",
+                "open": 500.0,
+                "high": 500.0,
+                "low": 500.0,
+                "close": 500.0,
+                "volume": 100,
+                "adjustment_factor": 1.0,
+                "adjusted_open": 500.0,
+                "adjusted_high": 500.0,
+                "adjusted_low": 500.0,
+                "adjusted_close": 500.0,
+                "adjusted_volume": 100,
+            }
+        ],
+        stage=ProviderStockStage(
+            provider_plan="premium",
+            provider_as_of="2024-12-30",
+            provider_codes=frozenset({"7203"}),
+        ),
+    )
+    session.handles.time_series_store.publish_statements(
+        [
+            {
+                "code": "72030",
+                "statement_id": "disclosure-1",
+                "disclosure_number": "disclosure-1",
+                "disclosed_date": "2024-05-10",
+                "disclosed_at": "2024-05-10T15:30:00+09:00",
+                "period_start": "2023-04-01",
+                "period_end": "2024-03-31",
+                "type_of_current_period": "FY",
+                "type_of_document": "FYFinancialStatements",
+                "earnings_per_share": 100.0,
+                "diluted_earnings_per_share": 98.0,
+                "bps": 1_000.0,
+                "forecast_eps": 120.0,
+                "dividend_fy": 30.0,
+                "forecast_dividend_fy": 40.0,
+                "shares_outstanding": 10_000_000.0,
+                "treasury_shares": 1_000_000.0,
+            }
+        ]
+    )
+    AdjustedMetricsMaterializer(session.handles.market_db).rebuild_current_basis([])
 
 
 def _hard_snapshot() -> DuckDbSizeSnapshot:
@@ -555,66 +665,112 @@ def test_post_commit_cleanup_failure_rolls_forward_but_is_not_suppressed(
 def test_source_validation_reuses_exact_adjusted_metric_diagnostics(
     tmp_path: Path,
 ) -> None:
-    data_root = tmp_path / "data"
-    market_root = data_root / "market-timeseries"
-    session = MarketWriterResourceFactory(
-        data_root=data_root, market_root=market_root
-    ).reset_and_open_v4()
-    session.handles.market_db._execute(
-        "INSERT INTO statements(code, disclosed_date, earnings_per_share, type_of_current_period) "
-        "VALUES ('7203', '2026-01-10', 100.0, 'FY')"
-    )
-    session.handles.market_db._execute(
-        """INSERT INTO stock_adjustment_bases(
-        code, basis_id, valid_from, valid_to_exclusive, adjustment_through_date,
-        source_fingerprint, materialized_through_date, status
-        ) VALUES (
-        '7203', 'event-pit-v1:7203:2026-01-01', '2026-01-01', NULL,
-        '2026-01-31', 'fixture', '2026-01-31', 'ready'
-        )"""
-    )
-    token = session.close_writable_handles()
-    authority = session.authorize_maintenance(token)
-    compactor = MarketCompactor(size_reader=lambda _path: _compact_snapshot())
+    with _managed_v5_writer_session(tmp_path) as session:
+        _seed_healthy_v5_current_basis(session)
+        market_db = session.handles.market_db
+        healthy = market_db.get_adjusted_metrics_snapshot()
+        market_db._execute(
+            "UPDATE statement_metrics_adjusted SET raw_eps = 999 "
+            "WHERE code = '7203'"
+        )
+        diagnostics = market_db.get_adjusted_metrics_source_diagnostics()
 
-    with pytest.raises(MarketCompactionError, match="PIT lineage"):
-        compactor.maintain(authority)
+        assert healthy["pendingCurrentBasisCodeCount"] == 0
+        assert diagnostics["staleAdjustedStatementRows"] == 1
 
-    read_only = session.reopen_read_only(token)
+        token = session.close_writable_handles()
+        authority = session.authorize_maintenance(token)
+        compactor = MarketCompactor(size_reader=lambda _path: _compact_snapshot())
 
-    session.release_after_read_only_reopen(token)
-    read_only.close()
+        with pytest.raises(
+            MarketCompactionError,
+            match="Market v5 current-basis validation failed",
+        ):
+            compactor.maintain(authority)
 
 
-def test_source_validation_reuses_catalog_overlap_and_status_snapshot(
+def test_source_validation_rejects_projection_factor_drift_before_staging(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    data_root = tmp_path / "data"
-    market_root = data_root / "market-timeseries"
-    session = MarketWriterResourceFactory(
-        data_root=data_root, market_root=market_root
-    ).reset_and_open_v4()
-    session.handles.market_db._execute(
-        """INSERT INTO stock_adjustment_bases(
-        code, basis_id, valid_from, valid_to_exclusive, adjustment_through_date,
-        source_fingerprint, materialized_through_date, status
-        ) VALUES (
-        '7203', 'event-pit-v1:7203:2026-01-01', '2026-01-01', NULL,
-        '2026-01-31', 'fixture', '2026-01-31', 'building'
-        )"""
-    )
-    token = session.close_writable_handles()
-    authority = session.authorize_maintenance(token)
+    with _managed_v5_writer_session(tmp_path) as session:
+        _seed_healthy_v5_current_basis(session)
+        market_db = session.handles.market_db
+        market_db._execute(
+            "UPDATE stock_data SET adjustment_factor = 0.5 WHERE code = '7203'"
+        )
+        token = session.close_writable_handles()
+        authority = session.authorize_maintenance(token)
+        source = authority.identity.path
+        original = (source.stat().st_ino, source.read_bytes())
+        staging_attempted = False
 
-    with pytest.raises(MarketCompactionError, match="PIT lineage"):
-        MarketCompactor(size_reader=lambda _path: _compact_snapshot()).maintain(
-            authority
+        def fail_if_staging_is_attempted(*_args: object, **_kwargs: object) -> None:
+            nonlocal staging_attempted
+            staging_attempted = True
+            raise AssertionError("compaction staging must not be created")
+
+        monkeypatch.setattr(
+            compaction_module,
+            "_create_candidate_staging",
+            fail_if_staging_is_attempted,
+        )
+        compactor = MarketCompactor(
+            size_reader=lambda _path: _hard_snapshot(),
+            available_bytes=lambda _path: required_compaction_capacity(
+                source.stat().st_size
+            ),
         )
 
-    read_only = session.reopen_read_only(token)
+        with pytest.raises(
+            MarketCompactionError,
+            match="Market v5 current-basis validation failed",
+        ):
+            compactor.maintain(authority)
 
-    session.release_after_read_only_reopen(token)
-    read_only.close()
+        assert staging_attempted is False
+        assert (source.stat().st_ino, source.read_bytes()) == original
+        assert not list(source.parent.glob(".market-maintenance-*"))
+        assert not (source.parent / ".market-maintenance.v1.jsonl").exists()
+
+
+def test_source_validation_reuses_invalid_current_basis_provider_state_snapshot(
+    tmp_path: Path,
+) -> None:
+    with _managed_v5_writer_session(tmp_path) as session:
+        _seed_healthy_v5_current_basis(session)
+        market_db = session.handles.market_db
+        market_db._execute(
+            "UPDATE current_basis_fundamentals_state "
+            "SET fundamentals_adjustment_basis_date = '2024-12-29' "
+            "WHERE code = '7203'"
+        )
+        snapshot = market_db.get_adjusted_metrics_snapshot()
+
+        assert snapshot["invalidCurrentBasisStateCount"] == 1
+        assert snapshot["pendingCurrentBasisCodeCount"] == 1
+
+        token = session.close_writable_handles()
+        authority = session.authorize_maintenance(token)
+
+        with pytest.raises(
+            MarketCompactionError,
+            match="Market v5 current-basis validation failed",
+        ):
+            MarketCompactor(size_reader=lambda _path: _compact_snapshot()).maintain(
+                authority
+            )
+
+
+def test_managed_v5_writer_session_releases_process_lock_after_body_failure(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(RuntimeError, match="injected test body failure"):
+        with _managed_v5_writer_session(tmp_path / "failed"):
+            raise RuntimeError("injected test body failure")
+
+    with _managed_v5_writer_session(tmp_path / "replacement"):
+        pass
 
 
 @pytest.mark.parametrize(
@@ -691,66 +847,141 @@ def test_fresh_session_recovers_exchanged_precommit_state_and_can_retry(
     tmp_path: Path,
     last_state: str,
 ) -> None:
-    session, token, authority = _closed_v4_session(tmp_path)
-    factory = session.factory
-    source = authority.identity.path
-    original_inode = source.stat().st_ino
-    staging = compaction_module._create_candidate_staging(authority, "fresh-recovery")
-    candidate = staging.candidate_path
-    journal = source.parent / ".market-maintenance.v1.jsonl"
-    shutil.copyfile(source, candidate)
-    compact_inode = candidate.stat().st_ino
-    validation = compaction_module._validation_snapshot(source)
-    payload = {
-        "source": MarketCompactor._identity_payload(source),
-        "candidate": MarketCompactor._identity_payload(candidate),
-        "trigger": "hard_cap",
-        "candidateRelative": staging.candidate_relative.as_posix(),
-        "candidateParent": {
-            "device": staging.parent_identity[0],
-            "inode": staging.parent_identity[1],
-        },
-        "schemaFingerprint": validation.schema_fingerprint,
-        "tableCounts": validation.table_counts,
-        "semanticDigests": validation.semantic_digests,
-    }
-    for state in compaction_module._JOURNAL_STATES:
-        compaction_module._append_journal(journal, state, payload)
-        if state == last_state:
-            break
-    with ManagedRootFd.open(authority.data_root) as root:
-        PlatformAtomicExchange().exchange_regular_files(
-            root,
-            source.relative_to(authority.data_root),
-            candidate.relative_to(authority.data_root),
-            expected_right_parent_identity=staging.parent_identity,
+    with _managed_closed_v4_session(tmp_path) as (session, token, authority):
+        factory = session.factory
+        source = authority.identity.path
+        original_inode = source.stat().st_ino
+        staging = compaction_module._create_candidate_staging(
+            authority, "fresh-recovery"
         )
-    assert source.stat().st_ino == compact_inode
-    old_read_only = session.reopen_read_only(token)
-    session.release_after_read_only_reopen(token)
-    old_read_only.close()
+        candidate = staging.candidate_path
+        journal = source.parent / ".market-maintenance.v1.jsonl"
+        shutil.copyfile(source, candidate)
+        compact_inode = candidate.stat().st_ino
+        validation = compaction_module._validation_snapshot(source)
+        payload = {
+            "source": MarketCompactor._identity_payload(source),
+            "candidate": MarketCompactor._identity_payload(candidate),
+            "trigger": "hard_cap",
+            "candidateRelative": staging.candidate_relative.as_posix(),
+            "candidateParent": {
+                "device": staging.parent_identity[0],
+                "inode": staging.parent_identity[1],
+            },
+            "schemaFingerprint": validation.schema_fingerprint,
+            "tableCounts": validation.table_counts,
+            "semanticDigests": validation.semantic_digests,
+        }
+        for state in compaction_module._JOURNAL_STATES:
+            compaction_module._append_journal(journal, state, payload)
+            if state == last_state:
+                break
+        with ManagedRootFd.open(authority.data_root) as root:
+            PlatformAtomicExchange().exchange_regular_files(
+                root,
+                source.relative_to(authority.data_root),
+                candidate.relative_to(authority.data_root),
+                expected_right_parent_identity=staging.parent_identity,
+            )
+        assert source.stat().st_ino == compact_inode
+        old_read_only = session.reopen_read_only(token)
+        session.release_after_read_only_reopen(token)
+        old_read_only.close()
 
-    fresh = factory.open_existing()
-    fresh_token = fresh.close_writable_handles()
-    fresh_authority = fresh.authorize_maintenance(fresh_token)
-    assert fresh_authority.identity.inode == compact_inode
+        with _managed_existing_writer_session(factory) as fresh:
+            fresh_token = fresh.close_writable_handles()
+            fresh_authority = fresh.authorize_maintenance(fresh_token)
+            assert fresh_authority.identity.inode == compact_inode
 
-    MarketCompactor().recover(fresh_authority)
+            MarketCompactor().recover(fresh_authority)
 
-    assert source.stat().st_ino == original_inode
-    assert fresh_authority.identity.inode == original_inode
-    assert not fresh.fenced
-    assert not journal.exists()
-    assert not staging.candidate_path.exists()
-    recovered_read_only = fresh.reopen_read_only(fresh_token)
-    fresh.release_after_read_only_reopen(fresh_token)
-    recovered_read_only.close()
+            assert source.stat().st_ino == original_inode
+            assert fresh_authority.identity.inode == original_inode
+            assert not fresh.fenced
+            assert not journal.exists()
+            assert not staging.candidate_path.exists()
+            recovered_read_only = fresh.reopen_read_only(fresh_token)
+            fresh.release_after_read_only_reopen(fresh_token)
+            recovered_read_only.close()
 
-    retry = factory.open_existing()
-    retry_token = retry.close_writable_handles()
-    retry_read_only = retry.reopen_read_only(retry_token)
-    retry.release_after_read_only_reopen(retry_token)
-    retry_read_only.close()
+        with _managed_existing_writer_session(factory) as retry:
+            retry_token = retry.close_writable_handles()
+            retry_read_only = retry.reopen_read_only(retry_token)
+            retry.release_after_read_only_reopen(retry_token)
+            retry_read_only.close()
+
+
+def test_fresh_recovery_fences_same_inode_semantic_mutation_after_size_drift(
+    tmp_path: Path,
+) -> None:
+    with _managed_closed_v4_session(tmp_path) as (session, token, authority):
+        factory = session.factory
+        source = authority.identity.path
+        seed = duckdb.connect(str(source))
+        try:
+            seed.execute(
+                "INSERT INTO margin_data VALUES ('7203', '2026-01-05', 100, 50)"
+            )
+            seed.execute("CHECKPOINT")
+        finally:
+            seed.close()
+        staging = compaction_module._create_candidate_staging(
+            authority, "semantic-size-drift"
+        )
+        candidate = staging.candidate_path
+        journal = source.parent / ".market-maintenance.v1.jsonl"
+        shutil.copyfile(source, candidate)
+        validation = compaction_module._validation_snapshot(source)
+        payload = {
+            "source": MarketCompactor._identity_payload(source),
+            "candidate": MarketCompactor._identity_payload(candidate),
+            "trigger": "hard_cap",
+            "candidateRelative": staging.candidate_relative.as_posix(),
+            "candidateParent": {
+                "device": staging.parent_identity[0],
+                "inode": staging.parent_identity[1],
+            },
+            "schemaFingerprint": validation.schema_fingerprint,
+            "tableCounts": validation.table_counts,
+            "semanticDigests": validation.semantic_digests,
+        }
+        for state in compaction_module._JOURNAL_STATES:
+            compaction_module._append_journal(journal, state, payload)
+            if state == "EXCHANGED":
+                break
+        with ManagedRootFd.open(authority.data_root) as root:
+            PlatformAtomicExchange().exchange_regular_files(
+                root,
+                source.relative_to(authority.data_root),
+                candidate.relative_to(authority.data_root),
+                expected_right_parent_identity=staging.parent_identity,
+            )
+        old_read_only = session.reopen_read_only(token)
+        session.release_after_read_only_reopen(token)
+        old_read_only.close()
+
+        with _managed_existing_writer_session(factory) as fresh:
+            fresh_token = fresh.close_writable_handles()
+            fresh_authority = fresh.authorize_maintenance(fresh_token)
+            tamper = duckdb.connect(str(source))
+            try:
+                tamper.execute("UPDATE margin_data SET long_margin_volume = 101")
+                tamper.execute("CHECKPOINT")
+            finally:
+                tamper.close()
+
+            candidate_record = payload["candidate"]
+            assert isinstance(candidate_record, dict)
+            assert (source.stat().st_dev, source.stat().st_ino) == (
+                candidate_record["device"],
+                candidate_record["inode"],
+            )
+            assert source.stat().st_size != candidate_record["size"]
+
+            with pytest.raises(MarketCompactionError, match="semantic identity"):
+                MarketCompactor().recover(fresh_authority)
+
+            assert fresh.fenced
 
 
 @pytest.mark.parametrize(

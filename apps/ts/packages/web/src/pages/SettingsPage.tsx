@@ -1,6 +1,5 @@
 import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 import type {
-  AdjustedMetricsMaterializeJobResponse,
   MarketRefreshResponse,
   MarketStatsResponse,
   MarketValidationResponse,
@@ -33,14 +32,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import {
-  useActiveAdjustedMetricsMaterializeJob,
   useActiveSyncJob,
-  useAdjustedMetricsMaterializeJobStatus,
   useCancelSync,
   useDbStats,
   useDbValidation,
   useRefreshStocks,
-  useStartAdjustedMetricsMaterialize,
   useStartSync,
   useSyncFetchDetails,
   useSyncJobStatus,
@@ -89,37 +85,23 @@ function buildStartSyncRequest(
 
 function useResetBeforeSyncGuard(
   syncMode: SyncMode,
+  resetBeforeSyncEligible: boolean,
   setResetBeforeSync: (value: boolean) => void,
   setResetConfirmOpen: (value: boolean) => void,
   setResetConfirmationText: (value: string) => void
 ): void {
   useEffect(() => {
-    if (syncMode === 'initial') {
+    if (syncMode === 'initial' && resetBeforeSyncEligible) {
       return;
     }
     setResetBeforeSync(false);
     setResetConfirmOpen(false);
     setResetConfirmationText('');
-  }, [syncMode, setResetBeforeSync, setResetConfirmOpen, setResetConfirmationText]);
+  }, [syncMode, resetBeforeSyncEligible, setResetBeforeSync, setResetConfirmOpen, setResetConfirmationText]);
 }
 
 type StatusTone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger';
-type SyncJobStatusShape = Pick<SyncJobResponse | AdjustedMetricsMaterializeJobResponse, 'status'> | null | undefined;
-
-function getToneClasses(tone: StatusTone): string {
-  switch (tone) {
-    case 'accent':
-      return 'border-primary/18 bg-primary/10 text-primary';
-    case 'success':
-      return 'border-emerald-500/18 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
-    case 'warning':
-      return 'border-amber-500/18 bg-amber-500/10 text-amber-700 dark:text-amber-300';
-    case 'danger':
-      return 'border-red-500/18 bg-red-500/10 text-red-700 dark:text-red-300';
-    default:
-      return 'border-border/70 bg-[var(--app-surface-muted)] text-foreground';
-  }
-}
+type SyncJobStatusShape = Pick<SyncJobResponse, 'status'> | null | undefined;
 
 function getValidationTone(status: MarketValidationResponse['status'] | undefined): StatusTone {
   switch (status) {
@@ -134,9 +116,7 @@ function getValidationTone(status: MarketValidationResponse['status'] | undefine
   }
 }
 
-function getJobTone(
-  status: SyncJobResponse['status'] | AdjustedMetricsMaterializeJobResponse['status'] | null | undefined
-): StatusTone {
+function getJobTone(status: SyncJobResponse['status'] | null | undefined): StatusTone {
   switch (status) {
     case 'pending':
     case 'running':
@@ -280,6 +260,7 @@ interface DatabaseSyncSectionProps {
   onEnforceBulkChange: (checked: boolean) => void;
   resetBeforeSync: boolean;
   onResetBeforeSyncChange: (checked: boolean) => void;
+  resetBeforeSyncEligible: boolean;
   isRunning: boolean;
   isStarting: boolean;
   onStartSync: () => void;
@@ -294,6 +275,7 @@ function DatabaseSyncSection({
   onEnforceBulkChange,
   resetBeforeSync,
   onResetBeforeSyncChange,
+  resetBeforeSyncEligible,
   isRunning,
   isStarting,
   onStartSync,
@@ -332,9 +314,15 @@ function DatabaseSyncSection({
                 id="reset-before-sync"
                 checked={resetBeforeSync}
                 onCheckedChange={onResetBeforeSyncChange}
-                disabled={isRunning || isStarting}
+                disabled={isRunning || isStarting || !resetBeforeSyncEligible}
               />
             </div>
+            {!resetBeforeSyncEligible ? (
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                This Market root is not eligible for a live reset. Rebuild and activate Market v5 with{' '}
+                <code>bt market-cutover cutover</code>.
+              </p>
+            ) : null}
             <p className="text-xs text-muted-foreground">
               Existing datasets must be rebuilt after a reset. `portfolio.db` is not touched.
             </p>
@@ -394,9 +382,9 @@ function WarningRecoverySection({
           <div className="space-y-1">
             <CardTitle className="text-xl tracking-tight">Warning Recovery</CardTitle>
             <CardDescription>
-              Resolve only the DuckDB snapshot warnings that `repair` sync can actually fix. Legacy stock-price
-              adjustment drift requires initial sync with reset enabled; N225 options coverage gaps must be handled from
-              Database Sync.
+              Resolve only the DuckDB snapshot warnings that `repair` sync can actually fix. Legacy or incompatible
+              stock-price snapshots require <code>bt market-cutover cutover</code>; N225 options coverage gaps must be
+              handled from Database Sync.
             </CardDescription>
           </div>
         </div>
@@ -420,8 +408,8 @@ function WarningRecoverySection({
         </div>
         <p className="text-xs text-muted-foreground">
           Runs `repair` sync mode to backfill listed-market fundamentals and related non-price warnings. It does not
-          rebuild legacy stock-price snapshots or ingest `options_225_data`; use Initial sync with reset enabled for
-          legacy price snapshots, and use Database Sync with `incremental` for options gaps.
+          rebuild incompatible stock-price snapshots or ingest `options_225_data`; use the Market v5 cutover workflow
+          for incompatible roots, and use Database Sync with `incremental` for options gaps.
         </p>
         <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
           <div>
@@ -451,41 +439,27 @@ function WarningRecoverySection({
   );
 }
 
-interface AdjustedMetricsMaterializeSectionProps {
+interface ProviderVintageSectionProps {
   dbStats: MarketStatsResponse | undefined;
-  currentJob: AdjustedMetricsMaterializeJobResponse | null;
-  isSyncRunning: boolean;
-  isMaterializing: boolean;
-  isStarting: boolean;
-  onStartMaterialize: () => void;
-  errorMessage: string | null;
 }
 
-function AdjustedMetricsMaterializeSection({
-  dbStats,
-  currentJob,
-  isSyncRunning,
-  isMaterializing,
-  isStarting,
-  onStartMaterialize,
-  errorMessage,
-}: AdjustedMetricsMaterializeSectionProps) {
-  const adjustedMetrics = dbStats?.adjustedMetrics;
-  const disabled = isSyncRunning || isMaterializing || isStarting;
-  const result = currentJob?.result;
+function ProviderVintageSection({ dbStats }: ProviderVintageSectionProps) {
+  const vintage = dbStats?.providerVintage;
+  const coverage = vintage?.effectiveCoverage;
+  const asOfRange = vintage?.providerAsOfRange;
 
   return (
-    <Card id="adjusted-metrics" className="border-border/70 bg-[var(--app-surface)] shadow-none">
+    <Card id="provider-vintage" className="border-border/70 bg-[var(--app-surface)] shadow-none">
       <CardHeader className="pb-4">
-        <SectionEyebrow>Derived SoT</SectionEyebrow>
+        <SectionEyebrow>Provider SoT</SectionEyebrow>
         <div className="mt-1 flex items-start gap-3">
           <div className="app-panel-muted flex h-10 w-10 items-center justify-center rounded-xl text-primary">
             <Activity className="h-5 w-5" />
           </div>
           <div className="space-y-1">
-            <CardTitle className="text-xl tracking-tight">Adjusted Metrics</CardTitle>
+            <CardTitle className="text-xl tracking-tight">Provider Vintage</CardTitle>
             <CardDescription>
-              Rebuild `statement_metrics_adjusted` and `daily_valuation` as a separate full materialization job.
+              Read-only J-Quants coverage and current-basis freshness. Normal sync performs required recomputation.
             </CardDescription>
           </div>
         </div>
@@ -494,48 +468,45 @@ function AdjustedMetricsMaterializeSection({
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
             <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Status</p>
-            <p className="mt-2 text-lg font-semibold">{adjustedMetrics?.status?.toUpperCase() ?? 'UNKNOWN'}</p>
+            <p className="mt-2 text-lg font-semibold">{vintage?.status?.toUpperCase() ?? 'UNKNOWN'}</p>
           </div>
           <div className="rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
             <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Coverage</p>
-            <p className="mt-2 text-sm font-semibold">{adjustedMetrics?.dailyValuationLatestDate ?? 'n/a'}</p>
+            <p className="mt-2 text-sm font-semibold">{coverage ? `${coverage.min} → ${coverage.max}` : 'n/a'}</p>
             <p className="mt-1 text-[11px] text-muted-foreground">
-              Codes {formatCount(adjustedMetrics?.dailyValuationLatestCodeCount ?? 0)}
+              Windows {formatCount(vintage?.readyProviderWindowCount ?? 0)} /{' '}
+              {formatCount(vintage?.providerWindowCount ?? 0)}
             </p>
-            <p className="mt-1 text-[11px] text-muted-foreground">Basis {adjustedMetrics?.priceBasisDate ?? 'n/a'}</p>
           </div>
         </div>
-        {currentJob ? (
-          <div className={cn('rounded-xl border p-3 text-sm', getToneClasses(getJobTone(currentJob.status)))}>
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-medium">{currentJob.status.toUpperCase()}</span>
-              <span>{currentJob.progress?.message ?? 'Materialization job tracked separately from sync.'}</span>
-            </div>
-            {result ? (
-              <p className="mt-2 text-xs">
-                Statements {formatCount(result.statementRows)} / Daily valuation{' '}
-                {formatCount(result.dailyValuationRows)} / Coverage {result.dailyValuationLatestDate ?? 'n/a'}
-              </p>
-            ) : null}
+        <dl className="grid grid-cols-2 gap-3 text-xs">
+          <div>
+            <dt className="text-muted-foreground">Plan</dt>
+            <dd className="mt-1 font-medium">{vintage?.providerPlan ?? 'n/a'}</dd>
           </div>
-        ) : (
-          <p className="text-xs text-muted-foreground">
-            Run this after sync when adjusted fundamentals or valuation semantics changed. It does not fetch J-Quants.
+          <div>
+            <dt className="text-muted-foreground">Provider as-of</dt>
+            <dd className="mt-1 font-medium">
+              {vintage?.providerAsOf ?? (asOfRange ? `${asOfRange.min} → ${asOfRange.max}` : 'n/a')}
+            </dd>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {vintage?.providerWindowCoherent ? 'Coherent windows' : 'Incoherent windows'}
+            </p>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Adjustment events</dt>
+            <dd className="mt-1 font-medium">{formatCount(vintage?.adjustmentEventCount ?? 0)}</dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Current basis</dt>
+            <dd className="mt-1 font-medium">{vintage?.fundamentalsAdjustmentBasisDate ?? 'n/a'}</dd>
+          </div>
+        </dl>
+        {vintage && vintage.pendingCurrentBasisCodeCount > 0 ? (
+          <p className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
+            {formatCount(vintage.pendingCurrentBasisCodeCount)} current-basis code pending normal sync.
           </p>
-        )}
-        <Button onClick={onStartMaterialize} disabled={disabled} className="w-full">
-          {isStarting || isMaterializing ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Materializing...
-            </>
-          ) : isSyncRunning ? (
-            'Sync in Progress'
-          ) : (
-            'Materialize Adjusted Metrics'
-          )}
-        </Button>
-        {errorMessage && <div className="rounded-xl bg-red-500/10 p-3 text-sm text-red-500">{errorMessage}</div>}
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -855,14 +826,12 @@ export function SettingsPage() {
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [resetConfirmationText, setResetConfirmationText] = useState('');
   const [activeJobId, setActiveJobId] = useState<string | null>(readPersistedActiveSyncJobId);
-  const [activeMaterializeJobId, setActiveMaterializeJobId] = useState<string | null>(null);
   const [refreshCodesInput, setRefreshCodesInput] = useState('');
   const [refreshInputError, setRefreshInputError] = useState<string | null>(null);
   const [refreshResult, setRefreshResult] = useState<MarketRefreshResponse | null>(null);
 
   const startSync = useStartSync();
   const { data: activeSyncJob } = useActiveSyncJob(activeJobId === null);
-  const { data: activeMaterializeJob } = useActiveAdjustedMetricsMaterializeJob(activeMaterializeJobId === null);
   const syncSse = useSyncSSE(activeJobId);
   const {
     data: jobStatus,
@@ -870,10 +839,8 @@ export function SettingsPage() {
     error: syncJobError,
   } = useSyncJobStatus(activeJobId, syncSse.isConnected);
   const { data: syncFetchDetails } = useSyncFetchDetails(activeJobId, syncSse.isConnected);
-  const { data: materializeJobStatus } = useAdjustedMetricsMaterializeJobStatus(activeMaterializeJobId);
   const cancelSync = useCancelSync();
   const refreshStocks = useRefreshStocks();
-  const startMaterialize = useStartAdjustedMetricsMaterialize();
 
   useEffect(() => {
     activeSyncJob?.jobId && setActiveJobId(activeSyncJob.jobId);
@@ -887,45 +854,51 @@ export function SettingsPage() {
     syncJobError instanceof ApiError && syncJobError.status === 404 && setActiveJobId(null);
   }, [syncJobError]);
 
-  useResetBeforeSyncGuard(syncMode, setResetBeforeSync, setResetConfirmOpen, setResetConfirmationText);
-
   const isJobStatusRunning = isSyncJobRunning(jobStatus);
   const isActiveJobRunning = isSyncJobRunning(activeSyncJob);
-  const isMaterializeJobRunning = isSyncJobRunning(materializeJobStatus);
-  const isActiveMaterializeJobRunning = isSyncJobRunning(activeMaterializeJob);
   const isRunning = startSync.isPending || isJobStatusRunning || (!jobStatus && isActiveJobRunning);
-  const isMaterializing =
-    startMaterialize.isPending || isMaterializeJobRunning || (!materializeJobStatus && isActiveMaterializeJobRunning);
   const {
     data: dbStats,
     isLoading: isStatsLoading,
     error: statsError,
     refetch: refetchDbStats,
-  } = useDbStats({ isSyncRunning: isRunning || isMaterializing });
+  } = useDbStats({ isSyncRunning: isRunning });
   const {
     data: dbValidation,
     isLoading: isValidationLoading,
     error: validationError,
     refetch: refetchDbValidation,
-  } = useDbValidation({ isSyncRunning: isRunning || isMaterializing });
+  } = useDbValidation({ isSyncRunning: isRunning });
   const repairTargets = resolveRepairTargets(dbValidation);
   const startSyncErrorMessage = startSync.error?.message ?? null;
-  const startMaterializeErrorMessage = startMaterialize.error?.message ?? null;
   const refreshErrorMessage = refreshStocks.error?.message ?? null;
   const currentJob = jobStatus ?? activeSyncJob ?? null;
-  const currentMaterializeJob = materializeJobStatus ?? activeMaterializeJob ?? null;
   const repairSignalCount = sumRepairTargets(repairTargets);
+  const resetBeforeSyncEligible =
+    dbStats?.schema?.resetBeforeSyncEligible === true && dbValidation?.schema?.resetBeforeSyncEligible === true;
+
+  useResetBeforeSyncGuard(
+    syncMode,
+    resetBeforeSyncEligible,
+    setResetBeforeSync,
+    setResetConfirmOpen,
+    setResetConfirmationText
+  );
 
   useEffect(() => {
-    if (!isRunning && !isMaterializing) {
+    if (!isRunning) {
       return;
     }
     void refetchDbStats();
     void refetchDbValidation();
-  }, [isRunning, isMaterializing, refetchDbStats, refetchDbValidation]);
+  }, [isRunning, refetchDbStats, refetchDbValidation]);
 
   const submitStartSync = () => {
-    const request = buildStartSyncRequest(syncMode, enforceBulkForStockData, resetBeforeSync);
+    const request = buildStartSyncRequest(
+      syncMode,
+      enforceBulkForStockData,
+      resetBeforeSync && resetBeforeSyncEligible
+    );
     startSync.mutate(request, {
       onSuccess: (data) => {
         setActiveJobId(data.jobId);
@@ -936,7 +909,7 @@ export function SettingsPage() {
   };
 
   const handleStartSync = () => {
-    if (syncMode === 'initial' && resetBeforeSync) {
+    if (syncMode === 'initial' && resetBeforeSync && resetBeforeSyncEligible) {
       setResetConfirmationText('');
       setResetConfirmOpen(true);
       return;
@@ -952,14 +925,6 @@ export function SettingsPage() {
         onSuccess: (data) => setActiveJobId(data.jobId),
       }
     );
-  };
-
-  const handleStartMaterialize = () => {
-    startMaterialize.mutate(undefined, {
-      onSuccess: (data) => {
-        setActiveMaterializeJobId(data.jobId);
-      },
-    });
   };
 
   const handleCancel = () => {
@@ -1016,7 +981,8 @@ export function SettingsPage() {
               onEnforceBulkChange={setEnforceBulkForStockData}
               resetBeforeSync={resetBeforeSync}
               onResetBeforeSyncChange={setResetBeforeSync}
-              isRunning={isRunning || isMaterializing}
+              resetBeforeSyncEligible={resetBeforeSyncEligible}
+              isRunning={isRunning}
               isStarting={startSync.isPending}
               onStartSync={handleStartSync}
               errorMessage={startSyncErrorMessage}
@@ -1026,20 +992,12 @@ export function SettingsPage() {
               className="h-full"
               repairTargets={repairTargets}
               isValidationLoading={isValidationLoading}
-              isRunning={isRunning || isMaterializing}
+              isRunning={isRunning}
               isStarting={startSync.isPending}
               onRepairWarnings={handleRepairWarnings}
             />
 
-            <AdjustedMetricsMaterializeSection
-              dbStats={dbStats}
-              currentJob={currentMaterializeJob}
-              isSyncRunning={isRunning}
-              isMaterializing={isMaterializing}
-              isStarting={startMaterialize.isPending}
-              onStartMaterialize={handleStartMaterialize}
-              errorMessage={startMaterializeErrorMessage}
-            />
+            <ProviderVintageSection dbStats={dbStats} />
           </div>
 
           <ManualStockRefreshSection
@@ -1048,7 +1006,7 @@ export function SettingsPage() {
             refreshErrorMessage={refreshErrorMessage}
             refreshResult={refreshResult}
             isRefreshing={refreshStocks.isPending}
-            isDisabled={isRunning || isMaterializing}
+            isDisabled={isRunning}
             onRefreshCodesInputChange={(value) => {
               setRefreshCodesInput(value);
               setRefreshInputError(null);

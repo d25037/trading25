@@ -146,8 +146,9 @@ _CRITICAL_TABLES = (
     "stock_data_raw",
     "stock_data",
     "stock_master_daily",
-    "stock_adjustment_bases",
-    "stock_adjustment_basis_segments",
+    "stock_adjustment_events",
+    "stock_provider_windows",
+    "current_basis_fundamentals_state",
     "statements",
     "statement_metrics_adjusted",
     "daily_valuation",
@@ -331,50 +332,7 @@ def _semantic_digest(conn: Any, schema: str, table: str) -> str:
     return hashlib.sha256(json.dumps(row, separators=(",", ":")).encode()).hexdigest()
 
 
-def _validate_pit_lineage(conn: Any) -> None:
-    invalid_queries = (
-        """
-        SELECT COUNT(*) FROM stock_adjustment_bases
-        WHERE basis_id != 'event-pit-v1:' || code || ':' || CAST(valid_from AS VARCHAR)
-           OR status != 'ready'
-           OR (valid_to_exclusive IS NOT NULL AND valid_to_exclusive <= valid_from)
-        """,
-        """
-        SELECT COUNT(*) FROM stock_adjustment_basis_segments s
-        LEFT JOIN stock_adjustment_bases b USING (code, basis_id)
-        WHERE b.basis_id IS NULL OR s.cumulative_factor <= 0
-           OR (s.source_date_to_exclusive IS NOT NULL
-               AND s.source_date_to_exclusive <= s.source_date_from)
-        """,
-        """
-        SELECT COUNT(*) FROM statement_metrics_adjusted m
-        LEFT JOIN stock_adjustment_bases b
-          ON m.code = b.code AND m.basis_version = b.basis_id
-        WHERE b.basis_id IS NULL
-        """,
-        """
-        SELECT COUNT(*) FROM daily_valuation v
-        LEFT JOIN stock_adjustment_bases b
-          ON v.code = b.code AND v.basis_version = b.basis_id
-        WHERE b.basis_id IS NULL
-        """,
-    )
-    for query in invalid_queries:
-        row = conn.execute(query).fetchone()
-        if row and int(row[0]) != 0:
-            raise MarketCompactionError("Market v4/PIT lineage validation failed")
-    overlap = conn.execute(
-        """
-        SELECT COUNT(*) FROM stock_adjustment_bases current
-        JOIN stock_adjustment_bases following
-          ON current.code = following.code AND current.valid_from < following.valid_from
-        WHERE current.valid_to_exclusive IS NULL
-           OR current.valid_to_exclusive > following.valid_from
-        """
-    ).fetchone()
-    if overlap and int(overlap[0]) != 0:
-        raise MarketCompactionError("Market v4/PIT lineage validation failed")
-
+def _validate_current_basis_fundamentals(conn: Any) -> None:
     def table_exists(table: str) -> bool:
         return bool(
             conn.execute(
@@ -400,14 +358,12 @@ def _validate_pit_lineage(conn: Any) -> None:
         fetchone,
     )
     invalid_snapshot = (
-        "invalidBasisCount",
-        "underCoveredActiveBasisCount",
-        "overlappingBasisCount",
+        "pendingCurrentBasisCodeCount",
         "orphanAdjustedStatementRows",
         "orphanDailyValuationRows",
     )
     if any(int(snapshot.get(key, 0) or 0) != 0 for key in invalid_snapshot):
-        raise MarketCompactionError("Market v4/PIT lineage validation failed")
+        raise MarketCompactionError("Market v5 current-basis validation failed")
     diagnostics = get_adjusted_metrics_source_diagnostics(
         table_exists,
         fetchone,
@@ -420,9 +376,10 @@ def _validate_pit_lineage(conn: Any) -> None:
         "missingDailyValuationRows",
         "extraDailyValuationRows",
         "wrongBasisDailyValuationRows",
+        "providerAdjustedMismatchCount",
     )
     if any(int(diagnostics.get(key, 0)) != 0 for key in invalid_diagnostics):
-        raise MarketCompactionError("Market v4/PIT lineage validation failed")
+        raise MarketCompactionError("Market v5 current-basis validation failed")
 
 
 def _validation_snapshot(path: Path) -> MarketValidationSnapshot:
@@ -451,7 +408,7 @@ def _validation_snapshot(path: Path) -> MarketValidationSnapshot:
             for table in _CRITICAL_TABLES
             if _catalog_identity_key("main", table) in counts
         }
-        _validate_pit_lineage(conn)
+        _validate_current_basis_fundamentals(conn)
     finally:
         conn.close()
     fingerprint = hashlib.sha256(
@@ -692,16 +649,38 @@ class MarketCompactor:
             authority.fence()
             raise MarketCompactionError(message)
 
+        expected_validation = MarketValidationSnapshot(
+            schema_fingerprint=cast(str, payload["schemaFingerprint"]),
+            table_counts=cast(dict[str, int], payload["tableCounts"]),
+            semantic_digests=cast(dict[str, str], payload["semanticDigests"]),
+        )
+        semantic_identity_mismatch = False
+
         def matches(path: Path, identity: dict[str, int]) -> bool:
+            nonlocal semantic_identity_mismatch
             try:
                 value = path.lstat()
             except OSError:
                 return False
-            return stat.S_ISREG(value.st_mode) and (
-                value.st_dev,
-                value.st_ino,
-                value.st_size,
-            ) == (identity["device"], identity["inode"], identity["size"])
+            if not stat.S_ISREG(value.st_mode) or (value.st_dev, value.st_ino) != (
+                identity["device"],
+                identity["inode"],
+            ):
+                return False
+            if value.st_size == identity["size"]:
+                return True
+            try:
+                matches_semantics = _validation_snapshot(path) == expected_validation
+            except BaseException:
+                matches_semantics = False
+            if not matches_semantics:
+                semantic_identity_mismatch = True
+            return matches_semantics
+
+        def fail_identity_mismatch() -> None:
+            if semantic_identity_mismatch:
+                fail("Maintenance recovery semantic identity mismatch")
+            fail("Maintenance recovery identity mismatch")
 
         candidate_relative = Path(cast(str, payload["candidateRelative"]))
         expected_market_relative = authority.market_root.relative_to(
@@ -743,14 +722,14 @@ class MarketCompactor:
 
         if state == "VALIDATED" or (state == "EXCHANGE_INTENT" and original_layout):
             if not original_layout:
-                fail("Maintenance recovery identity mismatch")
+                fail_identity_mismatch()
             _remove_candidate_staging(authority, candidate)
             _unlink_durable(journal)
             authority.assert_valid()
             return
         if state in {"EXCHANGE_INTENT", "EXCHANGED", "ACTIVE_VALIDATED"}:
             if not exchanged_layout:
-                fail("Maintenance recovery identity mismatch")
+                fail_identity_mismatch()
             self._rollback(
                 authority,
                 source,
@@ -768,18 +747,13 @@ class MarketCompactor:
                 or (not candidate.exists() and not parent_present)
             )
             if not committed_layout:
-                fail("Maintenance recovery identity mismatch")
+                fail_identity_mismatch()
             try:
                 active = _validation_snapshot(source)
             except BaseException:
                 authority.fence()
                 raise
-            expected = MarketValidationSnapshot(
-                schema_fingerprint=cast(str, payload["schemaFingerprint"]),
-                table_counts=cast(dict[str, int], payload["tableCounts"]),
-                semantic_digests=cast(dict[str, str], payload["semanticDigests"]),
-            )
-            if active != expected:
+            if active != expected_validation:
                 fail("Committed maintenance validation identity mismatch")
             _remove_candidate_staging(authority, candidate)
             authority.replace_identity(inspect_market_source_identity(source))
@@ -788,7 +762,7 @@ class MarketCompactor:
             return
         if state == "CLEANED":
             if not matches(source, candidate_record) or parent_present:
-                fail("Maintenance recovery identity mismatch")
+                fail_identity_mismatch()
             authority.replace_identity(inspect_market_source_identity(source))
             _unlink_durable(journal)
             return

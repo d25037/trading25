@@ -8,10 +8,11 @@ Codex 指摘 #6 対応: 列名・型・nullable・PK/FK/UNIQUE/INDEX まで検�
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
-from sqlalchemy import ForeignKeyConstraint, Integer, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, ForeignKeyConstraint, Integer, Text, UniqueConstraint
 from sqlalchemy.types import REAL
 
 from src.infrastructure.db.market import tables as market_tables
@@ -28,6 +29,8 @@ from src.infrastructure.db.market.tables import (
     portfolios,
     stock_data_raw,
     stock_data,
+    stock_provider_windows,
+    current_basis_recompute_pending,
     stocks,
     sync_metadata,
     topix_data,
@@ -60,6 +63,47 @@ def _sa_type_name(col_type: object) -> str:
     if type_name in ("INTEGER", "INT"):
         return "integer"
     return type_name.lower()
+
+
+def _resolve_schema(schema: dict, root: dict) -> dict:
+    if "$ref" not in schema:
+        return schema
+    target: object = root
+    for component in schema["$ref"].removeprefix("#/").split("/"):
+        assert isinstance(target, dict)
+        target = target[component]
+    assert isinstance(target, dict)
+    return target
+
+
+def _validate_contract_definition(value: object, schema: dict, root: dict) -> None:
+    schema = _resolve_schema(schema, root)
+    if "const" in schema:
+        assert value == schema["const"]
+        return
+    if schema.get("type") != "object":
+        return
+    assert isinstance(value, dict)
+    required = set(schema.get("required", []))
+    assert required.issubset(value)
+    properties = schema.get("properties", {})
+    if schema.get("additionalProperties") is False:
+        assert set(value).issubset(properties)
+    for key, child_value in value.items():
+        if key in properties:
+            _validate_contract_definition(child_value, properties[key], root)
+
+
+def _materialize_contract_definition(schema: dict, root: dict) -> object:
+    schema = _resolve_schema(schema, root)
+    if "const" in schema:
+        return deepcopy(schema["const"])
+    assert schema.get("type") == "object"
+    properties = schema["properties"]
+    return {
+        key: _materialize_contract_definition(properties[key], root)
+        for key in schema.get("required", [])
+    }
 
 
 # ===========================================================================
@@ -122,8 +166,14 @@ class TestMarketDbContract:
         pk_cols = [c.name for c in indices_data.primary_key.columns]
         assert pk_cols == self.tables["indices_data"]["properties"]["primary_key"]["const"]
 
-    def test_market_meta_has_12_tables(self) -> None:
-        assert len(market_meta.tables) == 12
+    def test_market_meta_tracks_v5_tables(self) -> None:
+        assert "daily_valuation" in market_meta.tables
+        assert "stock_adjustment_events" in market_meta.tables
+        assert "stock_provider_windows" in market_meta.tables
+        assert "current_basis_recompute_pending" in market_meta.tables
+        assert "statement_metrics_adjusted" in market_meta.tables
+        assert "stock_adjustment_bases" not in market_meta.tables
+        assert "stock_adjustment_basis_segments" not in market_meta.tables
 
     def test_sync_metadata_structure(self) -> None:
         assert sync_metadata.c.key.primary_key
@@ -155,9 +205,11 @@ class TestMarketDbContractV2:
             assert _sa_type_name(col.type) == expected["type"], f"market.statements.{col_name} type mismatch"
             assert col.nullable == expected["nullable"], f"market.statements.{col_name} nullable mismatch"
 
-    def test_statements_primary_key(self) -> None:
-        pk_cols = [c.name for c in market_statements.primary_key.columns]
-        assert pk_cols == self.tables["statements"]["properties"]["primary_key"]["const"]
+    def test_v2_contract_documents_historical_statements_primary_key(self) -> None:
+        assert self.tables["statements"]["properties"]["primary_key"]["const"] == [
+            "code",
+            "disclosed_date",
+        ]
 
     def test_statements_indexes(self) -> None:
         expected_indexes = self.tables["statements"]["properties"]["indexes"]["const"]
@@ -262,7 +314,7 @@ class TestMarketDbContractV3:
             "basis_version",
         ]
 
-    def test_v3_contract_defines_event_time_adjustment_basis_tables(self) -> None:
+    def test_v3_contract_documents_historical_event_time_adjustment_basis_tables(self) -> None:
         assert self.tables["stock_adjustment_bases"]["properties"]["primary_key"]["const"] == [
             "code",
             "basis_id",
@@ -274,33 +326,161 @@ class TestMarketDbContractV3:
             "const"
         ] == ["code", "basis_id", "source_date_from"]
 
-        basis_columns = self.tables["stock_adjustment_bases"]["properties"]["columns"]["properties"]
-        for column_name, column_spec in basis_columns.items():
-            column = market_tables.stock_adjustment_bases.c[column_name]
-            expected = column_spec["const"]
-            assert _sa_type_name(column.type) == expected["type"]
-            assert column.nullable == expected["nullable"]
-
-        segment_columns = self.tables["stock_adjustment_basis_segments"]["properties"]["columns"][
-            "properties"
-        ]
-        for column_name, column_spec in segment_columns.items():
-            column = market_tables.stock_adjustment_basis_segments.c[column_name]
-            expected = column_spec["const"]
-            assert _sa_type_name(column.type) == expected["type"]
-            assert column.nullable == expected["nullable"]
 
 
-class TestDatasetDbContractV3:
-    """Dataset v3 is the breaking event-time PIT snapshot contract."""
+class TestMarketDbContractV4:
+    """Contract v4 describes the breaking provider-adjusted Market v5 plane."""
 
     @pytest.fixture(autouse=True)
     def _load(self) -> None:
-        self.contract = _load_contract("dataset-db-schema-v3.json")
+        self.contract = _load_contract("market-db-schema-v4.json")
         self.tables = self.contract["properties"]["tables"]["properties"]
 
-    def test_requires_all_writer_tables_including_event_time_pit_graph(self, tmp_path: Path) -> None:
-        assert self.contract["properties"]["schema_version"]["const"] == "3.0.0"
+    def test_v4_contract_requires_v5_relations_without_retained_bases(self) -> None:
+        assert self.contract["properties"]["schema_version"]["const"] == "4.0.0"
+        assert self.contract["properties"]["physical_schema_version"]["const"] == 5
+        assert self.contract["properties"]["stock_price_adjustment_mode"]["const"] == (
+            "provider_adjusted_v1"
+        )
+        required = set(self.contract["properties"]["tables"]["required"])
+        assert "stock_adjustment_events" in required
+        assert "stock_provider_windows" in required
+        assert "current_basis_recompute_pending" in required
+        assert "statement_metrics_adjusted" in required
+        assert "daily_valuation" in required
+        assert "stock_adjustment_bases" not in required
+        assert "stock_adjustment_basis_segments" not in required
+
+    def test_v4_raw_and_event_columns_are_exact(self) -> None:
+        assert list(
+            self.tables["stock_data_raw"]["properties"]["columns"]["properties"]
+        ) == [column.name for column in stock_data_raw.columns]
+        assert list(
+            self.tables["stock_adjustment_events"]["properties"]["columns"]["properties"]
+        ) == [column.name for column in market_tables.stock_adjustment_events.columns]
+        assert self.tables["stock_adjustment_events"]["properties"]["primary_key"][
+            "const"
+        ] == ["code", "date"]
+        checks = {
+            constraint.name: str(constraint.sqltext)
+            for constraint in market_tables.stock_adjustment_events.constraints
+            if isinstance(constraint, CheckConstraint)
+        }
+        assert checks == {
+            "ck_stock_adjustment_events_non_unit_positive_factor": (
+                "adjustment_factor > 0 AND adjustment_factor <> 1"
+            )
+        }
+        assert self.tables["stock_adjustment_events"]["properties"]["checks"][
+            "const"
+        ] == [
+            {
+                "name": "ck_stock_adjustment_events_non_unit_positive_factor",
+                "expression": "adjustment_factor > 0 AND adjustment_factor <> 1",
+            }
+        ]
+
+    def test_v4_current_basis_statement_key_has_no_basis_dimension(self) -> None:
+        assert self.tables["statement_metrics_adjusted"]["properties"]["primary_key"][
+            "const"
+        ] == ["code", "statement_id"]
+        columns = self.tables["statement_metrics_adjusted"]["properties"]["columns"][
+            "properties"
+        ]
+        assert list(columns) == [
+            column.name for column in market_tables.statement_metrics_adjusted.columns
+        ]
+        assert "basis_version" not in columns
+
+    def test_v4_pending_recompute_ledger_matches_sqlalchemy_schema(self) -> None:
+        pending = self.tables["current_basis_recompute_pending"]
+        assert list(pending["properties"]["columns"]["properties"]) == [
+            column.name for column in current_basis_recompute_pending.columns
+        ]
+        assert pending["properties"]["primary_key"]["const"] == ["code"]
+
+    def test_v4_current_basis_state_matches_sqlalchemy_schema(self) -> None:
+        state = self.tables["current_basis_fundamentals_state"]
+        assert list(state["properties"]["columns"]["properties"]) == [
+            column.name for column in market_tables.current_basis_fundamentals_state.columns
+        ]
+        assert state["properties"]["primary_key"]["const"] == ["code"]
+
+    def test_v4_daily_valuation_is_a_view_without_basis_dimension(self) -> None:
+        valuation = self.tables["daily_valuation"]
+        assert valuation["properties"]["relation_type"]["const"] == "view"
+        assert "primary_key" not in valuation["properties"]
+        assert "basis_version" not in valuation["properties"]["columns"]["properties"]
+
+    def test_v4_contract_requires_per_code_provider_window_ledger(self) -> None:
+        assert list(
+            self.tables["stock_provider_windows"]["properties"]["columns"][
+                "properties"
+            ]
+        ) == [column.name for column in stock_provider_windows.columns]
+        assert self.tables["stock_provider_windows"]["properties"]["primary_key"][
+            "const"
+        ] == ["code"]
+        assert self.tables["sync_metadata"]["properties"]["required_keys"]["const"] == [
+            "provider_plan",
+            "fundamentals_adjustment_basis_date",
+        ]
+
+    @pytest.mark.parametrize(
+        ("table_name", "mutate"),
+        [
+            (
+                "stock_data",
+                lambda definition: definition["columns"].pop("close"),
+            ),
+            (
+                "market_schema_version",
+                lambda definition: definition["columns"]["version"].update(
+                    {"nullable": True}
+                ),
+            ),
+            (
+                "stock_master_daily",
+                lambda definition: definition.update({"primary_key": ["code"]}),
+            ),
+        ],
+    )
+    def test_v4_contract_rejects_invalid_unchanged_table_definitions(
+        self, table_name: str, mutate: object
+    ) -> None:
+        table_schema = self.tables[table_name]
+        valid = _materialize_contract_definition(table_schema, self.contract)
+        _validate_contract_definition(valid, table_schema, self.contract)
+        invalid = deepcopy(valid)
+        assert callable(mutate)
+        mutate(invalid)
+        with pytest.raises(AssertionError):
+            _validate_contract_definition(invalid, table_schema, self.contract)
+
+    def test_v4_contract_has_no_unconstrained_required_table_placeholders(self) -> None:
+        assert "documented_table" not in json.dumps(self.contract, sort_keys=True)
+        for table_name in self.contract["properties"]["tables"]["required"]:
+            table_schema = _resolve_schema(self.tables[table_name], self.contract)
+            assert table_schema["type"] == "object"
+            assert table_schema["additionalProperties"] is False
+            assert "columns" in table_schema["required"]
+            columns_schema = _resolve_schema(
+                table_schema["properties"]["columns"], self.contract
+            )
+            assert columns_schema["type"] == "object"
+            assert set(columns_schema["required"]).issubset(columns_schema["properties"])
+
+
+class TestDatasetDbContractV4:
+    """Dataset v4 is the provider-adjusted immutable snapshot contract."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self) -> None:
+        self.contract = _load_contract("dataset-db-schema-v4.json")
+        self.tables = self.contract["properties"]["tables"]["properties"]
+
+    def test_requires_exact_writer_table_set(self, tmp_path: Path) -> None:
+        assert self.contract["properties"]["schema_version"]["const"] == "4.0.0"
         from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
 
         writer = DatasetWriter(str(tmp_path / "snapshot"))
@@ -312,30 +492,11 @@ class TestDatasetDbContractV3:
         assert set(self.contract["properties"]["tables"]["required"]) == actual_tables
         assert set(self.tables) == actual_tables
 
-    def test_primary_keys_and_basis_foreign_keys_are_exact(self) -> None:
-        expected_primary_keys = {
-            "stock_data_raw": ["code", "date"],
-            "stock_master_daily": ["date", "code"],
-            "stock_adjustment_bases": ["code", "basis_id"],
-            "stock_adjustment_basis_segments": ["code", "basis_id", "source_date_from"],
-            "statement_metrics_adjusted": [
-                "code", "disclosed_date", "period_end", "period_type", "basis_version"
-            ],
-            "daily_valuation": ["code", "date", "basis_version"],
-        }
-        for table, primary_key in expected_primary_keys.items():
-            assert self.tables[table]["properties"]["primary_key"]["const"] == primary_key
-
-        basis_fk = {
-            "columns": ["code", "basis_id"],
-            "references_table": "stock_adjustment_bases",
-            "references_columns": ["code", "basis_id"],
-            "on_delete": "NO ACTION",
-        }
-        metric_fk = basis_fk | {"columns": ["code", "basis_version"]}
-        assert self.tables["stock_adjustment_basis_segments"]["properties"]["foreign_keys"]["const"] == [basis_fk]
-        assert self.tables["statement_metrics_adjusted"]["properties"]["foreign_keys"]["const"] == [metric_fk]
-        assert self.tables["daily_valuation"]["properties"]["foreign_keys"]["const"] == [metric_fk]
+    def test_contract_forbids_retained_basis_graph_and_named_indexes(self) -> None:
+        assert "stock_adjustment_bases" not in self.tables
+        assert "stock_adjustment_basis_segments" not in self.tables
+        for table in self.tables.values():
+            assert table["properties"]["indexes"]["const"] == []
 
     def test_contract_primary_keys_match_dataset_writer(self, tmp_path: Path) -> None:
         from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter

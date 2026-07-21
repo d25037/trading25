@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date
 from typing import Any
 
@@ -18,6 +19,7 @@ from src.infrastructure.external_api.dataset.helpers import (
     convert_ohlcv_response,
 )
 from src.infrastructure.external_api.jquants_client import StockInfo
+from src.shared.provider_stock_window import validate_provider_plan
 from src.shared.utils.market_code_alias import expand_market_codes
 
 
@@ -78,82 +80,94 @@ def _as_date(value: object, *, field: str) -> date:
         ) from exc
 
 
-def _basis_rows(
-    reader: MarketDbReader, code: str, effective_market_date: date
-) -> list[dict[str, Any]]:
-    value = effective_market_date.isoformat()
-    return _records(
+def _cutoff_timestamp(cutoff: date) -> str:
+    return f"{cutoff.isoformat()}T23:59:59.999999+09:00"
+
+
+def _resolve_provider_windows(
+    reader: MarketDbReader,
+    codes: Sequence[str],
+    effective_market_date: date,
+) -> dict[str, dict[str, Any]]:
+    normalized_codes = sorted({normalize_stock_code(code) for code in codes if code})
+    if not normalized_codes:
+        return {}
+    placeholders = ",".join("?" for _ in normalized_codes)
+    rows = _records(
         reader.query(
-            """
-            SELECT code, basis_id, valid_from, valid_to_exclusive,
-                   adjustment_through_date, source_fingerprint,
-                   materialized_through_date, status, created_at, updated_at
-            FROM stock_adjustment_bases
-            WHERE code = ?
-              AND status = 'ready'
-              AND valid_from <= ?
-              AND (valid_to_exclusive IS NULL OR ? < valid_to_exclusive)
-            ORDER BY valid_from
+            f"""
+            SELECT code, coverage_start, coverage_end, provider_plan, provider_as_of,
+                   source_fingerprint, updated_at
+            FROM stock_provider_windows
+            WHERE code IN ({placeholders})
+            ORDER BY code
             """,
-            (normalize_stock_code(code), value, value),
+            tuple(normalized_codes),
         )
     )
-
-
-def _resolve_basis(
-    reader: MarketDbReader, code: str, effective_market_date: date
-) -> dict[str, Any]:
-    rows = _basis_rows(reader, code, effective_market_date)
-    if not rows:
+    by_code = {normalize_stock_code(str(row["code"])): row for row in rows}
+    missing = [code for code in normalized_codes if code not in by_code]
+    if missing:
         raise FundamentalsPitSnapshotError(
-            "historical_adjustment_basis_required",
-            f"no ready adjustment basis contains {code} at {effective_market_date}",
+            "provider_window_required",
+            "market_db_sync recovery required: provider window is unavailable for "
+            + ", ".join(missing),
         )
-    if len(rows) != 1:
-        raise FundamentalsPitSnapshotError(
-            "pit_snapshot_inconsistent",
-            f"multiple ready adjustment bases contain {code} at {effective_market_date}",
+
+    pending = _records(
+        reader.query(
+            f"""
+            SELECT DISTINCT {_NORMALIZED_CODE_SQL} AS code
+            FROM current_basis_recompute_pending
+            WHERE {_NORMALIZED_CODE_SQL} IN ({placeholders})
+            ORDER BY code
+            """,
+            tuple(normalized_codes),
         )
-    basis = rows[0]
-    _validate_basis(basis, code, effective_market_date)
-    return basis
-
-
-def _validate_basis(
-    basis: dict[str, Any], code: str, effective_market_date: date
-) -> None:
-    materialized = _as_date(
-        basis["materialized_through_date"], field="materialized_through_date"
     )
-    if materialized < effective_market_date:
+    if pending:
+        pending_codes = ", ".join(str(row["code"]) for row in pending)
         raise FundamentalsPitSnapshotError(
-            "historical_adjustment_basis_required",
-            f"adjustment basis for {code} is materialized only through {materialized}",
+            "current_adjusted_metrics_required",
+            "market_db_sync recovery required: current-basis recompute is pending for "
+            + pending_codes,
         )
-    adjustment_through = _as_date(
-        basis["adjustment_through_date"], field="adjustment_through_date"
-    )
-    valid_from = _as_date(basis["valid_from"], field="valid_from")
-    valid_to_value = basis.get("valid_to_exclusive")
-    valid_to = (
-        _as_date(valid_to_value, field="valid_to_exclusive")
-        if valid_to_value is not None
-        else None
-    )
-    if (
-        normalize_stock_code(str(basis["code"])) != normalize_stock_code(code)
-        or basis["basis_id"]
-        != f"event-pit-v1:{normalize_stock_code(code)}:{valid_from.isoformat()}"
-        or not str(basis["source_fingerprint"] or "").strip()
-        or basis["status"] != "ready"
-        or valid_from > effective_market_date
-        or (valid_to is not None and effective_market_date >= valid_to)
-        or adjustment_through != valid_from
-        or adjustment_through > effective_market_date
-    ):
+
+    provider_plans: set[str] = set()
+    provider_as_of_dates: set[date] = set()
+    for code, window in by_code.items():
+        coverage_start = _as_date(window["coverage_start"], field="provider coverage_start")
+        coverage_end = _as_date(window["coverage_end"], field="provider coverage_end")
+        provider_as_of = _as_date(window["provider_as_of"], field="provider as-of")
+        try:
+            provider_plan = validate_provider_plan(window["provider_plan"])
+        except ValueError as exc:
+            raise FundamentalsPitSnapshotError(
+                "provider_window_required",
+                f"market_db_sync recovery required: provider window for {code} "
+                "has invalid provider plan lineage",
+            ) from exc
+        if (
+            coverage_start > effective_market_date
+            or coverage_end < effective_market_date
+            or coverage_start > coverage_end
+            or provider_as_of < coverage_end
+            or not str(window["source_fingerprint"] or "").strip()
+        ):
+            raise FundamentalsPitSnapshotError(
+                "provider_window_required",
+                f"market_db_sync recovery required: provider window for {code} "
+                f"does not cover {effective_market_date}",
+            )
+        provider_plans.add(provider_plan)
+        provider_as_of_dates.add(provider_as_of)
+    if len(provider_plans) != 1 or len(provider_as_of_dates) != 1:
         raise FundamentalsPitSnapshotError(
-            "pit_snapshot_inconsistent", f"invalid adjustment basis for {code}"
+            "provider_window_required",
+            "market_db_sync recovery required: provider windows do not share one "
+            "provider plan and as-of frontier",
         )
+    return by_code
 
 
 def _resolve_master(
@@ -186,10 +200,6 @@ def _resolve_master(
             f"{code} is not listed in the stock master at {effective_market_date}",
         )
     record = dict(row.items())
-    if _as_date(record["date"], field="stock master date") != effective_market_date:
-        raise FundamentalsPitSnapshotError(
-            "pit_snapshot_inconsistent", "stock master date does not match market date"
-        )
     return (
         StockInfo(
             code=str(record["code"]),
@@ -208,388 +218,384 @@ def _resolve_master(
     )
 
 
-def _load_statements(
-    reader: MarketDbReader, code: str, knowledge_cutoff_date: date
-) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
-    rows = _records(
+def _load_statement_rows(
+    reader: MarketDbReader,
+    codes: Sequence[str],
+    knowledge_cutoff_date: date | None,
+) -> list[dict[str, Any]]:
+    normalized_codes = sorted({normalize_stock_code(code) for code in codes if code})
+    if not normalized_codes:
+        return []
+    placeholders = ",".join("?" for _ in normalized_codes)
+    cutoff_clause = " AND disclosed_at <= ?" if knowledge_cutoff_date else ""
+    params: tuple[object, ...] = tuple(normalized_codes)
+    if knowledge_cutoff_date is not None:
+        params = (*params, _cutoff_timestamp(knowledge_cutoff_date))
+    return _records(
         reader.query(
             f"""
             WITH ranked AS (
-                SELECT *, ROW_NUMBER() OVER (
-                    PARTITION BY disclosed_date
-                    ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END,
-                             CASE WHEN type_of_document LIKE '%FinancialStatements%' THEN 0
-                                  WHEN type_of_document IS NULL OR type_of_document = '' THEN 1
-                                  ELSE 2 END
-                ) AS rn
+                SELECT *, {_NORMALIZED_CODE_SQL} AS normalized_code,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY {_NORMALIZED_CODE_SQL}, statement_id
+                           ORDER BY CASE WHEN code = {_NORMALIZED_CODE_SQL} THEN 0 ELSE 1 END,
+                                    length(code), code
+                       ) AS rn
                 FROM statements
-                WHERE {_NORMALIZED_CODE_SQL} = ? AND disclosed_date <= ?
+                WHERE {_NORMALIZED_CODE_SQL} IN ({placeholders})
+                  {cutoff_clause}
             )
-            SELECT * EXCLUDE (rn) FROM ranked WHERE rn = 1 ORDER BY disclosed_date
+            SELECT * EXCLUDE (rn, code), normalized_code AS code
+            FROM ranked WHERE rn = 1
+            ORDER BY normalized_code, disclosed_at, statement_id
             """,
-            (normalize_stock_code(code), knowledge_cutoff_date.isoformat()),
+            params,
         )
     )
-    for row in rows:
-        if (
-            normalize_stock_code(str(row["code"])) != normalize_stock_code(code)
-            or _as_date(row["disclosed_date"], field="statement disclosed_date")
-            > knowledge_cutoff_date
-        ):
-            raise FundamentalsPitSnapshotError(
-                "pit_snapshot_inconsistent", "statement escaped the knowledge cutoff"
+
+
+def _load_metric_rows(
+    reader: MarketDbReader,
+    codes: Sequence[str],
+    knowledge_cutoff_date: date | None,
+) -> list[dict[str, Any]]:
+    normalized_codes = sorted({normalize_stock_code(code) for code in codes if code})
+    if not normalized_codes:
+        return []
+    placeholders = ",".join("?" for _ in normalized_codes)
+    cutoff_clause = " AND disclosed_at <= ?" if knowledge_cutoff_date else ""
+    params: tuple[object, ...] = tuple(normalized_codes)
+    if knowledge_cutoff_date is not None:
+        params = (*params, _cutoff_timestamp(knowledge_cutoff_date))
+    return _records(
+        reader.query(
+            f"""
+            WITH ranked AS (
+                SELECT *, {_NORMALIZED_CODE_SQL} AS normalized_code,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY {_NORMALIZED_CODE_SQL}, statement_id
+                           ORDER BY CASE WHEN code = {_NORMALIZED_CODE_SQL} THEN 0 ELSE 1 END,
+                                    length(code), code
+                       ) AS rn
+                FROM statement_metrics_adjusted
+                WHERE {_NORMALIZED_CODE_SQL} IN ({placeholders})
+                  {cutoff_clause}
             )
+            SELECT * EXCLUDE (rn, code), normalized_code AS code
+            FROM ranked WHERE rn = 1
+            ORDER BY normalized_code, disclosed_at, statement_id
+            """,
+            params,
+        )
+    )
+
+
+def _validate_current_fundamentals_state(
+    reader: MarketDbReader,
+    codes: Sequence[str],
+    windows: dict[str, dict[str, Any]],
+) -> None:
+    normalized_codes = sorted({normalize_stock_code(code) for code in codes if code})
+    if not normalized_codes:
+        return
+    placeholders = ",".join("?" for _ in normalized_codes)
+    state_rows = _records(
+        reader.query(
+            f"""
+            SELECT code, fundamentals_adjustment_basis_date, source_fingerprint,
+                   statement_count, materialized_at
+            FROM current_basis_fundamentals_state
+            WHERE code IN ({placeholders})
+            ORDER BY code
+            """,
+            tuple(normalized_codes),
+        )
+    )
+    state_by_code = {
+        normalize_stock_code(str(row["code"])): row for row in state_rows
+    }
+    raw_rows = _load_statement_rows(reader, normalized_codes, None)
+    metric_rows = _load_metric_rows(reader, normalized_codes, None)
+    raw_by_key = {
+        (normalize_stock_code(str(row["code"])), str(row["statement_id"])): row
+        for row in raw_rows
+    }
+    metric_by_key = {
+        (normalize_stock_code(str(row["code"])), str(row["statement_id"])): row
+        for row in metric_rows
+    }
+
+    inconsistent = False
+    for code in normalized_codes:
+        state = state_by_code.get(code)
+        raw_keys = {key for key in raw_by_key if key[0] == code}
+        metric_keys = {key for key in metric_by_key if key[0] == code}
+        if state is None:
+            inconsistent = True
+            continue
+        basis_date = str(windows[code]["coverage_end"])
+        state_fingerprint = str(state["source_fingerprint"] or "")
+        inconsistent = inconsistent or (
+            str(state["fundamentals_adjustment_basis_date"]) != basis_date
+            or not state_fingerprint.strip()
+            or not str(state["materialized_at"] or "").strip()
+            or int(state["statement_count"]) != len(raw_keys)
+            or int(state["statement_count"]) != len(metric_keys)
+            or raw_keys != metric_keys
+        )
+        for key in raw_keys & metric_keys:
+            source = raw_by_key[key]
+            metric = metric_by_key[key]
+            inconsistent = inconsistent or (
+                str(metric["fundamentals_adjustment_basis_date"]) != basis_date
+                or str(metric["source_fingerprint"] or "") != state_fingerprint
+                or str(metric["disclosed_date"]) != str(source["disclosed_date"])
+                or str(metric["disclosed_at"]) != str(source["disclosed_at"])
+                or str(metric["period_end"]) != str(source["period_end"])
+                or str(metric["period_type"] or "").upper()
+                != str(source["type_of_current_period"] or "").upper()
+            )
+    if inconsistent:
+        raise FundamentalsPitSnapshotError(
+            "current_adjusted_metrics_required",
+            "market_db_sync recovery required: current-basis fundamentals "
+            "state does not match provider coverage and full statement identities",
+        )
+
+
+def _validate_current_metrics(
+    codes: Sequence[str],
+    statement_rows: Sequence[dict[str, Any]],
+    metric_rows: Sequence[dict[str, Any]],
+    windows: dict[str, dict[str, Any]],
+) -> None:
+    normalized_codes = {normalize_stock_code(code) for code in codes if code}
+    expected = {
+        (normalize_stock_code(str(row["code"])), str(row["statement_id"]))
+        for row in statement_rows
+        if normalize_stock_code(str(row["code"])) in normalized_codes
+    }
+    actual = {
+        (normalize_stock_code(str(row["code"])), str(row["statement_id"]))
+        for row in metric_rows
+        if normalize_stock_code(str(row["code"])) in normalized_codes
+    }
+    inconsistent = expected != actual
+    for row in metric_rows:
+        code = normalize_stock_code(str(row["code"]))
+        if code not in normalized_codes:
+            continue
+        expected_basis_date = _as_date(
+            windows[code]["coverage_end"], field="provider coverage_end"
+        )
+        inconsistent = inconsistent or (
+            _as_date(
+                row["fundamentals_adjustment_basis_date"],
+                field="fundamentals_adjustment_basis_date",
+            )
+            != expected_basis_date
+            or not str(row["source_fingerprint"] or "").strip()
+        )
+    if inconsistent:
+        raise FundamentalsPitSnapshotError(
+            "current_adjusted_metrics_required",
+            "market_db_sync recovery required: current-basis statement metrics "
+            "do not match the bounded statement identities/provider windows",
+        )
+
+
+def _load_statements(
+    reader: MarketDbReader, code: str, knowledge_cutoff_date: date
+) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
+    rows = _load_statement_rows(reader, [code], knowledge_cutoff_date)
     converted = [
         {target: row.get(source) for target, source in _STATEMENT_FIELD_MAP.items()}
         for row in rows
     ]
-    return (
-        convert_dated_response(converted, date_column="disclosedDate"),
-        rows,
-    )
+    return convert_dated_response(converted, date_column="disclosedDate"), rows
 
 
-def _load_adjusted_metrics(
+def _load_provider_ohlcv(
     reader: MarketDbReader,
     code: str,
-    basis: dict[str, Any],
-    knowledge_cutoff_date: date,
-    statement_disclosure_dates: set[date],
-) -> list[dict[str, Any]]:
-    rows = _records(
-        reader.query(
-            """
-            SELECT * FROM statement_metrics_adjusted
-            WHERE code = ? AND basis_version = ? AND disclosed_date <= ?
-            ORDER BY disclosed_date, period_end, period_type
-            """,
-            (
-                normalize_stock_code(code),
-                str(basis["basis_id"]),
-                knowledge_cutoff_date.isoformat(),
-            ),
-        )
-    )
-    expected_basis = str(basis["basis_id"])
-    adjustment_through = _as_date(
-        basis["adjustment_through_date"], field="adjustment_through_date"
-    )
-    for row in rows:
-        price_basis = _as_date(row["price_basis_date"], field="metric price_basis_date")
-        if (
-            normalize_stock_code(str(row["code"])) != normalize_stock_code(code)
-            or row["basis_version"] != expected_basis
-            or price_basis != adjustment_through
-            or (
-                disclosed := _as_date(
-                    row["disclosed_date"], field="metric disclosed_date"
-                )
-            )
-            > knowledge_cutoff_date
-            or disclosed not in statement_disclosure_dates
-        ):
-            raise FundamentalsPitSnapshotError(
-                "pit_snapshot_inconsistent",
-                "adjusted statement metric provenance is inconsistent",
-            )
-    return rows
-
-
-def _load_valuation(
-    reader: MarketDbReader,
-    code: str,
-    basis: dict[str, Any],
-    knowledge_cutoff_date: date,
-    effective_market_date: date,
-    statement_disclosure_dates: set[date],
-) -> list[dict[str, Any]]:
-    rows = _records(
-        reader.query(
-            """
-            SELECT * FROM daily_valuation
-            WHERE code = ? AND basis_version = ? AND date <= ?
-            ORDER BY date
-            """,
-            (
-                normalize_stock_code(code),
-                str(basis["basis_id"]),
-                effective_market_date.isoformat(),
-            ),
-        )
-    )
-    expected_basis = str(basis["basis_id"])
-    adjustment_through = _as_date(
-        basis["adjustment_through_date"], field="adjustment_through_date"
-    )
-    for row in rows:
-        row_date = _as_date(row["date"], field="valuation date")
-        price_basis = _as_date(
-            row["price_basis_date"], field="valuation price_basis_date"
-        )
-        if (
-            normalize_stock_code(str(row["code"])) != normalize_stock_code(code)
-            or row["basis_version"] != expected_basis
-            or price_basis != adjustment_through
-            or row_date > effective_market_date
-        ):
-            raise FundamentalsPitSnapshotError(
-                "pit_snapshot_inconsistent",
-                "daily valuation basis or date is inconsistent",
-            )
-        for field in (
-            "statement_disclosed_date",
-            "forward_eps_disclosed_date",
-            "forward_sales_disclosed_date",
-        ):
-            value = row.get(field)
-            if value is None:
-                continue
-            disclosed = _as_date(value, field=field)
-            if disclosed > row_date or disclosed > knowledge_cutoff_date:
-                raise FundamentalsPitSnapshotError(
-                    "pit_snapshot_inconsistent",
-                    f"daily valuation contains future {field}",
-                )
-            if disclosed not in statement_disclosure_dates:
-                raise FundamentalsPitSnapshotError(
-                    "pit_snapshot_inconsistent",
-                    f"daily valuation {field} is absent from bounded statements",
-                )
-    return rows
-
-
-def _load_basis_ohlcv(
-    reader: MarketDbReader,
-    code: str,
-    basis: dict[str, Any],
+    window: dict[str, Any],
     effective_market_date: date,
 ) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
     rows = _records(
         reader.query(
             f"""
-            WITH normalized_raw AS (
-                SELECT {_NORMALIZED_CODE_SQL} AS normalized_code, code AS source_code,
+            SELECT normalized_code AS code, date, open, high, low, close, volume
+            FROM (
+                SELECT {_NORMALIZED_CODE_SQL} AS normalized_code,
                        date, open, high, low, close, volume,
                        ROW_NUMBER() OVER (
                            PARTITION BY {_NORMALIZED_CODE_SQL}, date
                            ORDER BY CASE WHEN code = {_NORMALIZED_CODE_SQL} THEN 0 ELSE 1 END,
                                     length(code), code
-                       ) AS alias_rank
-                FROM stock_data_raw
+                       ) AS rn
+                FROM stock_data
+                WHERE {_NORMALIZED_CODE_SQL} = ?
+                  AND date >= ? AND date <= ?
             )
-            SELECT raw.normalized_code AS code, raw.date,
-                   raw.open * segment.cumulative_factor AS open,
-                   raw.high * segment.cumulative_factor AS high,
-                   raw.low * segment.cumulative_factor AS low,
-                   raw.close * segment.cumulative_factor AS close,
-                   CAST(ROUND(raw.volume / segment.cumulative_factor) AS BIGINT) AS volume,
-                   basis.basis_id
-            FROM normalized_raw AS raw
-            JOIN stock_adjustment_bases AS basis
-              ON basis.code = raw.normalized_code AND basis.basis_id = ? AND basis.status = 'ready'
-            JOIN stock_adjustment_basis_segments AS segment
-              ON segment.code = basis.code AND segment.basis_id = basis.basis_id
-             AND raw.date >= segment.source_date_from
-             AND (segment.source_date_to_exclusive IS NULL OR raw.date < segment.source_date_to_exclusive)
-            WHERE raw.alias_rank = 1 AND raw.normalized_code = ?
-              AND raw.date <= ? AND raw.date <= basis.materialized_through_date
-              AND raw.open IS NOT NULL AND raw.high IS NOT NULL AND raw.low IS NOT NULL
-              AND raw.close IS NOT NULL AND raw.volume IS NOT NULL
-            ORDER BY raw.date
+            WHERE rn = 1
+            ORDER BY date
             """,
             (
-                str(basis["basis_id"]),
                 normalize_stock_code(code),
+                str(window["coverage_start"]),
                 effective_market_date.isoformat(),
             ),
         )
     )
+    return convert_ohlcv_response(rows), rows
+
+
+def _load_valuation(
+    reader: MarketDbReader,
+    code: str,
+    window: dict[str, Any],
+    knowledge_cutoff_date: date,
+    effective_market_date: date,
+    statement_ids: set[str],
+) -> list[dict[str, Any]]:
+    rows = _records(
+        reader.query(
+            """
+            SELECT * EXCLUDE (rn, source_code, normalized_code),
+                   normalized_code AS code, ? AS provider_as_of
+            FROM (
+                SELECT valuation.*, valuation.code AS source_code,
+                       CASE
+                           WHEN length(valuation.code) IN (5, 6)
+                                AND right(valuation.code, 1) = '0'
+                           THEN left(valuation.code, length(valuation.code) - 1)
+                           ELSE valuation.code
+                       END AS normalized_code,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY normalized_code, valuation.date
+                           ORDER BY CASE WHEN valuation.code = normalized_code THEN 0 ELSE 1 END,
+                                    length(valuation.code), valuation.code
+                       ) AS rn
+                FROM daily_valuation AS valuation
+                WHERE normalized_code = ? AND valuation.date >= ? AND valuation.date <= ?
+            )
+            WHERE rn = 1
+            ORDER BY date
+            """,
+            (
+                str(window["provider_as_of"]),
+                normalize_stock_code(code),
+                str(window["coverage_start"]),
+                effective_market_date.isoformat(),
+            ),
+        )
+    )
+    cutoff_timestamp = _cutoff_timestamp(knowledge_cutoff_date)
     for row in rows:
+        row_date = _as_date(row["date"], field="valuation date")
+        disclosed_at = row.get("statement_disclosed_at")
         if (
-            normalize_stock_code(str(row["code"])) != normalize_stock_code(code)
-            or row["basis_id"] != basis["basis_id"]
-            or _as_date(row["date"], field="OHLCV date") > effective_market_date
+            row_date > effective_market_date
+            or row["price_basis_date"] != row["date"]
+            or (disclosed_at is not None and str(disclosed_at) > cutoff_timestamp)
+            or (row.get("statement_id") is not None and str(row["statement_id"]) not in statement_ids)
         ):
             raise FundamentalsPitSnapshotError(
-                "pit_snapshot_inconsistent", "OHLCV basis or date is inconsistent"
+                "pit_snapshot_inconsistent",
+                "canonical daily valuation escaped its price/knowledge cutoff",
             )
-    frame = convert_ohlcv_response(
-        [
-            {
-                key: row.get(key)
-                for key in ("date", "open", "high", "low", "close", "volume")
-            }
-            for row in rows
-        ]
-    )
-    return frame, rows
+    return rows
 
 
-def _load_prime_panel(
-    reader: MarketDbReader, effective_market_date: date
-) -> pd.DataFrame:
+def _load_prime_panel(reader: MarketDbReader, effective_market_date: date) -> pd.DataFrame:
     market_codes = tuple(expand_market_codes(["prime"]))
     placeholders = ",".join("?" for _ in market_codes)
     master_rows = _records(
         reader.query(
             f"""
-            SELECT date, code FROM stock_master_daily
+            SELECT DISTINCT {_NORMALIZED_CODE_SQL} AS code
+            FROM stock_master_daily
             WHERE date = ? AND lower(trim(market_code)) IN ({placeholders})
             ORDER BY code
             """,
             (effective_market_date.isoformat(), *market_codes),
         )
     )
-    prime_codes = sorted(
-        {normalize_stock_code(str(master["code"])) for master in master_rows}
-    )
-    if not prime_codes:
+    codes = [str(row["code"]) for row in master_rows]
+    if not codes:
         return pd.DataFrame()
-    code_placeholders = ",".join("?" for _ in prime_codes)
-    basis_rows = _records(
+    windows = _resolve_provider_windows(reader, codes, effective_market_date)
+    _validate_current_fundamentals_state(reader, codes, windows)
+    statements = _load_statement_rows(reader, codes, effective_market_date)
+    metrics = _load_metric_rows(reader, codes, effective_market_date)
+    _validate_current_metrics(codes, statements, metrics, windows)
+    code_placeholders = ",".join("?" for _ in codes)
+    rows = _records(
         reader.query(
             f"""
-            SELECT code, basis_id, valid_from, valid_to_exclusive,
-                   adjustment_through_date, source_fingerprint,
-                   materialized_through_date, status, created_at, updated_at
-            FROM stock_adjustment_bases
-            WHERE code IN ({code_placeholders})
-              AND status = 'ready'
-              AND valid_from <= ?
-              AND (valid_to_exclusive IS NULL OR ? < valid_to_exclusive)
-            ORDER BY code, valid_from
-            """,
-            (
-                *prime_codes,
-                effective_market_date.isoformat(),
-                effective_market_date.isoformat(),
-            ),
-        )
-    )
-    bases_by_code: dict[str, list[dict[str, Any]]] = {code: [] for code in prime_codes}
-    for basis in basis_rows:
-        bases_by_code.setdefault(normalize_stock_code(str(basis["code"])), []).append(
-            basis
-        )
-    selected_bases: list[dict[str, Any]] = []
-    for code in prime_codes:
-        candidates = bases_by_code[code]
-        if not candidates:
-            raise FundamentalsPitSnapshotError(
-                "historical_adjustment_basis_required",
-                f"no ready adjustment basis contains {code} at {effective_market_date}",
-            )
-        if len(candidates) != 1:
-            raise FundamentalsPitSnapshotError(
-                "pit_snapshot_inconsistent",
-                f"multiple ready adjustment bases contain {code} at {effective_market_date}",
-            )
-        _validate_basis(candidates[0], code, effective_market_date)
-        selected_bases.append(candidates[0])
-
-    values_sql = ",".join("(?, ?, ?)" for _ in selected_bases)
-    basis_params: list[Any] = []
-    for basis in selected_bases:
-        basis_params.extend(
-            [basis["code"], basis["basis_id"], basis["adjustment_through_date"]]
-        )
-    panel = _records(
-        reader.query(
-            f"""
-            WITH selected_bases(code, basis_id, adjustment_through_date) AS (
-                VALUES {values_sql}
-            ),
-            normalized_raw AS (
-                SELECT {_NORMALIZED_CODE_SQL} AS normalized_code, code AS source_code,
-                       date, close, volume,
-                       ROW_NUMBER() OVER (
-                           PARTITION BY {_NORMALIZED_CODE_SQL}, date
-                           ORDER BY CASE WHEN code = {_NORMALIZED_CODE_SQL} THEN 0 ELSE 1 END,
-                                    length(code), code
-                       ) AS alias_rank
-                FROM stock_data_raw
-                WHERE date <= ?
-                  AND open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL
-                  AND close IS NOT NULL AND volume IS NOT NULL
-            ),
-            adjusted_prices AS (
-                SELECT raw.normalized_code AS code, raw.date,
-                       raw.close * segment.cumulative_factor AS close,
-                       CAST(ROUND(raw.volume / segment.cumulative_factor) AS BIGINT) AS volume,
-                       selected.basis_id,
-                       selected.adjustment_through_date
-                FROM normalized_raw AS raw
-                JOIN selected_bases AS selected ON selected.code = raw.normalized_code
-                JOIN stock_adjustment_basis_segments AS segment
-                  ON segment.code = selected.code AND segment.basis_id = selected.basis_id
-                 AND raw.date >= segment.source_date_from
-                 AND (segment.source_date_to_exclusive IS NULL OR raw.date < segment.source_date_to_exclusive)
-                WHERE raw.alias_rank = 1
-            ),
-            recent AS (
+            WITH normalized_prices AS (
+                SELECT normalized_code AS code, date, close, volume
+                FROM (
+                    SELECT {_NORMALIZED_CODE_SQL} AS normalized_code,
+                           date, close, volume,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY {_NORMALIZED_CODE_SQL}, date
+                               ORDER BY CASE WHEN code = {_NORMALIZED_CODE_SQL} THEN 0 ELSE 1 END,
+                                        length(code), code
+                           ) AS rn
+                    FROM stock_data
+                    WHERE {_NORMALIZED_CODE_SQL} IN ({code_placeholders})
+                      AND date <= ?
+                )
+                WHERE rn = 1
+            ), recent AS (
                 SELECT *, ROW_NUMBER() OVER (PARTITION BY code ORDER BY date DESC) AS recency_rank
-                FROM adjusted_prices
-            ),
-            aggregates AS (
-                SELECT code, basis_id, adjustment_through_date,
+                FROM normalized_prices
+            ), aggregates AS (
+                SELECT code,
                        MAX(CASE WHEN date = ? THEN close END) AS close,
                        MAX(CASE WHEN date = ? THEN volume END) AS volume,
                        CASE WHEN COUNT(*) FILTER (WHERE recency_rank <= 20) >= 20
                             THEN MEDIAN(CASE WHEN recency_rank <= 20 THEN close * volume END) END AS adv20_jpy,
                        CASE WHEN COUNT(*) FILTER (WHERE recency_rank <= 60) >= 60
                             THEN MEDIAN(CASE WHEN recency_rank <= 60 THEN close * volume END) END AS adv60_jpy
-                FROM recent
-                WHERE recency_rank <= 60
-                GROUP BY code, basis_id, adjustment_through_date
+                FROM recent WHERE recency_rank <= 60 GROUP BY code
+            ), valuation_canonical AS (
+                SELECT * EXCLUDE (rn, code, normalized_code), normalized_code AS code
+                FROM (
+                    SELECT valuation.*,
+                           CASE
+                               WHEN length(valuation.code) IN (5, 6)
+                                    AND right(valuation.code, 1) = '0'
+                               THEN left(valuation.code, length(valuation.code) - 1)
+                               ELSE valuation.code
+                           END AS normalized_code,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY normalized_code, valuation.date
+                               ORDER BY CASE WHEN valuation.code = normalized_code THEN 0 ELSE 1 END,
+                                        length(valuation.code), valuation.code
+                           ) AS rn
+                    FROM daily_valuation AS valuation
+                    WHERE valuation.date = ?
+                ) WHERE rn = 1
             )
             SELECT aggregates.code, ? AS date, aggregates.close, aggregates.volume,
-                   valuation.free_float_market_cap, aggregates.basis_id,
-                   valuation.price_basis_date, ? AS stock_master_snapshot_date,
+                   valuation.free_float_market_cap,
+                   ? AS stock_master_snapshot_date,
                    aggregates.adv20_jpy, aggregates.adv60_jpy,
-                   aggregates.adjustment_through_date,
+                   valuation.fundamentals_adjustment_basis_date,
+                   provider.provider_as_of,
                    valuation.statement_disclosed_date,
                    valuation.forward_eps_disclosed_date,
-                   valuation.forward_sales_disclosed_date,
-                   CASE WHEN valuation.statement_disclosed_date IS NULL THEN TRUE ELSE EXISTS (
-                       SELECT 1 FROM statements AS source_statement
-                       WHERE CASE
-                                 WHEN length(source_statement.code) IN (5, 6)
-                                      AND right(source_statement.code, 1) = '0'
-                                 THEN left(source_statement.code, length(source_statement.code) - 1)
-                                 ELSE source_statement.code
-                             END = aggregates.code
-                         AND source_statement.disclosed_date = valuation.statement_disclosed_date
-                   ) END AS statement_disclosure_exists,
-                   CASE WHEN valuation.forward_eps_disclosed_date IS NULL THEN TRUE ELSE EXISTS (
-                       SELECT 1 FROM statements AS source_statement
-                       WHERE CASE
-                                 WHEN length(source_statement.code) IN (5, 6)
-                                      AND right(source_statement.code, 1) = '0'
-                                 THEN left(source_statement.code, length(source_statement.code) - 1)
-                                 ELSE source_statement.code
-                             END = aggregates.code
-                         AND source_statement.disclosed_date = valuation.forward_eps_disclosed_date
-                   ) END AS forward_eps_disclosure_exists,
-                   CASE WHEN valuation.forward_sales_disclosed_date IS NULL THEN TRUE ELSE EXISTS (
-                       SELECT 1 FROM statements AS source_statement
-                       WHERE CASE
-                                 WHEN length(source_statement.code) IN (5, 6)
-                                      AND right(source_statement.code, 1) = '0'
-                                 THEN left(source_statement.code, length(source_statement.code) - 1)
-                                 ELSE source_statement.code
-                             END = aggregates.code
-                         AND source_statement.disclosed_date = valuation.forward_sales_disclosed_date
-                   ) END AS forward_sales_disclosure_exists
+                   valuation.forward_sales_disclosed_date
             FROM aggregates
-            JOIN daily_valuation AS valuation
-              ON valuation.code = aggregates.code
-             AND valuation.date = ?
-             AND valuation.basis_version = aggregates.basis_id
+            JOIN valuation_canonical AS valuation ON valuation.code = aggregates.code
+            JOIN stock_provider_windows AS provider ON provider.code = aggregates.code
             WHERE aggregates.close IS NOT NULL
             ORDER BY aggregates.code
             """,
             (
-                *basis_params,
+                *codes,
                 effective_market_date.isoformat(),
                 effective_market_date.isoformat(),
                 effective_market_date.isoformat(),
@@ -599,47 +605,7 @@ def _load_prime_panel(
             ),
         )
     )
-    for row in panel:
-        if (
-            _as_date(row["date"], field="liquidity valuation date")
-            != effective_market_date
-            or _as_date(
-                row["stock_master_snapshot_date"], field="liquidity master date"
-            )
-            != effective_market_date
-            or _as_date(row["price_basis_date"], field="liquidity price_basis_date")
-            != _as_date(row["adjustment_through_date"], field="adjustment_through_date")
-        ):
-            raise FundamentalsPitSnapshotError(
-                "pit_snapshot_inconsistent",
-                "Prime liquidity valuation provenance is inconsistent",
-            )
-        for field, exists_field in (
-            ("statement_disclosed_date", "statement_disclosure_exists"),
-            ("forward_eps_disclosed_date", "forward_eps_disclosure_exists"),
-            ("forward_sales_disclosed_date", "forward_sales_disclosure_exists"),
-        ):
-            value = row.get(field)
-            if value is not None and (
-                _as_date(value, field=f"liquidity {field}") > effective_market_date
-                or not bool(row.get(exists_field))
-            ):
-                raise FundamentalsPitSnapshotError(
-                    "pit_snapshot_inconsistent",
-                    f"Prime liquidity valuation contains inconsistent {field}",
-                )
-            row.pop(exists_field)
-        row.pop("adjustment_through_date")
-    frame = pd.DataFrame(panel)
-    if not frame.empty and (
-        set(frame["date"]) != {effective_market_date.isoformat()}
-        or set(frame["stock_master_snapshot_date"])
-        != {effective_market_date.isoformat()}
-    ):
-        raise FundamentalsPitSnapshotError(
-            "pit_snapshot_inconsistent", "Prime liquidity panel dates are inconsistent"
-        )
-    return frame
+    return pd.DataFrame(rows)
 
 
 def _resolve_inside_snapshot(
@@ -666,67 +632,50 @@ def _resolve_inside_snapshot(
         )
     effective_market_date = _as_date(session["date"], field="effective market date")
     code = normalize_stock_code(symbol)
-    basis = _resolve_basis(reader, code, effective_market_date)
     stock_info, _master = _resolve_master(reader, code, effective_market_date)
-    statements, raw_statement_rows = _load_statements(
-        reader, code, knowledge_cutoff_date
-    )
-    statement_disclosure_dates = {
-        _as_date(row["disclosed_date"], field="statement disclosed_date")
-        for row in raw_statement_rows
-    }
-    adjusted_metrics = _load_adjusted_metrics(
-        reader,
-        code,
-        basis,
-        knowledge_cutoff_date,
-        statement_disclosure_dates,
-    )
+    window = _resolve_provider_windows(reader, [code], effective_market_date)[code]
+    _validate_current_fundamentals_state(reader, [code], {code: window})
+    statements, statement_rows = _load_statements(reader, code, knowledge_cutoff_date)
+    metrics = _load_metric_rows(reader, [code], knowledge_cutoff_date)
+    _validate_current_metrics([code], statement_rows, metrics, {code: window})
+    statement_ids = {str(row["statement_id"]) for row in statement_rows}
     valuation = _load_valuation(
         reader,
         code,
-        basis,
+        window,
         knowledge_cutoff_date,
         effective_market_date,
-        statement_disclosure_dates,
+        statement_ids,
     )
-    ohlcv, _ohlcv_rows = _load_basis_ohlcv(reader, code, basis, effective_market_date)
-    expected_disclosures = [
-        _as_date(row["disclosed_date"], field="statement disclosed_date")
-        for row in raw_statement_rows
-    ]
-    actual_disclosures = [
-        _as_date(row["disclosed_date"], field="metric disclosed_date")
-        for row in adjusted_metrics
-    ]
-    if sorted(actual_disclosures) != sorted(expected_disclosures):
+    ohlcv, ohlcv_rows = _load_provider_ohlcv(
+        reader, code, window, effective_market_date
+    )
+    valuation_dates = [str(row["date"]) for row in valuation]
+    ohlcv_dates = [str(row["date"]) for row in ohlcv_rows]
+    if valuation_dates != ohlcv_dates or any(
+        valuation_row["close"] != price_row["close"]
+        for valuation_row, price_row in zip(valuation, ohlcv_rows, strict=True)
+    ):
         raise FundamentalsPitSnapshotError(
             "pit_snapshot_inconsistent",
-            "bounded statements are not represented exactly once in the selected adjustment basis",
-        )
-    valuation_dates = [_as_date(row["date"], field="valuation date") for row in valuation]
-    ohlcv_dates = [_as_date(row["date"], field="OHLCV date") for row in _ohlcv_rows]
-    if sorted(valuation_dates) != sorted(ohlcv_dates):
-        raise FundamentalsPitSnapshotError(
-            "pit_snapshot_inconsistent",
-            "daily valuation does not cover the selected basis price history exactly",
+            "canonical daily valuation does not equal provider-adjusted stock_data",
         )
     prime_panel = _load_prime_panel(reader, effective_market_date)
+    coverage_end = _as_date(window["coverage_end"], field="provider coverage_end")
     return FundamentalsPitSnapshot(
         requested_cutoff_date=cutoff_date,
         knowledge_cutoff_date=knowledge_cutoff_date,
         effective_market_date=effective_market_date,
         stock_master_snapshot_date=effective_market_date,
-        basis_id=str(basis["basis_id"]),
-        adjustment_through_date=_as_date(
-            basis["adjustment_through_date"], field="adjustment_through_date"
+        fundamentals_adjustment_basis_date=coverage_end,
+        provider_as_of=str(window["provider_as_of"]),
+        provider_coverage_start=_as_date(
+            window["coverage_start"], field="provider coverage_start"
         ),
-        materialized_through_date=_as_date(
-            basis["materialized_through_date"], field="materialized_through_date"
-        ),
+        provider_coverage_end=coverage_end,
         stock_info=stock_info,
         statements=statements,
-        adjusted_statement_metrics=tuple(adjusted_metrics),
+        adjusted_statement_metrics=tuple(metrics),
         daily_valuation=tuple(valuation),
         ohlcv=ohlcv,
         prime_liquidity_panel=prime_panel,

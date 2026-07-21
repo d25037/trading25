@@ -403,7 +403,7 @@ def build_psr_features(conn: Any, request: PsrFeaturesRequest) -> RelationRef:
         _assert_normalized_alias_consistency(
             conn,
             relation="daily_valuation",
-            natural_key_columns=("date", "basis_version"),
+            natural_key_columns=("date", "price_basis_date"),
             payload_columns=("psr",),
         )
     _assert_normalized_alias_consistency(
@@ -447,11 +447,11 @@ def build_psr_features(conn: Any, request: PsrFeaturesRequest) -> RelationRef:
         daily_valuation_normalized AS (
             SELECT {valuation_code} AS code,
                    CAST(valuation.date AS DATE) AS date,
-                   CAST(valuation.basis_version AS VARCHAR) AS basis_version,
+                   CAST(valuation.price_basis_date AS DATE) AS price_basis_date,
                    {daily_psr_projection} AS psr,
                    row_number() OVER (
                        PARTITION BY {valuation_code}, CAST(valuation.date AS DATE),
-                                    CAST(valuation.basis_version AS VARCHAR)
+                                    CAST(valuation.price_basis_date AS DATE)
                        ORDER BY CASE WHEN length(valuation.code) = 4 THEN 0 ELSE 1 END,
                                 valuation.code
                    ) AS alias_rank
@@ -474,9 +474,9 @@ def build_psr_features(conn: Any, request: PsrFeaturesRequest) -> RelationRef:
                    ) AS psr
             FROM {source.name} source
             LEFT JOIN daily_valuation_exact valuation
-              ON valuation.code = source.code
+             ON valuation.code = source.code
              AND CAST(valuation.date AS DATE) = source.date
-             AND valuation.basis_version = source.valuation_basis_id
+             AND valuation.price_basis_date = source.date
             LEFT JOIN actual_fy_sales sales
               ON sales.code = source.code
              AND sales.disclosed_date <= source.date
@@ -540,12 +540,7 @@ def build_roe_features(conn: Any, request: RoeFeaturesRequest) -> RelationRef:
     _assert_normalized_alias_consistency(
         conn,
         relation="statement_metrics_adjusted",
-        natural_key_columns=(
-            "basis_version",
-            "disclosed_date",
-            "period_end",
-            "period_type",
-        ),
+        natural_key_columns=("statement_id",),
         payload_columns=(
             "adjusted_eps",
             "adjusted_bps",
@@ -557,7 +552,6 @@ def build_roe_features(conn: Any, request: RoeFeaturesRequest) -> RelationRef:
     ctes = f"""
         quality_metrics_raw AS (
             SELECT {metrics_code} AS code,
-                   CAST(metrics.basis_version AS VARCHAR) AS basis_version,
                    CAST(metrics.disclosed_date AS DATE) AS disclosed_date,
                    CAST(metrics.period_end AS DATE) AS period_end,
                    CAST(metrics.adjusted_eps AS DOUBLE) AS adjusted_eps,
@@ -571,8 +565,7 @@ def build_roe_features(conn: Any, request: RoeFeaturesRequest) -> RelationRef:
                         THEN metrics.adjusted_forecast_eps / metrics.adjusted_bps * 100.0
                    END AS forward_roe,
                    row_number() OVER (
-                       PARTITION BY {metrics_code}, metrics.basis_version,
-                                    CAST(metrics.disclosed_date AS DATE)
+                       PARTITION BY {metrics_code}, CAST(metrics.disclosed_date AS DATE)
                        ORDER BY CASE WHEN metrics.adjusted_forecast_eps IS NOT NULL
                                      THEN 0 ELSE 1 END,
                                 CAST(metrics.period_end AS DATE) DESC,
@@ -580,13 +573,18 @@ def build_roe_features(conn: Any, request: RoeFeaturesRequest) -> RelationRef:
                                 metrics.code
                    ) AS same_disclosure_rank
             FROM statement_metrics_adjusted metrics
+            JOIN current_basis_fundamentals_state state
+              ON state.code = {metrics_code}
+             AND state.fundamentals_adjustment_basis_date =
+                 metrics.fundamentals_adjustment_basis_date
+             AND state.source_fingerprint = metrics.source_fingerprint
             WHERE upper(coalesce(metrics.period_type, '')) = 'FY'
               AND metrics.adjusted_bps > 0
         ),
         quality_metrics AS (
             SELECT * EXCLUDE (same_disclosure_rank),
                    lead(disclosed_date) OVER (
-                       PARTITION BY code, basis_version ORDER BY disclosed_date
+                       PARTITION BY code ORDER BY disclosed_date
                    ) AS valid_to
             FROM quality_metrics_raw
             WHERE same_disclosure_rank = 1
@@ -599,8 +597,7 @@ def build_roe_features(conn: Any, request: RoeFeaturesRequest) -> RelationRef:
                    quality.adjusted_forecast_eps, quality.roe, quality.forward_roe
             FROM {source.name} source
             LEFT JOIN quality_metrics quality
-              ON quality.code = source.code
-             AND quality.basis_version = source.valuation_basis_id
+             ON quality.code = source.code
              AND quality.disclosed_date <= source.date
              AND (quality.valid_to IS NULL OR source.date < quality.valid_to)
         ),

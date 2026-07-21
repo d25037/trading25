@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+import hashlib
 import importlib
+import json
 from pathlib import Path
 import shutil
 import tempfile
@@ -12,16 +14,21 @@ from threading import RLock
 from typing import Any, cast
 
 from src.infrastructure.db.dataset_io.snapshot_contract import (
-    DATASET_V3_PARQUET_EXPORTS,
-    EVENT_TIME_PIT_DATE_TO_INFO_KEY,
-    MARKET_V4_EVENT_TIME_REQUIRED_TABLES,
+    DATASET_FUNDAMENTALS_BASIS_DATE_INFO_KEY,
+    DATASET_PROVIDER_AS_OF_INFO_KEY,
+    DATASET_PROVIDER_COVERAGE_END_INFO_KEY,
+    DATASET_PROVIDER_COVERAGE_START_INFO_KEY,
+    DATASET_PROVIDER_PLAN_INFO_KEY,
+    DATASET_PROVIDER_SOURCE_FINGERPRINT_INFO_KEY,
+    DATASET_V4_PARQUET_EXPORTS,
+    MARKET_V5_PROVIDER_REQUIRED_TABLES,
 )
 from src.infrastructure.db.dataset_io.pit_validation import (
-    find_dataset_pit_audit_error,
+    find_dataset_snapshot_audit_error,
 )
-from src.infrastructure.db.dataset_io.dataset_pit_lineage import (
-    DatasetPitLineageError,
-    stage_cutoff_lineage,
+from src.shared.provider_stock_window import (
+    provider_stock_source_fingerprint,
+    validate_provider_plan,
 )
 
 _SOURCE_ALIAS = "market_source"
@@ -30,27 +37,19 @@ _TEMP_INDEX_CODE_TABLE = "_dataset_copy_target_index_codes"
 _TEMP_STOCK_DATA_TABLE = "_dataset_copy_stock_data"
 _TEMP_STATEMENTS_TABLE = "_dataset_copy_statements"
 _TEMP_MARGIN_TABLE = "_dataset_copy_margin"
-_PIT_STAGE_TABLES: tuple[tuple[str, str], ...] = (
-    ("_dataset_pit_stock_data_raw", "stock_data_raw"),
-    ("_dataset_pit_stock_master_daily", "stock_master_daily"),
-    ("_dataset_pit_bases", "stock_adjustment_bases"),
-    ("_dataset_pit_segments", "stock_adjustment_basis_segments"),
-    ("_dataset_pit_statement_metrics", "statement_metrics_adjusted"),
-    ("_dataset_pit_daily_valuation", "daily_valuation"),
+_PROVIDER_STAGE_TABLES: tuple[tuple[str, str], ...] = (
+    ("_dataset_provider_stock_data_raw", "stock_data_raw"),
+    ("_dataset_provider_stock_master_daily", "stock_master_daily"),
+    ("_dataset_provider_statements", "statements"),
+    ("_dataset_provider_statement_metrics", "statement_metrics_adjusted"),
+    ("_dataset_provider_daily_valuation", "daily_valuation"),
 )
-_PIT_PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
+_PROVIDER_PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
     "stock_data_raw": ("code", "date"),
     "stock_master_daily": ("date", "code"),
-    "stock_adjustment_bases": ("code", "basis_id"),
-    "stock_adjustment_basis_segments": ("code", "basis_id", "source_date_from"),
-    "statement_metrics_adjusted": (
-        "code",
-        "disclosed_date",
-        "period_end",
-        "period_type",
-        "basis_version",
-    ),
-    "daily_valuation": ("code", "date", "basis_version"),
+    "statements": ("code", "statement_id"),
+    "statement_metrics_adjusted": ("code", "statement_id"),
+    "daily_valuation": ("code", "date"),
 }
 
 
@@ -68,15 +67,14 @@ class StockDataCopyResult:
 
 
 class DatasetSnapshotError(RuntimeError):
-    """The source cannot produce a complete dataset v3 PIT snapshot."""
+    """The source cannot produce a complete Dataset v4 provider snapshot."""
 
 
 @dataclass(frozen=True)
-class EventTimePitCopyResult:
+class ProviderSnapshotCopyResult:
     raw_price_rows: int
     stock_master_rows: int
-    basis_rows: int
-    segment_rows: int
+    statement_rows: int
     statement_metric_rows: int
     daily_valuation_rows: int
 
@@ -103,12 +101,26 @@ def parquet_dir_for_path(path: str) -> Path:
 
 class _DatasetDuckDbStore:
     _STATEMENT_TEXT_COLUMNS: frozenset[str] = frozenset(
-        {"type_of_current_period", "type_of_document"}
+        {
+            "disclosure_number",
+            "disclosed_date",
+            "disclosed_at",
+            "period_start",
+            "period_end",
+            "type_of_current_period",
+            "type_of_document",
+        }
     )
     _STATEMENT_COLUMNS: tuple[str, ...] = (
         "code",
+        "statement_id",
+        "disclosure_number",
         "disclosed_date",
+        "disclosed_at",
+        "period_start",
+        "period_end",
         "earnings_per_share",
+        "diluted_earnings_per_share",
         "profit",
         "equity",
         "type_of_current_period",
@@ -137,24 +149,30 @@ class _DatasetDuckDbStore:
     )
     _ADJUSTED_STATEMENT_COLUMNS: tuple[str, ...] = (
         "code",
+        "statement_id",
         "disclosed_date",
+        "disclosed_at",
         "period_end",
         "period_type",
-        "price_basis_date",
+        "fundamentals_adjustment_basis_date",
         "raw_eps",
         "adjusted_eps",
+        "raw_diluted_eps",
+        "adjusted_diluted_eps",
         "raw_bps",
         "adjusted_bps",
         "raw_forecast_eps",
         "adjusted_forecast_eps",
         "raw_dividend_fy",
         "adjusted_dividend_fy",
+        "raw_forecast_dividend_fy",
+        "adjusted_forecast_dividend_fy",
         "raw_shares_outstanding",
         "adjusted_shares_outstanding",
         "raw_treasury_shares",
         "adjusted_treasury_shares",
         "adjustment_factor_cumulative",
-        "basis_version",
+        "source_fingerprint",
         "created_at",
     )
     _DAILY_VALUATION_COLUMNS: tuple[str, ...] = (
@@ -181,7 +199,10 @@ class _DatasetDuckDbStore:
         "forward_eps_source",
         "forward_sales_disclosed_date",
         "forward_sales_source",
-        "basis_version",
+        "statement_id",
+        "statement_disclosed_at",
+        "fundamentals_adjustment_basis_date",
+        "source_fingerprint",
         "created_at",
     )
 
@@ -370,9 +391,15 @@ class _DatasetDuckDbStore:
             self._conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS statements (
-                    code TEXT,
-                    disclosed_date TEXT,
+                    code TEXT NOT NULL,
+                    statement_id TEXT NOT NULL,
+                    disclosure_number TEXT,
+                    disclosed_date TEXT NOT NULL,
+                    disclosed_at TEXT NOT NULL,
+                    period_start TEXT NOT NULL,
+                    period_end TEXT NOT NULL,
                     earnings_per_share DOUBLE,
+                    diluted_earnings_per_share DOUBLE,
                     profit DOUBLE,
                     equity DOUBLE,
                     type_of_current_period TEXT,
@@ -398,21 +425,27 @@ class _DatasetDuckDbStore:
                     total_assets DOUBLE,
                     shares_outstanding DOUBLE,
                     treasury_shares DOUBLE,
-                    PRIMARY KEY (code, disclosed_date)
+                    PRIMARY KEY (code, statement_id)
                 )
                 """
             )
             self._conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS stock_data_raw (
-                    code TEXT,
-                    date TEXT,
+                    code TEXT NOT NULL,
+                    date TEXT NOT NULL,
                     open DOUBLE NOT NULL,
                     high DOUBLE NOT NULL,
                     low DOUBLE NOT NULL,
                     close DOUBLE NOT NULL,
                     volume BIGINT NOT NULL,
+                    turnover_value DOUBLE,
                     adjustment_factor DOUBLE,
+                    adjusted_open DOUBLE,
+                    adjusted_high DOUBLE,
+                    adjusted_low DOUBLE,
+                    adjusted_close DOUBLE,
+                    adjusted_volume BIGINT,
                     created_at TEXT,
                     PRIMARY KEY (code, date)
                 )
@@ -440,71 +473,43 @@ class _DatasetDuckDbStore:
             )
             self._conn.execute(
                 """
-                CREATE TABLE IF NOT EXISTS stock_adjustment_bases (
-                    code TEXT,
-                    basis_id TEXT,
-                    valid_from TEXT NOT NULL,
-                    valid_to_exclusive TEXT,
-                    adjustment_through_date TEXT NOT NULL,
-                    source_fingerprint TEXT NOT NULL,
-                    materialized_through_date TEXT NOT NULL,
-                    status TEXT NOT NULL CHECK (status IN ('building', 'ready', 'invalid')),
-                    created_at TEXT,
-                    updated_at TEXT,
-                    PRIMARY KEY (code, basis_id),
-                    UNIQUE (code, valid_from)
-                )
-                """
-            )
-            self._conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS stock_adjustment_basis_segments (
-                    code TEXT,
-                    basis_id TEXT,
-                    source_date_from TEXT,
-                    source_date_to_exclusive TEXT,
-                    cumulative_factor DOUBLE NOT NULL,
-                    PRIMARY KEY (code, basis_id, source_date_from),
-                    FOREIGN KEY (code, basis_id)
-                        REFERENCES stock_adjustment_bases (code, basis_id)
-                )
-                """
-            )
-            self._conn.execute(
-                """
                 CREATE TABLE IF NOT EXISTS statement_metrics_adjusted (
-                    code TEXT,
-                    disclosed_date TEXT,
-                    period_end TEXT,
-                    period_type TEXT,
-                    price_basis_date TEXT,
+                    code TEXT NOT NULL,
+                    statement_id TEXT NOT NULL,
+                    disclosed_date TEXT NOT NULL,
+                    disclosed_at TEXT NOT NULL,
+                    period_end TEXT NOT NULL,
+                    period_type TEXT NOT NULL,
+                    fundamentals_adjustment_basis_date TEXT NOT NULL,
                     raw_eps DOUBLE,
                     adjusted_eps DOUBLE,
+                    raw_diluted_eps DOUBLE,
+                    adjusted_diluted_eps DOUBLE,
                     raw_bps DOUBLE,
                     adjusted_bps DOUBLE,
                     raw_forecast_eps DOUBLE,
                     adjusted_forecast_eps DOUBLE,
                     raw_dividend_fy DOUBLE,
                     adjusted_dividend_fy DOUBLE,
+                    raw_forecast_dividend_fy DOUBLE,
+                    adjusted_forecast_dividend_fy DOUBLE,
                     raw_shares_outstanding DOUBLE,
                     adjusted_shares_outstanding DOUBLE,
                     raw_treasury_shares DOUBLE,
                     adjusted_treasury_shares DOUBLE,
-                    adjustment_factor_cumulative DOUBLE,
-                    basis_version TEXT,
+                    adjustment_factor_cumulative DOUBLE NOT NULL,
+                    source_fingerprint TEXT NOT NULL,
                     created_at TEXT,
-                    PRIMARY KEY (code, disclosed_date, period_end, period_type, basis_version),
-                    FOREIGN KEY (code, basis_version)
-                        REFERENCES stock_adjustment_bases (code, basis_id)
+                    PRIMARY KEY (code, statement_id)
                 )
                 """
             )
             self._conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS daily_valuation (
-                    code TEXT,
-                    date TEXT,
-                    price_basis_date TEXT,
+                    code TEXT NOT NULL,
+                    date TEXT NOT NULL,
+                    price_basis_date TEXT NOT NULL,
                     close DOUBLE,
                     eps DOUBLE,
                     bps DOUBLE,
@@ -525,11 +530,12 @@ class _DatasetDuckDbStore:
                     forward_eps_source TEXT,
                     forward_sales_disclosed_date TEXT,
                     forward_sales_source TEXT,
-                    basis_version TEXT,
+                    statement_id TEXT,
+                    statement_disclosed_at TEXT,
+                    fundamentals_adjustment_basis_date TEXT,
+                    source_fingerprint TEXT,
                     created_at TEXT,
-                    PRIMARY KEY (code, date, basis_version),
-                    FOREIGN KEY (code, basis_version)
-                        REFERENCES stock_adjustment_bases (code, basis_id)
+                    PRIMARY KEY (code, date)
                 )
                 """
             )
@@ -653,16 +659,19 @@ class _DatasetDuckDbStore:
         *,
         source_duckdb_path: str,
         normalized_codes: list[str],
+        date_from: str,
         date_to: str,
     ) -> StockDataCopyResult:
         if not normalized_codes:
             return StockDataCopyResult(inserted_rows=0, code_stats={})
 
-        cutoff = self._validated_snapshot_date(date_to, field="date_to")
-        if cutoff is None:
-            raise DatasetSnapshotError("date_to is required for stock data copy")
+        lower = self._validated_snapshot_date(date_from, field="date_from")
+        upper = self._validated_snapshot_date(date_to, field="date_to")
+        if lower is None or upper is None:
+            raise DatasetSnapshotError("provider coverage bounds are required")
+        if lower > upper:
+            raise DatasetSnapshotError("date_from must be on or before date_to")
         with self._lock:
-            self._require_matching_snapshot_cutoff_if_present(cutoff)
             source_alias = self._attach_source_database(source_duckdb_path)
             self._reset_temp_table(_TEMP_STOCK_CODE_TABLE, "code TEXT PRIMARY KEY")
             self._load_temp_codes(_TEMP_STOCK_CODE_TABLE, normalized_codes)
@@ -689,7 +698,8 @@ class _DatasetDuckDbStore:
                     WHERE {normalized_code_sql} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
                       AND date IS NOT NULL
                       AND date <> ''
-                      AND date <= '{cutoff}'
+                      AND date >= '{lower}'
+                      AND date <= '{upper}'
                 ),
                 merged_rows AS (
                     SELECT
@@ -820,17 +830,17 @@ class _DatasetDuckDbStore:
         return len(rows)
 
     def copy_topix_data_from_source(
-        self, *, source_duckdb_path: str, date_to: str
+        self, *, source_duckdb_path: str, date_from: str, date_to: str
     ) -> int:
-        cutoff = self._validated_snapshot_date(date_to, field="date_to")
-        if cutoff is None:
-            raise DatasetSnapshotError("date_to is required for TOPIX copy")
+        lower = self._validated_snapshot_date(date_from, field="date_from")
+        upper = self._validated_snapshot_date(date_to, field="date_to")
+        if lower is None or upper is None:
+            raise DatasetSnapshotError("provider coverage bounds are required")
         with self._lock:
-            self._require_matching_snapshot_cutoff(cutoff)
             source_alias = self._attach_source_database(source_duckdb_path)
             inserted_rows = self._query_scalar_int(
                 f"SELECT COUNT(*) FROM {source_alias}.topix_data "
-                f"WHERE date IS NOT NULL AND date <> '' AND date <= '{cutoff}'"
+                f"WHERE date BETWEEN '{lower}' AND '{upper}'"
             )
             self._conn.execute(
                 f"""
@@ -845,7 +855,7 @@ class _DatasetDuckDbStore:
                 FROM {source_alias}.topix_data
                 WHERE date IS NOT NULL
                   AND date <> ''
-                  AND date <= '{cutoff}'
+                  AND date BETWEEN '{lower}' AND '{upper}'
                 ON CONFLICT (date) DO UPDATE
                 SET open = excluded.open,
                     high = excluded.high,
@@ -898,16 +908,17 @@ class _DatasetDuckDbStore:
         *,
         source_duckdb_path: str,
         normalized_codes: list[str],
+        date_from: str,
         date_to: str,
     ) -> int:
         if not normalized_codes:
             return 0
 
-        cutoff = self._validated_snapshot_date(date_to, field="date_to")
-        if cutoff is None:
-            raise DatasetSnapshotError("date_to is required for indices copy")
+        lower = self._validated_snapshot_date(date_from, field="date_from")
+        upper = self._validated_snapshot_date(date_to, field="date_to")
+        if lower is None or upper is None:
+            raise DatasetSnapshotError("provider coverage bounds are required")
         with self._lock:
-            self._require_matching_snapshot_cutoff(cutoff)
             source_alias = self._attach_source_database(source_duckdb_path)
             self._reset_temp_table(_TEMP_INDEX_CODE_TABLE, "code TEXT PRIMARY KEY")
             self._load_temp_codes(_TEMP_INDEX_CODE_TABLE, normalized_codes)
@@ -920,7 +931,7 @@ class _DatasetDuckDbStore:
                 WHERE {normalized_code_sql} IN (SELECT code FROM {_TEMP_INDEX_CODE_TABLE})
                   AND date IS NOT NULL
                   AND date <> ''
-                  AND date <= '{cutoff}'
+                  AND date BETWEEN '{lower}' AND '{upper}'
                 """
             )
             self._conn.execute(
@@ -948,7 +959,7 @@ class _DatasetDuckDbStore:
                 WHERE {normalized_code_sql} IN (SELECT code FROM {_TEMP_INDEX_CODE_TABLE})
                   AND date IS NOT NULL
                   AND date <> ''
-                  AND date <= '{cutoff}'
+                  AND date BETWEEN '{lower}' AND '{upper}'
                 ON CONFLICT (code, date) DO UPDATE
                 SET open = excluded.open,
                     high = excluded.high,
@@ -993,16 +1004,17 @@ class _DatasetDuckDbStore:
         *,
         source_duckdb_path: str,
         normalized_codes: list[str],
+        date_from: str,
         date_to: str,
     ) -> int:
         if not normalized_codes:
             return 0
 
-        cutoff = self._validated_snapshot_date(date_to, field="date_to")
-        if cutoff is None:
-            raise DatasetSnapshotError("date_to is required for margin copy")
+        lower = self._validated_snapshot_date(date_from, field="date_from")
+        upper = self._validated_snapshot_date(date_to, field="date_to")
+        if lower is None or upper is None:
+            raise DatasetSnapshotError("provider coverage bounds are required")
         with self._lock:
-            self._require_matching_snapshot_cutoff(cutoff)
             source_alias = self._attach_source_database(source_duckdb_path)
             self._reset_temp_table(_TEMP_STOCK_CODE_TABLE, "code TEXT PRIMARY KEY")
             self._load_temp_codes(_TEMP_STOCK_CODE_TABLE, normalized_codes)
@@ -1024,7 +1036,7 @@ class _DatasetDuckDbStore:
                     WHERE {normalized_code_sql} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
                       AND date IS NOT NULL
                       AND date <> ''
-                      AND date <= '{cutoff}'
+                      AND date BETWEEN '{lower}' AND '{upper}'
                 )
                 SELECT
                     code,
@@ -1072,7 +1084,7 @@ class _DatasetDuckDbStore:
             "INSERT INTO statements "
             f"({', '.join(self._STATEMENT_COLUMNS)}) "
             f"VALUES ({placeholders}) "
-            "ON CONFLICT (code, disclosed_date) DO UPDATE "
+            "ON CONFLICT (code, statement_id) DO UPDATE "
             f"SET {update_columns}"
         )
         values = [tuple(row.get(column) for column in self._STATEMENT_COLUMNS) for row in rows]
@@ -1095,7 +1107,6 @@ class _DatasetDuckDbStore:
             raise DatasetSnapshotError("date_to is required for statement copy")
 
         with self._lock:
-            self._require_matching_snapshot_cutoff(cutoff)
             source_alias = self._attach_source_database(source_duckdb_path)
             self._reset_temp_table(_TEMP_STOCK_CODE_TABLE, "code TEXT PRIMARY KEY")
             self._load_temp_codes(_TEMP_STOCK_CODE_TABLE, normalized_codes)
@@ -1115,7 +1126,7 @@ class _DatasetDuckDbStore:
                 INSERT INTO statements ({", ".join(self._STATEMENT_COLUMNS)})
                 SELECT {", ".join(self._STATEMENT_COLUMNS)}
                 FROM {_TEMP_STATEMENTS_TABLE}
-                ON CONFLICT (code, disclosed_date) DO UPDATE
+                ON CONFLICT (code, statement_id) DO UPDATE
                 SET {update_columns}
                 """
             )
@@ -1156,21 +1167,23 @@ class _DatasetDuckDbStore:
             WITH source_rows AS (
                 SELECT
                     {normalized_code_sql} AS code,
-                    disclosed_date,
+                    statement_id,
                     {priority_sql} AS source_priority,
                     {", ".join(statement_select_columns)}
                 FROM {source_alias}.statements
                 WHERE {normalized_code_sql} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+                  AND statement_id IS NOT NULL
+                  AND statement_id <> ''
                   AND disclosed_date IS NOT NULL
                   AND disclosed_date <> ''
                   AND {upper_sql}
             )
             SELECT
                 code,
-                disclosed_date,
+                statement_id,
                 {", ".join(merged_columns)}
             FROM source_rows
-            GROUP BY code, disclosed_date
+            GROUP BY code, statement_id
             """
         )
 
@@ -1197,625 +1210,691 @@ class _DatasetDuckDbStore:
             raise DatasetSnapshotError(f"{field} must be an ISO YYYY-MM-DD date")
         return value
 
-    def copy_event_time_pit_from_source(
+    def copy_provider_snapshot_from_source(
         self,
         *,
         source_duckdb_path: str,
         normalized_codes: list[str],
-        date_from: str | None,
-        date_to: str | None,
-    ) -> EventTimePitCopyResult:
-        """Copy a complete Market v4 event-time basis graph atomically."""
+        date_from: str,
+        date_to: str,
+    ) -> ProviderSnapshotCopyResult:
+        """Copy one bounded Market v5 provider/current-basis snapshot atomically."""
         codes = self._normalize_requested_codes(normalized_codes)
         if not codes:
-            raise DatasetSnapshotError("event-time PIT copy requires at least one stock code")
+            raise DatasetSnapshotError("provider snapshot copy requires at least one stock code")
         lower = self._validated_snapshot_date(date_from, field="date_from")
         upper = self._validated_snapshot_date(date_to, field="date_to")
-        if lower is not None and upper is not None and lower > upper:
+        if lower is None or upper is None:
+            raise DatasetSnapshotError("provider coverage bounds are required")
+        if lower > upper:
             raise DatasetSnapshotError("date_from must be on or before date_to")
 
         with self._lock:
             source_alias = self._attach_source_database(source_duckdb_path)
-            self._preflight_event_time_source(source_alias)
+            self._preflight_provider_source(source_alias)
+            self._reset_temp_table(_TEMP_STOCK_CODE_TABLE, "code TEXT PRIMARY KEY")
+            self._load_temp_codes(_TEMP_STOCK_CODE_TABLE, codes)
+            vintage = self._load_provider_vintage(source_alias, codes)
+            if (
+                vintage[DATASET_PROVIDER_COVERAGE_START_INFO_KEY] != lower
+                or vintage[DATASET_PROVIDER_COVERAGE_END_INFO_KEY] != upper
+            ):
+                raise DatasetSnapshotError(
+                    "requested bounds differ from the pinned effective provider coverage"
+                )
             try:
-                self._reset_temp_table(_TEMP_STOCK_CODE_TABLE, "code TEXT PRIMARY KEY")
-                self._load_temp_codes(_TEMP_STOCK_CODE_TABLE, codes)
-                snapshot_date_to = upper
-                if snapshot_date_to is None:
-                    cutoff_row = self._conn.execute(
-                        f"SELECT max(date) FROM {source_alias}.topix_data"
-                    ).fetchone()
-                    snapshot_date_to = (
-                        str(cutoff_row[0])
-                        if cutoff_row is not None and cutoff_row[0] is not None
-                        else None
-                    )
-                snapshot_date_to = self._validated_snapshot_date(
-                    snapshot_date_to, field="event-time PIT snapshot cutoff"
-                )
-                if snapshot_date_to is None:
-                    raise DatasetSnapshotError(
-                        "event-time PIT snapshot cutoff is unavailable"
-                    )
-                self._stage_event_time_pit_copy(
+                self._stage_provider_snapshot_copy(
                     source_alias=source_alias,
-                    codes=codes,
                     date_from=lower,
-                    date_to=snapshot_date_to,
+                    date_to=upper,
                 )
-                self._validate_staged_event_time_pit(
+                self._validate_staged_provider_snapshot(
                     codes=codes,
-                    cutoff=snapshot_date_to,
+                    coverage_start=lower,
+                    coverage_end=upper,
+                    fundamentals_basis_date=vintage[
+                        DATASET_FUNDAMENTALS_BASIS_DATE_INFO_KEY
+                    ],
                 )
-            except (DatasetSnapshotError, DatasetPitLineageError) as exc:
-                if isinstance(exc, DatasetPitLineageError):
-                    raise DatasetSnapshotError(str(exc)) from exc
+            except DatasetSnapshotError:
                 raise
             except Exception as exc:
                 raise DatasetSnapshotError(
-                    "Market v4 event-time source failed PIT preflight"
+                    "Market v5 provider source failed Dataset v4 preflight"
                 ) from exc
-            counts = [self._copy_count(stage) for stage, _ in _PIT_STAGE_TABLES]
-            if self._destination_matches_staged_event_time_pit():
-                self._require_matching_snapshot_cutoff(snapshot_date_to)
-                return EventTimePitCopyResult(*counts)
+
+            counts = [
+                self._copy_count(stage) for stage, _target in _PROVIDER_STAGE_TABLES
+            ]
+            if self._destination_matches_staged_provider_snapshot():
+                self._require_matching_provider_vintage(vintage)
+                return ProviderSnapshotCopyResult(*counts)
+            if any(
+                self._copy_count(target) > 0
+                for _stage, target in _PROVIDER_STAGE_TABLES
+            ):
+                raise DatasetSnapshotError(
+                    "immutable Dataset provider snapshot differs from staged source"
+                )
 
             try:
                 self._conn.execute("BEGIN TRANSACTION")
-                for stage, target in _PIT_STAGE_TABLES:
-                    columns = tuple(
-                        str(row[1])
-                        for row in self._conn.execute(
-                            f"PRAGMA table_info('{target}')"
-                        ).fetchall()
-                    )
-                    key_columns = _PIT_PRIMARY_KEYS[target]
-                    update_sql = ", ".join(
-                        f"{column} = excluded.{column}"
-                        for column in columns
-                        if column not in key_columns
-                    )
-                    conflict_action = (
-                        "DO NOTHING"
-                        if target == "stock_adjustment_bases"
-                        else f"DO UPDATE SET {update_sql}"
-                    )
-                    self._conn.execute(
-                        f"INSERT INTO {target} SELECT * FROM {stage} "
-                        f"ON CONFLICT ({', '.join(key_columns)}) {conflict_action}"
-                    )
-                self._conn.execute(
+                for stage, target in _PROVIDER_STAGE_TABLES:
+                    self._conn.execute(f"INSERT INTO {target} SELECT * FROM {stage}")
+                now = datetime.now(UTC).isoformat()
+                self._conn.executemany(
                     """
                     INSERT INTO dataset_info (key, value, updated_at)
                     VALUES (?, ?, ?)
                     ON CONFLICT (key) DO UPDATE
-                    SET value = excluded.value,
-                        updated_at = excluded.updated_at
+                    SET value = excluded.value, updated_at = excluded.updated_at
                     """,
-                    [
-                        EVENT_TIME_PIT_DATE_TO_INFO_KEY,
-                        snapshot_date_to,
-                        datetime.now(UTC).isoformat(),
-                    ],
+                    [(key, value, now) for key, value in vintage.items()],
                 )
                 self._conn.execute("COMMIT")
             except Exception as exc:
                 self._conn.execute("ROLLBACK")
                 raise DatasetSnapshotError(
-                    "event-time PIT snapshot publish failed atomically"
+                    "provider snapshot publish failed atomically"
                 ) from exc
 
-            self._dirty_tables.update(target for _, target in _PIT_STAGE_TABLES)
-            return EventTimePitCopyResult(*counts)
+            self._dirty_tables.update(target for _stage, target in _PROVIDER_STAGE_TABLES)
+            return ProviderSnapshotCopyResult(*counts)
 
-    def _require_matching_snapshot_cutoff(self, expected: str) -> None:
-        row = self._conn.execute(
-            "SELECT value FROM dataset_info WHERE key = ?",
-            [EVENT_TIME_PIT_DATE_TO_INFO_KEY],
-        ).fetchone()
-        if row is None or str(row[0]) != expected:
-            raise DatasetSnapshotError(
-                "immutable Dataset PIT cutoff differs from staged source"
-            )
-
-    def _require_matching_snapshot_cutoff_if_present(self, expected: str) -> None:
-        row = self._conn.execute(
-            "SELECT value FROM dataset_info WHERE key = ?",
-            [EVENT_TIME_PIT_DATE_TO_INFO_KEY],
-        ).fetchone()
-        if row is not None and str(row[0]) != expected:
-            raise DatasetSnapshotError(
-                "immutable Dataset PIT cutoff differs from staged source"
-            )
-
-    def _preflight_event_time_source(self, source_alias: str) -> None:
+    def _preflight_provider_source(self, source_alias: str) -> None:
         missing = sorted(
             table
-            for table in MARKET_V4_EVENT_TIME_REQUIRED_TABLES
+            for table in MARKET_V5_PROVIDER_REQUIRED_TABLES
             if not self._source_table_exists(source_alias, table)
         )
         if missing:
             raise DatasetSnapshotError(
-                "Market v4 event-time source is missing required tables: "
+                "Market v5 provider source is missing required tables: "
                 + ", ".join(missing)
             )
         version = self._conn.execute(
             f"SELECT MAX(version) FROM {source_alias}.market_schema_version"
         ).fetchone()
-        if version is None or version[0] != 4:
-            raise DatasetSnapshotError("Dataset v3 snapshots require Market schema version 4")
+        if version is None or version[0] != 5:
+            raise DatasetSnapshotError("Dataset v4 snapshots require Market schema version 5")
         mode = self._conn.execute(
             f"SELECT value FROM {source_alias}.sync_metadata "
             "WHERE key = 'stock_price_adjustment_mode'"
         ).fetchone()
-        if mode is None or mode[0] != "local_projection_v2_event_time":
+        if mode is None or mode[0] != "provider_adjusted_v1":
             raise DatasetSnapshotError(
-                "Dataset v3 snapshots require local_projection_v2_event_time"
+                "Dataset v4 snapshots require provider_adjusted_v1"
+            )
+    def _load_provider_vintage(
+        self,
+        source_alias: str,
+        codes: list[str],
+    ) -> dict[str, str]:
+        normalized_window_code = self._normalize_stock_code_expr("provider_window.code")
+        normalized_state_code = self._normalize_stock_code_expr("basis_state.code")
+        rows = self._conn.execute(
+            f"""
+            SELECT {normalized_window_code} AS code,
+                   provider_window.coverage_start, provider_window.coverage_end,
+                   provider_window.provider_plan, provider_window.provider_as_of,
+                   provider_window.source_fingerprint,
+                   basis_state.fundamentals_adjustment_basis_date,
+                   basis_state.source_fingerprint, basis_state.statement_count
+            FROM {source_alias}.stock_provider_windows AS provider_window
+            LEFT JOIN {source_alias}.current_basis_fundamentals_state AS basis_state
+              ON {normalized_state_code} = {normalized_window_code}
+            WHERE {normalized_window_code}
+                  IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+            ORDER BY code
+            """
+        ).fetchall()
+        if len(rows) != len(codes) or {str(row[0]) for row in rows} != set(codes):
+            raise DatasetSnapshotError(
+                "selected stocks require exactly one provider window and current basis state"
+            )
+        if self._query_scalar_int(
+            f"""
+            SELECT COUNT(*) FROM {source_alias}.current_basis_recompute_pending
+            WHERE {self._normalize_stock_code_expr('code')}
+                  IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+            """
+        ):
+            raise DatasetSnapshotError(
+                "selected stocks have unresolved current-basis recomputation"
             )
 
-    def _stage_event_time_pit_copy(
+        starts: list[str] = []
+        ends: list[str] = []
+        provider_plan_values: set[str] = set()
+        provider_as_of_values: set[str] = set()
+        basis_dates: set[str] = set()
+        fingerprint_rows: list[dict[str, object]] = []
+        for row in rows:
+            code = str(row[0])
+            coverage_start = self._validated_snapshot_date(
+                str(row[1]), field=f"provider coverage start for {code}"
+            )
+            coverage_end = self._validated_snapshot_date(
+                str(row[2]), field=f"provider coverage end for {code}"
+            )
+            try:
+                provider_plan = validate_provider_plan(row[3])
+            except ValueError as exc:
+                raise DatasetSnapshotError(
+                    f"provider plan is invalid for {code}"
+                ) from exc
+            provider_as_of = self._validated_snapshot_date(
+                str(row[4]), field=f"provider as-of for {code}"
+            )
+            basis_date = self._validated_snapshot_date(
+                str(row[6]), field=f"fundamentals adjustment basis date for {code}"
+            )
+            window_fingerprint = str(row[5] or "").strip()
+            state_fingerprint = str(row[7] or "").strip()
+            statement_count = int(row[8]) if row[8] is not None else -1
+            if (
+                coverage_start is None
+                or coverage_end is None
+                or provider_as_of is None
+                or basis_date is None
+                or coverage_start > coverage_end
+                or coverage_end > provider_as_of
+            ):
+                raise DatasetSnapshotError(
+                    f"provider vintage dates are incoherent for {code}"
+                )
+            if (
+                basis_date > coverage_end
+                or not window_fingerprint
+                or not state_fingerprint
+                or statement_count < 0
+            ):
+                raise DatasetSnapshotError(
+                    f"current-basis provider state is incomplete for {code}"
+                )
+            raw_rows = self._conn.execute(
+                f"""
+                SELECT code, date, open, high, low, close, volume, turnover_value,
+                       adjustment_factor, adjusted_open, adjusted_high, adjusted_low,
+                       adjusted_close, adjusted_volume
+                FROM (
+                    SELECT {self._normalize_stock_code_expr('code')} AS code,
+                           date, open, high, low, close, volume, turnover_value,
+                           adjustment_factor, adjusted_open, adjusted_high,
+                           adjusted_low, adjusted_close, adjusted_volume,
+                           row_number() OVER (
+                               PARTITION BY {self._normalize_stock_code_expr('code')}, date
+                               ORDER BY {self._stock_code_priority_expr('code')}, code
+                           ) AS alias_rank
+                    FROM {source_alias}.stock_data_raw
+                    WHERE {self._normalize_stock_code_expr('code')} = ?
+                      AND date BETWEEN ? AND ?
+                ) ranked
+                WHERE alias_rank = 1
+                ORDER BY date
+                """,
+                (code, coverage_start, coverage_end),
+            ).fetchall()
+            raw_columns = (
+                "code", "date", "open", "high", "low", "close", "volume",
+                "turnover_value", "adjustment_factor", "adjusted_open",
+                "adjusted_high", "adjusted_low", "adjusted_close",
+                "adjusted_volume",
+            )
+            calculated_window_fingerprint = provider_stock_source_fingerprint(
+                [dict(zip(raw_columns, raw_row, strict=True)) for raw_row in raw_rows]
+            )
+            if calculated_window_fingerprint != window_fingerprint:
+                raise DatasetSnapshotError(
+                    f"provider source fingerprint is stale or malformed for {code}"
+                )
+            state_error = self._query_scalar_int(
+                f"""
+                SELECT COUNT(*) FROM (
+                    SELECT
+                        (SELECT COUNT(DISTINCT statement_id) FROM {source_alias}.statements
+                         WHERE {self._normalize_stock_code_expr('code')} = ?) AS raw_count,
+                        (SELECT COUNT(DISTINCT statement_id) FROM {source_alias}.statement_metrics_adjusted
+                         WHERE {self._normalize_stock_code_expr('code')} = ?) AS metric_count,
+                        (SELECT COUNT(*) FROM {source_alias}.statement_metrics_adjusted
+                         WHERE {self._normalize_stock_code_expr('code')} = ?
+                           AND (fundamentals_adjustment_basis_date <> ?
+                                OR source_fingerprint <> ?)) AS stale_count
+                ) state
+                WHERE raw_count <> ? OR metric_count <> ? OR stale_count <> 0
+                """,
+                (
+                    code,
+                    code,
+                    code,
+                    basis_date,
+                    state_fingerprint,
+                    statement_count,
+                    statement_count,
+                ),
+            )
+            if state_error:
+                raise DatasetSnapshotError(
+                    f"current-basis statement state is inconsistent for {code}"
+                )
+            starts.append(coverage_start)
+            ends.append(coverage_end)
+            provider_plan_values.add(provider_plan)
+            provider_as_of_values.add(provider_as_of)
+            basis_dates.add(basis_date)
+            fingerprint_rows.append(
+                {
+                    "code": code,
+                    "coverageStart": coverage_start,
+                    "coverageEnd": coverage_end,
+                    "providerPlan": provider_plan,
+                    "providerAsOf": provider_as_of,
+                    "providerFingerprint": window_fingerprint,
+                    "fundamentalsBasisDate": basis_date,
+                    "fundamentalsFingerprint": state_fingerprint,
+                    "statementCount": statement_count,
+                }
+            )
+
+        effective_start = max(starts)
+        effective_end = min(ends)
+        if effective_start > effective_end:
+            raise DatasetSnapshotError(
+                "selected provider windows have no common effective coverage"
+            )
+        if len(provider_as_of_values) != 1:
+            raise DatasetSnapshotError(
+                "selected stocks do not share one provider vintage"
+            )
+        if len(provider_plan_values) != 1:
+            raise DatasetSnapshotError(
+                "selected stocks do not share one provider plan"
+            )
+        plan = next(iter(provider_plan_values))
+        provider_as_of = next(iter(provider_as_of_values))
+        fundamentals_basis_date = max(basis_dates)
+        if fundamentals_basis_date > effective_end:
+            raise DatasetSnapshotError(
+                "fundamentals adjustment basis date exceeds effective coverage end"
+            )
+        normalized = json.dumps(
+            fingerprint_rows,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        return {
+            DATASET_PROVIDER_PLAN_INFO_KEY: plan,
+            DATASET_PROVIDER_AS_OF_INFO_KEY: provider_as_of,
+            DATASET_PROVIDER_COVERAGE_START_INFO_KEY: effective_start,
+            DATASET_PROVIDER_COVERAGE_END_INFO_KEY: effective_end,
+            DATASET_PROVIDER_SOURCE_FINGERPRINT_INFO_KEY: hashlib.sha256(
+                normalized.encode("utf-8")
+            ).hexdigest(),
+            DATASET_FUNDAMENTALS_BASIS_DATE_INFO_KEY: fundamentals_basis_date,
+        }
+
+    def _stage_provider_snapshot_copy(
         self,
         *,
         source_alias: str,
-        codes: list[str],
-        date_from: str | None,
+        date_from: str,
         date_to: str,
     ) -> None:
-        for stage, _ in _PIT_STAGE_TABLES:
-            self._conn.execute(f"DROP TABLE IF EXISTS {stage}")
-        self._conn.execute("DROP TABLE IF EXISTS _dataset_pit_provenance_errors")
-        self._conn.execute(
-            "DROP TABLE IF EXISTS _dataset_pit_expected_statement_metrics"
+        self._reject_conflicting_provider_aliases(
+            source_alias=source_alias,
+            date_from=date_from,
+            date_to=date_to,
         )
-
+        for stage, _target in _PROVIDER_STAGE_TABLES:
+            self._conn.execute(f"DROP TABLE IF EXISTS {stage}")
+        self._conn.execute("DROP TABLE IF EXISTS _dataset_provider_expected_sessions")
         normalized = self._normalize_stock_code_expr("code")
-        lower_raw = "TRUE" if date_from is None else f"date >= '{date_from}'"
-        upper_raw = "TRUE" if date_to is None else f"date <= '{date_to}'"
-        statement_upper = "TRUE" if date_to is None else f"disclosed_date <= '{date_to}'"
-        valuation_lower = "TRUE" if date_from is None else f"valuation.date >= '{date_from}'"
-        valuation_upper = "TRUE" if date_to is None else f"valuation.date <= '{date_to}'"
+        priority = self._stock_code_priority_expr("code")
 
         self._conn.execute(
             f"""
-            CREATE TEMP TABLE _dataset_pit_stock_data_raw AS
-            SELECT code, date, open, high, low, close, volume,
-                   adjustment_factor, created_at
+            CREATE TEMP TABLE _dataset_provider_expected_sessions AS
+            SELECT DISTINCT date FROM {source_alias}.topix_data
+            WHERE date BETWEEN '{date_from}' AND '{date_to}'
+            """
+        )
+
+        self._conn.execute(
+            f"""
+            CREATE TEMP TABLE _dataset_provider_stock_data_raw AS
+            SELECT code, date, open, high, low, close, volume, turnover_value,
+                   adjustment_factor, adjusted_open, adjusted_high, adjusted_low,
+                   adjusted_close, adjusted_volume, created_at
             FROM (
                 SELECT {normalized} AS code, date, open, high, low, close, volume,
-                       adjustment_factor, created_at,
+                       turnover_value, adjustment_factor, adjusted_open,
+                       adjusted_high, adjusted_low, adjusted_close, adjusted_volume,
+                       created_at,
                        row_number() OVER (
                            PARTITION BY {normalized}, date
-                           ORDER BY CASE
-                               WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
-                               THEN 1 ELSE 0 END
-                       ) AS alias_priority
+                           ORDER BY {priority}, code
+                       ) AS alias_rank
                 FROM {source_alias}.stock_data_raw
                 WHERE {normalized} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
-                  AND {lower_raw} AND {upper_raw}
-                  AND open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL
-                  AND close IS NOT NULL AND volume IS NOT NULL
-            ) ranked
-            WHERE alias_priority = 1
+                  AND date BETWEEN '{date_from}' AND '{date_to}'
+            ) ranked WHERE alias_rank = 1
             """
         )
         self._conn.execute(
             f"""
-            CREATE TEMP TABLE _dataset_pit_stock_master_daily AS
-            SELECT date, code, company_name, company_name_english,
-                   market_code, market_name, sector_17_code, sector_17_name,
-                   sector_33_code, sector_33_name, scale_category, listed_date,
-                   created_at
+            CREATE TEMP TABLE _dataset_provider_stock_master_daily AS
+            SELECT date, code, company_name, company_name_english, market_code,
+                   market_name, sector_17_code, sector_17_name, sector_33_code,
+                   sector_33_name, scale_category, listed_date, created_at
             FROM (
                 SELECT date, {normalized} AS code,
                        coalesce(company_name, '') AS company_name,
-                       company_name_english,
-                       coalesce(market_code, '') AS market_code,
+                       company_name_english, coalesce(market_code, '') AS market_code,
                        coalesce(market_name, '') AS market_name,
                        coalesce(sector_17_code, '') AS sector_17_code,
                        coalesce(sector_17_name, '') AS sector_17_name,
                        coalesce(sector_33_code, '') AS sector_33_code,
                        coalesce(sector_33_name, '') AS sector_33_name,
-                       scale_category,
-                       coalesce(listed_date, '') AS listed_date,
+                       scale_category, coalesce(listed_date, '') AS listed_date,
                        created_at,
                        row_number() OVER (
                            PARTITION BY date, {normalized}
-                           ORDER BY CASE
-                               WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
-                               THEN 1 ELSE 0 END, code
-                       ) AS alias_priority
+                           ORDER BY {priority}, code
+                       ) AS alias_rank
                 FROM {source_alias}.stock_master_daily
                 WHERE {normalized} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
-                  AND {lower_raw} AND {upper_raw}
-            ) ranked
-            WHERE alias_priority = 1
-            """
-        )
-        stage_cutoff_lineage(
-            self._conn,
-            source_alias=source_alias,
-            target_code_table=_TEMP_STOCK_CODE_TABLE,
-            cutoff=date_to,
-        )
-        self._conn.execute(
-            f"""
-            CREATE TEMP TABLE _dataset_pit_provenance_errors AS
-            SELECT 'statement_metrics_adjusted' AS source_table
-            FROM {source_alias}.statement_metrics_adjusted AS metric
-            LEFT JOIN _dataset_pit_bases AS basis
-              ON {self._normalize_stock_code_expr('metric.code')} = basis.code
-             AND metric.basis_version = basis.basis_id
-            LEFT JOIN {source_alias}.stock_adjustment_bases AS catalog
-              ON {self._normalize_stock_code_expr('metric.code')} =
-                 {self._normalize_stock_code_expr('catalog.code')}
-             AND metric.basis_version = catalog.basis_id
-            WHERE {self._normalize_stock_code_expr('metric.code')}
-                  IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
-              AND {statement_upper}
-              AND (
-                  catalog.basis_id IS NULL
-                  OR (
-                      basis.basis_id IS NOT NULL
-                      AND metric.price_basis_date IS DISTINCT FROM basis.adjustment_through_date
-                  )
-              )
-            UNION ALL
-            SELECT 'daily_valuation' AS source_table
-            FROM {source_alias}.daily_valuation AS valuation
-            LEFT JOIN _dataset_pit_bases AS basis
-              ON {self._normalize_stock_code_expr('valuation.code')} = basis.code
-             AND valuation.basis_version = basis.basis_id
-            WHERE {self._normalize_stock_code_expr('valuation.code')}
-                  IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
-              AND {valuation_lower} AND {valuation_upper}
-              AND (
-                  basis.basis_id IS NULL
-                  OR valuation.price_basis_date IS DISTINCT FROM basis.adjustment_through_date
-              )
-            UNION ALL
-            SELECT 'stock_adjustment_basis_segments' AS source_table
-            FROM {source_alias}.stock_adjustment_basis_segments AS segment
-            LEFT JOIN _dataset_pit_bases AS basis
-              ON {self._normalize_stock_code_expr('segment.code')} = basis.code
-             AND segment.basis_id = basis.basis_id
-            LEFT JOIN {source_alias}.stock_adjustment_bases AS catalog
-              ON {self._normalize_stock_code_expr('segment.code')} =
-                 {self._normalize_stock_code_expr('catalog.code')}
-             AND segment.basis_id = catalog.basis_id
-            WHERE {self._normalize_stock_code_expr('segment.code')}
-                  IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
-              AND (
-                  catalog.basis_id IS NULL
-                  OR (
-                      basis.basis_id IS NOT NULL
-                      AND (
-                          NOT isfinite(segment.cumulative_factor)
-                          OR segment.cumulative_factor <= 0
-                          OR (
-                              segment.source_date_to_exclusive IS NOT NULL
-                              AND segment.source_date_from >=
-                                  segment.source_date_to_exclusive
-                          )
-                      )
-                  )
-              )
+                  AND date BETWEEN '{date_from}' AND '{date_to}'
+            ) ranked WHERE alias_rank = 1
             """
         )
         self._conn.execute(
             f"""
-            CREATE TEMP TABLE _dataset_pit_statement_metrics AS
-            SELECT {self._normalize_stock_code_expr('metric.code')} AS code,
-                   {", ".join(f'metric.{column}' for column in self._ADJUSTED_STATEMENT_COLUMNS[1:])}
-            FROM {source_alias}.statement_metrics_adjusted AS metric
-            JOIN _dataset_pit_bases AS basis
-              ON {self._normalize_stock_code_expr('metric.code')} = basis.code
-             AND metric.basis_version = basis.basis_id
-            WHERE {self._normalize_stock_code_expr('metric.code')}
-                  IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
-              AND {statement_upper}
+            CREATE TEMP TABLE _dataset_provider_statement_metrics AS
+            SELECT {", ".join(self._ADJUSTED_STATEMENT_COLUMNS)}
+            FROM (
+                SELECT {normalized} AS code,
+                       {", ".join(self._ADJUSTED_STATEMENT_COLUMNS[1:])},
+                       row_number() OVER (
+                           PARTITION BY {normalized}, statement_id
+                           ORDER BY {priority}, code
+                       ) AS alias_rank
+                FROM {source_alias}.statement_metrics_adjusted
+                WHERE {normalized} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+                  AND disclosed_date <= '{date_to}'
+            ) ranked WHERE alias_rank = 1
+            """
+        )
+        self._conn.execute(
+            f"""
+            CREATE TEMP TABLE _dataset_provider_daily_valuation AS
+            SELECT {", ".join(self._DAILY_VALUATION_COLUMNS)}
+            FROM (
+                SELECT {normalized} AS code,
+                       {", ".join(self._DAILY_VALUATION_COLUMNS[1:])},
+                       row_number() OVER (
+                           PARTITION BY {normalized}, date
+                           ORDER BY {priority}, code
+                       ) AS alias_rank
+                FROM {source_alias}.daily_valuation
+                WHERE {normalized} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+                  AND date BETWEEN '{date_from}' AND '{date_to}'
+            ) ranked WHERE alias_rank = 1
             """
         )
         self._stage_normalized_statements(
             source_alias=source_alias,
-            target_table="_dataset_pit_normalized_statements",
+            target_table="_dataset_provider_statements",
             disclosed_date_to=date_to,
         )
-        self._conn.execute(
-            """
-            CREATE TEMP TABLE _dataset_pit_expected_statement_metrics AS
-            SELECT basis.code, basis.basis_id, source.disclosed_date,
-                   source.disclosed_date AS period_end,
-                   coalesce(source.type_of_current_period, '') AS period_type
-            FROM _dataset_pit_normalized_statements AS source
-            JOIN _dataset_pit_bases AS basis
-              ON source.code = basis.code
-             AND (basis.valid_to_exclusive IS NULL
-                  OR source.disclosed_date < basis.valid_to_exclusive)
-            """
-        )
-        self._conn.execute(
-            f"""
-            CREATE TEMP TABLE _dataset_pit_daily_valuation AS
-            SELECT {self._normalize_stock_code_expr('valuation.code')} AS code,
-                   {", ".join(f'valuation.{column}' for column in self._DAILY_VALUATION_COLUMNS[1:])}
-            FROM {source_alias}.daily_valuation AS valuation
-            JOIN _dataset_pit_bases AS basis
-              ON {self._normalize_stock_code_expr('valuation.code')} = basis.code
-             AND valuation.basis_version = basis.basis_id
-            WHERE {self._normalize_stock_code_expr('valuation.code')}
-                  IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
-              AND {valuation_lower} AND {valuation_upper}
-            """
-        )
 
-    def _validate_staged_event_time_pit(
-        self, *, codes: list[str], cutoff: str
+    def _reject_conflicting_provider_aliases(
+        self, *, source_alias: str, date_from: str, date_to: str
     ) -> None:
-        audit_error = find_dataset_pit_audit_error(
+        normalized = self._normalize_stock_code_expr("code")
+        statement_payload = ", ".join(
+            sorted(
+                self._get_source_table_columns(source_alias, "statements")
+                - {"code", "statement_id"}
+            )
+        )
+        checks = (
+            (
+                "statements",
+                "statement_id",
+                statement_payload,
+                f"disclosed_date <= '{date_to}'",
+            ),
+            (
+                "stock_data_raw",
+                "date",
+                "open, high, low, close, volume, turnover_value, adjustment_factor, "
+                "adjusted_open, adjusted_high, adjusted_low, adjusted_close, adjusted_volume",
+                f"date BETWEEN '{date_from}' AND '{date_to}'",
+            ),
+            (
+                "stock_master_daily",
+                "date",
+                "company_name, company_name_english, market_code, market_name, "
+                "sector_17_code, sector_17_name, sector_33_code, sector_33_name, "
+                "scale_category, listed_date",
+                f"date BETWEEN '{date_from}' AND '{date_to}'",
+            ),
+            (
+                "statement_metrics_adjusted",
+                "statement_id",
+                ", ".join(self._ADJUSTED_STATEMENT_COLUMNS[2:-1]),
+                f"disclosed_date <= '{date_to}'",
+            ),
+            (
+                "daily_valuation",
+                "date",
+                ", ".join(self._DAILY_VALUATION_COLUMNS[2:-1]),
+                f"date BETWEEN '{date_from}' AND '{date_to}'",
+            ),
+        )
+        for table, identity, payload, bounds in checks:
+            conflicts = self._query_scalar_int(
+                f"""
+                SELECT COUNT(*) FROM (
+                    SELECT {normalized} AS normalized_code, {identity}
+                    FROM {source_alias}.{table}
+                    WHERE {normalized} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+                      AND {bounds}
+                    GROUP BY normalized_code, {identity}
+                    HAVING COUNT(DISTINCT code) > 1
+                       AND COUNT(DISTINCT hash({payload})) > 1
+                ) conflicts
+                """
+            )
+            if conflicts:
+                raise DatasetSnapshotError(
+                    f"conflicting normalized stock-code aliases in {table}"
+                )
+
+    def _validate_staged_provider_snapshot(
+        self,
+        *,
+        codes: list[str],
+        coverage_start: str,
+        coverage_end: str,
+        fundamentals_basis_date: str,
+    ) -> None:
+        expected_session_count = self._copy_count(
+            "_dataset_provider_expected_sessions"
+        )
+        expected_bounds = self._conn.execute(
+            "SELECT min(date), max(date) FROM _dataset_provider_expected_sessions"
+        ).fetchone()
+        if (
+            expected_session_count == 0
+            or expected_bounds is None
+            or expected_bounds[0] != coverage_start
+            or expected_bounds[1] != coverage_end
+        ):
+            raise DatasetSnapshotError(
+                "provider coverage lacks exact market sessions at both bounds"
+            )
+        expected_pairs_sql = (
+            "SELECT codes.code, sessions.date "
+            "FROM _dataset_copy_target_stock_codes AS codes "
+            "CROSS JOIN _dataset_provider_expected_sessions AS sessions"
+        )
+        master_table = "_dataset_provider_stock_master_daily"
+        if self._query_scalar_int(
+            f"""
+            SELECT COUNT(*) FROM (
+                ({expected_pairs_sql} EXCEPT ALL SELECT code, date FROM {master_table})
+                UNION ALL
+                (SELECT code, date FROM {master_table}
+                 WHERE code IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+                 EXCEPT ALL {expected_pairs_sql})
+            ) differences
+            """
+        ):
+            raise DatasetSnapshotError(
+                "provider snapshot has an empty, gap, or bound mismatch: "
+                f"{master_table}"
+            )
+        raw_table = "_dataset_provider_stock_data_raw"
+        if self._query_scalar_int(
+            f"""
+            SELECT COUNT(*) FROM (
+                SELECT code FROM {_TEMP_STOCK_CODE_TABLE}
+                EXCEPT ALL SELECT DISTINCT code FROM {raw_table}
+            ) empty_codes
+            """
+        ):
+            raise DatasetSnapshotError(
+                "provider snapshot has an empty, gap, or bound mismatch: "
+                f"{raw_table}"
+            )
+        for table in (raw_table, "stock_data", "_dataset_provider_daily_valuation"):
+            if self._query_scalar_int(
+                f"""
+                SELECT COUNT(*) FROM (
+                    (SELECT code, date FROM {table}
+                     WHERE code IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+                     EXCEPT ALL {expected_pairs_sql})
+                    UNION ALL
+                    (SELECT code, date FROM {raw_table}
+                     EXCEPT ALL SELECT code, date FROM {table}
+                     WHERE code IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE}))
+                    UNION ALL
+                    (SELECT code, date FROM {table}
+                     WHERE code IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+                     EXCEPT ALL SELECT code, date FROM {raw_table})
+                ) differences
+                """
+            ):
+                raise DatasetSnapshotError(
+                    "provider snapshot has an empty, gap, or bound mismatch: "
+                    f"{table}"
+                )
+        audit_error = find_dataset_snapshot_audit_error(
             self._conn,
-            cutoff=cutoff,
+            coverage_start=coverage_start,
+            coverage_end=coverage_end,
+            fundamentals_basis_date=fundamentals_basis_date,
             tables={
-                "stock_data_raw": "_dataset_pit_stock_data_raw",
-                "stock_master_daily": "_dataset_pit_stock_master_daily",
-                "stock_adjustment_bases": "_dataset_pit_bases",
-                "stock_adjustment_basis_segments": "_dataset_pit_segments",
-                "statements": "_dataset_pit_normalized_statements",
-                "statement_metrics_adjusted": "_dataset_pit_statement_metrics",
-                "daily_valuation": "_dataset_pit_daily_valuation",
+                "stocks": "stocks",
+                "stock_data": "stock_data",
+                "stock_data_raw": "_dataset_provider_stock_data_raw",
+                "stock_master_daily": "_dataset_provider_stock_master_daily",
+                "statements": "_dataset_provider_statements",
+                "statement_metrics_adjusted": "_dataset_provider_statement_metrics",
+                "daily_valuation": "_dataset_provider_daily_valuation",
             },
         )
         if audit_error is not None:
             raise DatasetSnapshotError(audit_error)
+        if self._query_distinct_values(
+            "SELECT code FROM _dataset_provider_stock_data_raw"
+        ) != set(codes):
+            raise DatasetSnapshotError(
+                "provider-adjusted price coverage is missing for requested codes"
+            )
         if self._query_scalar_int(
             """
             SELECT COUNT(*) FROM (
-                (
-                    SELECT code, company_name, company_name_english,
-                           market_code, market_name, sector_17_code,
-                           sector_17_name, sector_33_code, sector_33_name,
-                           scale_category, listed_date
-                    FROM stocks
-                    EXCEPT ALL
-                    SELECT code, company_name, company_name_english,
-                           market_code, market_name, sector_17_code,
-                           sector_17_name, sector_33_code, sector_33_name,
-                           scale_category, listed_date
-                    FROM _dataset_pit_stock_master_daily
-                    WHERE date = ?
-                )
+                (SELECT code, company_name, company_name_english, market_code,
+                        market_name, sector_17_code, sector_17_name,
+                        sector_33_code, sector_33_name, scale_category, listed_date
+                 FROM stocks
+                 EXCEPT ALL
+                 SELECT code, company_name, company_name_english, market_code,
+                        market_name, sector_17_code, sector_17_name,
+                        sector_33_code, sector_33_name, scale_category, listed_date
+                 FROM _dataset_provider_stock_master_daily WHERE date = ?)
                 UNION ALL
-                (
-                    SELECT code, company_name, company_name_english,
-                           market_code, market_name, sector_17_code,
-                           sector_17_name, sector_33_code, sector_33_name,
-                           scale_category, listed_date
-                    FROM _dataset_pit_stock_master_daily
-                    WHERE date = ?
-                    EXCEPT ALL
-                    SELECT code, company_name, company_name_english,
-                           market_code, market_name, sector_17_code,
-                           sector_17_name, sector_33_code, sector_33_name,
-                           scale_category, listed_date
-                    FROM stocks
-                )
-            ) AS cutoff_master_difference
+                (SELECT code, company_name, company_name_english, market_code,
+                        market_name, sector_17_code, sector_17_name,
+                        sector_33_code, sector_33_name, scale_category, listed_date
+                 FROM _dataset_provider_stock_master_daily WHERE date = ?
+                 EXCEPT ALL
+                 SELECT code, company_name, company_name_english, market_code,
+                        market_name, sector_17_code, sector_17_name,
+                        sector_33_code, sector_33_name, scale_category, listed_date
+                 FROM stocks)
+            ) differences
             """,
-            (cutoff, cutoff),
+            (coverage_end, coverage_end),
         ):
             raise DatasetSnapshotError(
-                "Dataset stocks must exactly match cutoff-day stock master rows"
+                "Dataset stocks must exactly match coverage-end stock master rows"
             )
-        staged_codes = self._query_distinct_values(
-            "SELECT DISTINCT code FROM _dataset_pit_stock_data_raw"
-        )
-        if staged_codes != set(codes):
-            raise DatasetSnapshotError("ready event-time price coverage is missing for requested codes")
-        if self._query_scalar_int(
-            "SELECT COUNT(*) FROM _dataset_pit_bases WHERE status <> 'ready'"
-        ):
-            raise DatasetSnapshotError("intersecting event-time basis is not ready")
-        if self._query_distinct_values(
-            "SELECT DISTINCT code FROM _dataset_pit_bases"
-        ) != set(codes):
-            raise DatasetSnapshotError("ready intersecting basis is missing for requested codes")
         if self._query_scalar_int(
             """
             SELECT COUNT(*) FROM (
-                SELECT code, valid_from, valid_to_exclusive,
-                       lead(valid_from) OVER (PARTITION BY code ORDER BY valid_from) AS next_from
-                FROM _dataset_pit_bases
-            ) AS ordered
-            WHERE valid_to_exclusive IS NOT NULL
-              AND (valid_from >= valid_to_exclusive
-                   OR (next_from IS NOT NULL AND valid_to_exclusive <> next_from))
-            """
-        ):
-            raise DatasetSnapshotError("event-time basis intervals are incomplete or overlapping")
-        if self._query_scalar_int(
-            """
-            SELECT COUNT(*)
-            FROM _dataset_pit_stock_data_raw AS raw
-            LEFT JOIN _dataset_pit_bases AS basis
-              ON raw.code = basis.code
-             AND raw.date >= basis.valid_from
-             AND (basis.valid_to_exclusive IS NULL OR raw.date < basis.valid_to_exclusive)
-            GROUP BY raw.code, raw.date
-            HAVING COUNT(basis.basis_id) <> 1
-            """
-        ):
-            raise DatasetSnapshotError("raw price dates are not covered by exactly one ready basis")
-        if self._query_scalar_int(
-            """
-            SELECT COUNT(*) FROM (
-                SELECT code, date FROM _dataset_pit_stock_data_raw
-                WHERE open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL
-                  AND close IS NOT NULL AND volume IS NOT NULL
+                SELECT code, date FROM _dataset_provider_stock_data_raw
                 EXCEPT ALL
-                SELECT code, date FROM _dataset_pit_stock_master_daily
-            ) AS raw_without_daily_master
+                SELECT code, date FROM _dataset_provider_stock_master_daily
+            ) missing_master
             """
         ):
-            raise DatasetSnapshotError("raw price coverage is missing exact daily master rows")
-        if self._query_scalar_int(
-            """
-            SELECT COUNT(*)
-            FROM _dataset_pit_bases AS basis
-            LEFT JOIN _dataset_pit_segments AS segment
-              ON basis.code = segment.code AND basis.basis_id = segment.basis_id
-            GROUP BY basis.code, basis.basis_id
-            HAVING COUNT(segment.source_date_from) = 0
-            """
-        ):
-            raise DatasetSnapshotError("event-time basis segments are missing")
+            raise DatasetSnapshotError(
+                "provider raw price coverage is missing exact daily master rows"
+            )
         if self._query_scalar_int(
             """
             SELECT COUNT(*) FROM (
-                SELECT code, basis_id, source_date_from, source_date_to_exclusive,
-                       lead(source_date_from) OVER (
-                           PARTITION BY code, basis_id ORDER BY source_date_from
-                       ) AS next_from,
-                       cumulative_factor
-                FROM _dataset_pit_segments
-            ) AS ordered
-            WHERE NOT isfinite(cumulative_factor) OR cumulative_factor <= 0
-               OR (source_date_to_exclusive IS NOT NULL
-                   AND (source_date_from >= source_date_to_exclusive
-                        OR (next_from IS NOT NULL AND source_date_to_exclusive <> next_from)))
-            """
-        ):
-            raise DatasetSnapshotError("event-time basis segment integrity failed")
-        if self._query_scalar_int(
-            """
-            SELECT COUNT(*) FROM (
-                SELECT basis.code, basis.basis_id, raw.date
-                FROM _dataset_pit_bases AS basis
-                JOIN _dataset_pit_stock_data_raw AS raw
-                  ON basis.code = raw.code
-                 AND raw.date <= basis.materialized_through_date
-                LEFT JOIN _dataset_pit_segments AS segment
-                  ON basis.code = segment.code
-                 AND basis.basis_id = segment.basis_id
-                 AND raw.date >= segment.source_date_from
-                 AND (segment.source_date_to_exclusive IS NULL
-                      OR raw.date < segment.source_date_to_exclusive)
-                GROUP BY basis.code, basis.basis_id, raw.date
-                HAVING COUNT(segment.source_date_from) <> 1
-            ) AS invalid_segment_coverage
-            """
-        ):
-            raise DatasetSnapshotError("event-time segment physical coverage is incomplete")
-        if self._query_scalar_int(
-            """
-            SELECT COUNT(*) FROM (
-                SELECT basis.code, basis.basis_id, basis.materialized_through_date,
-                       max(raw.date) AS required_through
-                FROM _dataset_pit_bases AS basis
-                JOIN _dataset_pit_stock_data_raw AS raw
-                  ON basis.code = raw.code
-                 AND raw.date >= basis.valid_from
-                 AND (basis.valid_to_exclusive IS NULL OR raw.date < basis.valid_to_exclusive)
-                GROUP BY basis.code, basis.basis_id, basis.materialized_through_date
-            ) AS coverage
-            WHERE materialized_through_date < required_through
-            """
-        ):
-            raise DatasetSnapshotError("event-time basis materialized coverage is incomplete")
-        if self._query_scalar_int(
-            "SELECT COUNT(*) FROM _dataset_pit_provenance_errors "
-            "WHERE source_table = 'stock_adjustment_basis_segments'"
-        ):
-            raise DatasetSnapshotError("event-time segment provenance is inconsistent")
-        if self._query_scalar_int(
-            "SELECT COUNT(*) FROM _dataset_pit_provenance_errors"
-        ):
-            raise DatasetSnapshotError("event-time basis provenance is inconsistent")
-        if self._query_scalar_int(
-            """
-            SELECT COUNT(*) FROM _dataset_pit_daily_valuation
-            WHERE (statement_disclosed_date IS NOT NULL AND statement_disclosed_date > date)
-               OR (forward_eps_disclosed_date IS NOT NULL AND forward_eps_disclosed_date > date)
-               OR (forward_sales_disclosed_date IS NOT NULL AND forward_sales_disclosed_date > date)
-            """
-        ):
-            raise DatasetSnapshotError("daily valuation provenance is inconsistent")
-        if self._query_scalar_int(
-            """
-            SELECT COUNT(*) FROM (
-                (
-                    SELECT basis.code, basis.basis_id, raw.date
-                    FROM _dataset_pit_bases AS basis
-                    JOIN _dataset_pit_stock_data_raw AS raw
-                      ON basis.code = raw.code
-                     AND raw.date <= basis.materialized_through_date
-                     AND raw.open IS NOT NULL AND raw.high IS NOT NULL
-                     AND raw.low IS NOT NULL AND raw.close IS NOT NULL
-                     AND raw.volume IS NOT NULL
-                    EXCEPT ALL
-                    SELECT code, basis_version, date
-                    FROM _dataset_pit_daily_valuation
-                )
+                (SELECT code, date FROM stock_data
+                 WHERE code IN (SELECT code FROM _dataset_copy_target_stock_codes)
+                 EXCEPT ALL
+                 SELECT code, date FROM _dataset_provider_daily_valuation)
                 UNION ALL
-                (
-                    SELECT code, basis_version, date
-                    FROM _dataset_pit_daily_valuation
-                    EXCEPT ALL
-                    SELECT basis.code, basis.basis_id, raw.date
-                    FROM _dataset_pit_bases AS basis
-                    JOIN _dataset_pit_stock_data_raw AS raw
-                      ON basis.code = raw.code
-                     AND raw.date <= basis.materialized_through_date
-                     AND raw.open IS NOT NULL AND raw.high IS NOT NULL
-                     AND raw.low IS NOT NULL AND raw.close IS NOT NULL
-                     AND raw.volume IS NOT NULL
-                )
-            ) AS valuation_difference
+                (SELECT code, date FROM _dataset_provider_daily_valuation
+                 EXCEPT ALL
+                 SELECT code, date FROM stock_data
+                 WHERE code IN (SELECT code FROM _dataset_copy_target_stock_codes))
+            ) differences
             """
         ):
-            raise DatasetSnapshotError("daily valuation coverage is incomplete or gapped")
+            raise DatasetSnapshotError(
+                "daily valuation coverage differs from provider-adjusted prices"
+            )
         if self._query_scalar_int(
             """
-            SELECT COUNT(*) FROM (
-                SELECT code, basis_id, disclosed_date, period_end, period_type
-                FROM _dataset_pit_expected_statement_metrics
-                EXCEPT ALL
-                SELECT code, basis_version, disclosed_date, period_end, period_type
-                FROM _dataset_pit_statement_metrics
-            ) AS missing_expected_metric
+            SELECT COUNT(*) FROM _dataset_provider_daily_valuation valuation
+            JOIN stock_data price USING (code, date)
+            WHERE valuation.close IS DISTINCT FROM price.close
             """
         ):
-            raise DatasetSnapshotError("adjusted metric coverage is incomplete or gapped")
-        if self._query_scalar_int(
-            """
-            SELECT COUNT(*) FROM (
-                SELECT basis.code, basis.basis_id, identity.disclosed_date,
-                       identity.period_end, identity.period_type
-                FROM _dataset_pit_bases AS basis
-                JOIN (
-                    SELECT DISTINCT code, disclosed_date, period_end, period_type
-                    FROM _dataset_pit_statement_metrics
-                ) AS identity
-                  ON basis.code = identity.code
-                 AND (basis.valid_to_exclusive IS NULL
-                      OR identity.disclosed_date < basis.valid_to_exclusive)
-                EXCEPT ALL
-                SELECT code, basis_version, disclosed_date, period_end, period_type
-                FROM _dataset_pit_statement_metrics
-            ) AS missing_metric_basis
-            """
-        ):
-            raise DatasetSnapshotError("adjusted metric coverage is incomplete or gapped")
+            raise DatasetSnapshotError(
+                "daily valuation close differs from provider-adjusted price"
+            )
 
-    def _destination_matches_staged_event_time_pit(self) -> bool:
+    def _destination_matches_staged_provider_snapshot(self) -> bool:
         existing_rows = sum(
             self._query_scalar_int(
                 f"SELECT COUNT(*) FROM {target} "
                 f"WHERE code IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})"
             )
-            for _, target in _PIT_STAGE_TABLES
+            for _stage, target in _PROVIDER_STAGE_TABLES
         )
         if existing_rows == 0:
             return False
-        for stage, target in _PIT_STAGE_TABLES:
+        for stage, target in _PROVIDER_STAGE_TABLES:
             difference = self._query_scalar_int(
                 f"""
                 SELECT COUNT(*) FROM (
@@ -1826,14 +1905,28 @@ class _DatasetDuckDbStore:
                     (SELECT * FROM {stage} EXCEPT ALL
                      SELECT * FROM {target}
                      WHERE code IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE}))
-                ) AS graph_difference
+                ) differences
                 """
             )
             if difference:
                 raise DatasetSnapshotError(
-                    "immutable Dataset PIT graph differs from staged source"
+                    "immutable Dataset provider snapshot differs from staged source"
                 )
         return True
+
+    def _require_matching_provider_vintage(self, expected: dict[str, str]) -> None:
+        actual = dict(
+            self._conn.execute(
+                "SELECT key, value FROM dataset_info WHERE key IN ("
+                + ", ".join("?" for _key in expected)
+                + ")",
+                list(expected),
+            ).fetchall()
+        )
+        if actual != expected:
+            raise DatasetSnapshotError(
+                "immutable Dataset provider vintage differs from staged source"
+            )
 
     def _source_table_exists(self, source_alias: str, table_name: str) -> bool:
         try:
@@ -1887,7 +1980,7 @@ class _DatasetDuckDbStore:
         with self._lock:
             if self._closed:
                 return
-            for table_name, parquet_name, order_by in DATASET_V3_PARQUET_EXPORTS:
+            for table_name, parquet_name, order_by in DATASET_V4_PARQUET_EXPORTS:
                 output_path = self._parquet_dir / parquet_name
                 if output_path.exists():
                     output_path.unlink()
@@ -1929,11 +2022,13 @@ class DatasetWriter:
         *,
         source_duckdb_path: str,
         normalized_codes: list[str],
+        date_from: str,
         date_to: str,
     ) -> StockDataCopyResult:
         return self._duckdb_store.copy_stock_data_from_source(
             source_duckdb_path=source_duckdb_path,
             normalized_codes=normalized_codes,
+            date_from=date_from,
             date_to=date_to,
         )
 
@@ -1941,10 +2036,12 @@ class DatasetWriter:
         return self._duckdb_store.upsert_topix_data(rows)
 
     def copy_topix_data_from_source(
-        self, *, source_duckdb_path: str, date_to: str
+        self, *, source_duckdb_path: str, date_from: str, date_to: str
     ) -> int:
         return self._duckdb_store.copy_topix_data_from_source(
-            source_duckdb_path=source_duckdb_path, date_to=date_to
+            source_duckdb_path=source_duckdb_path,
+            date_from=date_from,
+            date_to=date_to,
         )
 
     def upsert_indices_data(self, rows: list[dict[str, Any]]) -> int:
@@ -1955,11 +2052,13 @@ class DatasetWriter:
         *,
         source_duckdb_path: str,
         normalized_codes: list[str],
+        date_from: str,
         date_to: str,
     ) -> int:
         return self._duckdb_store.copy_indices_data_from_source(
             source_duckdb_path=source_duckdb_path,
             normalized_codes=normalized_codes,
+            date_from=date_from,
             date_to=date_to,
         )
 
@@ -1971,11 +2070,13 @@ class DatasetWriter:
         *,
         source_duckdb_path: str,
         normalized_codes: list[str],
+        date_from: str,
         date_to: str,
     ) -> int:
         return self._duckdb_store.copy_margin_data_from_source(
             source_duckdb_path=source_duckdb_path,
             normalized_codes=normalized_codes,
+            date_from=date_from,
             date_to=date_to,
         )
 
@@ -1995,15 +2096,15 @@ class DatasetWriter:
             date_to=date_to,
         )
 
-    def copy_event_time_pit_from_source(
+    def copy_provider_snapshot_from_source(
         self,
         *,
         source_duckdb_path: str,
         normalized_codes: list[str],
-        date_from: str | None,
-        date_to: str | None,
-    ) -> EventTimePitCopyResult:
-        return self._duckdb_store.copy_event_time_pit_from_source(
+        date_from: str,
+        date_to: str,
+    ) -> ProviderSnapshotCopyResult:
+        return self._duckdb_store.copy_provider_snapshot_from_source(
             source_duckdb_path=source_duckdb_path,
             normalized_codes=normalized_codes,
             date_from=date_from,

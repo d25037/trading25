@@ -1,4 +1,4 @@
-"""Public facade for Market v4 cutover workflows."""
+"""Public facade for Market v5 full-rebuild cutover workflows."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from typing import Callable
 
 from .backup import MarketBackupService
 from .activation import MarketActivationService
+from .activation_recovery import ActivationRecoveryService
 from .contracts import (
     AtomicExchange,
     BackupResult,
@@ -20,13 +21,9 @@ from .contracts import (
     SmokeResult,
 )
 from .evidence import MarketEvidence
-from .duckdb_service import MarketIdentityService
 from .full_rehearsal import FullRebuildRehearsalService
-from .rehearsal import RetainedRehearsalService
 from .reports import CutoverReportRepository
 from .smoke import RuntimeSmokeService
-from .promotion_eligibility import PromotionEligibilityService
-from .promotion import RetainedPromotionService
 from .workspace import CutoverWorkspace
 
 
@@ -54,10 +51,6 @@ class MarketV4CutoverService:
             atomic_exchange=atomic_exchange,
         )
         self._evidence = MarketEvidence(self._workspace)
-        self._market_identity = MarketIdentityService(
-            self._workspace,
-            self._evidence,
-        )
         self._reports = CutoverReportRepository(self._workspace, self._evidence)
         self._backups = MarketBackupService(self._workspace, self._evidence)
         self._runtime_smoke = RuntimeSmokeService(self._workspace)
@@ -67,33 +60,21 @@ class MarketV4CutoverService:
             self._reports,
             self._runtime_smoke,
         )
-        self._retained_rehearsal = RetainedRehearsalService(
-            self._workspace,
-            self._evidence,
-            self._market_identity,
-            self._reports,
-            self._runtime_smoke,
-        )
-        promotion_eligibility = PromotionEligibilityService(
-            self._workspace,
-            self._market_identity,
-        )
-        self._promotion = RetainedPromotionService(
-            self._workspace,
-            self._evidence,
-            self._market_identity,
-            self._reports,
-            self._runtime_smoke,
-            self._backups,
-            promotion_eligibility,
-        )
         self._activation = MarketActivationService(
             self._workspace,
             self._evidence,
-            self._market_identity,
             self._reports,
             self._runtime_smoke,
             self._backups,
+        )
+        self._activation_recovery = ActivationRecoveryService(
+            self._workspace,
+            self._evidence,
+            self._reports,
+            self._runtime_smoke,
+            self._backups,
+            self._activation,
+            self._activation._journal,
         )
 
     def preflight(self) -> MarketSourceMetadata:
@@ -130,13 +111,25 @@ class MarketV4CutoverService:
         config: SmokeConfig,
         inherited_environment: dict[str, str],
     ) -> OperationResult:
-        return self._activation.cutover(
-            report_id,
-            rehearsal_report_id=rehearsal_report_id,
-            backup_id=backup_id,
-            config=config,
-            inherited_environment=inherited_environment,
-        )
+        with self._workspace.exclusive_operation() as code_version:
+            recovered = self._activation_recovery.recover_if_present(
+                report_id,
+                rehearsal_report_id=rehearsal_report_id,
+                backup_id=backup_id,
+                config=config,
+                inherited_environment=inherited_environment,
+                code_version=code_version,
+            )
+            if recovered is not None:
+                return recovered
+            return self._activation._cutover_under_lease(
+                report_id,
+                rehearsal_report_id=rehearsal_report_id,
+                backup_id=backup_id,
+                config=config,
+                inherited_environment=inherited_environment,
+                code_version=code_version,
+            )
 
     def rehearse(
         self,
@@ -148,38 +141,6 @@ class MarketV4CutoverService:
         return self._full_rehearsal.rehearse(
             report_id,
             config,
-            inherited_environment=inherited_environment,
-        )
-
-    def rehearse_retained(
-        self,
-        report_id: str,
-        *,
-        source_rehearsal_report_id: str,
-        config: SmokeConfig,
-        inherited_environment: dict[str, str],
-    ) -> OperationResult:
-        return self._retained_rehearsal.rehearse_retained(
-            report_id,
-            source_rehearsal_report_id=source_rehearsal_report_id,
-            config=config,
-            inherited_environment=inherited_environment,
-        )
-
-    def promote_retained(
-        self,
-        report_id: str,
-        *,
-        retained_report_id: str,
-        backup_id: str,
-        config: SmokeConfig,
-        inherited_environment: dict[str, str] | None = None,
-    ) -> OperationResult:
-        return self._promotion.promote_retained(
-            report_id,
-            retained_report_id=retained_report_id,
-            backup_id=backup_id,
-            config=config,
             inherited_environment=inherited_environment,
         )
 

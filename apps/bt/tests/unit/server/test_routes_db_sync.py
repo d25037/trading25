@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import shutil
 from collections.abc import Generator
@@ -17,15 +18,20 @@ from fastapi.testclient import TestClient
 
 from src.entrypoints.http.app import create_app
 from src.entrypoints.http.routes import db as db_routes
-from src.application.contracts.market_data_plane import (
-    AdjustedMetricsMaterializeResult,
-)
 from src.entrypoints.http.schemas.db import SyncDataPlaneRequest, SyncRequest
 from src.application.contracts.jobs import JobStatus
 from src.application.services.sync_stream_manager import SyncStreamEvent
 from src.shared.contracts import market_maintenance as maintenance_contracts
 from tests.unit.server.db.market_writer_test_support import open_market_db
 from tests.unit.server.db.market_writer_test_support import publish_topix_data
+
+
+def _regular_file_sha256s(root: Path) -> dict[str, str]:
+    return {
+        str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
 
 
 @pytest.mark.asyncio
@@ -37,12 +43,6 @@ from tests.unit.server.db.market_writer_test_support import publish_topix_data
             "start_sync",
             SyncRequest(mode="incremental"),
             "incremental_sync",
-        ),
-        (
-            db_routes.start_adjusted_metrics_materialize_job,
-            "start_adjusted_metrics_materialization",
-            None,
-            "adjusted_metrics_materialization",
         ),
     ],
 )
@@ -83,11 +83,6 @@ async def test_job_start_cancellation_finalizes_reserved_writer_before_reraise(
     monkeypatch.setattr(db_routes, starter_name, cancel_during_job_create)
     monkeypatch.setattr(db_routes, "_finalize_direct_market_write", finalize)
     monkeypatch.setattr(db_routes.sync_job_manager, "get_active_job", lambda: None)
-    monkeypatch.setattr(
-        db_routes.adjusted_metrics_materialize_job_manager,
-        "get_active_job",
-        lambda: None,
-    )
 
     with pytest.raises(asyncio.CancelledError):
         if body is None:
@@ -262,6 +257,7 @@ def client(
     market_db = open_market_db(market_db_path, read_only=False)
     mock_client = MagicMock()
     mock_client.has_api_key = True
+    mock_client.plan = "premium"
     app_client.app.state.market_db = market_db
     app_client.app.state.jquants_client = mock_client
     try:
@@ -661,15 +657,9 @@ class TestSyncRoutes:
         default_store = MagicMock()
         client.app.state.market_time_series_store = default_store
 
-        with (
-            patch(
-                "src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock
-            ) as mock_start,
-            patch(
-                "src.entrypoints.http.routes.db.adjusted_metrics_materialize_job_manager.get_active_job",
-                return_value=None,
-            ),
-        ):
+        with patch(
+            "src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock
+        ) as mock_start:
             mock_job = MagicMock()
             mock_job.job_id = "test-job-123"
             mock_job.data.resolved_mode = "incremental"
@@ -690,177 +680,20 @@ class TestSyncRoutes:
             finalizer_provider = mock_start.await_args.kwargs["market_finalizer"]
             assert callable(finalizer_provider)
 
-    def test_sync_start_rejects_while_adjusted_metrics_materialize_is_running(
-        self,
-        client: TestClient,
-    ) -> None:
-        with (
-            patch(
-                "src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock
-            ) as mock_start,
-            patch(
-                "src.entrypoints.http.routes.db.adjusted_metrics_materialize_job_manager.get_active_job",
-                return_value=object(),
-            ),
-        ):
-            resp = client.post("/api/db/sync", json={"mode": "incremental"})
-
-        assert resp.status_code == 409
-        assert mock_start.await_count == 0
-
-    def test_adjusted_metrics_materialize_start(self, client: TestClient) -> None:
-        with (
-            patch(
-                "src.entrypoints.http.routes.db.sync_job_manager.get_active_job",
-                return_value=None,
-            ),
-            patch(
-                "src.entrypoints.http.routes.db.adjusted_metrics_materialize_job_manager.get_active_job",
-                return_value=None,
-            ),
-            patch(
-                "src.entrypoints.http.routes.db._prepare_market_write_resources"
-            ) as prepare_resources,
-            patch(
-                "src.entrypoints.http.routes.db.start_adjusted_metrics_materialization",
-                new_callable=AsyncMock,
-            ) as mock_start,
-        ):
-            mock_market_db = MagicMock()
-            mock_time_series_store = MagicMock()
-
-            def prepare_write_resources(_request):
-                client.app.state.market_time_series_store = mock_time_series_store
-                return mock_market_db, mock_time_series_store
-
-            prepare_resources.side_effect = prepare_write_resources
-            mock_job = MagicMock()
-            mock_job.job_id = "materialize-job-1"
-            mock_job.data.mode = "full"
-            mock_start.return_value = mock_job
-
-            resp = client.post("/api/db/adjusted-metrics/materialize")
-
-        assert resp.status_code == 202
-        data = resp.json()
-        assert data["jobId"] == "materialize-job-1"
-        assert data["mode"] == "full"
-        prepare_resources.assert_called_once()
-        assert client.app.state.market_time_series_store is mock_time_series_store
-        mock_start.assert_awaited_once()
-        assert mock_start.await_args.args[0] is mock_market_db
-
-    def test_adjusted_metrics_materialize_job_returns_event_time_aggregates(
-        self,
-        client: TestClient,
-    ) -> None:
-        now = datetime.now(UTC)
-        job = SimpleNamespace(
-            job_id="materialize-job-1",
-            status=JobStatus.COMPLETED,
-            data=SimpleNamespace(mode="full"),
-            progress=None,
-            result=AdjustedMetricsMaterializeResult(
-                success=True,
-                basisCount=4,
-                readyBasisCount=3,
-                statementRows=5,
-                dailyValuationRows=7,
-                dailyTechnicalMetricRows=11,
-                dailyValuationLatestDate="2026-05-16",
-                activePriceBasisDate="2026-05-15",
-                activeBasisVersion="event-pit-v1:7203:2026-05-15",
-            ),
-            created_at=now,
-            started_at=now,
-            completed_at=now,
-            error=None,
-        )
-        with patch(
-            "src.entrypoints.http.routes.db.adjusted_metrics_materialize_job_manager.get_job",
-            return_value=job,
-        ):
-            resp = client.get(
-                "/api/db/adjusted-metrics/materialize/jobs/materialize-job-1"
-            )
-
-        assert resp.status_code == 200
-        result = resp.json()["result"]
-        assert result["basisCount"] == 4
-        assert result["readyBasisCount"] == 3
-        assert result["activePriceBasisDate"] == "2026-05-15"
-        assert result["activeBasisVersion"] == "event-pit-v1:7203:2026-05-15"
-        assert "priceBasisDate" not in result
-        assert "basisVersion" not in result
-        assert resp.json()["maintenance"]["evidenceStatus"] == "never_run"
-
-    def test_adjusted_metrics_materialize_cancel_waits_for_job_shutdown(
-        self,
-        client: TestClient,
-    ) -> None:
-        with (
-            patch(
-                "src.entrypoints.http.routes.db.adjusted_metrics_materialize_job_manager.get_job"
-            ) as get_job,
-            patch(
-                "src.entrypoints.http.routes.db.adjusted_metrics_materialize_job_manager.cancel_job",
-                new_callable=AsyncMock,
-            ) as cancel_job,
-        ):
-            get_job.return_value = SimpleNamespace(status=JobStatus.RUNNING)
-            cancel_job.return_value = True
-
-            response = client.delete(
-                "/api/db/adjusted-metrics/materialize/jobs/materialize-job-1"
-            )
-
-        assert response.status_code == 200
-        assert response.json()["success"] is True
-        cancel_job.assert_awaited_once_with("materialize-job-1", wait=True)
-
-    def test_adjusted_metrics_materialize_maps_resource_creation_failure(
-        self,
-        client: TestClient,
-    ) -> None:
-        with (
-            patch(
-                "src.entrypoints.http.routes.db.sync_job_manager.get_active_job",
-                return_value=None,
-            ),
-            patch(
-                "src.entrypoints.http.routes.db.adjusted_metrics_materialize_job_manager.get_active_job",
-                return_value=None,
-            ),
-            patch(
-                "src.entrypoints.http.routes.db._prepare_market_write_resources",
-                side_effect=RuntimeError(
-                    "DuckDB market time-series store is unavailable"
-                ),
-            ),
-            patch(
-                "src.entrypoints.http.routes.db.start_adjusted_metrics_materialization",
-                new_callable=AsyncMock,
-            ) as mock_start,
-        ):
-            resp = client.post("/api/db/adjusted-metrics/materialize")
-
-        assert resp.status_code == 422
+    def test_adjusted_metrics_materialize_routes_are_removed(self, client: TestClient) -> None:
+        assert client.post("/api/db/adjusted-metrics/materialize").status_code == 404
         assert (
-            "DuckDB market time-series store is unavailable" in resp.json()["message"]
+            client.get("/api/db/adjusted-metrics/materialize/jobs/active").status_code
+            == 404
         )
-        mock_start.assert_not_awaited()
-
-    def test_adjusted_metrics_materialize_rejects_while_sync_is_running(
-        self,
-        client: TestClient,
-    ) -> None:
-        with patch(
-            "src.entrypoints.http.routes.db.sync_job_manager.get_active_job",
-            return_value=object(),
-        ):
-            resp = client.post("/api/db/adjusted-metrics/materialize")
-
-        assert resp.status_code == 409
+        assert (
+            client.get("/api/db/adjusted-metrics/materialize/jobs/materialize-job-1").status_code
+            == 404
+        )
+        assert (
+            client.delete("/api/db/adjusted-metrics/materialize/jobs/materialize-job-1").status_code
+            == 404
+        )
 
     def test_sync_start_with_bulk_enforcement(self, client: TestClient) -> None:
         default_store = MagicMock()
@@ -909,6 +742,62 @@ class TestSyncRoutes:
             assert mock_start.await_count == 1
             assert mock_start.await_args.kwargs["reset_before_sync"] is True
             assert callable(mock_start.await_args.kwargs["reset_market_snapshot"])
+
+    def test_sync_start_rejects_incompatible_reset_without_mutating_files(
+        self,
+        app_client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        from src.application.services import sync_service
+
+        market_root = tmp_path / "market-timeseries"
+        parquet_dir = market_root / "parquet"
+        parquet_dir.mkdir(parents=True)
+        db_path = market_root / "market.duckdb"
+        seeded_db = open_market_db(str(db_path), read_only=False)
+        seeded_db._execute("DELETE FROM market_schema_version")
+        seeded_db._execute(
+            """
+            INSERT INTO market_schema_version (version, applied_at, notes)
+            VALUES (?, ?, ?)
+            """,
+            [4, "2026-07-21T00:00:00+00:00", "Market v4 test fixture"],
+        )
+        seeded_db.set_sync_metadata(
+            "stock_price_adjustment_mode", "local_projection_v2_event_time"
+        )
+        seeded_db.close()
+        (parquet_dir / "legacy-marker.parquet").write_bytes(b"legacy-parquet-bytes")
+
+        market_db = open_market_db(str(db_path), read_only=True)
+        create_job = AsyncMock(return_value=None)
+        monkeypatch.setattr(
+            sync_service,
+            "sync_job_manager",
+            SimpleNamespace(create_job=create_job),
+        )
+        app_client.app.state.market_db = market_db
+        app_client.app.state.market_time_series_store = MagicMock()
+        app_client.app.state.jquants_client = MagicMock(has_api_key=True)
+        app_client.app.state.market_writer_session = None
+        before = _regular_file_sha256s(market_root)
+
+        try:
+            response = app_client.post(
+                "/api/db/sync",
+                json={"mode": "initial", "resetBeforeSync": True},
+            )
+
+            assert response.status_code == 409
+            assert _regular_file_sha256s(market_root) == before
+            assert "market-cutover cutover" in response.json()["message"]
+            assert create_job.await_count == 0
+        finally:
+            market_db.close()
+            app_client.app.state.market_db = None
+            app_client.app.state.market_time_series_store = None
+            app_client.app.state.jquants_client = None
 
     def test_sync_start_rejects_reset_before_sync_outside_initial_mode(
         self, client: TestClient
@@ -1085,7 +974,7 @@ class TestSyncRoutes:
             mock_get_active.return_value = None
 
             resp = client.get("/api/db/sync/jobs/active")
-            assert resp.status_code == 200
+            assert resp.status_code == 200, resp.text
             assert resp.json() is None
 
     def test_get_active_sync_job_success(self, client: TestClient) -> None:
@@ -1107,7 +996,7 @@ class TestSyncRoutes:
             mock_get_active.return_value = job
 
             resp = client.get("/api/db/sync/jobs/active")
-            assert resp.status_code == 200
+            assert resp.status_code == 200, resp.text
             body = resp.json()
             assert body["jobId"] == "job-active"
             assert body["status"] == "running"
@@ -1473,7 +1362,7 @@ class TestIntradaySyncRoute:
                 json={"date": "2026-04-14", "codes": ["9984"]},
             )
 
-            assert resp.status_code == 200
+            assert resp.status_code == 200, resp.text
             data = resp.json()
             assert data["mode"] == "rest"
             assert data["recordsStored"] == 2
@@ -1496,6 +1385,9 @@ class TestRefreshRoute:
             patch(
                 "src.application.services.stock_refresh_service.refresh_stocks"
             ) as mock_refresh,
+            patch(
+                "src.entrypoints.http.routes.db.AdjustedMetricsMaterializer"
+            ) as materializer,
         ):
             from src.application.contracts.market_data_plane import (
                 RefreshResponse,
@@ -1522,6 +1414,9 @@ class TestRefreshRoute:
             assert data["totalStocks"] == 1
             assert data["successCount"] == 1
             assert data["maintenance"]["outcome"] == "passed"
+            materializer.return_value.rebuild_current_basis.assert_called_once_with(
+                ["7203"]
+            )
 
     def test_refresh_validation_error(self, client: TestClient) -> None:
         resp = client.post("/api/db/stocks/refresh", json={"codes": []})
@@ -1540,7 +1435,7 @@ class TestRefreshRoute:
         app_client.app.state.jquants_client = None
         try:
             resp = app_client.post("/api/db/stocks/refresh", json={"codes": ["7203"]})
-            assert resp.status_code == 422
+            assert resp.status_code == 422, resp.text
         finally:
             market_db.close()
 

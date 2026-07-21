@@ -26,6 +26,9 @@ from src.domains.analytics.ranking_color_evidence import (
     write_ranking_color_evidence_bundle,
 )
 from src.domains.analytics import ranking_color_evidence
+from tests.unit.domains.analytics.daily_ranking_market_v5_fixture import (
+    upgrade_daily_ranking_fixture_to_market_v5,
+)
 
 _OBSERVATION_SAMPLE_COLUMNS = (
     "date",
@@ -352,7 +355,17 @@ def test_ranking_color_evidence_uses_daily_valuation_fast_path(tmp_path: Path) -
     assert "neutral_rerating" in _LIQUIDITY_REGIMES
     assert "topix_20d_lt_0_60d_gt_0" in {regime for regime, _ in _TOPIX_REGIMES}
     assert "rerating_participation" not in _LIQUIDITY_REGIMES
-    assert "statements" not in set(result.required_tables)
+    assert {
+        "stock_data",
+        "stock_provider_windows",
+        "stock_adjustment_events",
+        "current_basis_recompute_pending",
+        "current_basis_fundamentals_state",
+        "statements",
+        "statement_metrics_adjusted",
+    }.issubset(result.required_tables)
+    assert "stock_adjustment_bases" not in result.required_tables
+    assert "stock_adjustment_basis_segments" not in result.required_tables
     sample = result.observation_sample_df
     high_forward_p_op = sample.loc[sample["code"] == "3333"].iloc[0]
     invalid_forward_p_op = sample.loc[sample["code"] == "6666"].iloc[0]
@@ -419,25 +432,16 @@ def test_ranking_color_freezes_each_valuation_bucket_before_outcome_attach(
         )
 
 
-def test_ranking_color_ignores_poisoned_stock_data_convenience_rows(
+def test_ranking_color_rejects_noncanonical_stock_data_projection(
     tmp_path: Path,
 ) -> None:
     db_path = _build_ranking_color_db(tmp_path / "market.duckdb")
-    baseline = _run_test_research(db_path)
     conn = duckdb.connect(str(db_path))
     conn.execute("UPDATE stock_data SET close = close * 99")
     conn.close()
 
-    poisoned = _run_test_research(db_path)
-
-    pd.testing.assert_frame_equal(
-        baseline.observation_sample_df,
-        poisoned.observation_sample_df,
-    )
-    pd.testing.assert_frame_equal(
-        baseline.ranking_color_evidence_df,
-        poisoned.ranking_color_evidence_df,
-    )
+    with pytest.raises(RuntimeError, match="provider vintage lineage"):
+        _run_test_research(db_path)
 
 
 def test_ranking_color_percentiles_use_single_window_per_metric() -> None:
@@ -475,7 +479,8 @@ def test_ranking_color_panel_resolves_session_guaranteed_feature_history(
     )
     conn.executemany(
         "INSERT INTO stock_data_raw VALUES "
-        "('1111', ?, 99.0, 101.0, 98.0, 100.0, 1000, 1.0)",
+        "('1111', ?, 99.0, 101.0, 98.0, 100.0, 1000, 100000.0, 1.0, "
+        "99.0, 101.0, 98.0, 100.0, 1000)",
         [(value,) for value in earlier_dates],
     )
     conn.executemany(
@@ -596,18 +601,6 @@ def _build_ranking_color_db(db_path: Path) -> Path:
     conn = duckdb.connect(str(db_path))
     conn.execute(
         """
-        CREATE TABLE market_schema_version (
-            version INTEGER, applied_at TEXT, notes TEXT
-        );
-        INSERT INTO market_schema_version VALUES (4, NULL, NULL);
-        CREATE TABLE sync_metadata (
-            key TEXT PRIMARY KEY, value TEXT, updated_at TEXT
-        );
-        INSERT INTO sync_metadata VALUES (
-            'stock_price_adjustment_mode',
-            'local_projection_v2_event_time',
-            NULL
-        );
         CREATE TABLE stock_data (
             code TEXT,
             date TEXT,
@@ -616,33 +609,6 @@ def _build_ranking_color_db(db_path: Path) -> Path:
             low DOUBLE,
             close DOUBLE,
             volume BIGINT
-        );
-        CREATE TABLE stock_data_raw (
-            code TEXT,
-            date DATE,
-            open DOUBLE,
-            high DOUBLE,
-            low DOUBLE,
-            close DOUBLE,
-            volume BIGINT,
-            adjustment_factor DOUBLE
-        );
-        CREATE TABLE stock_adjustment_bases (
-            code TEXT,
-            basis_id TEXT,
-            valid_from DATE,
-            valid_to_exclusive DATE,
-            adjustment_through_date DATE,
-            source_fingerprint TEXT,
-            materialized_through_date DATE,
-            status TEXT
-        );
-        CREATE TABLE stock_adjustment_basis_segments (
-            code TEXT,
-            basis_id TEXT,
-            source_date_from DATE,
-            source_date_to_exclusive DATE,
-            cumulative_factor DOUBLE
         )
         """
     )
@@ -694,8 +660,7 @@ def _build_ranking_color_db(db_path: Path) -> Path:
             p_op DOUBLE,
             forward_p_op DOUBLE,
             market_cap DOUBLE,
-            free_float_market_cap DOUBLE,
-            basis_version TEXT
+            free_float_market_cap DOUBLE
         )
         """
     )
@@ -730,10 +695,6 @@ def _build_ranking_color_db(db_path: Path) -> Path:
             )
             master_rows.append((date, code, name, market_code, "Market", None))
     conn.executemany("INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?)", stock_rows)
-    conn.executemany(
-        "INSERT INTO stock_data_raw VALUES (?, ?, ?, ?, ?, ?, ?, 1.0)",
-        stock_rows,
-    )
     conn.executemany(
         "INSERT INTO stock_master_daily VALUES (?, ?, ?, ?, ?, ?)", master_rows
     )
@@ -790,7 +751,6 @@ def _build_ranking_color_db(db_path: Path) -> Path:
             float,
             float,
             float,
-            str,
         ]
     ] = []
     for date in dates:
@@ -807,7 +767,6 @@ def _build_ranking_color_db(db_path: Path) -> Path:
                     6.0,
                     110_000_000.0,
                     90_000_000.0,
-                    f"event-pit-v1:1111:{dates[0]}",
                 ),
                 (
                     "2222",
@@ -820,7 +779,6 @@ def _build_ranking_color_db(db_path: Path) -> Path:
                     9.0,
                     220_000_000.0,
                     180_000_000.0,
-                    f"event-pit-v1:2222:{dates[0]}",
                 ),
                 (
                     "3333",
@@ -833,7 +791,6 @@ def _build_ranking_color_db(db_path: Path) -> Path:
                     80.0,
                     90_000_000.0,
                     70_000_000.0,
-                    f"event-pit-v1:3333:{dates[0]}",
                 ),
                 (
                     "4444",
@@ -846,7 +803,6 @@ def _build_ranking_color_db(db_path: Path) -> Path:
                     10.0,
                     120_000_000.0,
                     110_000_000.0,
-                    f"event-pit-v1:4444:{dates[0]}",
                 ),
                 (
                     "5555",
@@ -859,7 +815,6 @@ def _build_ranking_color_db(db_path: Path) -> Path:
                     15.0,
                     150_000_000.0,
                     140_000_000.0,
-                    f"event-pit-v1:5555:{dates[0]}",
                 ),
                 (
                     "6666",
@@ -872,7 +827,6 @@ def _build_ranking_color_db(db_path: Path) -> Path:
                     0.0,
                     75_000_000.0,
                     60_000_000.0,
-                    f"event-pit-v1:6666:{dates[0]}",
                 ),
             ]
         )
@@ -888,38 +842,13 @@ def _build_ranking_color_db(db_path: Path) -> Path:
                 12.0 + extra_index * 0.1,
                 100_000_000.0 + extra_index * 1_000_000.0,
                 80_000_000.0 + extra_index * 1_000_000.0,
-                f"event-pit-v1:{7000 + extra_index}:{dates[0]}",
             )
             for extra_index in range(120)
         )
     conn.executemany(
-        "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         valuation_rows,
     )
-    basis_rows = [
-        (
-            code,
-            f"event-pit-v1:{code}:{dates[0]}",
-            dates[0],
-            None,
-            dates[0],
-            f"fixture-{code}",
-            dates[-1],
-            "ready",
-        )
-        for code, *_ in codes
-    ]
-    segment_rows = [
-        (code, f"event-pit-v1:{code}:{dates[0]}", dates[0], None, 1.0)
-        for code, *_ in codes
-    ]
-    conn.executemany(
-        "INSERT INTO stock_adjustment_bases VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        basis_rows,
-    )
-    conn.executemany(
-        "INSERT INTO stock_adjustment_basis_segments VALUES (?, ?, ?, ?, ?)",
-        segment_rows,
-    )
+    upgrade_daily_ranking_fixture_to_market_v5(conn)
     conn.close()
     return db_path

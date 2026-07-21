@@ -290,7 +290,9 @@ async def test_statements_and_statements_raw_share_cached_fins_summary() -> None
         "data": [
             {
                 "DiscDate": "2024-05-10",
+                "DiscTime": "15:30:00",
                 "Code": "72030",
+                "DiscNo": "20240510123456",
                 "CurPerType": "FY",
                 "CurPerSt": "2023-04-01",
                 "CurPerEn": "2024-03-31",
@@ -305,6 +307,10 @@ async def test_statements_and_statements_raw_share_cached_fins_summary() -> None
 
     assert len(statements.data) == 1
     assert len(statements_raw.data) == 1
+    assert statements.data[0].DiscNo == "20240510123456"
+    assert statements.data[0].DiscTime == "15:30:00"
+    assert statements_raw.data[0].DiscNo == "20240510123456"
+    assert statements_raw.data[0].DiscTime == "15:30:00"
     assert client.get.await_count == 1
 
 

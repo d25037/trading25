@@ -53,27 +53,6 @@ class SyncJobResponse(BaseModel):
     error: str | None = None
 
 
-class CreateAdjustedMetricsMaterializeJobResponse(BaseModel):
-    jobId: str
-    status: str = "pending"
-    mode: str = "full"
-    message: str = "Adjusted metrics materialization job started"
-
-
-class AdjustedMetricsMaterializeJobResponse(BaseModel):
-    jobId: str
-    status: str
-    mode: str = "full"
-    maintenance: maintenance_contracts.MarketMaintenanceRecord = Field(
-        default_factory=maintenance_contracts.MarketMaintenanceRecord.never_run
-    )
-    progress: market_contracts.SyncProgress | None = None
-    result: market_contracts.AdjustedMetricsMaterializeResult | None = None
-    startedAt: str
-    completedAt: str | None = None
-    error: str | None = None
-
-
 class SyncFetchDetail(BaseModel):
     eventType: Literal["strategy", "execution"]
     stage: str

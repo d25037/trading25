@@ -22,8 +22,8 @@ _LOCK_ERROR_PATTERNS: tuple[str, ...] = (
     "conflicting lock is held",
     "could not set lock",
 )
-_MARKET_SCHEMA_VERSION = 4
-_STOCK_PRICE_ADJUSTMENT_MODE = "local_projection_v2_event_time"
+_MARKET_SCHEMA_VERSION = 5
+_STOCK_PRICE_ADJUSTMENT_MODE = "provider_adjusted_v1"
 _COMPATIBILITY_METADATA_TABLES = frozenset(
     {"market_schema_version", "sync_metadata"}
 )
@@ -141,11 +141,11 @@ def normalize_code_sql(column_name: str) -> str:
     )
 
 
-def require_market_v4_compatibility(
+def require_market_v5_compatibility(
     conn: duckdb.DuckDBPyConnection,
     *,
     required_tables: Collection[str],
-) -> None:
+) -> int:
     """Require the standalone analytics Market Data Plane contract."""
     existing_tables = {
         str(row[0])
@@ -160,9 +160,9 @@ def require_market_v4_compatibility(
     if missing_tables:
         missing = ", ".join(missing_tables)
         raise RuntimeError(
-            "Incompatible market.duckdb: missing required Market v4 tables "
-            f"({missing}). Run initial sync with reset enabled "
-            "(resetBeforeSync=true) to recreate the Market Data Plane."
+            "Incompatible market.duckdb: missing required Market v5 tables "
+            f"({missing}). Run bt market-cutover cutover to rebuild the "
+            "Market Data Plane."
         )
 
     version_row = conn.execute(
@@ -180,9 +180,9 @@ def require_market_v4_compatibility(
         observed_version = "missing" if version is None else str(version)
         observed_mode = "missing" if adjustment_mode is None else adjustment_mode
         raise RuntimeError(
-            "Incompatible market.duckdb metadata: required schema version 4 and "
-            "stock_price_adjustment_mode=local_projection_v2_event_time; observed "
+            "Incompatible market.duckdb metadata: required schema version 5 and "
+            "stock_price_adjustment_mode=provider_adjusted_v1; observed "
             f"schema version {observed_version} and adjustment mode {observed_mode}. "
-            "Run initial sync with reset enabled (resetBeforeSync=true) to recreate "
-            "the Market Data Plane."
+            "Run bt market-cutover cutover to rebuild the Market Data Plane."
         )
+    return _MARKET_SCHEMA_VERSION

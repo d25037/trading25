@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import MagicMock
 
@@ -22,7 +21,11 @@ from src.application.services.market_maintenance_finalizer import (
 from src.application.contracts.jobs import JobStatus
 from src.application.services.sync_service import SyncMode
 from src.application.contracts.market_data_plane import SyncResult
-from src.infrastructure.db.market.market_db import MARKET_SCHEMA_VERSION, METADATA_KEYS
+from src.infrastructure.db.market.market_db import (
+    MARKET_SCHEMA_VERSION,
+    METADATA_KEYS,
+    PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
+)
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 
 
@@ -32,11 +35,17 @@ class DummyMarketDb:
         last_sync_date: str | None = None,
         *,
         legacy_stock_snapshot: bool = False,
-        schema_version: int = MARKET_SCHEMA_VERSION,
+        schema_version: int | None = MARKET_SCHEMA_VERSION,
+        adjustment_mode: str | None = PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
+        schema_valid: bool = True,
+        reset_eligibility_error: Exception | None = None,
     ) -> None:
         self._last_sync_date = last_sync_date
         self._legacy_stock_snapshot = legacy_stock_snapshot
         self._schema_version = schema_version
+        self._adjustment_mode = adjustment_mode
+        self._schema_valid = schema_valid
+        self._reset_eligibility_error = reset_eligibility_error
         self.ensure_schema_calls = 0
         self.metadata: dict[str, str] = {}
 
@@ -61,6 +70,16 @@ class DummyMarketDb:
 
     def is_market_schema_current(self) -> bool:
         return self._schema_version == MARKET_SCHEMA_VERSION
+
+    def is_reset_before_sync_eligible(self) -> bool:
+        if self._reset_eligibility_error is not None:
+            raise self._reset_eligibility_error
+        return (
+            self._schema_version == MARKET_SCHEMA_VERSION
+            and self._adjustment_mode == PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
+            and self._schema_valid
+            and not self._legacy_stock_snapshot
+        )
 
 
 class DummyTimeSeriesStore:
@@ -107,7 +126,10 @@ def _market_db(
     last_sync_date: str | None = None,
     *,
     legacy_stock_snapshot: bool = False,
-    schema_version: int = MARKET_SCHEMA_VERSION,
+    schema_version: int | None = MARKET_SCHEMA_VERSION,
+    adjustment_mode: str | None = PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
+    schema_valid: bool = True,
+    reset_eligibility_error: Exception | None = None,
 ) -> sync_service.SyncServiceMarketDbLike:
     return cast(
         sync_service.SyncServiceMarketDbLike,
@@ -115,6 +137,9 @@ def _market_db(
             last_sync_date=last_sync_date,
             legacy_stock_snapshot=legacy_stock_snapshot,
             schema_version=schema_version,
+            adjustment_mode=adjustment_mode,
+            schema_valid=schema_valid,
+            reset_eligibility_error=reset_eligibility_error,
         ),
     )
 
@@ -235,20 +260,64 @@ def isolated_manager(monkeypatch: pytest.MonkeyPatch) -> GenericJobManager:
     return manager
 
 
-@pytest.fixture
-def isolated_materialize_manager(monkeypatch: pytest.MonkeyPatch) -> GenericJobManager:
-    manager: GenericJobManager = GenericJobManager()
-    monkeypatch.setattr(
-        sync_service, "adjusted_metrics_materialize_job_manager", manager
-    )
-    return manager
-
-
 def test_resolve_mode_prefers_requested_non_auto() -> None:
     market_db = _market_db(last_sync_date=None)
     assert sync_service._resolve_mode(SyncMode.INITIAL, market_db) == "initial"
     assert sync_service._resolve_mode(SyncMode.INCREMENTAL, market_db) == "incremental"
     assert sync_service._resolve_mode(SyncMode.REPAIR, market_db) == "repair"
+
+
+def test_sync_result_separates_append_and_affected_code_replacement_counters() -> None:
+    result = SyncResult(
+        success=True,
+        stocksUpdated=12,
+        stockRowsAppended=7,
+        affectedStockCodes=2,
+        stockCodesReplaced=2,
+        stockRowsReplaced=5,
+        stockRecomputationErrors=["7203: recompute failed"],
+    )
+
+    assert result.model_dump()["stockRowsAppended"] == 7
+    assert result.model_dump()["affectedStockCodes"] == 2
+    assert result.model_dump()["stockCodesReplaced"] == 2
+    assert result.model_dump()["stockRowsReplaced"] == 5
+    assert result.model_dump()["stockRecomputationErrors"] == [
+        "7203: recompute failed"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_start_sync_publishes_structured_stock_commit_progress_counters(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    class StockCommitProgressStrategy(StrategyProbe):
+        async def execute(self, ctx: Any) -> SyncResult:
+            self.captured_ctx = ctx
+            ctx.on_progress("stock_data", 1, 2, "staging")
+            ctx.on_stock_commit(7, 2, 2, 5)
+            raise RuntimeError("later stage failed")
+
+    strategy = StockCommitProgressStrategy()
+    monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
+
+    job = await sync_service.start_sync(
+        SyncMode.INCREMENTAL,
+        _market_db(last_sync_date="2026-03-01T00:00:00+00:00"),
+        DummyJQuantsClient(),
+        time_series_store=_time_series_store(),
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    stored = isolated_manager.get_job(job.job_id)
+    assert stored is not None and stored.progress is not None
+    assert stored.status.value == "failed"
+    assert stored.progress.stockRowsAppended == 7
+    assert stored.progress.affectedStockCodes == 2
+    assert stored.progress.stockCodesReplaced == 2
+    assert stored.progress.stockRowsReplaced == 5
 
 
 def test_resolve_mode_auto_uses_metadata_anchor() -> None:
@@ -366,7 +435,7 @@ def test_prepare_market_db_rejects_v3_with_reset_only_recovery() -> None:
 
     with pytest.raises(
         RuntimeError,
-        match=r"version: 3, required: 4.*initial sync with reset enabled",
+        match=r"version: 3, required: 5.*initial sync with reset enabled",
     ):
         sync_service._prepare_market_db_for_sync(market_db)
 
@@ -401,6 +470,109 @@ async def test_start_sync_requires_reset_callback_when_reset_enabled(
             time_series_store=_time_series_store(),
             reset_before_sync=True,
         )
+
+
+@pytest.mark.parametrize(
+    (
+        "schema_version",
+        "adjustment_mode",
+        "schema_valid",
+        "legacy_stock_snapshot",
+        "reset_eligibility_error",
+    ),
+    [
+        pytest.param(4, "local_projection_v2_event_time", True, False, None, id="v4"),
+        pytest.param(3, None, True, False, None, id="v3"),
+        pytest.param(None, None, True, False, None, id="missing-schema"),
+        pytest.param(5, None, True, False, None, id="missing-adjustment-mode"),
+        pytest.param(
+            5,
+            "local_projection_v2_event_time",
+            True,
+            False,
+            None,
+            id="wrong-adjustment-mode",
+        ),
+        pytest.param(
+            5,
+            PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
+            False,
+            False,
+            None,
+            id="malformed-schema-validation",
+        ),
+        pytest.param(
+            5,
+            PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
+            True,
+            True,
+            None,
+            id="legacy-snapshot",
+        ),
+        pytest.param(
+            5,
+            PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
+            True,
+            False,
+            RuntimeError("malformed DuckDB metadata"),
+            id="predicate-error",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_start_sync_rejects_incompatible_reset_before_job_creation(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+    schema_version: int | None,
+    adjustment_mode: str | None,
+    schema_valid: bool,
+    legacy_stock_snapshot: bool,
+    reset_eligibility_error: Exception | None,
+) -> None:
+    market_db = _market_db(
+        schema_version=schema_version,
+        adjustment_mode=adjustment_mode,
+        schema_valid=schema_valid,
+        legacy_stock_snapshot=legacy_stock_snapshot,
+        reset_eligibility_error=reset_eligibility_error,
+    )
+    create_job_calls = 0
+    reset_calls = 0
+
+    async def track_create_job(_data: Any) -> None:
+        nonlocal create_job_calls
+        create_job_calls += 1
+        return None
+
+    def reset_market_snapshot() -> tuple[
+        sync_service.SyncServiceMarketDbLike,
+        sync_service.SyncServiceTimeSeriesStoreLike,
+    ]:
+        nonlocal reset_calls
+        reset_calls += 1
+        return market_db, _time_series_store()
+
+    monkeypatch.setattr(isolated_manager, "create_job", track_create_job)
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "resetBeforeSync is maintenance for an already-compatible Market v5 "
+            "root only.*market-cutover cutover"
+        ),
+    ) as caught:
+        await sync_service.start_sync(
+            SyncMode.INITIAL,
+            market_db,
+            DummyJQuantsClient(),
+            time_series_store=_time_series_store(),
+            reset_before_sync=True,
+            reset_market_snapshot=reset_market_snapshot,
+        )
+
+    assert type(caught.value).__name__ == "IncompatibleMarketResetError"
+    assert create_job_calls == 0
+    assert reset_calls == 0
 
 
 @pytest.mark.asyncio
@@ -460,7 +632,7 @@ async def test_start_sync_completes_job_and_passes_bulk_enforcement(
     assert "timestamp" in stored.data.fetch_details[0]
     assert market_db.ensure_schema_calls == 1
     assert market_db.metadata[METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"]] == (
-        "local_projection_v2_event_time"
+        PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
     )
     assert store.close_calls == 0
     published_events = [call.args[1] for call in stream_manager.publish.call_args_list]
@@ -483,7 +655,7 @@ async def test_start_sync_completes_job_and_passes_bulk_enforcement(
         (SyncMode.REPAIR, "2026-03-01T00:00:00+00:00"),
     ],
 )
-async def test_start_sync_injects_adjusted_metrics_materializer_for_write_strategy(
+async def test_start_sync_injects_affected_code_current_basis_materializer(
     monkeypatch: pytest.MonkeyPatch,
     isolated_manager: GenericJobManager,
     mode: SyncMode,
@@ -505,7 +677,9 @@ async def test_start_sync_injects_adjusted_metrics_materializer_for_write_strate
     stored = isolated_manager.get_job(job.job_id)
     assert stored is not None
     assert stored.status.value == "completed"
-    assert strategy.captured_ctx.materialize_adjusted_metrics is not None
+    assert not hasattr(strategy.captured_ctx, "materialize_adjusted_metrics")
+    assert callable(strategy.captured_ctx.recompute_affected_stock_codes)
+    assert strategy.captured_ctx.provider_plan
 
 
 @pytest.mark.asyncio
@@ -786,448 +960,6 @@ async def test_sync_release_failure_compensates_staged_success_with_failed_job(
 
 
 @pytest.mark.asyncio
-async def test_start_adjusted_metrics_materialization_runs_as_separate_job(
-    monkeypatch: pytest.MonkeyPatch,
-    isolated_materialize_manager: GenericJobManager,
-) -> None:
-    class FakeMaterializer:
-        def __init__(self, market_db: object) -> None:
-            self.market_db = market_db
-
-        def reconcile(self, **kwargs: Any) -> object:
-            kwargs["on_progress"](0, 1, "7203", 0)
-            kwargs["on_progress"](1, 1, "7203", 4)
-            return SimpleNamespace(
-                completed_codes=1,
-                total_codes=1,
-                basis_count=4,
-                published_basis_count=4,
-                ready_basis_count=3,
-                statement_rows=3,
-                daily_valuation_rows=5,
-                daily_technical_metric_rows=7,
-                daily_valuation_latest_date="2026-05-16",
-                active_price_basis_date="2026-05-15",
-                active_basis_version="event-pit-v1:7203:2026-05-15",
-            )
-
-    monkeypatch.setattr(sync_service, "AdjustedMetricsMaterializer", FakeMaterializer)
-    market_db = cast(sync_service.MarketDb, object())
-
-    job = await sync_service.start_adjusted_metrics_materialization(market_db)
-    assert job is not None and job.task is not None
-    await job.task
-
-    stored = isolated_materialize_manager.get_job(job.job_id)
-    assert stored is not None
-    assert stored.status.value == "completed"
-    assert stored.progress is not None
-    assert stored.progress.stage == "complete"
-    assert stored.progress.completedCodes == 1
-    assert stored.progress.totalCodes == 1
-    assert stored.progress.currentCode is None
-    assert stored.progress.publishedBasisCount == 4
-    assert stored.result is not None
-    assert stored.result.basisCount == 4
-    assert stored.result.readyBasisCount == 3
-    assert stored.result.statementRows == 3
-    assert stored.result.dailyValuationRows == 5
-    assert stored.result.dailyTechnicalMetricRows == 7
-    assert stored.result.dailyValuationLatestDate == "2026-05-16"
-    assert stored.result.activePriceBasisDate == "2026-05-15"
-    assert stored.result.activeBasisVersion == "event-pit-v1:7203:2026-05-15"
-
-
-@pytest.mark.asyncio
-async def test_materialization_job_remains_nonterminal_until_market_finalizer(
-    monkeypatch: pytest.MonkeyPatch,
-    isolated_materialize_manager: GenericJobManager,
-) -> None:
-    from src.shared.contracts.market_maintenance import (
-        MaintenanceEvidenceStatus,
-        MaintenanceOutcome,
-        MarketMaintenanceRecord,
-    )
-    from src.application.services.market_maintenance_finalizer import (
-        MarketFinalizationDecision,
-    )
-
-    async def fake_materialization(*_args: object, **_kwargs: object) -> object:
-        return SimpleNamespace(
-            completed_codes=0,
-            total_codes=0,
-            basis_count=0,
-            published_basis_count=0,
-            ready_basis_count=0,
-            statement_rows=0,
-            daily_valuation_rows=0,
-            daily_technical_metric_rows=0,
-            daily_valuation_latest_date=None,
-            active_price_basis_date=None,
-            active_basis_version=None,
-        )
-
-    monkeypatch.setattr(
-        sync_service,
-        "run_shielded_materialization",
-        fake_materialization,
-    )
-    finalizer_started = threading.Event()
-    allow_finalizer = threading.Event()
-
-    class BlockingFinalizer:
-        def finalize(self, **kwargs: Any) -> MarketFinalizationDecision:
-            decision = MarketFinalizationDecision(
-                terminal_outcome=kwargs["operation_outcome"],
-                maintenance=MarketMaintenanceRecord(
-                    evidenceStatus=MaintenanceEvidenceStatus.VALID,
-                    outcome=MaintenanceOutcome.PASSED,
-                    operation="adjusted_metrics_materialization",
-                    recordedAt="2026-07-16T00:00:00+00:00",
-                    compacted=False,
-                    trigger="none",
-                    beforeBytes=1024,
-                    afterBytes=1024,
-                    durationMs=1.0,
-                    validation="passed",
-                    schemaFingerprint="schema-v4",
-                    tableCounts={},
-                    semanticDigests={},
-                ),
-                error=kwargs["operation_error"],
-            )
-            kwargs["stage_terminal"](decision)
-            finalizer_started.set()
-            allow_finalizer.wait()
-            kwargs["publish_terminal"](decision)
-            return decision
-
-    job = await sync_service.start_adjusted_metrics_materialization(
-        cast(sync_service.MarketDb, object()),
-        market_finalizer=BlockingFinalizer(),
-    )
-    assert job is not None and job.task is not None
-    assert await asyncio.to_thread(finalizer_started.wait, 1)
-
-    assert job.status not in {
-        JobStatus.COMPLETED,
-        JobStatus.FAILED,
-        JobStatus.CANCELLED,
-    }
-    allow_finalizer.set()
-    await job.task
-    assert job.status is JobStatus.COMPLETED
-    assert job.data.maintenance.outcome is MaintenanceOutcome.PASSED
-    assert MarketOperationOutcome.SUCCEEDED.value == "succeeded"
-
-
-@pytest.mark.asyncio
-async def test_standalone_materialization_uses_production_timeout(
-    monkeypatch: pytest.MonkeyPatch,
-    isolated_materialize_manager: GenericJobManager,
-) -> None:
-    observed_timeouts: list[float] = []
-
-    async def fake_run_shielded_materialization(
-        materializer: object,
-        *,
-        timeout_seconds: float,
-        on_progress: object,
-    ) -> object:
-        del materializer, on_progress
-        observed_timeouts.append(timeout_seconds)
-        return SimpleNamespace(
-            completed_codes=0,
-            total_codes=0,
-            basis_count=0,
-            published_basis_count=0,
-            ready_basis_count=0,
-            statement_rows=0,
-            daily_valuation_rows=0,
-            daily_technical_metric_rows=0,
-            daily_valuation_latest_date=None,
-            active_price_basis_date=None,
-            active_basis_version=None,
-        )
-
-    monkeypatch.setattr(
-        sync_service,
-        "run_shielded_materialization",
-        fake_run_shielded_materialization,
-    )
-
-    job = await sync_service.start_adjusted_metrics_materialization(
-        cast(sync_service.MarketDb, object())
-    )
-    assert job is not None and job.task is not None
-    await job.task
-
-    assert observed_timeouts == [120 * 60]
-
-
-@pytest.mark.asyncio
-async def test_sync_nested_materialization_uses_production_timeout(
-    monkeypatch: pytest.MonkeyPatch,
-    isolated_manager: GenericJobManager,
-) -> None:
-    observed_timeouts: list[float] = []
-
-    class MaterializingStrategy:
-        async def execute(self, ctx: Any) -> SyncResult:
-            assert ctx.materialize_adjusted_metrics is not None
-            await ctx.materialize_adjusted_metrics()
-            return SyncResult(success=True)
-
-    async def fake_run_shielded_materialization(
-        materializer: object,
-        *,
-        timeout_seconds: float,
-        on_progress: object,
-    ) -> object:
-        del materializer, on_progress
-        observed_timeouts.append(timeout_seconds)
-        return object()
-
-    monkeypatch.setattr(
-        sync_service, "get_strategy", lambda _mode: MaterializingStrategy()
-    )
-    monkeypatch.setattr(
-        sync_service,
-        "run_shielded_materialization",
-        fake_run_shielded_materialization,
-    )
-
-    job = await sync_service.start_sync(
-        SyncMode.INITIAL,
-        _market_db(),
-        DummyJQuantsClient(),
-        time_series_store=_time_series_store(),
-    )
-    assert job is not None and job.task is not None
-    await job.task
-
-    assert observed_timeouts == [120 * 60]
-
-
-@pytest.mark.asyncio
-async def test_materialization_cancel_joins_worker_before_close_finish_and_terminal_status(
-    monkeypatch: pytest.MonkeyPatch,
-    isolated_materialize_manager: GenericJobManager,
-) -> None:
-    worker_started = threading.Event()
-    allow_code_boundary = threading.Event()
-    worker_finished = threading.Event()
-    cancel_seen_at_boundary = threading.Event()
-
-    class BlockingMaterializer:
-        def __init__(self, market_db: object) -> None:
-            del market_db
-
-        def reconcile(self, **kwargs: Any) -> object:
-            worker_started.set()
-            allow_code_boundary.wait()
-            if kwargs["cancel_requested"]():
-                cancel_seen_at_boundary.set()
-            worker_finished.set()
-            return SimpleNamespace(
-                completed_codes=0,
-                total_codes=1,
-                basis_count=0,
-                published_basis_count=0,
-                ready_basis_count=0,
-                statement_rows=0,
-                daily_valuation_rows=0,
-                daily_technical_metric_rows=0,
-                daily_valuation_latest_date=None,
-                active_price_basis_date=None,
-                active_basis_version=None,
-            )
-
-    monkeypatch.setattr(
-        sync_service, "AdjustedMetricsMaterializer", BlockingMaterializer
-    )
-    job = await sync_service.start_adjusted_metrics_materialization(
-        cast(sync_service.MarketDb, object()),
-    )
-    assert job is not None and job.task is not None
-    assert await asyncio.to_thread(worker_started.wait, 1)
-
-    cancel_task = asyncio.create_task(
-        isolated_materialize_manager.cancel_job(job.job_id, wait=True)
-    )
-    try:
-        await asyncio.sleep(0.05)
-        assert not worker_finished.is_set()
-        assert job.status != JobStatus.CANCELLED
-        assert not cancel_task.done()
-    finally:
-        allow_code_boundary.set()
-
-    assert await cancel_task is True
-    assert worker_finished.is_set()
-    assert cancel_seen_at_boundary.is_set()
-    assert job.status == JobStatus.CANCELLED
-
-
-@pytest.mark.asyncio
-async def test_repeated_materialization_cancel_cannot_detach_blocked_worker(
-    monkeypatch: pytest.MonkeyPatch,
-    isolated_materialize_manager: GenericJobManager,
-) -> None:
-    worker_started = threading.Event()
-    allow_code_boundary = threading.Event()
-    worker_finished = threading.Event()
-
-    class BlockingMaterializer:
-        def __init__(self, market_db: object) -> None:
-            del market_db
-
-        def reconcile(self, **kwargs: Any) -> object:
-            worker_started.set()
-            allow_code_boundary.wait()
-            assert kwargs["cancel_requested"]()
-            worker_finished.set()
-            return SimpleNamespace()
-
-    monkeypatch.setattr(
-        sync_service, "AdjustedMetricsMaterializer", BlockingMaterializer
-    )
-    job = await sync_service.start_adjusted_metrics_materialization(
-        cast(sync_service.MarketDb, object()),
-    )
-    assert job is not None and job.task is not None
-    assert await asyncio.to_thread(worker_started.wait, 1)
-
-    cancel_tasks: list[asyncio.Task[bool]] = []
-    try:
-        for _ in range(3):
-            cancel_tasks.append(
-                asyncio.create_task(
-                    isolated_materialize_manager.cancel_job(job.job_id, wait=True)
-                )
-            )
-            await asyncio.sleep(0)
-        await asyncio.sleep(0.05)
-        assert not worker_finished.is_set()
-        assert job.status != JobStatus.CANCELLED
-    finally:
-        allow_code_boundary.set()
-
-    results = await asyncio.gather(*cancel_tasks)
-    assert any(results)
-    assert worker_finished.is_set()
-    assert job.status == JobStatus.CANCELLED
-
-
-@pytest.mark.asyncio
-async def test_materialization_timeout_joins_worker_before_failed_status(
-    monkeypatch: pytest.MonkeyPatch,
-    isolated_materialize_manager: GenericJobManager,
-) -> None:
-    worker_started = threading.Event()
-    allow_code_boundary = threading.Event()
-    worker_finished = threading.Event()
-
-    class BlockingMaterializer:
-        def __init__(self, market_db: object) -> None:
-            del market_db
-
-        def reconcile(self, **kwargs: Any) -> object:
-            worker_started.set()
-            allow_code_boundary.wait()
-            assert kwargs["cancel_requested"]()
-            worker_finished.set()
-            return SimpleNamespace()
-
-    monkeypatch.setattr(
-        sync_service, "AdjustedMetricsMaterializer", BlockingMaterializer
-    )
-    monkeypatch.setattr(
-        sync_service,
-        "ADJUSTED_METRICS_MATERIALIZATION_TIMEOUT_MINUTES",
-        0.001,
-    )
-    job = await sync_service.start_adjusted_metrics_materialization(
-        cast(sync_service.MarketDb, object())
-    )
-    assert job is not None and job.task is not None
-    assert await asyncio.to_thread(worker_started.wait, 1)
-
-    try:
-        await asyncio.sleep(0.1)
-        assert not worker_finished.is_set()
-        assert job.status != JobStatus.FAILED
-        assert not job.task.done()
-    finally:
-        allow_code_boundary.set()
-
-    await job.task
-    assert worker_finished.is_set()
-    assert job.status == JobStatus.FAILED
-    assert job.error is not None and "timed out" in job.error
-
-
-@pytest.mark.asyncio
-async def test_sync_timeout_joins_materializer_before_failed_status(
-    monkeypatch: pytest.MonkeyPatch,
-    isolated_manager: GenericJobManager,
-) -> None:
-    worker_started = threading.Event()
-    allow_code_boundary = threading.Event()
-    worker_finished = threading.Event()
-
-    class MaterializingStrategy:
-        async def execute(self, ctx: Any) -> SyncResult:
-            assert ctx.materialize_adjusted_metrics is not None
-            await ctx.materialize_adjusted_metrics()
-            return SyncResult(success=True)
-
-    class BlockingMaterializer:
-        def __init__(self, market_db: object) -> None:
-            del market_db
-
-        def reconcile(self, **kwargs: Any) -> object:
-            del kwargs
-            worker_started.set()
-            allow_code_boundary.wait()
-            worker_finished.set()
-            return object()
-
-    market_db = DummyMarketDb()
-    store = DummyTimeSeriesStore()
-    monkeypatch.setattr(
-        sync_service, "get_strategy", lambda _mode: MaterializingStrategy()
-    )
-    monkeypatch.setattr(
-        sync_service, "AdjustedMetricsMaterializer", BlockingMaterializer
-    )
-    monkeypatch.setattr(sync_service, "INITIAL_SYNC_JOB_TIMEOUT_MINUTES", 0.001)
-
-    job = await sync_service.start_sync(
-        SyncMode.INITIAL,
-        cast(sync_service.SyncServiceMarketDbLike, market_db),
-        DummyJQuantsClient(),
-        time_series_store=cast(sync_service.SyncServiceTimeSeriesStoreLike, store),
-    )
-    assert job is not None and job.task is not None
-    assert await asyncio.to_thread(worker_started.wait, 1)
-
-    try:
-        await asyncio.sleep(0.1)
-        assert store.close_calls == 0
-        assert not worker_finished.is_set()
-        assert not job.task.done()
-    finally:
-        allow_code_boundary.set()
-
-    await job.task
-    assert worker_finished.is_set()
-    assert store.close_calls == 0
-    assert job.status == JobStatus.FAILED
-    assert job.error is not None and "timed out" in job.error
-
-
-@pytest.mark.asyncio
 async def test_start_sync_resets_market_snapshot_before_initial_sync(
     monkeypatch: pytest.MonkeyPatch,
     isolated_manager: GenericJobManager,
@@ -1235,7 +967,10 @@ async def test_start_sync_resets_market_snapshot_before_initial_sync(
     strategy = StrategyProbe(emit_progress=False)
     monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
 
-    old_market_db = DummyMarketDb(legacy_stock_snapshot=True)
+    old_market_db = DummyMarketDb(
+        schema_version=MARKET_SCHEMA_VERSION,
+        adjustment_mode=PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
+    )
     old_store = DummyTimeSeriesStore()
     reset_market_db = DummyMarketDb()
     reset_store = DummyTimeSeriesStore()
@@ -1271,7 +1006,7 @@ async def test_start_sync_resets_market_snapshot_before_initial_sync(
     assert METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"] not in old_market_db.metadata
     assert reset_market_db.ensure_schema_calls == 1
     assert reset_market_db.metadata[METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"]] == (
-        "local_projection_v2_event_time"
+        PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
     )
     assert strategy.captured_ctx is not None
     assert strategy.captured_ctx.market_db is reset_market_db
