@@ -466,7 +466,9 @@ def test_research_prices_fail_closed_for_current_fundamentals_lineage(
         conn.close()
 
 
-def test_research_prices_reject_market_v4_without_dual_read(tmp_path: Path) -> None:
+def test_research_prices_reject_unsupported_schema_without_dual_read(
+    tmp_path: Path,
+) -> None:
     conn = _build_market_v5_fixture(tmp_path / "market.duckdb")
     try:
         conn.execute("UPDATE market_schema_version SET version = 4")
@@ -474,7 +476,7 @@ def test_research_prices_reject_market_v4_without_dual_read(tmp_path: Path) -> N
             build_daily_ranking_event_time_prices(
                 conn,
                 DailyRankingPriceRequest(
-                    namespace="reject_v4",
+                    namespace="reject_unsupported_schema",
                     query_start="2024-01-04",
                     query_end="2024-01-08",
                     analysis_start_date="2024-01-04",
@@ -565,7 +567,7 @@ def test_forward_projection_rejects_unvalidated_relation_namespace() -> None:
     [
         ("UPDATE market_schema_version SET version = 4", "required schema version 5"),
         (
-            "UPDATE sync_metadata SET value = 'local_projection_v2_event_time'",
+            "UPDATE sync_metadata SET value = 'unsupported_adjustment_mode'",
             "provider_adjusted_v1",
         ),
         ("DROP TABLE market_schema_version", "market_schema_version"),

@@ -1,4 +1,4 @@
-"""Upgrade legacy Daily Ranking fixtures to canonical Market v5 inputs."""
+"""Upgrade Daily Ranking fixtures to canonical Market v5 inputs."""
 
 from __future__ import annotations
 
