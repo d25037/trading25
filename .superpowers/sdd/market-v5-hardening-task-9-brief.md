@@ -5,6 +5,7 @@ Implement exactly Task 9 in `docs/superpowers/plans/2026-07-21-market-v5-review-
 ## Scope
 
 - create `apps/bt/src/application/services/market_v4_cutover/activation_recovery.py`
+- create `apps/bt/src/application/services/market_v4_cutover/activation_runtime.py` when required to isolate the P1-only exact recovery-runtime ownership manifest, gated active-core comparison, and prepare/remove operations from recovery state orchestration while preserving structure caps
 - create `apps/bt/tests/unit/server/services/test_market_v4_cutover_activation_crash_recovery.py`
 - modify `apps/bt/src/application/services/market_v4_cutover/activation.py`
 - modify `apps/bt/src/application/services/market_v4_cutover/service.py`
@@ -14,17 +15,21 @@ Implement exactly Task 9 in `docs/superpowers/plans/2026-07-21-market-v5-review-
 
 ### Approved plan file-list omissions
 
-The Task 9 plan's four-file list omits two changes required by its own fresh-process
+The Task 9 plan's four-file list omits three changes required by its own fresh-process
 contract: an anchored descriptor-relative `load_existing(report_id)` entry point in
-`activation_journal.py` with focused journal tests, and the two existing Task 8 report
+`activation_journal.py` with focused journal tests; the two existing Task 8 report
 publication failure cases whose obsolete restore expectation contradicts Task 8's
-approved preserve-for-recovery boundary. The task brief and parent approval therefore
-allow those minimal focused changes; they do not broaden production recovery scope.
+approved preserve-for-recovery boundary; and the P1-only `activation_runtime.py`
+ownership helper needed to keep runtime evidence out of the 612-line recovery state
+orchestrator and preserve package line/responsibility caps. The task brief and parent
+approval therefore allow those minimal focused changes; they do not broaden production
+recovery scope.
 
 ## Contract
 
 - Recovery runs at same-ID entry before any new preparation or mutation and requires exact report/rehearsal/backup IDs, config, code version, target/source/staged/active/backup/quarantine identities and canonical evidence.
 - Fresh discovery must use an anchored validated report ID and descriptor-relative/no-follow canonical loading; it must not scan filenames or infer ownership from path names.
+- A residual deterministic recovery runtime may be excluded from active-tree identity or removed only after validating its anchored report-derived path, managed no-follow/single-link traversal, allowed top-level shape, exact config digest, and exact staged strategy map with the canonical smoke overlay. Tampered or ambiguous runtime trees remain untouched.
 - Fresh child-process crash tests use `os._exit(75)` before exchange, after exchange, after durable `activated` before report, and after report publication before `reported`.
 - `reported`: validate exact report and filesystem identities, then return it.
 - `activated`: validate exact active/quarantine/backup identities, run active smoke, publish/adopt exact report, append `reported`.

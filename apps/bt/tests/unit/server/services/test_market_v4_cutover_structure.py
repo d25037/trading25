@@ -16,6 +16,7 @@ TEST_ROOT = Path(__file__).parent
 
 EXPECTED_RESPONSIBILITIES = {
     "activation_journal.py",
+    "activation_runtime.py",
     "activation_contract.py",
     "backup.py",
     "contracts.py",

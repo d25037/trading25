@@ -81,6 +81,18 @@ def _run_crashing_cutover(data_root: Path, crash_point: str) -> None:
                     os._exit(_CRASH_EXIT_CODE)
 
             service._workspace._secure_rename = crash_after_quarantine
+        elif crash_point == "after_runtime_rename":
+            real_rename = service._workspace._secure_rename
+
+            def crash_after_runtime_rename(source: Path, target: Path) -> None:
+                real_rename(source, target)
+                if (
+                    source.name == f"runtime-template-{_REPORT_ID}"
+                    and target.name == f".cutover-runtime-{_REPORT_ID}"
+                ):
+                    os._exit(_CRASH_EXIT_CODE)
+
+            service._workspace._secure_rename = crash_after_runtime_rename
         elif crash_point == "after_report":
             real_publish = service._reports._write_or_adopt_exact_report
 
@@ -115,6 +127,7 @@ def _run_crashing_cutover(data_root: Path, crash_point: str) -> None:
         "before_exchange",
         "after_exchange",
         "after_quarantine",
+        "after_runtime_rename",
         "after_activated",
         "after_report",
     ),
@@ -387,3 +400,124 @@ def test_recovery_never_adopts_or_overwrites_mismatched_published_report(
 
     assert active_market.read_bytes() == active_bytes
     assert report_path.read_bytes() == mismatched
+
+
+def test_joined_smoke_and_runtime_cleanup_failure_remains_recoverable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class RecoverySmokeFailure(RuntimeError):
+        pass
+
+    class FailingApi(FakeApi):
+        def request(
+            self,
+            method: str,
+            path: str,
+            payload: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            del method, path, payload
+            raise RecoverySmokeFailure("injected joined recovery smoke failure")
+
+    data_root = _market_root(tmp_path)
+    setup = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi(), FakeApi()]),
+    )
+    setup.backup(_BACKUP_ID)
+    setup.rehearse(_REHEARSAL_ID, _CONFIG, inherited_environment={})
+    _run_crashing_cutover(data_root, "after_activated")
+
+    failed = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FailingApi()]),
+    )
+
+    def fail_runtime_cleanup(_market_fd: int, _runtime_name: str) -> None:
+        raise OSError("injected recovery runtime cleanup failure")
+
+    monkeypatch.setattr(
+        failed._workspace,
+        "_remove_market_runtime",
+        fail_runtime_cleanup,
+    )
+    with pytest.raises(CutoverSafetyError, match="runtime cleanup failure") as caught:
+        failed.cutover(
+            _REPORT_ID,
+            rehearsal_report_id=_REHEARSAL_ID,
+            backup_id=_BACKUP_ID,
+            config=_CONFIG,
+            inherited_environment={},
+        )
+    assert isinstance(caught.value.__cause__, OSError)
+    assert "injected recovery runtime cleanup failure" in str(caught.value.__cause__)
+
+    runtime_root = (
+        data_root / f"market-timeseries/.cutover-runtime-{_REPORT_ID}"
+    )
+    assert runtime_root.is_dir()
+    assert (runtime_root / "config/default.yaml").is_file()
+    journal_dir = (
+        data_root
+        / f"operations/market-v5-cutover/activation-journals/{_REPORT_ID}"
+    )
+    assert [path.name for path in sorted(journal_dir.iterdir())][-1] == (
+        "00000003-activated.json"
+    )
+
+    fresh = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi()]),
+    )
+    result = fresh.cutover(
+        _REPORT_ID,
+        rehearsal_report_id=_REHEARSAL_ID,
+        backup_id=_BACKUP_ID,
+        config=_CONFIG,
+        inherited_environment={},
+    )
+
+    assert result.report_id == _REPORT_ID
+    assert not runtime_root.exists()
+    assert [path.name for path in sorted(journal_dir.iterdir())][-1] == (
+        "00000004-reported.json"
+    )
+
+
+def test_recovery_rejects_tampered_runtime_without_deleting_it(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    setup = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi(), FakeApi()]),
+    )
+    setup.backup(_BACKUP_ID)
+    setup.rehearse(_REHEARSAL_ID, _CONFIG, inherited_environment={})
+    _run_crashing_cutover(data_root, "after_runtime_rename")
+    runtime_config = (
+        data_root
+        / f"market-timeseries/.cutover-runtime-{_REPORT_ID}/config/default.yaml"
+    )
+    runtime_config.write_text("tampered: true\n")
+    tampered = runtime_config.read_bytes()
+
+    fresh = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi()]),
+    )
+    with pytest.raises(CutoverSafetyError, match="runtime.*exact"):
+        fresh.cutover(
+            _REPORT_ID,
+            rehearsal_report_id=_REHEARSAL_ID,
+            backup_id=_BACKUP_ID,
+            config=_CONFIG,
+            inherited_environment={},
+        )
+
+    assert runtime_config.read_bytes() == tampered

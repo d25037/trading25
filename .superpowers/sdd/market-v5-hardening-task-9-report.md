@@ -149,3 +149,67 @@ bounds. `git diff --check` exits 0. Per the Task 9 brief, no repository-wide sui
 run.
 
 Intended commit subject: `fix(bt): recover interrupted cutover by exact same id`.
+
+## P1 remediation: recover an exact journal-owned residual runtime
+
+- Review base: `ad8cbcf2b75dbfd4bfb863a6eafe974110397d8b`.
+- Scope is limited to the P1 residual-runtime ownership and joined cleanup-failure
+  paths. The general crash-boundary matrix remains deferred to GitHub issue #496.
+- `activation_runtime.py` is an approved plan file-list omission. It isolates the
+  runtime ownership manifest and active-core comparison from the 612-line state
+  orchestrator, preserves package structure caps, and contains no journal, API, sync,
+  rebuild, or Task 10 behavior.
+
+### Strict RED
+
+No production file changed before the focused regressions were run:
+
+```text
+uv run --directory apps/bt pytest \
+  tests/unit/server/services/test_market_v4_cutover_activation_crash_recovery.py \
+  -k 'after_runtime_rename or joined_smoke or tampered_runtime' -q
+
+3 selected, 3 failed
+```
+
+The real child exited with `os._exit(75)` immediately after the exact runtime-template
+to active `.cutover-runtime-<REPORT_ID>` rename. Fresh recovery rejected the otherwise
+legal quarantined layout as ambiguous because the residual runtime changed the active
+tree digest. A joined recovery smoke failure followed by an injected runtime-removal
+`OSError` exposed the original smoke error because cleanup failure was swallowed. A
+tampered runtime reached the same generic layout rejection instead of a dedicated
+ownership gate.
+
+### Remediation behavior
+
+- Before active identity may exclude a runtime or cleanup may remove it, recovery
+  validates the report-derived managed path with descriptor-relative no-follow
+  traversal and requires every regular file to have one link.
+- The runtime has an exact allowed top-level entry/type set. Its default config digest
+  equals the exact staging snapshot; its complete strategy directory/file map equals
+  the staging map after applying the canonical repository smoke overlay. Recovery
+  artifacts may exist only under the managed datasets/backtest/runtime subtrees.
+- Only after this gate passes does recovery compare the active core while excluding
+  that one runtime. Other active files and sibling paths remain part of the exact
+  journaled active identity.
+- A legal quarantined `exchange_started` or `activated` layout may therefore retain
+  one exact owned runtime. Recovery validates and removes it, creates a fresh isolated
+  runtime, and reruns active smoke before advancing the journal.
+- Joined smoke cleanup failure raises `CutoverSafetyError` with the exact cleanup
+  exception as its cause and leaves the runtime intact. A fresh same-ID retry validates
+  that residual runtime, cleans/recreates it, and reaches `reported`. A tampered runtime
+  is rejected without mutation or deletion.
+
+### GREEN and final verification
+
+```text
+Focused P1 regressions: 3 passed, 11 deselected
+Complete crash recovery file: 14 passed, 15 warnings
+Package structure guard: 8 passed, 1 warning
+Full cutover glob plus CLI: 268 passed, 15 warnings
+Scoped Ruff: All checks passed!
+Scoped Pyright: 0 errors, 0 warnings, 0 informations
+```
+
+No repository-wide suite was run. Intended fix commit subject:
+`fix(bt): recover journal-owned cutover runtime`.
