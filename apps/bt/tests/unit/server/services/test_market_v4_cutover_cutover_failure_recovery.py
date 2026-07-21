@@ -10,6 +10,7 @@ import shutil
 import pytest
 
 from src.application.services.market_v4_cutover.contracts import (
+    ActivationState,
     MarketSourceMetadata,
     SmokeConfig,
 )
@@ -27,6 +28,288 @@ from tests.unit.server.services.market_v4_cutover_test_support import (
     _market_root,
     _service,
 )
+
+
+@pytest.mark.parametrize("durable_activated", (False, True))
+def test_activated_append_failure_preserves_v5_for_same_id_recovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    durable_activated: bool,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()]),
+    )
+    config = SmokeConfig("7203", "production/smoke", "primeMarket")
+    original = (data_root / "market-timeseries/market.duckdb").read_bytes()
+    service.backup("activated-append-backup")
+    service.rehearse(
+        "activated-append-rehearsal", config, inherited_environment={}
+    )
+    real_append = service._activation._journal.append
+
+    def fail_activated_append(attempt, state):
+        if state is ActivationState.ACTIVATED:
+            if durable_activated:
+                real_append(attempt, state)
+            raise OSError("injected activated append failure")
+        return real_append(attempt, state)
+
+    monkeypatch.setattr(
+        service._activation._journal,
+        "append",
+        fail_activated_append,
+    )
+    restore_called = False
+
+    def forbidden_restore(_backup_id: str) -> None:
+        nonlocal restore_called
+        restore_called = True
+        raise AssertionError("committed activation must await same-ID recovery")
+
+    monkeypatch.setattr(service._backups, "restore", forbidden_restore)
+
+    with pytest.raises(CutoverSafetyError, match="same-ID recovery"):
+        service.cutover(
+            "activated-append-active",
+            rehearsal_report_id="activated-append-rehearsal",
+            backup_id="activated-append-backup",
+            config=config,
+            inherited_environment={},
+        )
+
+    assert restore_called is False
+    assert (data_root / "market-timeseries/market.duckdb").read_bytes() != original
+    quarantine = (
+        data_root
+        / "operations/market-v5-cutover/quarantine/pre-cutover-activated-append-active"
+    )
+    assert (quarantine / "market.duckdb").read_bytes() == original
+    assert (
+        data_root / "operations/market-v5-cutover/backups/activated-append-backup"
+    ).is_dir()
+    journal_dir = (
+        data_root
+        / "operations/market-v5-cutover/activation-journals/activated-append-active"
+    )
+    expected = [
+        "00000001-prepared.json",
+        "00000002-exchange_started.json",
+    ]
+    if durable_activated:
+        expected.append("00000003-activated.json")
+    assert [path.name for path in sorted(journal_dir.iterdir())] == expected
+    assert not (
+        data_root
+        / "operations/market-v5-cutover/reports/activated-append-active/report.json"
+    ).exists()
+
+
+@pytest.mark.parametrize(
+    ("failure_point", "report_exists"),
+    (
+        ("report_build", False),
+        ("report_publish", False),
+        ("report_readback", True),
+        ("reported_append", True),
+    ),
+)
+def test_post_activated_failure_preserves_v5_and_exact_report_for_recovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_point: str,
+    report_exists: bool,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()]),
+    )
+    config = SmokeConfig("7203", "production/smoke", "primeMarket")
+    original = (data_root / "market-timeseries/market.duckdb").read_bytes()
+    service.backup("post-activated-backup")
+    service.rehearse(
+        "post-activated-rehearsal", config, inherited_environment={}
+    )
+
+    if failure_point == "report_build":
+        real_operation_report = service._reports._operation_report
+
+        def fail_success_report_build(**kwargs: object):
+            if kwargs["status"] == "passed":
+                raise OSError("injected report build failure")
+            return real_operation_report(**kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(
+            service._reports,
+            "_operation_report",
+            fail_success_report_build,
+        )
+    elif failure_point == "report_publish":
+        monkeypatch.setattr(
+            service._reports,
+            "_write_or_adopt_exact_report",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                OSError("injected report publish failure")
+            ),
+        )
+    elif failure_point == "report_readback":
+        real_read_report = service._reports._read_report
+
+        def fail_active_report_readback(report_id: str) -> dict[str, object]:
+            if report_id == "post-activated-active":
+                raise OSError("injected report readback failure")
+            return real_read_report(report_id)
+
+        monkeypatch.setattr(
+            service._reports,
+            "_read_report",
+            fail_active_report_readback,
+        )
+    else:
+        real_append = service._activation._journal.append
+
+        def fail_reported_append(attempt, state):
+            if state is ActivationState.REPORTED:
+                raise OSError("injected reported append failure")
+            return real_append(attempt, state)
+
+        monkeypatch.setattr(
+            service._activation._journal,
+            "append",
+            fail_reported_append,
+        )
+
+    restore_called = False
+
+    def forbidden_restore(_backup_id: str) -> None:
+        nonlocal restore_called
+        restore_called = True
+        raise AssertionError("committed activation must await same-ID recovery")
+
+    monkeypatch.setattr(service._backups, "restore", forbidden_restore)
+
+    with pytest.raises(CutoverSafetyError, match="same-ID recovery"):
+        service.cutover(
+            "post-activated-active",
+            rehearsal_report_id="post-activated-rehearsal",
+            backup_id="post-activated-backup",
+            config=config,
+            inherited_environment={},
+        )
+
+    assert restore_called is False
+    assert (data_root / "market-timeseries/market.duckdb").read_bytes() != original
+    quarantine = (
+        data_root
+        / "operations/market-v5-cutover/quarantine/pre-cutover-post-activated-active"
+    )
+    assert (quarantine / "market.duckdb").read_bytes() == original
+    assert (
+        data_root / "operations/market-v5-cutover/backups/post-activated-backup"
+    ).is_dir()
+    journal_dir = (
+        data_root
+        / "operations/market-v5-cutover/activation-journals/post-activated-active"
+    )
+    assert (journal_dir / "00000003-activated.json").is_file()
+    assert not (journal_dir / "00000004-reported.json").exists()
+    report_path = (
+        data_root
+        / "operations/market-v5-cutover/reports/post-activated-active/report.json"
+    )
+    assert report_path.exists() is report_exists
+    if report_exists:
+        report = json.loads(report_path.read_text())
+        assert report["status"] == "passed"
+        assert report["reportId"] == "post-activated-active"
+
+
+def test_runtime_template_failure_occurs_before_activated_boundary_and_restores(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi(), FakeApi()]),
+    )
+    config = SmokeConfig("7203", "production/smoke", "primeMarket")
+    original = (data_root / "market-timeseries/market.duckdb").read_bytes()
+    service.backup("runtime-template-backup")
+    service.rehearse(
+        "runtime-template-rehearsal", config, inherited_environment={}
+    )
+
+    def fail_runtime_template_rename(_source: Path, target: Path) -> None:
+        if target.name == ".cutover-runtime-runtime-template-active":
+            raise OSError("injected runtime-template rename failure")
+
+    service._workspace._rename_at_hook = fail_runtime_template_rename
+
+    with pytest.raises(CutoverSafetyError, match="restored backup"):
+        service.cutover(
+            "runtime-template-active",
+            rehearsal_report_id="runtime-template-rehearsal",
+            backup_id="runtime-template-backup",
+            config=config,
+            inherited_environment={},
+        )
+
+    assert (data_root / "market-timeseries/market.duckdb").read_bytes() == original
+    journal_dir = (
+        data_root
+        / "operations/market-v5-cutover/activation-journals/runtime-template-active"
+    )
+    assert [path.name for path in sorted(journal_dir.iterdir())] == [
+        "00000001-prepared.json",
+        "00000002-exchange_started.json",
+    ]
+
+
+@pytest.mark.parametrize(
+    "failed_state",
+    (ActivationState.PREPARED, ActivationState.EXCHANGE_STARTED),
+)
+def test_preexchange_journal_failure_leaves_active_untouched(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failed_state: ActivationState,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi(), FakeApi()]),
+    )
+    config = SmokeConfig("7203", "production/smoke", "primeMarket")
+    original = (data_root / "market-timeseries/market.duckdb").read_bytes()
+    service.backup("preexchange-journal-backup")
+    service.rehearse(
+        "preexchange-journal-rehearsal", config, inherited_environment={}
+    )
+    real_append = service._activation._journal.append
+
+    def fail_before_exchange(attempt, state):
+        if state is failed_state:
+            raise OSError(f"injected {state.value} append failure")
+        return real_append(attempt, state)
+
+    monkeypatch.setattr(service._activation._journal, "append", fail_before_exchange)
+
+    with pytest.raises(CutoverSafetyError, match="active market is unchanged"):
+        service.cutover(
+            "preexchange-journal-active",
+            rehearsal_report_id="preexchange-journal-rehearsal",
+            backup_id="preexchange-journal-backup",
+            config=config,
+            inherited_environment={},
+        )
+
+    assert (data_root / "market-timeseries/market.duckdb").read_bytes() == original
 
 
 def test_cutover_defers_restore_when_active_server_stop_is_unproven(

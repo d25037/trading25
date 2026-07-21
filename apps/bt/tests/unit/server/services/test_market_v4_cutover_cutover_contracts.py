@@ -5,10 +5,18 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import cast
 
 import pytest
 
+from src.application.services.market_v4_cutover.activation_contract import (
+    activation_report_contract_valid,
+    market_tree_identity_evidence,
+)
 from src.application.services.market_v4_cutover.contracts import (
+    ActivationAttempt,
+    ImmutableJsonValue,
+    MarketTreeIdentity,
     MarketSourceMetadata,
     SmokeConfig,
 )
@@ -26,6 +34,162 @@ from tests.unit.server.services.market_v4_cutover_test_support import (
     _write_report,
     _service,
 )
+
+
+def _contract_identity(
+    path: str,
+    seed: int,
+    *,
+    payload: dict[str, ImmutableJsonValue] | None = None,
+) -> MarketTreeIdentity:
+    return MarketTreeIdentity(
+        path,
+        {"device": seed, "inode": seed + 100},
+        payload or {"marketTreeSha256": f"tree-{seed}"},
+    )
+
+
+def _activation_contract_fixture(
+    scalar: object,
+) -> tuple[dict[str, object], ActivationAttempt, MarketTreeIdentity, dict[str, object]]:
+    evidence = {
+        "schemaVersion": 5,
+        "stockPriceAdjustmentMode": "provider_adjusted_v1",
+        "providerVintage": {
+            "sourceFingerprint": "a" * 64,
+            "typeSensitiveScalar": scalar,
+        },
+    }
+    source = _contract_identity(
+        "operations/market-v5-cutover/staging/type-exact/root/market-timeseries",
+        1,
+        payload=cast(
+            dict[str, ImmutableJsonValue],
+            {"marketTreeSha256": "tree-1", "schemaCoverage": evidence},
+        ),
+    )
+    staged = _contract_identity(source.path, 1, payload=dict(source.payload))
+    active_before = _contract_identity("market-timeseries", 2)
+    backup = _contract_identity(
+        "operations/market-v5-cutover/backups/type-exact/payload",
+        3,
+        payload={"marketTreeSha256": "tree-2"},
+    )
+    expected_active = _contract_identity(
+        "market-timeseries", 1, payload=dict(staged.payload)
+    )
+    attempt = ActivationAttempt(
+        "type-exact-active",
+        "type-exact-rehearsal",
+        "type-exact-backup",
+        "deadbeef",
+        SmokeConfig("7203", "production/smoke", "primeMarket"),
+        source,
+        staged,
+        active_before,
+        backup,
+        expected_active,
+    )
+    quarantine = _contract_identity(
+        "operations/market-v5-cutover/quarantine/pre-cutover-type-exact-active", 2
+    )
+    report = {
+        "reportId": attempt.report_id,
+        "rehearsalReportId": attempt.rehearsal_report_id,
+        "backupId": attempt.backup_id,
+        "codeVersion": attempt.code_version,
+        "phase": "cutover",
+        "status": "passed",
+        "activationMode": "journaled_atomic_exchange",
+        "smokeConfig": {
+            "symbol": attempt.config.symbol,
+            "strategy": attempt.config.strategy,
+            "datasetPreset": attempt.config.dataset_preset,
+        },
+        "schemaCoverage": evidence,
+        "sourceMarketIdentity": market_tree_identity_evidence(attempt.source),
+        "stagedMarketIdentity": market_tree_identity_evidence(attempt.staged),
+        "activeMarketIdentityBefore": market_tree_identity_evidence(
+            attempt.active_before
+        ),
+        "backupMarketIdentity": market_tree_identity_evidence(attempt.backup),
+        "activatedMarketIdentity": market_tree_identity_evidence(
+            attempt.expected_active
+        ),
+        "quarantineMarketIdentity": market_tree_identity_evidence(quarantine),
+        "activeBackupTreeSha256": "tree-2",
+        "stagedProviderVintage": evidence["providerVintage"],
+        "activeProviderVintage": evidence["providerVintage"],
+    }
+    return report, attempt, quarantine, evidence
+
+
+@pytest.mark.parametrize(
+    ("frozen_scalar", "report_scalar"),
+    ((1, 1.0), (0, False), (-0.0, 0.0)),
+    ids=("int-vs-float", "int-vs-bool", "negative-zero-vs-zero"),
+)
+def test_activation_report_contract_rejects_type_coerced_nested_evidence(
+    frozen_scalar: object,
+    report_scalar: object,
+) -> None:
+    report, attempt, quarantine, evidence = _activation_contract_fixture(
+        frozen_scalar
+    )
+    report_evidence = cast(dict[str, object], report["schemaCoverage"])
+    provider_vintage = cast(dict[str, object], report_evidence["providerVintage"])
+    provider_vintage["typeSensitiveScalar"] = report_scalar
+    report["stagedProviderVintage"] = provider_vintage
+    report["activeProviderVintage"] = provider_vintage
+
+    assert not activation_report_contract_valid(
+        report, attempt=attempt, quarantine=quarantine, evidence=evidence
+    )
+
+
+def test_activation_report_contract_binds_caller_evidence_to_frozen_attempt() -> None:
+    report, attempt, quarantine, _evidence = _activation_contract_fixture(1)
+    unbound_caller_evidence = {
+        "schemaVersion": 5,
+        "stockPriceAdjustmentMode": "provider_adjusted_v1",
+        "providerVintage": {
+            "sourceFingerprint": "b" * 64,
+            "typeSensitiveScalar": 1,
+        },
+    }
+    report["schemaCoverage"] = unbound_caller_evidence
+    report["stagedProviderVintage"] = unbound_caller_evidence["providerVintage"]
+    report["activeProviderVintage"] = unbound_caller_evidence["providerVintage"]
+
+    assert not activation_report_contract_valid(
+        report,
+        attempt=attempt,
+        quarantine=quarantine,
+        evidence=unbound_caller_evidence,
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    (
+        ("activationMode", "atomic_exchange"),
+        ("activeBackupTreeSha256", "tree-other"),
+        ("stagedProviderVintage", {"sourceFingerprint": "b" * 64}),
+        ("activeProviderVintage", {"sourceFingerprint": "b" * 64}),
+        ("phase", "rehearsal"),
+        ("status", "failed"),
+    ),
+)
+def test_activation_report_contract_rejects_unbound_success_fields(
+    field: str,
+    replacement: object,
+) -> None:
+    report, attempt, quarantine, evidence = _activation_contract_fixture(1)
+    report[field] = replacement
+
+    assert not activation_report_contract_valid(
+        report, attempt=attempt, quarantine=quarantine, evidence=evidence
+    )
 
 
 def test_cutover_rechecks_fingerprint_after_runtime_start_and_restores(

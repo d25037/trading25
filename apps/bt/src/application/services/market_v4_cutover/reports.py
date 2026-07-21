@@ -28,6 +28,14 @@ class CutoverReportRepository:
         self._workspace = workspace
         self._evidence = evidence
 
+    def _prepare_cutover_report_directory(self, report_id: str) -> tuple[Path, Path]:
+        report_dir = self._workspace.operations_root / "reports" / report_id
+        self._workspace._prepare_managed_directory(report_dir.parent, exist_ok=True)
+        self._workspace._prepare_managed_directory(report_dir, exist_ok=False)
+        log_path = report_dir / "server.log"
+        self._workspace._assert_managed_target_absent(log_path)
+        return report_dir, log_path
+
     def _operation_report(
         self,
         *,

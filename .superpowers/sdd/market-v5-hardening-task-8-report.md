@@ -140,3 +140,96 @@ the terminal journal append.
 - No API/OpenAPI, schema, CLI, frontend, or data-plane contract changed.
 
 Intended commit subject: `refactor(bt): bind activation to journaled identities`.
+
+## Review remediation: commit-aware activation and type-exact reports
+
+- Review base: `6676348c98db387361e30e39a414558314bfc067`.
+- Scope is restricted to the P1 activated-boundary rollback flaw and P2 report
+  contract binding. The P3 warning remains deferred to GitHub issue #495 and was
+  not changed.
+
+### Strict RED
+
+No production file was edited before the remediation regressions were run:
+
+```text
+uv run --directory apps/bt pytest \
+  tests/unit/server/services/test_market_v4_cutover_cutover_activation.py \
+  tests/unit/server/services/test_market_v4_cutover_cutover_failure_recovery.py -q
+
+collected 50 items
+17 failed, 33 passed, 1 warning
+```
+
+The P1 failures proved that activated append failures, including a record made
+durable before the injected exception, and failures in report build, publish,
+readback, and `reported` append all entered the old restore handler. The injected
+restore guard therefore produced `Active cutover failed and explicit restore also
+failed`. A runtime-template rename failure also left a durable `activated` record
+before rollback. The pre-exchange `prepared`/`exchange_started` failure tests already
+passed and proved active remained untouched.
+
+The P2 failures proved Python mapping equality accepted nested `1` versus `1.0`, `0`
+versus `false`, and `-0.0` versus `0.0`. It also accepted caller-only schema evidence
+that differed from the frozen attempt and did not bind activation mode, active backup
+digest, staged/active provider vintage, phase, or status.
+
+### Remediation behavior
+
+- An explicit commit disposition has two states: rollback remains allowed until all
+  runtime-template work, active smoke, runtime cleanup, root/code checks, and exact
+  active/quarantine identity checks complete; immediately before the `activated`
+  append it switches to preserve-for-recovery.
+- The preserve state is set before attempting `activated`, so both an absent record
+  and an append that became durable before raising preserve active v5, deterministic
+  old-active quarantine, immutable backup, journal, and any existing exact report.
+- The commit-aware handler raises a dedicated preserved-commit safety exception and
+  performs neither restore nor failure-report publication. Task 9 exact same-ID
+  recovery remains the only continuation.
+- Runtime-template failure occurs before the preserved boundary and therefore retains
+  the existing caught rollback behavior with only `prepared` and `exchange_started`
+  durable.
+- The activation report contract canonicalizes JSON with `allow_nan=False` and compares
+  exact bytes. Schema coverage is bound to the frozen `attempt.source.payload` evidence,
+  and every ID, config, identity, backup digest, provider vintage, activation mode,
+  phase, and status is checked type-sensitively.
+- Candidate/existing/read-back report comparison remains canonical and exact; a passed
+  report survives readback or terminal journal failure unchanged.
+
+### GREEN and final verification
+
+Focused remediation GREEN:
+
+```text
+uv run --directory apps/bt pytest \
+  tests/unit/server/services/test_market_v4_cutover_cutover_activation.py \
+  tests/unit/server/services/test_market_v4_cutover_cutover_failure_recovery.py -q
+
+50 passed, 1 warning
+```
+
+Final required activation, contracts, caught-failure, atomic exchange, Task 7 journal,
+and structure suites:
+
+```text
+uv run --directory apps/bt pytest \
+  tests/unit/server/services/test_market_v4_cutover_cutover_activation.py \
+  tests/unit/server/services/test_market_v4_cutover_cutover_contracts.py \
+  tests/unit/server/services/test_market_v4_cutover_cutover_failure_recovery.py \
+  tests/unit/server/services/test_market_v4_cutover_atomic_exchange.py \
+  tests/unit/server/services/test_market_v4_cutover_activation_journal.py \
+  tests/unit/server/services/test_market_v4_cutover_structure.py -q
+
+136 passed, 1 warning
+```
+
+Scoped Ruff: `All checks passed!`.
+
+Scoped production Pyright: `0 errors, 0 warnings, 0 informations`.
+
+`git diff --check` exited 0. The bounded-structure suite also verifies
+`activation.py` and every split cutover test module remain within their established
+line/method limits. No repository-wide suite was run, no Task 9 recovery was added,
+and no push is authorized.
+
+Fix-only commit subject: `fix(bt): preserve committed activation for recovery`.

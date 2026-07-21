@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import json
 from urllib.parse import quote
 
 from .contracts import ActivationAttempt, MarketTreeIdentity, SmokeConfig
@@ -25,6 +26,29 @@ def market_tree_identity_evidence(identity: MarketTreeIdentity) -> dict[str, obj
     }
 
 
+def _canonical_evidence(value: object) -> bytes | None:
+    try:
+        return json.dumps(
+            _mutable_evidence(value),
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+    except (TypeError, ValueError):
+        return None
+
+
+def _exact_evidence(actual: object, expected: object) -> bool:
+    actual_bytes = _canonical_evidence(actual)
+    expected_bytes = _canonical_evidence(expected)
+    return (
+        actual_bytes is not None
+        and expected_bytes is not None
+        and actual_bytes == expected_bytes
+    )
+
+
 def activation_report_contract_valid(
     report: dict[str, object],
     *,
@@ -34,31 +58,91 @@ def activation_report_contract_valid(
 ) -> bool:
     """Bind success publication to the immutable journal attempt."""
 
-    return (
-        report.get("reportId") == attempt.report_id
-        and report.get("rehearsalReportId") == attempt.rehearsal_report_id
-        and report.get("backupId") == attempt.backup_id
-        and report.get("codeVersion") == attempt.code_version
-        and report.get("smokeConfig")
-        == {
+    frozen_evidence = attempt.source.payload.get("schemaCoverage")
+    if not isinstance(frozen_evidence, Mapping):
+        return False
+    provider_vintage = frozen_evidence.get("providerVintage")
+    active_backup_sha256 = attempt.active_before.payload.get("marketTreeSha256")
+    if (
+        not isinstance(provider_vintage, Mapping)
+        or not isinstance(active_backup_sha256, str)
+        or not _exact_evidence(
+            attempt.backup.payload.get("marketTreeSha256"),
+            active_backup_sha256,
+        )
+    ):
+        return False
+    expected_fields: dict[str, object] = {
+        "reportId": attempt.report_id,
+        "rehearsalReportId": attempt.rehearsal_report_id,
+        "backupId": attempt.backup_id,
+        "codeVersion": attempt.code_version,
+        "phase": "cutover",
+        "status": "passed",
+        "activationMode": "journaled_atomic_exchange",
+        "smokeConfig": {
             "symbol": attempt.config.symbol,
             "strategy": attempt.config.strategy,
             "datasetPreset": attempt.config.dataset_preset,
-        }
-        and report.get("schemaCoverage") == evidence
-        and report.get("sourceMarketIdentity")
-        == market_tree_identity_evidence(attempt.source)
-        and report.get("stagedMarketIdentity")
-        == market_tree_identity_evidence(attempt.staged)
-        and report.get("activeMarketIdentityBefore")
-        == market_tree_identity_evidence(attempt.active_before)
-        and report.get("backupMarketIdentity")
-        == market_tree_identity_evidence(attempt.backup)
-        and report.get("activatedMarketIdentity")
-        == market_tree_identity_evidence(attempt.expected_active)
-        and report.get("quarantineMarketIdentity")
-        == market_tree_identity_evidence(quarantine)
+        },
+        "schemaCoverage": frozen_evidence,
+        "sourceMarketIdentity": market_tree_identity_evidence(attempt.source),
+        "stagedMarketIdentity": market_tree_identity_evidence(attempt.staged),
+        "activeMarketIdentityBefore": market_tree_identity_evidence(
+            attempt.active_before
+        ),
+        "backupMarketIdentity": market_tree_identity_evidence(attempt.backup),
+        "activatedMarketIdentity": market_tree_identity_evidence(
+            attempt.expected_active
+        ),
+        "quarantineMarketIdentity": market_tree_identity_evidence(quarantine),
+        "activeBackupTreeSha256": active_backup_sha256,
+        "stagedProviderVintage": provider_vintage,
+        "activeProviderVintage": provider_vintage,
+    }
+    return _exact_evidence(evidence, frozen_evidence) and all(
+        _exact_evidence(report.get(field), expected)
+        for field, expected in expected_fields.items()
     )
+
+
+def bind_activation_report(
+    report: dict[str, object],
+    *,
+    attempt: ActivationAttempt,
+    quarantine: MarketTreeIdentity,
+    evidence: dict[str, object],
+) -> None:
+    report.update(
+        {
+            "activationMode": "journaled_atomic_exchange",
+            "sourceMarketIdentity": market_tree_identity_evidence(attempt.source),
+            "stagedMarketIdentity": market_tree_identity_evidence(attempt.staged),
+            "activeMarketIdentityBefore": market_tree_identity_evidence(
+                attempt.active_before
+            ),
+            "backupMarketIdentity": market_tree_identity_evidence(attempt.backup),
+            "activatedMarketIdentity": market_tree_identity_evidence(
+                attempt.expected_active
+            ),
+            "quarantineMarketIdentity": market_tree_identity_evidence(quarantine),
+        }
+    )
+    if not activation_report_contract_valid(
+        report,
+        attempt=attempt,
+        quarantine=quarantine,
+        evidence=evidence,
+    ):
+        raise ValueError("Cutover report is not bound to its activation attempt")
+
+
+def activated_lineage_valid(
+    staged_evidence: dict[str, object],
+    active_lineage: dict[str, object],
+) -> bool:
+    staged = staged_evidence.get("providerVintage")
+    return isinstance(staged, dict) and _exact_evidence(active_lineage, staged)
 
 
 def full_rebuild_report_contract_valid(

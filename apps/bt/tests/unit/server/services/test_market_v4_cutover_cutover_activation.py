@@ -322,6 +322,7 @@ def test_cutover_never_overwrites_mismatched_preexisting_success_report(
         runtime=FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()]),
     )
     config = SmokeConfig("7203", "production/smoke", "primeMarket")
+    original = (data_root / "market-timeseries/market.duckdb").read_bytes()
     service.backup("reject-report-backup")
     service.rehearse("reject-report-rehearsal", config, inherited_environment={})
     real_write_report = service._reports._write_report
@@ -348,7 +349,7 @@ def test_cutover_never_overwrites_mismatched_preexisting_success_report(
         service._reports, "_write_report", collide_with_mismatched_report
     )
 
-    with pytest.raises(CutoverSafetyError, match="restored backup"):
+    with pytest.raises(CutoverSafetyError, match="same-ID recovery"):
         service.cutover(
             "reject-report-active",
             rehearsal_report_id="reject-report-rehearsal",
@@ -362,10 +363,16 @@ def test_cutover_never_overwrites_mismatched_preexisting_success_report(
         / "operations/market-v5-cutover/reports/reject-report-active/report.json"
     )
     assert json.loads(report_path.read_text()) == mismatched
+    assert (data_root / "market-timeseries/market.duckdb").read_bytes() != original
+    assert (
+        data_root
+        / "operations/market-v5-cutover/quarantine/pre-cutover-reject-report-active/market.duckdb"
+    ).read_bytes() == original
     journal_dir = (
         data_root
         / "operations/market-v5-cutover/activation-journals/reject-report-active"
     )
+    assert (journal_dir / "00000003-activated.json").is_file()
     assert not (journal_dir / "00000004-reported.json").exists()
 
 
@@ -908,7 +915,7 @@ def test_cutover_cross_parent_market_move_confines_non_market_writes(
     assert (data_root / "market-timeseries/market.duckdb").read_bytes() == b"duckdb-v3"
 
 
-def test_cutover_report_write_failure_is_inside_restore_boundary(
+def test_cutover_report_write_failure_preserves_committed_v5_for_recovery(
     tmp_path: Path,
 ) -> None:
     data_root = _market_root(tmp_path)
@@ -924,15 +931,20 @@ def test_cutover_report_write_failure_is_inside_restore_boundary(
         SmokeConfig("7203", "production/smoke", "primeMarket"),
         inherited_environment={},
     )
+    original = (data_root / "market-timeseries/market.duckdb").read_bytes()
     original_write = service._reports._write_report
 
-    def fail_active_report(report_id: str, report: dict[str, object]) -> Path:
+    def fail_active_report(
+        report_id: str,
+        report: dict[str, object],
+        **kwargs: object,
+    ) -> Path:
         if report_id == "active-write-fail":
             raise OSError("injected fsync failure")
-        return original_write(report_id, report)
+        return original_write(report_id, report, **kwargs)  # type: ignore[arg-type]
 
     service._reports._write_report = fail_active_report  # type: ignore[method-assign]
-    with pytest.raises(CutoverSafetyError, match="restored backup"):
+    with pytest.raises(CutoverSafetyError, match="same-ID recovery"):
         service.cutover(
             "active-write-fail",
             rehearsal_report_id="rehearsal-001",
@@ -940,4 +952,18 @@ def test_cutover_report_write_failure_is_inside_restore_boundary(
             config=SmokeConfig("7203", "production/smoke", "primeMarket"),
             inherited_environment={},
         )
-    assert (data_root / "market-timeseries/market.duckdb").read_bytes() == b"duckdb-v3"
+    assert (data_root / "market-timeseries/market.duckdb").read_bytes() != original
+    assert (
+        data_root
+        / "operations/market-v5-cutover/quarantine/pre-cutover-active-write-fail/market.duckdb"
+    ).read_bytes() == original
+    journal_dir = (
+        data_root
+        / "operations/market-v5-cutover/activation-journals/active-write-fail"
+    )
+    assert (journal_dir / "00000003-activated.json").is_file()
+    assert not (journal_dir / "00000004-reported.json").exists()
+    assert not (
+        data_root
+        / "operations/market-v5-cutover/reports/active-write-fail/report.json"
+    ).exists()

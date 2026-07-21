@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 import os
 from pathlib import Path
 import time
-from typing import cast
 
 from src.infrastructure.db.market import managed_root as _managed_root
 from src.infrastructure.db.market import market_operation_lease as _market_operation_lease
@@ -14,16 +14,15 @@ from .contracts import (
     ActivationAttempt,
     ActivationState,
     ApiAdapter,
-    ImmutableJsonValue,
     MarketTreeIdentity,
     OperationResult,
     SmokeConfig,
 )
 from .backup import MarketBackupService
 from .activation_contract import (
-    activation_report_contract_valid,
+    activated_lineage_valid,
+    bind_activation_report,
     full_rebuild_report_contract_valid,
-    market_tree_identity_evidence,
 )
 from .activation_journal import ActivationJournalRepository
 from .errors import RuntimeStopError, WorkerShutdownError
@@ -32,6 +31,15 @@ from .filesystem import _DIR_OPEN_FLAGS
 from .reports import CutoverReportRepository
 from .smoke import RuntimeSmokeService
 from .workspace import CutoverWorkspace
+
+
+class _ActivationCommitDisposition(StrEnum):
+    ROLLBACK_ALLOWED = "rollback_allowed"
+    PRESERVE_FOR_RECOVERY = "preserve_for_recovery"
+
+
+class _ActivationCommitPreservedError(_managed_root.CutoverSafetyError):
+    """The exchange is committed and only exact same-ID recovery may continue."""
 
 
 class MarketActivationService:
@@ -151,28 +159,23 @@ class MarketActivationService:
     def _execute_cutover(
         self,
         *,
-        report_id: str,
-        rehearsal_report_id: str,
-        backup_id: str,
-        config: SmokeConfig,
-        inherited_environment: dict[str, str],
-        code_version: str,
-        expected_root_fingerprint: str,
+        report_id: str, rehearsal_report_id: str,
+        backup_id: str, config: SmokeConfig, inherited_environment: dict[str, str],
+        code_version: str, expected_root_fingerprint: str,
         backup_market_tree_sha256: str,
     ) -> OperationResult:
         assert self._workspace._active_lease is not None
         started = time.monotonic()
         api: ApiAdapter | None = None
-        activated = False
-        activation_attempted = False
+        activated = activation_attempted = False
+        commit_disposition = _ActivationCommitDisposition.ROLLBACK_ALLOWED
         staging_lease: _market_operation_lease.MarketOperationLease | None = None
         staged_market_fd: int | None = None
         active_market_fd: int | None = None
-        report_dir, log_path = self._prepare_cutover_report_directory(report_id)
+        report_dir, log_path = self._reports._prepare_cutover_report_directory(report_id)
         try:
             staging = self._prepare_cutover_staging(
-                report_id, expected_root_fingerprint=expected_root_fingerprint
-            )
+                report_id, expected_root_fingerprint=expected_root_fingerprint)
             staging_root, runtime_name, runtime_template = staging
             staging_lease = _market_operation_lease.MarketOperationLease.acquire(
                 staging_root, exclusive=True
@@ -240,39 +243,21 @@ class MarketActivationService:
                 staging_root_identity=staging_root_identity,
                 staged_market_identity=staged_market_identity,
             )
-            self._assert_backup_still_matches_active(
-                backup_id, backup_market_tree_sha256
-            )
-            staged_market = staging_root / "market-timeseries"
-            quarantine = (
-                self._workspace.operations_root
-                / "quarantine"
-                / f"pre-cutover-{report_id}"
-            )
-            self._workspace._prepare_staged_activation(
-                staged_market,
-                quarantine=quarantine,
-            )
-            attempt = self._prepare_activation_attempt(
-                report_id=report_id,
-                rehearsal_report_id=rehearsal_report_id,
-                backup_id=backup_id,
-                config=config,
-                code_version=code_version,
-                staged_market=staged_market,
+            (
+                attempt,
+                quarantine,
+                quarantine_identity,
+            ) = self._backups._prepare_journaled_activation(
+                journal=self._journal, report_id=report_id,
+                rehearsal_report_id=rehearsal_report_id, backup_id=backup_id,
+                config=config, code_version=code_version, staging_root=staging_root,
                 evidence=evidence,
                 backup_market_tree_sha256=backup_market_tree_sha256,
             )
-            quarantine_identity = self._quarantine_identity(attempt, quarantine)
-            self._journal.append(attempt, ActivationState.PREPARED)
-            self._journal.append(attempt, ActivationState.EXCHANGE_STARTED)
             activation_attempted = True
             self._activate_rebuilt_market(
-                staging_root=staging_root,
-                runtime_template=runtime_template,
-                runtime_name=runtime_name,
-                attempt=attempt,
-                quarantine=quarantine,
+                staging_root=staging_root, runtime_template=runtime_template,
+                runtime_name=runtime_name, attempt=attempt, quarantine=quarantine,
                 quarantine_identity=quarantine_identity,
             )
             activated = True
@@ -286,24 +271,24 @@ class MarketActivationService:
             try:
                 api = self._workspace.runtime.start(
                     root_fd=self._workspace._active_lease.root_fd,
-                    market_fd=active_market_fd,
-                    lease_fd=self._workspace._active_lease.fd,
-                    environment=active_environment,
-                    log_path=active_log_path,
+                    market_fd=active_market_fd, lease_fd=self._workspace._active_lease.fd,
+                    environment=active_environment, log_path=active_log_path,
                     log_fd=active_log_fd,
                 )
             finally:
                 os.close(active_log_fd)
             active_smoke_started = time.monotonic()
             active_smoke = self._runtime_smoke.smoke(
-                api,
-                config,
+                api, config,
                 operation_id=f"{report_id}.active",
                 market_directory_fd=active_market_fd,
                 guard_lease_fd=self._workspace._active_lease.fd,
             )
             active_smoke_duration = time.monotonic() - active_smoke_started
-            self._assert_activated_lineage(evidence, active_smoke.lineage)
+            if not activated_lineage_valid(evidence, active_smoke.lineage):
+                raise _managed_root.CutoverSafetyError(
+                    "Activated Market provider vintage differs from staged lineage"
+                )
             self._workspace.runtime.stop(api)
             api = None
             self._workspace._remove_market_runtime(active_market_fd, runtime_name)
@@ -324,147 +309,33 @@ class MarketActivationService:
             )
             self._workspace._assert_current_data_root_identity()
             self._workspace._require_unchanged_code_identity(code_version)
-            self._assert_activation_identities(attempt, quarantine_identity)
+            self._backups._assert_activation_identities(
+                attempt, quarantine_identity
+            )
+            commit_disposition = _ActivationCommitDisposition.PRESERVE_FOR_RECOVERY
+            self._journal.append(attempt, ActivationState.ACTIVATED)
             return self._publish_cutover_success(
-                report_id=report_id,
-                rehearsal_report_id=rehearsal_report_id,
-                backup_id=backup_id,
-                config=config,
+                report_id=report_id, rehearsal_report_id=rehearsal_report_id,
+                backup_id=backup_id, config=config,
                 code_version=code_version, expected_root_fingerprint=expected_root_fingerprint,
                 started=started, checks=checks, evidence=evidence, phases=phases,
                 backup_market_tree_sha256=backup_market_tree_sha256,
                 active_provider_vintage=active_smoke.lineage,
-                attempt=attempt,
-                quarantine_identity=quarantine_identity,
+                attempt=attempt, quarantine_identity=quarantine_identity,
             )
         except BaseException as exc:
             self._handle_cutover_failure(
-                exc,
-                report_id=report_id,
-                rehearsal_report_id=rehearsal_report_id,
-                backup_id=backup_id,
-                config=config,
+                exc, report_id=report_id, rehearsal_report_id=rehearsal_report_id,
+                backup_id=backup_id, config=config,
                 inherited_environment=inherited_environment,
-                code_version=code_version,
-                expected_root_fingerprint=expected_root_fingerprint,
-                started=started,
-                api=api,
-                staging_lease=staging_lease,
-                staged_market_fd=staged_market_fd,
-                active_market_fd=active_market_fd,
-                activated=activated,
+                code_version=code_version, expected_root_fingerprint=expected_root_fingerprint,
+                started=started, api=api,
+                staging_lease=staging_lease, staged_market_fd=staged_market_fd,
+                active_market_fd=active_market_fd, activated=activated,
                 activation_attempted=activation_attempted,
+                commit_disposition=commit_disposition,
             )
             raise AssertionError("cutover failure handler must raise")
-
-    def _assert_backup_still_matches_active(
-        self, backup_id: str, expected_sha256: str
-    ) -> None:
-        # Deliberately the last active-tree read before atomic exchange.
-        if (
-            self._backups._assert_active_matches_backup_under_lease(backup_id)
-            != expected_sha256
-        ):
-            raise _managed_root.CutoverSafetyError(
-                "Selected backup identity changed before activation"
-            )
-
-    def _prepare_activation_attempt(
-        self,
-        *,
-        report_id: str,
-        rehearsal_report_id: str,
-        backup_id: str,
-        config: SmokeConfig,
-        code_version: str,
-        staged_market: Path,
-        evidence: dict[str, object],
-        backup_market_tree_sha256: str,
-    ) -> ActivationAttempt:
-        source_payload = cast(
-            dict[str, ImmutableJsonValue],
-            {
-                "schemaCoverage": evidence,
-            },
-        )
-        source = self._backups._market_tree_identity(
-            staged_market,
-            payload=source_payload,
-        )
-        staged = MarketTreeIdentity(
-            path=source.path,
-            directory=source.directory,
-            payload=source.payload,
-        )
-        active_before = self._backups._market_tree_identity(
-            self._workspace.market_root
-        )
-        backup = self._backups._market_tree_identity(
-            self._workspace.backups_root / backup_id / "payload"
-        )
-        if (
-            active_before.payload.get("marketTreeSha256")
-            != backup_market_tree_sha256
-            or backup.payload.get("marketTreeSha256")
-            != backup_market_tree_sha256
-        ):
-            raise _managed_root.CutoverSafetyError(
-                "Activation active or backup identity changed before journal prepare"
-            )
-        expected_active = MarketTreeIdentity(
-            path=self._workspace.market_root.relative_to(
-                self._workspace.data_root
-            ).as_posix(),
-            directory=staged.directory,
-            payload=staged.payload,
-        )
-        return ActivationAttempt(
-            report_id=report_id,
-            rehearsal_report_id=rehearsal_report_id,
-            backup_id=backup_id,
-            code_version=code_version,
-            config=config,
-            source=source,
-            staged=staged,
-            active_before=active_before,
-            backup=backup,
-            expected_active=expected_active,
-        )
-
-    def _quarantine_identity(
-        self,
-        attempt: ActivationAttempt,
-        quarantine: Path,
-    ) -> MarketTreeIdentity:
-        return MarketTreeIdentity(
-            path=quarantine.relative_to(self._workspace.data_root).as_posix(),
-            directory=attempt.active_before.directory,
-            payload=attempt.active_before.payload,
-        )
-
-    def _assert_activation_identities(
-        self,
-        attempt: ActivationAttempt,
-        quarantine: MarketTreeIdentity,
-    ) -> None:
-        self._backups._assert_market_tree_identity(
-            self._workspace.market_root,
-            attempt.expected_active,
-        )
-        self._backups._assert_market_tree_identity(
-            self._workspace.data_root / quarantine.path,
-            quarantine,
-        )
-
-    @staticmethod
-    def _assert_activated_lineage(
-        staged_evidence: dict[str, object], active_lineage: dict[str, object]
-    ) -> None:
-        staged = staged_evidence.get("providerVintage")
-        if not isinstance(staged, dict) or active_lineage != staged:
-            raise _managed_root.CutoverSafetyError(
-                "Activated Market provider vintage differs from staged lineage"
-            )
 
     def _assert_active_root_fingerprint(
         self,
@@ -474,14 +345,6 @@ class MarketActivationService:
     ) -> None:
         if self._evidence.root_fingerprint(self._workspace.data_root) != expected:
             raise _managed_root.CutoverSafetyError(message)
-
-    def _prepare_cutover_report_directory(self, report_id: str) -> tuple[Path, Path]:
-        report_dir = self._workspace.operations_root / "reports" / report_id
-        self._workspace._prepare_managed_directory(report_dir.parent, exist_ok=True)
-        self._workspace._prepare_managed_directory(report_dir, exist_ok=False)
-        log_path = report_dir / "server.log"
-        self._workspace._assert_managed_target_absent(log_path)
-        return report_dir, log_path
 
     @staticmethod
     def _open_staged_market(
@@ -610,8 +473,9 @@ class MarketActivationService:
             raise _managed_root.CutoverSafetyError(
                 "Staged Market path remains after deterministic quarantine"
             )
-        self._assert_activation_identities(attempt, quarantine_identity)
-        self._journal.append(attempt, ActivationState.ACTIVATED)
+        self._backups._assert_activation_identities(
+            attempt, quarantine_identity
+        )
         self._workspace._secure_rename(
             runtime_template, self._workspace.market_root / runtime_name
         )
@@ -652,39 +516,20 @@ class MarketActivationService:
         report["activeBackupTreeSha256"] = backup_market_tree_sha256
         report["stagedProviderVintage"] = evidence["providerVintage"]
         report["activeProviderVintage"] = active_provider_vintage
-        report["activationMode"] = "journaled_atomic_exchange"
-        report["sourceMarketIdentity"] = market_tree_identity_evidence(
-            attempt.source
-        )
-        report["stagedMarketIdentity"] = market_tree_identity_evidence(
-            attempt.staged
-        )
-        report["activeMarketIdentityBefore"] = market_tree_identity_evidence(
-            attempt.active_before
-        )
-        report["backupMarketIdentity"] = market_tree_identity_evidence(
-            attempt.backup
-        )
-        report["activatedMarketIdentity"] = market_tree_identity_evidence(
-            attempt.expected_active
-        )
-        report["quarantineMarketIdentity"] = market_tree_identity_evidence(
-            quarantine_identity
-        )
-        if not activation_report_contract_valid(
-            report,
-            attempt=attempt,
-            quarantine=quarantine_identity,
-            evidence=evidence,
-        ):
-            raise _managed_root.CutoverSafetyError(
-                "Cutover success report is not bound to the activation attempt"
+        try:
+            bind_activation_report(
+                report,
+                attempt=attempt,
+                quarantine=quarantine_identity,
+                evidence=evidence,
             )
+        except ValueError as exc:
+            raise _managed_root.CutoverSafetyError(str(exc)) from exc
         report_path = self._reports._write_or_adopt_exact_report(
             report_id,
             report,
             expected_root_fingerprint=expected_root_fingerprint,
-            final_validator=lambda: self._assert_activation_identities(
+            final_validator=lambda: self._backups._assert_activation_identities(
                 attempt,
                 quarantine_identity,
             ),
@@ -713,6 +558,7 @@ class MarketActivationService:
         active_market_fd: int | None,
         activated: bool,
         activation_attempted: bool,
+        commit_disposition: _ActivationCommitDisposition,
     ) -> None:
         if staged_market_fd is not None:
             os.close(staged_market_fd)
@@ -777,6 +623,8 @@ class MarketActivationService:
             raise _managed_root.CutoverSafetyError(
                 "Owned process stop was not proven; restore is deferred"
             ) from (stop_error or exc)
+        if commit_disposition is _ActivationCommitDisposition.PRESERVE_FOR_RECOVERY:
+            self._raise_after_activation_commit(exc)
         if not activated and not activation_attempted:
             report = self._reports._operation_report(
                 **report_arguments,
@@ -814,3 +662,11 @@ class MarketActivationService:
         if not isinstance(exc, Exception):
             raise exc
         raise _managed_root.CutoverSafetyError(message) from exc
+
+    @staticmethod
+    def _raise_after_activation_commit(exc: BaseException) -> None:
+        if not isinstance(exc, Exception):
+            raise exc
+        raise _ActivationCommitPreservedError(
+            "Activated Market commit is preserved; exact same-ID recovery is required"
+        ) from exc
