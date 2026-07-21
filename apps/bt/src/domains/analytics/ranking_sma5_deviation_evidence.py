@@ -76,7 +76,6 @@ _REQUIRED_RETURN_WINDOWS: tuple[int, ...] = (20, 60)
 _WARMUP_CALENDAR_DAYS = 820
 _REQUIRED_TABLES: tuple[str, ...] = (
     "stock_data_raw",
-    "stock_data",
     "stock_provider_windows",
     "stock_adjustment_events",
     "current_basis_recompute_pending",

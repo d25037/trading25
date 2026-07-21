@@ -67,7 +67,6 @@ DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
 OVERHEAT_RETURN_20D_THRESHOLD_PCT = 30.0
 _REQUIRED_TABLES: tuple[str, ...] = (
     "stock_data_raw",
-    "stock_data",
     "stock_provider_windows",
     "stock_adjustment_events",
     "current_basis_recompute_pending",

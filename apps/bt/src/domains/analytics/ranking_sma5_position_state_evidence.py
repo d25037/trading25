@@ -62,7 +62,6 @@ _LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
 _LONG_SCAFFOLDS = LONG_SCAFFOLDS
 _REQUIRED_TABLES: tuple[str, ...] = (
     "stock_data_raw",
-    "stock_data",
     "stock_provider_windows",
     "stock_adjustment_events",
     "current_basis_recompute_pending",
