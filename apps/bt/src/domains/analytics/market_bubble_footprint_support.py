@@ -56,7 +56,20 @@ DEFAULT_SEVERE_LOSS_THRESHOLD_PCT = -10.0
 DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
 Frequency = Literal["monthly", "weekly"]
 
-_REQUIRED_TABLES: tuple[str, ...] = ("stock_data", "topix_data", "daily_valuation")
+_REQUIRED_TABLES: tuple[str, ...] = (
+    "stock_data_raw",
+    "stock_data",
+    "stock_provider_windows",
+    "stock_adjustment_events",
+    "current_basis_fundamentals_state",
+    "current_basis_recompute_pending",
+    "stock_master_daily",
+    "daily_valuation",
+    "statements",
+    "statement_metrics_adjusted",
+    "topix_data",
+    "indices_data",
+)
 _BUBBLE_REGIMES: tuple[str, ...] = (
     "normal",
     "narrowing",
@@ -312,19 +325,7 @@ def run_rerating_bubble_regime_forward_response_research(
         frequency=frequency,
         min_observations=int(min_observations),
         severe_loss_threshold_pct=float(severe_loss_threshold_pct),
-        required_tables=tuple(
-            dict.fromkeys(
-                (
-                    *_REQUIRED_TABLES,
-                    "stock_data_raw",
-                    "stock_provider_windows",
-                    "stock_adjustment_events",
-                    "current_basis_fundamentals_state",
-                    "current_basis_recompute_pending",
-                    "indices_data",
-                )
-            )
-        ),
+        required_tables=_REQUIRED_TABLES,
         observation_count=observation_count,
         footprint_df=footprint_df,
         regime_transition_df=regime_transition_df,
@@ -490,8 +491,6 @@ def build_rerating_bubble_regime_summary_markdown(
 
 def _assert_footprint_required_tables(conn: Any) -> None:
     missing = [table for table in _REQUIRED_TABLES if not table_exists(conn, table)]
-    if not table_exists(conn, "stock_master_daily"):
-        missing.append("stock_master_daily")
     if missing:
         raise ValueError(f"market.duckdb is missing required tables: {', '.join(missing)}")
 
@@ -760,14 +759,9 @@ def _create_footprint_base_tables(
 ) -> None:
     stock_code = normalize_code_sql("sd.code")
     valuation_code = normalize_code_sql("dv.code")
+    state_code = normalize_code_sql("state.code")
     stock_source_sql = f"{price_history_name} sd"
     stock_basis_sql = "CAST(sd.price_basis_id AS VARCHAR)"
-    valuation_basis_sql = "CAST(price_basis.price_basis_id AS VARCHAR)"
-    valuation_basis_join_sql = f"""
-            JOIN {price_history_name} price_basis
-              ON {normalize_code_sql("price_basis.code")} = {valuation_code}
-             AND CAST(price_basis.date AS DATE) = CAST(dv.date AS DATE)
-        """
     query_start = (
         (pd.Timestamp(start_date) - pd.Timedelta(days=900)).strftime("%Y-%m-%d")
         if start_date is not None
@@ -834,19 +828,11 @@ def _create_footprint_base_tables(
         else f"market IN ({_sql_string_list(market_scopes)})"
     )
     raw_filters = ["sd.close > 0"]
-    valuation_filters: list[str] = []
     if query_start is not None:
         raw_filters.append(f"sd.date >= '{query_start}'")
-        valuation_filters.append(f"dv.date >= '{query_start}'")
     if query_end is not None:
         raw_filters.append(f"sd.date <= '{query_end}'")
-        valuation_filters.append(f"dv.date <= '{query_end}'")
     raw_where_sql = " AND ".join(raw_filters)
-    valuation_where_sql = (
-        ""
-        if not valuation_filters
-        else "WHERE " + " AND ".join(valuation_filters)
-    )
     _create_market_master_source(
         conn,
         query_start=query_start,
@@ -926,49 +912,61 @@ def _create_footprint_base_tables(
     )
     conn.execute(
         f"""
-        CREATE OR REPLACE TEMP TABLE bubble_daily_valuation AS
+        CREATE OR REPLACE TEMP TABLE bubble_daily_valuation_candidates AS
         SELECT
-            code,
-            date,
-            price_basis_id,
-            market_cap,
-            free_float_market_cap,
-            per,
-            forward_per,
-            pbr,
-            p_op,
-            forward_p_op,
-            eps,
-            forward_eps
-        FROM (
-            SELECT
-                {valuation_code} AS code,
-                dv.date,
-                {valuation_basis_sql} AS price_basis_id,
-                CAST(dv.market_cap AS DOUBLE) AS market_cap,
-                {_optional_double_expr(conn, "daily_valuation", "dv", "free_float_market_cap")}
-                    AS free_float_market_cap,
-                {_optional_double_expr(conn, "daily_valuation", "dv", "per")} AS per,
-                {_optional_double_expr(conn, "daily_valuation", "dv", "forward_per")}
-                    AS forward_per,
-                {_optional_double_expr(conn, "daily_valuation", "dv", "pbr")} AS pbr,
-                {_optional_double_expr(conn, "daily_valuation", "dv", "p_op")} AS p_op,
-                {_optional_double_expr(conn, "daily_valuation", "dv", "forward_p_op")}
-                    AS forward_p_op,
-                {_optional_double_expr(conn, "daily_valuation", "dv", "eps")} AS eps,
-                {_optional_double_expr(conn, "daily_valuation", "dv", "forward_eps")}
-                    AS forward_eps,
-                row_number() OVER (
-                    PARTITION BY {valuation_code}, dv.date, {valuation_basis_sql}
-                    ORDER BY dv.price_basis_date DESC NULLS LAST,
-                             CASE WHEN length(dv.code) = 4 THEN 0 ELSE 1 END,
-                             dv.code
-                ) AS row_rank
-            FROM daily_valuation dv
-            {valuation_basis_join_sql}
-            {valuation_where_sql}
+            stock.code,
+            stock.date,
+            stock.price_basis_id,
+            CAST(dv.market_cap AS DOUBLE) AS market_cap,
+            {_optional_double_expr(conn, "daily_valuation", "dv", "free_float_market_cap")}
+                AS free_float_market_cap,
+            {_optional_double_expr(conn, "daily_valuation", "dv", "per")} AS per,
+            {_optional_double_expr(conn, "daily_valuation", "dv", "forward_per")}
+                AS forward_per,
+            {_optional_double_expr(conn, "daily_valuation", "dv", "pbr")} AS pbr,
+            {_optional_double_expr(conn, "daily_valuation", "dv", "p_op")} AS p_op,
+            {_optional_double_expr(conn, "daily_valuation", "dv", "forward_p_op")}
+                AS forward_p_op,
+            {_optional_double_expr(conn, "daily_valuation", "dv", "eps")} AS eps,
+            {_optional_double_expr(conn, "daily_valuation", "dv", "forward_eps")}
+                AS forward_eps
+        FROM bubble_stock_norm stock
+        JOIN current_basis_fundamentals_state state
+          ON {state_code} = stock.code
+        JOIN daily_valuation dv
+          ON {valuation_code} = stock.code
+         AND CAST(dv.date AS DATE) = CAST(stock.date AS DATE)
+         AND CAST(dv.price_basis_date AS DATE) = CAST(stock.date AS DATE)
+         AND dv.fundamentals_adjustment_basis_date =
+             state.fundamentals_adjustment_basis_date
+         AND dv.source_fingerprint = state.source_fingerprint
+        """
+    )
+    valuation_lineage_issue_count = int(
+        conn.execute(
+            """
+            WITH match_counts AS (
+                SELECT code, date, price_basis_id, count(*) AS match_count
+                FROM bubble_daily_valuation_candidates
+                GROUP BY code, date, price_basis_id
+            )
+            SELECT count(*)
+            FROM bubble_stock_norm stock
+            LEFT JOIN match_counts matches USING (code, date, price_basis_id)
+            WHERE coalesce(matches.match_count, 0) <> 1
+            """
+        ).fetchone()[0]
+    )
+    if valuation_lineage_issue_count:
+        raise RuntimeError(
+            "Market Bubble current-basis daily_valuation lineage requires exactly "
+            "one same-row valuation for each consumed provider-adjusted price; "
+            f"invalid rows={valuation_lineage_issue_count}"
         )
-        WHERE row_rank = 1
+    conn.execute(
+        """
+        CREATE OR REPLACE TEMP TABLE bubble_daily_valuation AS
+        SELECT * FROM bubble_daily_valuation_candidates
         """
     )
 

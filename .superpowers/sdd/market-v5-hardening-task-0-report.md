@@ -52,7 +52,15 @@ current valuation rows cannot satisfy this check jointly.
 - Market Bubble valuation joins use current fundamentals lineage; the selected
   price-history provider vintage is propagated by code/date. Standalone and live
   paths with no explicit price-history relation also use this verified Market v5
-  projection instead of the `stock_data` convenience table.
+  projection instead of the `stock_data` convenience table. Each consumed price
+  row now requires exactly one valuation row whose `date` and `price_basis_date`
+  both equal the price date and whose fundamentals basis/fingerprint match the
+  current state on that same row. Future/stale price-basis rows are ignored;
+  duplicate and split-witness valuation lineage fails closed.
+- Standalone and rerating Bubble results publish the same deduplicated 12-table
+  Market v5 dependency set: raw and convenience prices, provider windows/events,
+  current fundamentals state/pending work, daily master/valuation, raw and
+  adjusted statements, TOPIX, and indices.
 - Ranking analytics fixtures that previously created legacy statement tables or
   populated only the convenience price projection now seed canonical raw and
   adjusted statement identities, `stock_data_raw`, exact provider fingerprints,
@@ -69,8 +77,11 @@ current valuation rows cannot satisfy this check jointly.
 - Fixed-return research: **31 passed**.
 - Technical-fit research: **96 passed, 1 skipped** (267.38s); its focused
   provider/current-basis lineage set is **13 passed**.
-- Market Bubble: **6 passed**; its monitor tests also passed in the full-suite
-  run.
+- Market Bubble: **9 passed** (1 warning, 490.22s), including the reviewer
+  reproduction where a stale `price_basis_date=2099-12-31` row previously moved
+  `expensive_mcap_share_pct` from **44.883986** to **99.998841**. The metric now
+  remains at the verified baseline. Bubble monitor: **3 passed** (1 warning,
+  0.04s).
 - ATR expansion, sector strength, short red, and short sector strength:
   **24 passed** (1 warning, 327.56s).
 - PSR and short-value Market v5 fixtures: **2 passed** and **5 passed**,
@@ -84,7 +95,8 @@ current valuation rows cannot satisfy this check jointly.
   green: exact failing test **1 passed**, symbol route class **4 passed**,
   containing analytics route file **61 passed**, and ranking service/contracts
   **115 passed**. Per the approved efficient verification policy, the entire
-  43-minute suite was not rerun after this fixture-only repair.
+  43-minute suite was not rerun after this fixture-only repair or the subsequent
+  focused Bubble review fixes.
 - Analytics route recovery mapping remains covered by the 61-test route file and
   returns `market_db_sync` for provider-lineage recovery.
 - Changed Task 0 Python sources/tests pass Ruff.
