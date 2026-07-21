@@ -37,9 +37,12 @@ from src.infrastructure.db.market.market_writer_resources import (
     MarketWriterSession,
     ReadOnlyMarketResources,
 )
+from src.shared.provider_stock_window import ProviderStockStage
 
 
 _PROVIDER_PLAN = "premium"
+_PROVIDER_AS_OF = "2026-02-11"
+_PROVIDER_CODES = frozenset({"7203"})
 
 
 class _SqlRecorder:
@@ -333,7 +336,12 @@ def _run_cycle(
 
         topix = store.publish_topix_data(_topix_rows())
         stocks = store.publish_stock_data(
-            _stock_rows(), provider_plan=_PROVIDER_PLAN
+            _stock_rows(),
+            stage=ProviderStockStage(
+                provider_plan=_PROVIDER_PLAN,
+                provider_as_of=_PROVIDER_AS_OF,
+                provider_codes=_PROVIDER_CODES,
+            ),
         )
         statements = store.publish_statements(_statement_rows())
         store.index_topix_data()

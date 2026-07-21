@@ -257,6 +257,7 @@ def client(
     market_db = open_market_db(market_db_path, read_only=False)
     mock_client = MagicMock()
     mock_client.has_api_key = True
+    mock_client.plan = "premium"
     app_client.app.state.market_db = market_db
     app_client.app.state.jquants_client = mock_client
     try:

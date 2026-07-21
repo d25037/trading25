@@ -42,6 +42,7 @@ from src.infrastructure.db.market.market_writer_resources import (
 )
 from src.infrastructure.db.market.market_operation_lease import MarketOperationLease
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
+from src.shared.provider_stock_window import ProviderStockStage
 
 
 _SCENARIO_NAMES = (
@@ -458,15 +459,16 @@ async def _run_price_coordinator(
     *,
     ctx: SyncContext,
     incoming: list[dict[str, object]],
+    target_date: str,
+    stage: ProviderStockStage,
 ) -> tuple[int, int, int, frozenset[str]]:
     session = StockDataIngestionSession()
-    target_date = str(incoming[0]["Date"]) if incoming else "2026-01-01"
     fetched = await execute_stock_data_rest_date(
         ctx,
         session=session,
         date=target_date,
     )
-    outcome = await session.commit(ctx)
+    outcome = await session.commit(ctx, stage=stage)
     return (
         fetched.api_calls + outcome.api_calls,
         outcome.appended_rows,
@@ -488,6 +490,12 @@ def _seed_scenario_child(
     market_db = session.handles.market_db
     history_raw = _raw_stock_rows(len(universe) * rows_per_code, universe)
     history = _normalized_rows(history_raw)
+    provider_as_of = (
+        date(2026, 1, 1) + timedelta(days=rows_per_code - 1)
+    ).isoformat()
+    provider_plan = fixture.get("providerPlan")
+    if not isinstance(provider_plan, str):
+        raise ValueError("benchmark seed requires providerPlan")
     try:
         if history:
             store.publish_topix_data(
@@ -502,7 +510,14 @@ def _seed_scenario_child(
                     for row in history[:: max(1, len(universe))]
                 ]
             )
-            store.publish_stock_data(history, provider_plan="standard")
+            store.publish_stock_data(
+                history,
+                stage=ProviderStockStage(
+                    provider_plan=provider_plan,
+                    provider_as_of=provider_as_of,
+                    provider_codes=frozenset(universe),
+                ),
+            )
         store.index_stock_data()
         seed_result = AdjustedMetricsMaterializer(market_db).rebuild_current_basis(
             frozenset(universe)
@@ -553,7 +568,15 @@ def _run_scenario_child(
     assert isinstance(scenarios, dict)
     payload = scenarios[name]
     assert isinstance(payload, dict)
+    provider_plan = fixture.get("providerPlan")
+    if not isinstance(provider_plan, str):
+        raise ValueError("benchmark scenario requires providerPlan")
     universe, incoming, rows_per_code = _shared_input(fixture, name)
+    target_date = (
+        date(2026, 1, 1)
+        if name == "provider_split_drift"
+        else date(2026, 1, 1) + timedelta(days=rows_per_code)
+    ).isoformat()
     scenario_root = workspace / name
     session = _open_seeded_scenario(scenario_root)
     store = session.handles.time_series_store
@@ -567,7 +590,11 @@ def _run_scenario_child(
     }
     if name == "provider_split_drift" and incoming:
         code = str(incoming[0]["Code"])
-        replacement = [dict(row) for row in provider_windows[code]]
+        replacement = [
+            dict(row)
+            for row in provider_windows[code]
+            if str(row["Date"]) <= target_date
+        ]
         replacement[0] = dict(incoming[0])
         provider_windows[code] = replacement
     client = _ObservedFixtureClient(incoming, provider_windows)
@@ -603,11 +630,20 @@ def _run_scenario_child(
                 time_series_store=store,
                 cancelled=asyncio.Event(),
                 on_progress=lambda *_args: None,
-                provider_plan="standard",
+                provider_plan=provider_plan,
                 recompute_affected_stock_codes=spy.rebuild,
             )
             _, published_rows, replaced_rows, affected = asyncio.run(
-                _run_price_coordinator(ctx=ctx, incoming=incoming)
+                _run_price_coordinator(
+                    ctx=ctx,
+                    incoming=incoming,
+                    target_date=target_date,
+                    stage=ProviderStockStage(
+                        provider_plan=provider_plan,
+                        provider_as_of=target_date,
+                        provider_codes=frozenset(universe),
+                    ),
+                )
             )
             coordinator = "StockDataIngestionSession"
             if name == "legacy_all_code_local_projection":
@@ -720,8 +756,18 @@ def _run_representative_v5_child(
     started_wall = time.perf_counter()
     started_cpu = time.process_time()
     try:
+        provider_as_of = start.isoformat()
         api_calls, appended_rows, replaced_rows, affected = asyncio.run(
-            _run_price_coordinator(ctx=ctx, incoming=incoming)
+            _run_price_coordinator(
+                ctx=ctx,
+                incoming=incoming,
+                target_date=provider_as_of,
+                stage=ProviderStockStage(
+                    provider_plan=provider_plan,
+                    provider_as_of=provider_as_of,
+                    provider_codes=frozenset(codes),
+                ),
+            )
         )
         store.index_stock_data()
         _close_scenario(session)

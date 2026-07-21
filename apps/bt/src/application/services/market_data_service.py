@@ -6,10 +6,15 @@ DuckDB market time-series から株式・TOPIX データを読み取るサービ
 
 from __future__ import annotations
 
+from typing import Any
+
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.application.services.market_data_errors import MarketDataError
 from src.application.services.options_225 import build_options_225_response
-from src.infrastructure.db.market.query_helpers import stock_code_candidates
+from src.infrastructure.db.market.query_helpers import (
+    normalize_stock_code,
+    stock_code_candidates,
+)
 from src.shared.utils.market_code_alias import resolve_market_codes
 from src.application.contracts.market_data import (
     MarketMinuteBarRecord,
@@ -288,12 +293,30 @@ class MarketDataService:
         if not stock_rows:
             return None
 
-        result: list[MarketStockData] = []
+        stocks_by_code: dict[str, dict[str, Any]] = {}
         for stock in stock_rows:
+            raw_code = str(stock["code"])
+            normalized_code = normalize_stock_code(raw_code)
+            existing = stocks_by_code.get(normalized_code)
+            if existing is None or (
+                len(raw_code) == 4 and len(str(existing["code"])) != 4
+            ):
+                stocks_by_code[normalized_code] = stock
+
+        result: list[MarketStockData] = []
+        for stock in stocks_by_code.values():
+            codes = _stock_code_candidates(str(stock["code"]))
+            code_placeholders = ",".join("?" for _ in codes)
             data_rows = self._reader.query(
-                "SELECT date, open, high, low, close, volume FROM stock_data "
-                "WHERE code = ? AND date >= ? AND date <= ? ORDER BY date",
-                (stock["code"], start_date, latest_date),
+                "SELECT date, open, high, low, close, volume FROM ("
+                "SELECT date, open, high, low, close, volume, "
+                "ROW_NUMBER() OVER ("
+                "PARTITION BY date "
+                "ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code"
+                ") AS rn FROM stock_data "
+                f"WHERE code IN ({code_placeholders}) AND date >= ? AND date <= ?"
+                ") WHERE rn = 1 ORDER BY date",
+                (*codes, start_date, latest_date),
             )
             if data_rows:
                 result.append(

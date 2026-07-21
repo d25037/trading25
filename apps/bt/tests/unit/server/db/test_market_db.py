@@ -162,6 +162,7 @@ class TestMarketDbBasics:
             "code",
             "coverage_start",
             "coverage_end",
+            "provider_plan",
             "provider_as_of",
             "source_fingerprint",
             "updated_at",

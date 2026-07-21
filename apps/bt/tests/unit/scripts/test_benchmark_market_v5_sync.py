@@ -132,6 +132,28 @@ def test_materializer_observations_reject_hidden_pending_union(tmp_path: Path) -
     )
 
 
+def test_split_drift_provider_frontier_matches_requested_stage_date(
+    tmp_path: Path,
+) -> None:
+    report = run_benchmark_fixture(_fixture(), workspace=tmp_path)
+    calls = report["scenarios"]["provider_split_drift"]["observations"][
+        "clientCalls"
+    ]
+    date_request = next(
+        call
+        for call in calls
+        if call["path"] == "/equities/bars/daily" and "date" in call["params"]
+    )
+    refresh_request = next(
+        call
+        for call in calls
+        if call["path"] == "/equities/bars/daily" and "code" in call["params"]
+    )
+
+    assert date_request["params"]["date"] == "2026-01-01"
+    assert refresh_request["params"]["to"] == date_request["params"]["date"]
+
+
 def test_provider_incremental_work_scales_with_delta_not_all_codes(
     tmp_path: Path,
 ) -> None:
