@@ -1,88 +1,82 @@
-# Task 3 Report: Header cleanup and no-wrap layout
+# Task 3 report: reduce backend sync to RESET initial and incremental
 
-## Scope
+## Commit
 
-- Removed the duplicate header-level exact-name `四季報` button from Symbol Workbench.
-- Retained panel-local `四季報で開く`, `会社四季報を更新`, diagnostics, earnings-date badge, and collapse controls.
-- Converted the Shikiho panel header to a single-row, two-zone grid: truncating metadata on the left and non-wrapping actions on the right.
+- `6c801d59c4765ed37662275e00dc89f23d1d268d` — `refactor(market): simplify sync modes`
+
+## Implementation
+
+- Reduced the public and application sync contract to `initial` and `incremental`; the default is now `incremental`.
+- Enforced the request matrix: `initial` requires `resetBeforeSync=true`, while `incremental` rejects it. Removed AUTO resolution and the repair strategy, and made unknown strategy names fail closed.
+- Changed RESET initial orchestration to enter the guarded writer reset factory with no old `MarketDb` or time-series-store handles. The newly opened handles are prepared only after reset succeeds.
+- Preserved writer lease/path guards, ownership, common finalization, read-only reopen, and the original reset exception when no writer session was created.
+- Renamed the stale `reset_and_open_v4` factory API to `reset_and_open` and updated its repository callers.
+- Added a pre-write Market v5 compatibility fence: writable incremental open rejects legacy `BIGINT stock_data_raw.adjusted_volume` or `BIGINT stock_data.volume` before `ensure_schema`, with RESET initial guidance. No migration, alias, or compatibility read was added.
+- Removed `resetBeforeSyncEligible` from backend stats/validation contracts. Recovery guidance now points to RESET initial for incompatible/uninitialized roots and incremental for missing dates, fundamentals, options, and provider-vintage recovery.
 
 ## TDD evidence
 
 ### RED
 
-Added assertions before production changes for:
+The request, service, strategy, reset-handle, finalizer, and BIGINT regression tests were added before production changes.
 
-1. The header-level exact-name `四季報` button being absent.
-2. The panel-local `四季報で開く` link remaining available.
-3. Separate left/right header groups exposing non-wrapping layout classes.
-
-The brief's raw `bun test ...` command did not load this package's Vitest/jsdom setup and failed before test execution with `window is not defined` / `document is not defined`. Running the same focused files through the package test script produced the intended RED result:
-
-```text
-bun run test src/pages/SymbolWorkbenchPage.test.tsx src/components/SymbolWorkbench/ShikihoPanel.test.tsx
-2 failed | 52 passed
+```bash
+uv run --directory apps/bt pytest \
+  tests/unit/server/services/test_sync_service.py \
+  tests/unit/server/services/test_sync_strategies.py \
+  tests/unit/server/test_routes_db_sync.py -q
 ```
 
-The two expected failures were the still-present exact-name button and the missing left/right header zones.
+Result: **9 failed, 257 passed**. The failures showed the old service requiring existing handles for initial reset, AUTO/REPAIR and unknown fallback remaining accepted, the old default being AUTO, missing reset validation, and reset routes opening old handles.
+
+The critical schema regression was also run alone:
+
+```bash
+uv run --directory apps/bt pytest \
+  tests/unit/server/test_routes_db_sync.py::TestDbSyncRoutes::test_incremental_rejects_legacy_bigint_adjusted_volume_before_schema_write -q
+```
+
+Result: **1 failed** because the legacy BIGINT Market v5 root returned HTTP 202 and started incremental sync instead of failing before schema writes.
 
 ### GREEN
 
-After the minimal implementation, the same focused Vitest command passed:
-
-```text
-Test Files  2 passed (2)
-Tests       54 passed (54)
+```bash
+uv run --directory apps/bt pytest \
+  tests/unit/server/services/test_sync_service.py \
+  tests/unit/server/services/test_sync_strategies.py \
+  tests/unit/server/test_routes_db_sync.py -q
 ```
 
-## Implementation details
+Result: **240 passed, 1 warning**.
 
-- Deleted the stale `BookOpen` import, `openCompanyPage` helper, header button, and `window.open` test mock.
-- Replaced the wrapping panel header with `grid-cols-[minmax(0,1fr)_auto]`.
-- Added a `flex-nowrap` left metadata zone with overflow clipping and truncation for edition/capture metadata.
-- Added a `flex-nowrap whitespace-nowrap` right action zone for source, refresh, and collapse controls.
-- Removed the obsolete `ml-auto` from the collapse control because right-zone placement now owns alignment.
-
-## Self-review
-
-- Diff is limited to the four Task 3 implementation/test files plus this requested report.
-- No backend, OpenAPI, extension contract, state, or data-flow changes were introduced.
-- Existing focused tests continue to cover refresh, disabled refresh state, collapse/reset behavior, diagnostics input, source fallback normalization, and earnings-date display.
-- No material correctness, accessibility, or source-of-truth findings remain in the scoped diff.
-
-## Validation
-
-- Focused Vitest: `bun run test src/pages/SymbolWorkbenchPage.test.tsx src/components/SymbolWorkbench/ShikihoPanel.test.tsx`
-- Web typecheck: `bun run typecheck`
-- Focused Biome: `bunx biome check packages/web/src/pages/SymbolWorkbenchHeader.tsx packages/web/src/pages/SymbolWorkbenchPage.test.tsx packages/web/src/components/SymbolWorkbench/ShikihoPanel.tsx packages/web/src/components/SymbolWorkbench/ShikihoPanel.test.tsx`
-- Whitespace validation: `git diff --check`
-
-## Fix Review: expanded diagnostics placement
-
-### Review finding
-
-The first two-zone implementation placed the fragment returned by `ShikihoCaptureDiagnostics` inside the left `flex-nowrap overflow-hidden` zone. Its trigger stayed in the header, but its expanded `basis-full` details remained a sibling in that same clipped flex row, so diagnostic content could not render below the header as intended.
-
-### Regression test and RED
-
-Added a panel-level test that clicks `取得診断`, confirms `aria-expanded="true"`, confirms the detail content is not hidden, and requires `Tab探索` to be outside `shikiho-header-left`. Before the fix, the focused panel run failed with:
-
-```text
-expected true to be false
+```bash
+uv run --directory apps/bt pytest \
+  tests/unit/server/services/test_db_stats_service.py \
+  tests/unit/server/services/test_db_validation_service.py -q
 ```
 
-The failing value was `shikiho-header-left.contains(detailLabel)`.
+Result: **54 passed, 1 warning**.
 
-### Fix
+Additional writer-resource and MarketDb regression coverage:
 
-- Split `ShikihoCaptureDiagnostics` into reusable controlled trigger and details components while preserving the original self-contained component API and tests.
-- Kept the phase badge and `取得診断` trigger in the single-row left header zone.
-- Rendered the controlled details block immediately below the two-zone header grid, outside the clipped metadata container.
-- Preserved the trigger/details `aria-controls` relationship and the existing disclosure behavior.
+```bash
+uv run --directory apps/bt pytest \
+  tests/unit/server/db/test_market_writer_resources.py \
+  tests/unit/server/db/test_market_db.py \
+  tests/unit/cli_bt/test_market_cli.py \
+  tests/unit/server/db/test_market_compaction.py \
+  tests/unit/server/db/test_market_growth_acceptance.py -q
+```
 
-### Fix validation
+Result: **121 passed, 1 warning**.
 
-- Diagnostics + Panel unit tests: 30/30 passed.
-- Diagnostics + Panel + Page focused tests: 57/57 passed.
-- Web typecheck: passed.
-- Focused Biome: passed after formatter application.
-- `git diff --check`: passed.
+## Static verification
+
+- Ruff over all modified Python source, tests, and benchmark callers: `All checks passed!`.
+- Pyright over all modified backend modules: `0 errors, 0 warnings, 0 informations`.
+- `rg` found no remaining `reset_and_open_v4`, `resetBeforeSyncEligible`, `is_reset_before_sync_eligible`, `SyncMode.AUTO`, `SyncMode.REPAIR`, or `RepairSyncStrategy` references under `apps/bt`.
+- `git diff --check` passed.
+
+## Concerns
+
+None. OpenAPI/TypeScript regeneration and UI removal remain outside Task 3 scope.
