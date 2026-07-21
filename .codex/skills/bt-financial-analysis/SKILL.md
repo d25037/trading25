@@ -21,7 +21,7 @@ description: Use when bt FastAPI の ROE、ranking、screening、factor regressi
 ## Workflow
 
 1. 変更対象 endpoint の route -> service -> domain -> schema を特定する。
-2. 計算ロジックは `domains/*` と `application/services/*` に寄せ、route には I/O だけを残す。
+2. 計算ロジックは `src/domains/*`（`analytics` / `fundamentals` / `strategy/indicators`）を SoT とし、`src/application/services/*` と `entrypoints` は I/O + orchestration に限定する。
 3. ranking / fundamentals / screening の snapshot は必ず target date / as-of date で切り、開示・universe・latest row selection の順序が PIT stable か確認する。
    Fundamentals GET/POSTでは `to` をknowledge cutoff、`from`をdisplay lower boundとして扱い、同じMarket v5 current provider-basis PIT bundle readerとstrict date/error semanticsを使う。
 4. analytics read は schema v5 / `provider_adjusted_v1` の既存 current-basis materialization だけを読み、欠損 state を GET/POST 内で生成しないことを確認する。

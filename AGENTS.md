@@ -91,7 +91,6 @@ bun run --filter @trading25/contracts bt:sync   # bt の OpenAPI → TS型生成
 - FastAPI: 例外ハンドラが `HTTPException(detail=...)` を自動変換
 - `RequestLoggerMiddleware` が `JQuantsApiError`(502/504) / `SQLAlchemyError`(500) / 汎用例外(500) をキャッチし統一フォーマットで返却
 - correlation ID: `x-correlation-id` ヘッダで伝播（なければ自動生成）
-- 内部HTTP呼び出し（`src/api/client.py`）も `x-correlation-id` を伝播
 - ErrorResponse スキーマは OpenAPI で全エンドポイントに 400/404/500 として公開
 
 ## J-Quants Proxy キャッシュ/観測
@@ -105,10 +104,10 @@ bun run --filter @trading25/contracts bt:sync   # bt の OpenAPI → TS型生成
 
 ## ミドルウェア構成（FastAPI）
 
-登録順（LIFO: 下から上に実行）:
-1. **RequestLoggerMiddleware** — リクエストロギング（最外側）
+実行順（外側から内側。`app.user_middleware` で確認）:
+1. **CORSMiddleware** — CORS（最外側）
 2. **CorrelationIdMiddleware** — correlation ID 管理
-3. **CORSMiddleware** — CORS（最内側）
+3. **RequestLoggerMiddleware** — リクエストロギング（最内側）
 
 - OpenAPI 設定は `openapi_config.py` に集中管理
 - ドキュメント UI: `/doc`（Swagger UI）、`/docs` `/redoc` は無効
@@ -203,7 +202,7 @@ bun run --filter @trading25/web e2e:smoke  # web E2E smoke（Playwright）
 - Screening 画面は `Pre-Open Decidable / Requires In-Session Observation` の2タブ構成。Ranking 画面は `Daily Ranking / Fundamental Ranking` の2タブ構成で、Daily Ranking は `Individual Stocks / Indices` の2サブタブを持つ。Indices は backend `indexPerformance` を表示し、`lookbackDays` と `date` を共有 filter として使う。Fundamental Ranking は `Forecast High / Forecast Low / Actual High / Actual Low` の4サブタブで最新EPSランキングを表示する
 - `/symbol-workbench` `symbol|strategy|matchedDate`、`/portfolio` `tab|portfolioId|watchlistId`、`/indices` `code`、`/research/detail` `experimentId|runId`、`/options-225` `date|putCall|contractMonth|strikeMin|strikeMax|sortBy|order`、`/screening` `tab + filter params`、`/ranking` `dailyView + filter params`、`/backtest` `tab|strategy|resultJobId|dataset|labType` は Router search params を SoT にし、再訪/共有可能な UI 選択状態を URL で復元する
 - Symbol Workbench の sidebar 設定はカテゴリ別 Dialog（Chart Settings / Panel Layout / Fundamental Metrics / FY History Metrics / Overlay / Sub-Chart / Signal Overlay）で編集する。Fundamental 系パネル（Fundamentals / FY History / Margin Pressure / Factor Regression）は `fundamentalsPanelOrder` で表示順を保持・編集し、Fundamentals パネル内部の指標は `fundamentalsMetricOrder` / `fundamentalsMetricVisibility`、FY History パネル内部の指標は `fundamentalsHistoryMetricOrder` / `fundamentalsHistoryMetricVisibility` で順序・表示ON/OFFを保持する。Fundamentals パネル高さは表示中指標数に応じて動的に変化する
-- Portfolio / Watchlist の銘柄追加入力はチャート検索と同等の銘柄サーチ（コード/銘柄名）を使う。追加送信 payload は `companyName` 必須（候補選択時は候補名、未選択時はコードをフォールバック）。Watchlist 追加の送信は 4 桁コードのみ許可する
+- Portfolio / Watchlist の銘柄追加入力はチャート検索と同等の銘柄サーチ（コード/銘柄名）を使う。追加送信 payload は `companyName` 必須（候補選択時は候補名、未選択時はコードをフォールバック）。Watchlist 追加の code は backend 契約 `^\d[0-9A-Z]\d[0-9A-Z]$`（例: `7203`, `130A`）に従う
 - Fundamentals summary の予想EPS表示は `revisedForecastEps > adjustedForecastEps > forecastEps` の優先順位を SoT とする
 - Symbol Workbench の Company Shikiho 連携は `apps/ts/extensions/shikiho` のローカル専用 Atlas unpacked extension を SoT とする。`bun run --filter @trading25/shikiho-extension build` 後に `dist` を Atlas へ読み込み、認証済み `https://shikiho.toyokeizai.net/stocks/*` の表示済み DOM から自動取得する。cookie 権限、追加の Shikiho network request、raw HTML 保存、backend/OpenAPI/DB 永続化は禁止し、正常 snapshot は extension-local storage に最新 200 銘柄だけ保持する。失敗 diagnostic は正常 snapshot を上書きせず、Workbench は選択銘柄と一致する payload のみ表示する。導入・Reload・privacy・状態別 troubleshooting は `apps/ts/extensions/shikiho/README.md` を参照する
 - `N225 Options` ページは `/api/market/options/225` を SoT とし、DuckDB 同期済みの options chain を URL search params（`date|putCall|contractMonth|strikeMin|strikeMax|sortBy|order`）で探索する。live J-Quants proxy は診断用途に残すが、web 本導線では使わない

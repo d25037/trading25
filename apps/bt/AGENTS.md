@@ -168,16 +168,16 @@ uv sync
 
 ```bash
 # バックテスト実行
-uv run bt backtest range_break_v5
+uv run bt backtest buy_and_hold
 
 # パラメータ最適化
-uv run bt backtest range_break_v6 --optimize
+uv run bt backtest sma_cross --optimize
 
 # 戦略一覧
 uv run bt list
 
 # 設定検証
-uv run bt validate range_break_v5
+uv run bt validate buy_and_hold
 
 # APIサーバー起動
 uv run bt server

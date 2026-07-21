@@ -47,7 +47,7 @@ description: Use when bt の market sync、intraday minute ingest、J-Quants fet
 - retained Market v4 は v5 candidate として ineligible（不適格）で、昇格しない。CLI / service に retained promotion surface を戻さない。
 - cutover は immutable backup を検証し、staged Market v5 を atomic activation し、失敗時は exact rollback する。
 - artifact identity は `operations/market-v5-cutover` を使い、operator は operation lock / staging を手動変更しない。
-- `auto` mode の解決規則（`last_sync_date` 有無で `initial|incremental`）を変更しない。
+- `auto` mode は `last_sync_date` があれば `incremental`、無ければ DuckDB inspection を実行し、snapshot が非空なら `incremental`、空なら `initial` に解決する。inspection 失敗を `initial` に downgrade しない。
 - `repair` は listed-market fundamentals backfill など非 price warning の回復に限定し、adjustment refresh を復活させない。
 - `indices_data` は master 補完（placeholder backfill）前提を維持する。
 - minute freshness は現状 `16:45 JST` cutoff の wall-clock policy で、exchange holiday 精度が必要なら別途 `markets/calendar` を minute 側の補助ソースとして扱う。

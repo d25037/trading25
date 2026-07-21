@@ -73,7 +73,7 @@ uv run --project ../bt bt --help
 
 - `bt:sync` は `apps/bt` source から canonical OpenAPI を生成する strict sync。source export が失敗した場合は停止し、実行中 server や stale snapshot へ fallback しない。
 - `bt:generate-offline` は committed snapshot から TypeScript を再生成するだけで、Python/TypeScript 間の同期完了を意味しない。
-- `./scripts/check-contract-sync.sh` は source/snapshot drift、`openapi-typescript` 7.13.0 の生成差分、contracts の wire owner と `packages/api-clients/src/**/*.ts`（test/generated 除外）の手書き wire DTO 重複を non-destructive に検査する。PR では base snapshot との後方互換性も検査する。
+- repository root で実行する `./scripts/check-contract-sync.sh` は source/snapshot drift、`openapi-typescript` 7.13.0 の生成差分、contracts の wire owner と `packages/api-clients/src/**/*.ts`（test/generated 除外）の手書き wire DTO 重複を non-destructive に検査する。PR では base snapshot との後方互換性も検査する。
 - 意図した breaking change は `contracts/openapi-breaking-approvals.json` に finding fingerprint、理由、有効期限を限定記録する。blanket bypass や期限切れ approval は禁止。
 - request/query/path/response は `ApiJsonBody` / `ApiQuery` / `ApiPathParams` / `ApiJsonResponse` で generated `paths` から導出する。OpenAPI component と同名の wire DTO を interface/object literal で再定義しない。
 - stable public type は generated schema alias またはそこからの indexed-access とする。正規化済み UI/form/URL state は distinct name の local model として保持できる。
@@ -85,9 +85,9 @@ uv run --project ../bt bt --help
 **ランタイム**: ubuntu-latest, Bun 1.3.14（`.github/workflows/ci.yml` の `BUN_VERSION`）
 
 **主要ジョブ**:
-- `repo-guardrails`: `scripts/skills/audit_skills.py --strict-legacy` と privacy leak check
-- `quality`: `./scripts/lint.sh` と `./scripts/typecheck.sh`
-- `contract-tests`: duplicate-detector unit test + `./scripts/check-contract-sync.sh` + PR base compatibility
+- `repo-guardrails`: repository root の `./scripts/skills/audit_skills.py --strict-legacy` と privacy leak check
+- `quality`: repository root の `./scripts/lint.sh` と `./scripts/typecheck.sh`
+- `contract-tests`: duplicate-detector unit test + repository root の `./scripts/check-contract-sync.sh` + PR base compatibility
 - `package-unit-tests` / `app-integration-tests` / `coverage-gate`: package/web/bt tests と coverage threshold
 - `web-e2e`: Playwright smoke（必要な scope のとき）
 
@@ -101,7 +101,7 @@ uv run --project ../bt bt --help
 
 ## Environment Variables
 
-環境変数の SoT はプロセス環境。非機密設定は `~/.config/trading25/config.env` を shell source し、J-Quants API key は `scripts/dev-bt-server.sh` が `JQUANTS_API_KEY` 環境変数 override または macOS Keychain から bt FastAPI process へ注入する。repo root `.env` は使用しない。
+環境変数の SoT はプロセス環境。非機密設定は `~/.config/trading25/config.env` を shell source し、J-Quants API key は repository root の `./scripts/dev-bt-server.sh` が `JQUANTS_API_KEY` 環境変数 override または macOS Keychain から bt FastAPI process へ注入する。repo root `.env` は使用しない。
 
 ```
 JQUANTS_API_KEY         # JQuants API key (v2 API)
