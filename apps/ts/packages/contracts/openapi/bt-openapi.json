@@ -8772,6 +8772,11 @@
             "title": "Requiredversion",
             "type": "integer"
           },
+          "resetBeforeSyncEligible": {
+            "default": false,
+            "title": "Resetbeforesynceligible",
+            "type": "boolean"
+          },
           "version": {
             "anyOf": [
               {

@@ -177,6 +177,12 @@ beforeEach(() => {
         status: 'pending',
         recoveryStage: 'market_db_sync',
       },
+      schema: {
+        version: 5,
+        requiredVersion: 5,
+        current: true,
+        resetBeforeSyncEligible: true,
+      },
       lastUpdated: '2026-03-01T12:00:00Z',
     },
     isLoading: false,
@@ -190,6 +196,12 @@ beforeEach(() => {
       lastSync: '2026-02-28T02:29:45.768793+00:00',
       lastStocksRefresh: '2026-03-01T03:00:00Z',
       timeSeriesSource: 'duckdb-parquet',
+      schema: {
+        version: 5,
+        requiredVersion: 5,
+        current: true,
+        resetBeforeSyncEligible: true,
+      },
       topix: { count: 2450, dateRange: { min: '2016-02-29', max: '2026-02-27' } },
       stocks: { total: 3800, byMarket: { Prime: 1800 } },
       stockData: {
@@ -266,6 +278,44 @@ beforeEach(() => {
 });
 
 describe('SettingsPage', () => {
+  it('disables live reset and directs incompatible roots to market cutover', async () => {
+    const user = userEvent.setup();
+    const statsState = mockUseDbStats();
+    const validationState = mockUseDbValidation();
+    mockUseDbStats.mockReturnValue({
+      ...statsState,
+      data: {
+        ...statsState.data,
+        schema: {
+          version: 4,
+          requiredVersion: 5,
+          current: false,
+          resetBeforeSyncEligible: false,
+        },
+      },
+    });
+    mockUseDbValidation.mockReturnValue({
+      ...validationState,
+      data: {
+        ...validationState.data,
+        schema: {
+          version: 4,
+          requiredVersion: 5,
+          current: false,
+          resetBeforeSyncEligible: false,
+        },
+      },
+    });
+
+    render(<SettingsPage />);
+    await user.click(screen.getByRole('combobox', { name: 'Sync Mode' }));
+    await user.click(screen.getByText(/Full bootstrap of the local DuckDB snapshot/i));
+
+    expect(screen.getByRole('switch', { name: /Reset market\.duckdb \+ parquet first/i })).toBeDisabled();
+    expect(screen.getByText(/bt market-cutover cutover/)).toBeInTheDocument();
+    expect(screen.queryByText(/rebuild the legacy database with initial sync/i)).not.toBeInTheDocument();
+  });
+
   it('shows provider vintage as read-only sync state without standalone materialization controls', () => {
     render(<SettingsPage />);
 

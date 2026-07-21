@@ -85,18 +85,19 @@ function buildStartSyncRequest(
 
 function useResetBeforeSyncGuard(
   syncMode: SyncMode,
+  resetBeforeSyncEligible: boolean,
   setResetBeforeSync: (value: boolean) => void,
   setResetConfirmOpen: (value: boolean) => void,
   setResetConfirmationText: (value: string) => void
 ): void {
   useEffect(() => {
-    if (syncMode === 'initial') {
+    if (syncMode === 'initial' && resetBeforeSyncEligible) {
       return;
     }
     setResetBeforeSync(false);
     setResetConfirmOpen(false);
     setResetConfirmationText('');
-  }, [syncMode, setResetBeforeSync, setResetConfirmOpen, setResetConfirmationText]);
+  }, [syncMode, resetBeforeSyncEligible, setResetBeforeSync, setResetConfirmOpen, setResetConfirmationText]);
 }
 
 type StatusTone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger';
@@ -115,9 +116,7 @@ function getValidationTone(status: MarketValidationResponse['status'] | undefine
   }
 }
 
-function getJobTone(
-  status: SyncJobResponse['status'] | null | undefined
-): StatusTone {
+function getJobTone(status: SyncJobResponse['status'] | null | undefined): StatusTone {
   switch (status) {
     case 'pending':
     case 'running':
@@ -261,6 +260,7 @@ interface DatabaseSyncSectionProps {
   onEnforceBulkChange: (checked: boolean) => void;
   resetBeforeSync: boolean;
   onResetBeforeSyncChange: (checked: boolean) => void;
+  resetBeforeSyncEligible: boolean;
   isRunning: boolean;
   isStarting: boolean;
   onStartSync: () => void;
@@ -275,6 +275,7 @@ function DatabaseSyncSection({
   onEnforceBulkChange,
   resetBeforeSync,
   onResetBeforeSyncChange,
+  resetBeforeSyncEligible,
   isRunning,
   isStarting,
   onStartSync,
@@ -313,9 +314,15 @@ function DatabaseSyncSection({
                 id="reset-before-sync"
                 checked={resetBeforeSync}
                 onCheckedChange={onResetBeforeSyncChange}
-                disabled={isRunning || isStarting}
+                disabled={isRunning || isStarting || !resetBeforeSyncEligible}
               />
             </div>
+            {!resetBeforeSyncEligible ? (
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                This Market root is not eligible for a live reset. Rebuild and activate Market v5 with{' '}
+                <code>bt market-cutover cutover</code>.
+              </p>
+            ) : null}
             <p className="text-xs text-muted-foreground">
               Existing datasets must be rebuilt after a reset. `portfolio.db` is not touched.
             </p>
@@ -401,8 +408,8 @@ function WarningRecoverySection({
         </div>
         <p className="text-xs text-muted-foreground">
           Runs `repair` sync mode to backfill listed-market fundamentals and related non-price warnings. It does not
-          rebuild legacy stock-price snapshots or ingest `options_225_data`; use Initial sync with reset enabled for
-          legacy price snapshots, and use Database Sync with `incremental` for options gaps.
+          rebuild incompatible stock-price snapshots or ingest `options_225_data`; use the Market v5 cutover workflow
+          for incompatible roots, and use Database Sync with `incremental` for options gaps.
         </p>
         <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
           <div>
@@ -436,9 +443,7 @@ interface ProviderVintageSectionProps {
   dbStats: MarketStatsResponse | undefined;
 }
 
-function ProviderVintageSection({
-  dbStats,
-}: ProviderVintageSectionProps) {
+function ProviderVintageSection({ dbStats }: ProviderVintageSectionProps) {
   const vintage = dbStats?.providerVintage;
   const coverage = vintage?.effectiveCoverage;
   const asOfRange = vintage?.providerAsOfRange;
@@ -467,11 +472,10 @@ function ProviderVintageSection({
           </div>
           <div className="rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
             <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Coverage</p>
-            <p className="mt-2 text-sm font-semibold">
-              {coverage ? `${coverage.min} → ${coverage.max}` : 'n/a'}
-            </p>
+            <p className="mt-2 text-sm font-semibold">{coverage ? `${coverage.min} → ${coverage.max}` : 'n/a'}</p>
             <p className="mt-1 text-[11px] text-muted-foreground">
-              Windows {formatCount(vintage?.readyProviderWindowCount ?? 0)} / {formatCount(vintage?.providerWindowCount ?? 0)}
+              Windows {formatCount(vintage?.readyProviderWindowCount ?? 0)} /{' '}
+              {formatCount(vintage?.providerWindowCount ?? 0)}
             </p>
           </div>
         </div>
@@ -850,8 +854,6 @@ export function SettingsPage() {
     syncJobError instanceof ApiError && syncJobError.status === 404 && setActiveJobId(null);
   }, [syncJobError]);
 
-  useResetBeforeSyncGuard(syncMode, setResetBeforeSync, setResetConfirmOpen, setResetConfirmationText);
-
   const isJobStatusRunning = isSyncJobRunning(jobStatus);
   const isActiveJobRunning = isSyncJobRunning(activeSyncJob);
   const isRunning = startSync.isPending || isJobStatusRunning || (!jobStatus && isActiveJobRunning);
@@ -872,6 +874,16 @@ export function SettingsPage() {
   const refreshErrorMessage = refreshStocks.error?.message ?? null;
   const currentJob = jobStatus ?? activeSyncJob ?? null;
   const repairSignalCount = sumRepairTargets(repairTargets);
+  const resetBeforeSyncEligible =
+    dbStats?.schema?.resetBeforeSyncEligible === true && dbValidation?.schema?.resetBeforeSyncEligible === true;
+
+  useResetBeforeSyncGuard(
+    syncMode,
+    resetBeforeSyncEligible,
+    setResetBeforeSync,
+    setResetConfirmOpen,
+    setResetConfirmationText
+  );
 
   useEffect(() => {
     if (!isRunning) {
@@ -882,7 +894,11 @@ export function SettingsPage() {
   }, [isRunning, refetchDbStats, refetchDbValidation]);
 
   const submitStartSync = () => {
-    const request = buildStartSyncRequest(syncMode, enforceBulkForStockData, resetBeforeSync);
+    const request = buildStartSyncRequest(
+      syncMode,
+      enforceBulkForStockData,
+      resetBeforeSync && resetBeforeSyncEligible
+    );
     startSync.mutate(request, {
       onSuccess: (data) => {
         setActiveJobId(data.jobId);
@@ -893,7 +909,7 @@ export function SettingsPage() {
   };
 
   const handleStartSync = () => {
-    if (syncMode === 'initial' && resetBeforeSync) {
+    if (syncMode === 'initial' && resetBeforeSync && resetBeforeSyncEligible) {
       setResetConfirmationText('');
       setResetConfirmOpen(true);
       return;
@@ -965,6 +981,7 @@ export function SettingsPage() {
               onEnforceBulkChange={setEnforceBulkForStockData}
               resetBeforeSync={resetBeforeSync}
               onResetBeforeSyncChange={setResetBeforeSync}
+              resetBeforeSyncEligible={resetBeforeSyncEligible}
               isRunning={isRunning}
               isStarting={startSync.isPending}
               onStartSync={handleStartSync}

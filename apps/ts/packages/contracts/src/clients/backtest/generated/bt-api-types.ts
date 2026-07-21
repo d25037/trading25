@@ -7186,6 +7186,11 @@ export interface components {
              * @default 5
              */
             requiredVersion: number;
+            /**
+             * Resetbeforesynceligible
+             * @default false
+             */
+            resetBeforeSyncEligible: boolean;
             /** Version */
             version?: number | null;
         };

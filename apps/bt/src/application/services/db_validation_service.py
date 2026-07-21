@@ -34,7 +34,6 @@ from src.application.services.db_stats_service import _build_provider_vintage_st
 from src.domains.strategy.signals.feature_registry import resolve_feature_requirement_spec
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
 from src.infrastructure.db.market.market_db import (
-    PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
     MARKET_SCHEMA_VERSION,
     METADATA_KEYS,
 )
@@ -118,6 +117,7 @@ class _ValidationBaseSnapshot:
     basic: dict[str, int]
     schema_version: int | None
     schema_current: bool
+    reset_before_sync_eligible: bool
     master_coverage: dict[str, Any]
     missing_master_dates_count: int
     missing_master_dates: list[str]
@@ -175,6 +175,7 @@ class ValidationMarketDbLike(Protocol):
     def get_stats(self) -> dict[str, int]: ...
     def get_market_schema_version(self) -> int | None: ...
     def is_market_schema_current(self) -> bool: ...
+    def is_reset_before_sync_eligible(self) -> bool: ...
     def get_stock_master_coverage(self) -> dict[str, Any]: ...
     def get_stock_count_by_market(self) -> dict[str, int]: ...
     def get_adjustment_events(self, limit: int = 20) -> list[dict[str, Any]]: ...
@@ -202,10 +203,8 @@ class ValidationTimeSeriesStoreLike(Protocol):
 
 def _build_recommendations(
     *,
-    schema_current: bool,
     schema_version: int | None,
-    legacy_stock_snapshot: bool,
-    stock_price_adjustment_mode: str | None,
+    reset_before_sync_eligible: bool,
     initialized: bool,
     missing_dates_count: int,
     missing_master_dates_count: int,
@@ -228,23 +227,12 @@ def _build_recommendations(
     inspection: TimeSeriesInspection,
 ) -> list[str]:
     recommendations: list[str] = []
-    if not schema_current:
+    if not reset_before_sync_eligible:
         observed = "missing" if schema_version is None else str(schema_version)
         return [
-            "Run initial sync with reset enabled (resetBeforeSync=true) to recreate "
-            f"market.duckdb schema v{MARKET_SCHEMA_VERSION} "
-            f"(current schema version: {observed})"
+            "Run `bt market-cutover cutover` to rebuild the incompatible Market root "
+            f"as schema v{MARKET_SCHEMA_VERSION} (current schema version: {observed})"
         ]
-    if legacy_stock_snapshot:
-        recommendations.append(
-            "Run initial sync with reset enabled, or manually reset "
-            "market-timeseries/market.duckdb and market-timeseries/parquet first, "
-            "to rebuild stock_data_raw and provider-adjusted stock_data"
-        )
-    elif stock_price_adjustment_mode != PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE:
-        recommendations.append(
-            "Run initial sync with reset enabled to enable provider-adjusted prices"
-        )
     if not initialized:
         recommendations.append("Run initial sync to populate the database")
     if missing_dates_count > 0:
@@ -411,10 +399,8 @@ def validate_market_db(
     integrity_issues, readiness_recommendations = _build_readiness_issues(base.inspection)
 
     recommendations = _build_recommendations(
-        schema_current=base.schema_current,
         schema_version=base.schema_version,
-        legacy_stock_snapshot=base.legacy_stock_snapshot,
-        stock_price_adjustment_mode=base.stock_price_adjustment_mode,
+        reset_before_sync_eligible=base.reset_before_sync_eligible,
         initialized=base.initialized,
         missing_dates_count=_resolve_missing_dates_count(base.inspection),
         missing_master_dates_count=base.missing_master_dates_count,
@@ -491,6 +477,7 @@ def _load_validation_base_snapshot(
     basic = market_db.get_stats()
     schema_version = market_db.get_market_schema_version()
     schema_current = market_db.is_market_schema_current()
+    reset_before_sync_eligible = market_db.is_reset_before_sync_eligible()
     master_coverage = market_db.get_stock_master_coverage()
     missing_master_dates_count = int(master_coverage.get("missingTopixDatesCount", 0) or 0)
     missing_master_dates = [str(d) for d in master_coverage.get("missingTopixDates", [])]
@@ -506,6 +493,7 @@ def _load_validation_base_snapshot(
         basic=basic,
         schema_version=schema_version,
         schema_current=schema_current,
+        reset_before_sync_eligible=reset_before_sync_eligible,
         master_coverage=master_coverage,
         missing_master_dates_count=missing_master_dates_count,
         missing_master_dates=missing_master_dates,
@@ -761,6 +749,7 @@ def _build_market_validation_response(
         schema_=MarketSchemaStats(
             version=base.schema_version,
             current=base.schema_current,
+            resetBeforeSyncEligible=base.reset_before_sync_eligible,
         ),
         stockMaster=build_stock_master_coverage_stats(
             base.master_coverage,

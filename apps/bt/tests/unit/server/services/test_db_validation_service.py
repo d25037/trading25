@@ -121,6 +121,14 @@ class DummyMarketDb:
     def is_market_schema_current(self) -> bool:
         return self._schema_version == MARKET_SCHEMA_VERSION
 
+    def is_reset_before_sync_eligible(self) -> bool:
+        return (
+            self._schema_version == MARKET_SCHEMA_VERSION
+            and self._stock_price_adjustment_mode
+            == PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
+            and not self._legacy_stock_snapshot
+        )
+
     def get_stock_master_coverage(self) -> dict[str, Any]:
         return {
             "dailyCount": 0,
@@ -223,6 +231,7 @@ def test_validate_market_db_uses_missing_dates_total_count_from_inspection() -> 
     )
 
     assert result.margin.count == 0
+    assert result.schema_.resetBeforeSyncEligible is True
     assert result.stockData.missingDatesCount == 2438
     assert result.sampleWindows.stockDataMissingDates.truncated is True
     issue = next(
@@ -543,7 +552,7 @@ def test_validate_market_db_warns_when_failed_dates_metadata_exists() -> None:
     assert any("failed sync dates" in rec for rec in result.recommendations)
 
 
-def test_validate_market_db_flags_legacy_stock_snapshot_as_reset_required() -> None:
+def test_validate_market_db_flags_legacy_stock_snapshot_for_cutover() -> None:
     market_db = DummyMarketDb(
         initialized=True,
         legacy_stock_snapshot=True,
@@ -568,10 +577,12 @@ def test_validate_market_db_flags_legacy_stock_snapshot_as_reset_required() -> N
     assert result.stocksNeedingRefreshCount == 0
     assert result.stocksNeedingRefresh == []
     assert result.sampleWindows.stocksNeedingRefresh.totalCount == 0
-    assert any("Run initial sync with reset enabled" in rec for rec in result.recommendations)
+    assert result.schema_.resetBeforeSyncEligible is False
+    assert any("bt market-cutover cutover" in rec for rec in result.recommendations)
+    assert not any("initial sync" in rec.lower() for rec in result.recommendations)
 
 
-def test_validate_market_db_v3_recommends_only_destructive_initial_reset() -> None:
+def test_validate_market_db_v3_recommends_only_market_cutover() -> None:
     market_db = DummyMarketDb(schema_version=3)
     store = DummyTimeSeriesStore(
         TimeSeriesInspection(
@@ -589,12 +600,13 @@ def test_validate_market_db_v3_recommends_only_destructive_initial_reset() -> No
     result = validate_market_db(market_db=market_db, time_series_store=store)
 
     assert result.status == "error"
+    assert result.schema_.resetBeforeSyncEligible is False
     assert len(result.recommendations) == 1
-    assert "schema v5" in result.recommendations[0]
-    assert "initial sync with reset enabled" in result.recommendations[0]
+    assert "bt market-cutover cutover" in result.recommendations[0]
+    assert "initial sync" not in result.recommendations[0].lower()
 
 
-def test_validate_market_db_recommends_reset_before_enabling_provider_adjustment() -> None:
+def test_validate_market_db_recommends_cutover_for_wrong_adjustment_mode() -> None:
     market_db = DummyMarketDb(
         initialized=True,
         legacy_stock_snapshot=False,
@@ -626,11 +638,13 @@ def test_validate_market_db_recommends_reset_before_enabling_provider_adjustment
     result = validate_market_db(market_db=market_db, time_series_store=store)
 
     assert result.status == "healthy"
+    assert result.schema_.resetBeforeSyncEligible is False
     assert (
         market_db.get_stock_price_adjustment_mode()
         != PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
     )
-    assert any("enable provider-adjusted prices" in rec for rec in result.recommendations)
+    assert any("bt market-cutover cutover" in rec for rec in result.recommendations)
+    assert not any("initial sync" in rec.lower() for rec in result.recommendations)
     assert not any(
         "Reset market-timeseries/market.duckdb" in rec for rec in result.recommendations
     )
