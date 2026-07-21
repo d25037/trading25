@@ -727,8 +727,6 @@ def _create_footprint_base_tables(
             JOIN {price_history_name} price_basis
               ON {normalize_code_sql("price_basis.code")} = {valuation_code}
              AND CAST(price_basis.date AS DATE) = CAST(dv.date AS DATE)
-             AND CAST(price_basis.price_basis_id AS VARCHAR)
-                 = CAST(dv.basis_version AS VARCHAR)
         """
     )
     query_start = (
@@ -924,7 +922,6 @@ def _create_footprint_base_tables(
                 row_number() OVER (
                     PARTITION BY {valuation_code}, dv.date, {valuation_basis_sql}
                     ORDER BY dv.price_basis_date DESC NULLS LAST,
-                             dv.basis_version DESC NULLS LAST,
                              CASE WHEN length(dv.code) = 4 THEN 0 ELSE 1 END,
                              dv.code
                 ) AS row_rank

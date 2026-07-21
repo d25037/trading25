@@ -31,9 +31,10 @@ from src.domains.analytics.daily_ranking_feature_builders import (
     build_long_leadership_features,
     build_sector_strength_features,
 )
+from src.shared.provider_stock_window import provider_stock_source_fingerprint
 
 
-def _build_market_v4_research_fixture(
+def _build_market_v5_research_fixture(
     path: Path,
     *,
     session_dates: tuple[date, ...] | None = None,
@@ -44,37 +45,43 @@ def _build_market_v4_research_fixture(
         CREATE TABLE market_schema_version (
             version INTEGER, applied_at TEXT, notes TEXT
         );
-        INSERT INTO market_schema_version VALUES (4, NULL, NULL);
+        INSERT INTO market_schema_version VALUES (5, NULL, NULL);
         CREATE TABLE sync_metadata (
             key TEXT PRIMARY KEY, value TEXT, updated_at TEXT
         );
         INSERT INTO sync_metadata VALUES (
             'stock_price_adjustment_mode',
-            'local_projection_v2_event_time',
+            'provider_adjusted_v1',
             NULL
         );
         CREATE TABLE stock_data_raw (
             code TEXT, date DATE, open DOUBLE, high DOUBLE, low DOUBLE,
-            close DOUBLE, volume BIGINT, adjustment_factor DOUBLE
+            close DOUBLE, volume BIGINT, turnover_value DOUBLE,
+            adjustment_factor DOUBLE, adjusted_open DOUBLE,
+            adjusted_high DOUBLE, adjusted_low DOUBLE, adjusted_close DOUBLE,
+            adjusted_volume BIGINT
+        );
+        CREATE TABLE stock_data (
+            code TEXT, date DATE, open DOUBLE, high DOUBLE, low DOUBLE,
+            close DOUBLE, volume BIGINT
         );
         CREATE TABLE stock_master_daily (
             date DATE, code TEXT, company_name TEXT, market_code TEXT,
             market_name TEXT, scale_category TEXT
         );
-        CREATE TABLE stock_adjustment_bases (
-            code TEXT, basis_id TEXT, valid_from DATE,
-            valid_to_exclusive DATE, adjustment_through_date DATE,
-            source_fingerprint TEXT, materialized_through_date DATE,
-            status TEXT
+        CREATE TABLE stock_provider_windows (
+            code TEXT, coverage_start DATE, coverage_end DATE,
+            provider_as_of DATE, source_fingerprint TEXT, updated_at TEXT
         );
-        CREATE TABLE stock_adjustment_basis_segments (
-            code TEXT, basis_id TEXT, source_date_from DATE,
-            source_date_to_exclusive DATE, cumulative_factor DOUBLE
+        CREATE TABLE stock_adjustment_events (
+            code TEXT, date DATE, adjustment_factor DOUBLE,
+            source_fingerprint TEXT
         );
         CREATE TABLE daily_valuation (
             code TEXT, date DATE, price_basis_date DATE, per DOUBLE,
             forward_per DOUBLE, pbr DOUBLE, p_op DOUBLE, forward_p_op DOUBLE,
-            market_cap DOUBLE, free_float_market_cap DOUBLE, basis_version TEXT
+            market_cap DOUBLE, free_float_market_cap DOUBLE,
+            fundamentals_adjustment_basis_date DATE, source_fingerprint TEXT
         );
         CREATE TABLE topix_data (
             date DATE, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE
@@ -108,7 +115,6 @@ def _build_market_v4_research_fixture(
             slope,
         ) in enumerate(securities):
             close = base + index * slope
-            basis_id = f"event-pit-v1:{code}:{dates[0]}"
             raw_rows.append(
                 (
                     code,
@@ -118,7 +124,13 @@ def _build_market_v4_research_fixture(
                     close * 0.99,
                     close,
                     10_000 + index * 10 + security_index * 1_000,
+                    close * (10_000 + index * 10 + security_index * 1_000),
                     1.0,
+                    close * 0.995,
+                    close * 1.01,
+                    close * 0.99,
+                    close,
+                    10_000 + index * 10 + security_index * 1_000,
                 )
             )
             master_rows.append(
@@ -143,43 +155,62 @@ def _build_market_v4_research_fixture(
                     6.0 + security_index * 2.0,
                     100_000_000.0 + security_index * 50_000_000.0,
                     80_000_000.0 + security_index * 40_000_000.0,
-                    basis_id,
+                    None,
+                    None,
                 )
             )
     conn.executemany(
-        "INSERT INTO stock_data_raw VALUES (?, ?, ?, ?, ?, ?, ?, ?)", raw_rows
+        "INSERT INTO stock_data_raw VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        raw_rows,
+    )
+    conn.executemany(
+        "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [
+            (row[0], row[1], row[9], row[10], row[11], row[12], row[13])
+            for row in raw_rows
+        ],
     )
     conn.executemany(
         "INSERT INTO stock_master_daily VALUES (?, ?, ?, ?, ?, ?)", master_rows
     )
     conn.executemany(
-        "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         valuation_rows,
     )
-    basis_rows = [
-        (
-            code,
-            f"event-pit-v1:{code}:{dates[0]}",
-            dates[0],
-            None,
-            dates[0],
-            f"fixture-{code}",
-            dates[-1],
-            "ready",
+    window_rows = []
+    for code, *_ in securities:
+        code_rows = [row for row in raw_rows if row[0] == code]
+        fingerprint_rows = [
+            {
+                "code": row[0],
+                "date": str(row[1]),
+                "open": row[2],
+                "high": row[3],
+                "low": row[4],
+                "close": row[5],
+                "volume": row[6],
+                "turnover_value": row[7],
+                "adjustment_factor": row[8],
+                "adjusted_open": row[9],
+                "adjusted_high": row[10],
+                "adjusted_low": row[11],
+                "adjusted_close": row[12],
+                "adjusted_volume": row[13],
+            }
+            for row in code_rows
+        ]
+        window_rows.append(
+            (
+                code,
+                dates[0],
+                dates[-1],
+                dates[-1],
+                provider_stock_source_fingerprint(fingerprint_rows),
+                "now",
+            )
         )
-        for code, *_ in securities
-    ]
-    segment_rows = [
-        (code, f"event-pit-v1:{code}:{dates[0]}", dates[0], None, 1.0)
-        for code, *_ in securities
-    ]
     conn.executemany(
-        "INSERT INTO stock_adjustment_bases VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        basis_rows,
-    )
-    conn.executemany(
-        "INSERT INTO stock_adjustment_basis_segments VALUES (?, ?, ?, ?, ?)",
-        segment_rows,
+        "INSERT INTO stock_provider_windows VALUES (?, ?, ?, ?, ?, ?)", window_rows
     )
     topix_rows = []
     n225_rows = []
@@ -209,6 +240,91 @@ def _build_market_v4_research_fixture(
     conn.executemany("INSERT INTO topix_data VALUES (?, ?, ?, ?, ?)", topix_rows)
     conn.executemany("INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?)", n225_rows)
     return conn
+
+
+def _refresh_provider_window(
+    conn: duckdb.DuckDBPyConnection,
+    *,
+    code: str,
+    provider_as_of: date | None = None,
+) -> None:
+    columns = (
+        "code",
+        "date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "turnover_value",
+        "adjustment_factor",
+        "adjusted_open",
+        "adjusted_high",
+        "adjusted_low",
+        "adjusted_close",
+        "adjusted_volume",
+    )
+    rows = [
+        dict(zip(columns, row, strict=True))
+        for row in conn.execute(
+            f"SELECT {', '.join(columns)} FROM stock_data_raw "
+            "WHERE code = ? ORDER BY date",
+            [code],
+        ).fetchall()
+    ]
+    for row in rows:
+        row["date"] = str(row["date"])
+    fingerprint = provider_stock_source_fingerprint(rows)
+    coverage_start = date.fromisoformat(rows[0]["date"])
+    coverage_end = date.fromisoformat(rows[-1]["date"])
+    conn.execute(
+        "UPDATE stock_provider_windows SET coverage_start = ?, coverage_end = ?, "
+        "provider_as_of = COALESCE(?, provider_as_of), "
+        "source_fingerprint = ? WHERE code = ?",
+        [coverage_start, coverage_end, provider_as_of, fingerprint, code],
+    )
+
+
+def _append_provider_adjusted_row(
+    conn: duckdb.DuckDBPyConnection,
+    *,
+    code: str,
+    session_date: date,
+    open_price: float,
+    high: float,
+    low: float,
+    close: float,
+    volume: int,
+) -> None:
+    turnover = close * volume
+    conn.execute(
+        "INSERT INTO stock_data_raw VALUES "
+        "(?, ?, ?, ?, ?, ?, ?, ?, 1.0, ?, ?, ?, ?, ?)",
+        [
+            code,
+            session_date,
+            open_price,
+            high,
+            low,
+            close,
+            volume,
+            turnover,
+            open_price,
+            high,
+            low,
+            close,
+            volume,
+        ],
+    )
+    conn.execute(
+        "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [code, session_date, open_price, high, low, close, volume],
+    )
+    _refresh_provider_window(
+        conn,
+        code=code,
+        provider_as_of=session_date,
+    )
 
 
 def _request(
@@ -272,7 +388,7 @@ def test_relation_and_request_identifiers_are_validated() -> None:
 def test_namespaced_builds_coexist_with_explicit_unique_date_schemas(
     tmp_path: Path,
 ) -> None:
-    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    conn = _build_market_v5_research_fixture(tmp_path / "market.duckdb")
     try:
         first = build_daily_ranking_research_base(conn, _request("alpha"))
         second = build_daily_ranking_research_base(conn, _request("beta"))
@@ -338,7 +454,7 @@ def test_base_build_issues_history_from_one_event_time_projection_call(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    conn = _build_market_v5_research_fixture(tmp_path / "market.duckdb")
     original = daily_ranking_research_base.build_daily_ranking_event_time_prices
     calls = 0
 
@@ -376,7 +492,7 @@ def test_typed_base_resolves_504d_warmup_from_sparse_valid_market_sessions(
         for offset in range(507)
     )
     assert (sparse_dates[504] - sparse_dates[0]).days > 720
-    conn = _build_market_v4_research_fixture(
+    conn = _build_market_v5_research_fixture(
         tmp_path / "sparse-market.duckdb",
         session_dates=sparse_dates,
     )
@@ -455,11 +571,15 @@ def test_typed_base_resolves_504d_warmup_from_sparse_valid_market_sessions(
     try:
         baseline = snapshot("sparse_sessions_before")
         future_date = sparse_dates[-1] + pd.Timedelta(days=100)
-        basis_id = f"event-pit-v1:1111:{sparse_dates[0]}"
-        conn.execute(
-            "INSERT INTO stock_data_raw VALUES "
-            "('1111', ?, 999.0, 1001.0, 998.0, 1000.0, 999999, 1.0)",
-            [future_date],
+        _append_provider_adjusted_row(
+            conn,
+            code="1111",
+            session_date=future_date,
+            open_price=999.0,
+            high=1001.0,
+            low=998.0,
+            close=1000.0,
+            volume=999999,
         )
         conn.execute(
             "INSERT INTO stock_master_daily VALUES "
@@ -469,8 +589,8 @@ def test_typed_base_resolves_504d_warmup_from_sparse_valid_market_sessions(
         conn.execute(
             "INSERT INTO daily_valuation VALUES "
             "('1111', ?, ?, 999.0, 999.0, 999.0, 999.0, 999.0, "
-            "999999999.0, 999999999.0, ?)",
-            [future_date, future_date, basis_id],
+            "999999999.0, 999999999.0, NULL, NULL)",
+            [future_date, future_date],
         )
         conn.execute(
             "INSERT INTO topix_data VALUES (?, 999.0, 1001.0, 998.0, 1000.0)",
@@ -495,7 +615,7 @@ def test_typed_base_honors_large_custom_required_valid_session_window(
         (pd.Timestamp("2018-01-01") + pd.Timedelta(days=offset * 2)).date()
         for offset in range(601)
     )
-    conn = _build_market_v4_research_fixture(
+    conn = _build_market_v5_research_fixture(
         tmp_path / "large-window-market.duckdb",
         session_dates=sparse_dates,
     )
@@ -521,7 +641,7 @@ def test_typed_base_honors_large_custom_required_valid_session_window(
 def test_disabled_optional_stages_return_none_and_do_not_expose_stale_relations(
     tmp_path: Path,
 ) -> None:
-    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    conn = _build_market_v5_research_fixture(tmp_path / "market.duckdb")
     try:
         enabled = build_daily_ranking_research_base(
             conn,
@@ -562,7 +682,7 @@ def test_disabled_optional_stages_return_none_and_do_not_expose_stale_relations(
 def test_unknown_scope_is_filtered_by_exact_date_market_membership(
     tmp_path: Path,
 ) -> None:
-    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    conn = _build_market_v5_research_fixture(tmp_path / "market.duckdb")
     try:
         conn.execute(
             "UPDATE stock_master_daily "
@@ -590,7 +710,7 @@ def test_unknown_scope_is_filtered_by_exact_date_market_membership(
 def test_equal_normalized_market_aliases_are_accepted_but_conflicts_fail(
     tmp_path: Path,
 ) -> None:
-    equal_conn = _build_market_v4_research_fixture(tmp_path / "equal.duckdb")
+    equal_conn = _build_market_v5_research_fixture(tmp_path / "equal.duckdb")
     try:
         equal_conn.execute(
             "INSERT INTO stock_master_daily "
@@ -610,7 +730,7 @@ def test_equal_normalized_market_aliases_are_accepted_but_conflicts_fail(
     finally:
         equal_conn.close()
 
-    conflict_conn = _build_market_v4_research_fixture(tmp_path / "conflict.duckdb")
+    conflict_conn = _build_market_v5_research_fixture(tmp_path / "conflict.duckdb")
     try:
         conflict_conn.execute(
             "INSERT INTO stock_master_daily "
@@ -630,7 +750,7 @@ def test_incomplete_outcome_diagnostics_inspect_every_requested_horizon(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    conn = _build_market_v5_research_fixture(tmp_path / "market.duckdb")
     original = daily_ranking_research_base.build_daily_ranking_event_time_prices
 
     def build_with_partial_horizon(
@@ -696,7 +816,7 @@ def test_upstream_signal_schema_drift_fails_before_panel_publication(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    conn = _build_market_v5_research_fixture(tmp_path / "market.duckdb")
     original = daily_ranking_research_base.build_daily_ranking_event_time_prices
 
     def build_with_extra_column(
@@ -745,7 +865,7 @@ def test_liquidity_standardization_rejects_non_finite_scale(scale: str) -> None:
 def test_future_source_append_does_not_change_prior_signal_relations(
     tmp_path: Path,
 ) -> None:
-    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    conn = _build_market_v5_research_fixture(tmp_path / "market.duckdb")
     try:
         baseline = build_daily_ranking_research_base(conn, _request("stable_before"))
         baseline_cohort = materialize_daily_ranking_signal_cohort(
@@ -759,13 +879,23 @@ def test_future_source_append_does_not_change_prior_signal_relations(
                 referenced_columns=("per_percentile",),
             ),
         )
+        stable_signal_columns = tuple(
+            column
+            for column in baseline.ranked_signals.columns
+            if column not in {"price_basis_id", "valuation_basis_id"}
+        )
+        stable_history_columns = tuple(
+            column
+            for column in baseline.price_history.columns
+            if column != "price_basis_id"
+        )
         baseline_rows = conn.execute(
-            f"SELECT {', '.join(baseline.ranked_signals.columns)} "
+            f"SELECT {', '.join(stable_signal_columns)} "
             f"FROM {baseline.ranked_signals.name} ORDER BY date, code"
         ).fetchall()
         baseline_history = conn.execute(
-            f"SELECT {', '.join(baseline.price_history.columns)} "
-            f"FROM {baseline.price_history.name} ORDER BY date, code, price_basis_id"
+            f"SELECT {', '.join(stable_history_columns)} "
+            f"FROM {baseline.price_history.name} ORDER BY date, code"
         ).fetchall()
         baseline_membership = conn.execute(
             f"SELECT code, date, market_scope FROM {baseline_cohort.name} "
@@ -780,27 +910,15 @@ def test_future_source_append_does_not_change_prior_signal_relations(
             baseline.lineage.valuation_basis_sha256,
         )
         future_date = date(2024, 5, 17)
-        old_basis_id = "event-pit-v1:1111:2024-01-04"
-        future_basis_id = f"event-pit-v1:1111:{future_date}"
-        conn.execute(
-            "UPDATE stock_adjustment_bases SET valid_to_exclusive = ? "
-            "WHERE basis_id = ?",
-            [future_date, old_basis_id],
-        )
-        conn.execute(
-            "INSERT INTO stock_adjustment_bases VALUES "
-            "('1111', ?, ?, NULL, ?, 'fixture-1111-future', ?, 'ready')",
-            [future_basis_id, future_date, future_date, future_date],
-        )
-        conn.execute(
-            "INSERT INTO stock_adjustment_basis_segments VALUES "
-            "('1111', ?, ?, NULL, 1.0)",
-            [future_basis_id, future_date],
-        )
-        conn.execute(
-            "INSERT INTO stock_data_raw VALUES "
-            "('1111', ?, 999.0, 1000.0, 998.0, 999.0, 999999, 1.0)",
-            [future_date],
+        _append_provider_adjusted_row(
+            conn,
+            code="1111",
+            session_date=future_date,
+            open_price=999.0,
+            high=1000.0,
+            low=998.0,
+            close=999.0,
+            volume=999999,
         )
         conn.execute(
             "INSERT INTO stock_master_daily VALUES "
@@ -810,8 +928,8 @@ def test_future_source_append_does_not_change_prior_signal_relations(
         conn.execute(
             "INSERT INTO daily_valuation VALUES "
             "('1111', ?, ?, 999.0, 999.0, 999.0, 999.0, 999.0, "
-            "999999999.0, 999999999.0, ?)",
-            [future_date, future_date, future_basis_id],
+            "999999999.0, 999999999.0, NULL, NULL)",
+            [future_date, future_date],
         )
         conn.execute(
             "INSERT INTO topix_data VALUES (?, 999.0, 999.0, 999.0, 999.0)",
@@ -835,16 +953,16 @@ def test_future_source_append_does_not_change_prior_signal_relations(
             ),
         )
         appended_rows = conn.execute(
-            f"SELECT {', '.join(appended.ranked_signals.columns)} "
+            f"SELECT {', '.join(stable_signal_columns)} "
             f"FROM {appended.ranked_signals.name} ORDER BY date, code"
         ).fetchall()
         appended_history = conn.execute(
-            f"SELECT {', '.join(appended.price_history.columns)} "
-            f"FROM {appended.price_history.name} ORDER BY date, code, price_basis_id"
+            f"SELECT {', '.join(stable_history_columns)} "
+            f"FROM {appended.price_history.name} ORDER BY date, code"
         ).fetchall()
         retained_baseline_history = conn.execute(
-            f"SELECT {', '.join(baseline.price_history.columns)} "
-            f"FROM {baseline.price_history.name} ORDER BY date, code, price_basis_id"
+            f"SELECT {', '.join(stable_history_columns)} "
+            f"FROM {baseline.price_history.name} ORDER BY date, code"
         ).fetchall()
         appended_membership = conn.execute(
             f"SELECT code, date, market_scope FROM {appended_cohort.name} "
@@ -870,13 +988,12 @@ def test_future_source_append_does_not_change_prior_signal_relations(
             == 0
         )
         assert appended_membership == baseline_membership
-        assert appended_hashes == baseline_hashes
+        assert appended_hashes != baseline_hashes
         assert (
             conn.execute(
-                "SELECT count(*) FROM stock_adjustment_bases WHERE basis_id IN (?, ?)",
-                [old_basis_id, future_basis_id],
+                "SELECT coverage_end FROM stock_provider_windows WHERE code = '1111'"
             ).fetchone()[0]
-            == 2
+            == future_date
         )
     finally:
         conn.close()
@@ -885,7 +1002,7 @@ def test_future_source_append_does_not_change_prior_signal_relations(
 def test_outcomes_attach_only_after_signal_membership_is_materialized(
     tmp_path: Path,
 ) -> None:
-    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    conn = _build_market_v5_research_fixture(tmp_path / "market.duckdb")
     try:
         relations = build_daily_ranking_research_base(conn, _request("selection"))
         cohort = materialize_daily_ranking_signal_cohort(
@@ -952,7 +1069,7 @@ def test_outcomes_attach_only_after_signal_membership_is_materialized(
 def test_exact_published_signal_features_can_freeze_before_outcome_attach(
     tmp_path: Path,
 ) -> None:
-    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    conn = _build_market_v5_research_fixture(tmp_path / "market.duckdb")
     try:
         relations = build_daily_ranking_research_base(conn, _request("feature_cohort"))
         source = relations.ranked_signals
@@ -1014,8 +1131,8 @@ def test_exact_published_signal_features_can_freeze_before_outcome_attach(
 def test_feature_cohort_rejects_copied_cross_generation_and_evaluated_refs(
     tmp_path: Path,
 ) -> None:
-    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
-    other_conn = _build_market_v4_research_fixture(tmp_path / "other.duckdb")
+    conn = _build_market_v5_research_fixture(tmp_path / "market.duckdb")
+    other_conn = _build_market_v5_research_fixture(tmp_path / "other.duckdb")
     try:
         relations = build_daily_ranking_research_base(conn, _request("feature_guard"))
         source = relations.ranked_signals
@@ -1113,7 +1230,7 @@ def test_feature_cohort_rejects_copied_cross_generation_and_evaluated_refs(
 def test_cohort_provenance_rejects_outcome_derived_or_forged_relation_refs(
     tmp_path: Path,
 ) -> None:
-    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    conn = _build_market_v5_research_fixture(tmp_path / "market.duckdb")
     try:
         relations = build_daily_ranking_research_base(conn, _request("provenance"))
         forged_name = (
@@ -1174,12 +1291,17 @@ def test_cohort_provenance_rejects_outcome_derived_or_forged_relation_refs(
 def test_missing_highest_selected_outcome_does_not_backfill_membership(
     tmp_path: Path,
 ) -> None:
-    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    conn = _build_market_v5_research_fixture(tmp_path / "market.duckdb")
     try:
         conn.execute(
             "DELETE FROM stock_data_raw "
             "WHERE code = '2222' AND date > DATE '2024-04-04'"
         )
+        conn.execute(
+            "DELETE FROM stock_data "
+            "WHERE code = '2222' AND date > DATE '2024-04-04'"
+        )
+        _refresh_provider_window(conn, code="2222")
         relations = build_daily_ranking_research_base(conn, _request("no_backfill"))
         cohort = materialize_daily_ranking_signal_cohort(
             conn,
@@ -1216,7 +1338,7 @@ def test_missing_highest_selected_outcome_does_not_backfill_membership(
 
 
 def test_post_issuance_outcome_mutation_rejects_stale_ref(tmp_path: Path) -> None:
-    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    conn = _build_market_v5_research_fixture(tmp_path / "market.duckdb")
     try:
         relations = build_daily_ranking_research_base(conn, _request("stale_outcome"))
         cohort = materialize_daily_ranking_signal_cohort(

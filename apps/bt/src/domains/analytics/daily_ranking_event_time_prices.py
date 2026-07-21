@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from src.domains.analytics.readonly_duckdb_support import (
     normalize_code_sql,
-    require_market_v4_compatibility,
+    require_market_v5_compatibility,
 )
 
 
@@ -46,26 +46,35 @@ _RESEARCH_PRICE_REQUIRED_COLUMNS = {
         "low",
         "close",
         "volume",
+        "turnover_value",
         "adjustment_factor",
+        "adjusted_open",
+        "adjusted_high",
+        "adjusted_low",
+        "adjusted_close",
+        "adjusted_volume",
     },
+    "stock_data": {"code", "date", "open", "high", "low", "close", "volume"},
     "stock_master_daily": {"date", "code", "market_code"},
-    "daily_valuation": {"code", "date", "basis_version"},
-    "stock_adjustment_bases": {
+    "daily_valuation": {
         "code",
-        "basis_id",
-        "valid_from",
-        "valid_to_exclusive",
-        "adjustment_through_date",
+        "date",
+        "price_basis_date",
+        "fundamentals_adjustment_basis_date",
         "source_fingerprint",
-        "materialized_through_date",
-        "status",
     },
-    "stock_adjustment_basis_segments": {
+    "stock_provider_windows": {
         "code",
-        "basis_id",
-        "source_date_from",
-        "source_date_to_exclusive",
-        "cumulative_factor",
+        "coverage_start",
+        "coverage_end",
+        "provider_as_of",
+        "source_fingerprint",
+    },
+    "stock_adjustment_events": {
+        "code",
+        "date",
+        "adjustment_factor",
+        "source_fingerprint",
     },
     "topix_data": {"date", "open", "close"},
     "indices_data": {"code", "date", "close"},
@@ -292,7 +301,7 @@ def _drop_price_relations(
             conn.execute(f"DROP TABLE IF EXISTS {relation_name}")
 
 
-def _require_market_v4_price_columns(conn: Any) -> None:
+def _require_market_v5_price_columns(conn: Any) -> None:
     missing_by_table: dict[str, list[str]] = {}
     for table_name, required_columns in _RESEARCH_PRICE_REQUIRED_COLUMNS.items():
         observed_columns = {
@@ -308,9 +317,9 @@ def _require_market_v4_price_columns(conn: Any) -> None:
             for table_name, columns in sorted(missing_by_table.items())
         )
         raise RuntimeError(
-            "Incompatible market.duckdb: missing required Market v4 columns "
-            f"({details}). Run initial sync with reset enabled "
-            "(resetBeforeSync=true) to recreate the Market Data Plane."
+            "Incompatible market.duckdb: missing required Market v5 columns "
+            f"({details}). Run bt market-cutover cutover to rebuild the "
+            "Market Data Plane."
         )
 
 
@@ -365,10 +374,14 @@ class EventTimeSignalSql:
 
 
 def build_event_time_signal_sql(request: EventTimeSignalRequest) -> EventTimeSignalSql:
-    """Build one read-only CTE graph using the signal-date adjustment basis."""
+    """Build one read-only CTE graph using one exact provider vintage."""
 
     market_clause = ""
-    params: list[Any] = [request.signal_date, request.start_date or "0001-01-01"]
+    params: list[Any] = [
+        request.signal_date,
+        request.start_date,
+        request.start_date or "0001-01-01",
+    ]
     if request.market_codes:
         placeholders = ",".join("?" for _ in request.market_codes)
         market_clause = f" AND smd.market_code IN ({placeholders})"
@@ -376,12 +389,14 @@ def build_event_time_signal_sql(request: EventTimeSignalRequest) -> EventTimeSig
 
     raw_code = _normalized_code_sql("raw.code")
     master_code = _normalized_code_sql("smd.code")
-    basis_code = _normalized_code_sql("basis.code")
-    segment_code = _normalized_code_sql("segment.code")
+    window_code = _normalized_code_sql("provider.code")
+    projection_code = _normalized_code_sql("projection.code")
+    event_code = _normalized_code_sql("event.code")
     cte_sql = f"""
         event_time_signal_config AS (
             SELECT CAST(? AS VARCHAR) AS signal_date,
-                   CAST(? AS VARCHAR) AS start_date
+                   CAST(? AS VARCHAR) AS requested_start_date,
+                   CAST(? AS VARCHAR) AS scan_start_date
         ),
         event_time_signal_universe AS (
             SELECT DISTINCT {master_code} AS normalized_code
@@ -394,12 +409,18 @@ def build_event_time_signal_sql(request: EventTimeSignalRequest) -> EventTimeSig
                 {raw_code} AS normalized_code,
                 raw.code AS source_code,
                 raw.date,
-                raw.open,
-                raw.high,
-                raw.low,
-                raw.close,
-                raw.volume,
+                raw.open AS raw_open,
+                raw.high AS raw_high,
+                raw.low AS raw_low,
+                raw.close AS raw_close,
+                raw.volume AS raw_volume,
+                raw.turnover_value,
                 raw.adjustment_factor,
+                raw.adjusted_open,
+                raw.adjusted_high,
+                raw.adjusted_low,
+                raw.adjusted_close,
+                raw.adjusted_volume,
                 ROW_NUMBER() OVER (
                     PARTITION BY {raw_code}, raw.date
                     ORDER BY
@@ -417,7 +438,13 @@ def build_event_time_signal_sql(request: EventTimeSignalRequest) -> EventTimeSig
                     coalesce(CAST(raw.low AS VARCHAR), '<null>'),
                     coalesce(CAST(raw.close AS VARCHAR), '<null>'),
                     coalesce(CAST(raw.volume AS VARCHAR), '<null>'),
-                    coalesce(CAST(raw.adjustment_factor AS VARCHAR), '<null>')
+                    coalesce(CAST(raw.turnover_value AS VARCHAR), '<null>'),
+                    coalesce(CAST(raw.adjustment_factor AS VARCHAR), '<null>'),
+                    coalesce(CAST(raw.adjusted_open AS VARCHAR), '<null>'),
+                    coalesce(CAST(raw.adjusted_high AS VARCHAR), '<null>'),
+                    coalesce(CAST(raw.adjusted_low AS VARCHAR), '<null>'),
+                    coalesce(CAST(raw.adjusted_close AS VARCHAR), '<null>'),
+                    coalesce(CAST(raw.adjusted_volume AS VARCHAR), '<null>')
                 )) OVER (
                     PARTITION BY {raw_code}, raw.date
                 ) AS alias_value_count
@@ -425,7 +452,7 @@ def build_event_time_signal_sql(request: EventTimeSignalRequest) -> EventTimeSig
             JOIN event_time_signal_universe AS universe
               ON universe.normalized_code = {raw_code}
             CROSS JOIN event_time_signal_config AS config
-            WHERE raw.date >= config.start_date
+            WHERE raw.date >= config.scan_start_date
               AND raw.date <= config.signal_date
         ),
         event_time_signal_raw AS (
@@ -439,87 +466,125 @@ def build_event_time_signal_sql(request: EventTimeSignalRequest) -> EventTimeSig
             CROSS JOIN event_time_signal_config AS config
             WHERE raw.date = config.signal_date
         ),
-        event_time_signal_basis_candidates AS (
+        event_time_signal_provider_rows AS (
             SELECT
-                signal.normalized_code,
-                basis.basis_id,
-                basis.valid_from,
-                basis.valid_to_exclusive,
-                basis.adjustment_through_date,
-                basis.source_fingerprint,
-                basis.materialized_through_date,
-                basis.status,
-                COUNT(basis.basis_id) OVER (
-                    PARTITION BY signal.normalized_code
-                ) AS basis_count,
-                ROW_NUMBER() OVER (
-                    PARTITION BY signal.normalized_code
-                    ORDER BY basis.valid_from, basis.basis_id
-                ) AS basis_rank
+                {raw_code} AS normalized_code,
+                raw.code AS source_code,
+                raw.date,
+                raw.open, raw.high, raw.low, raw.close, raw.volume,
+                raw.turnover_value, raw.adjustment_factor,
+                raw.adjusted_open, raw.adjusted_high, raw.adjusted_low,
+                raw.adjusted_close, raw.adjusted_volume
+            FROM stock_data_raw AS raw
+            JOIN event_time_signal_codes AS signal
+              ON signal.normalized_code = {raw_code}
+        ),
+        event_time_signal_provider_row_hashes AS (
+            SELECT normalized_code, date, adjustment_factor,
+                   from_hex(sha256(to_json(struct_pack(
+                       adjusted_close := adjusted_close,
+                       adjusted_high := adjusted_high,
+                       adjusted_low := adjusted_low,
+                       adjusted_open := adjusted_open,
+                       adjusted_volume := adjusted_volume,
+                       adjustment_factor := adjustment_factor,
+                       close := close,
+                       code := source_code,
+                       date := date,
+                       high := high,
+                       low := low,
+                       open := open,
+                       turnover_value := turnover_value,
+                       volume := volume
+                   ))))::BIT AS row_hash
+            FROM event_time_signal_provider_rows
+        ),
+        event_time_signal_provider_evidence AS (
+            SELECT normalized_code,
+                   lower(hex(bit_xor(row_hash)::BLOB)) AS calculated_fingerprint,
+                   min(date) AS raw_min,
+                   max(date) AS raw_max,
+                   count(*) FILTER (
+                       WHERE adjustment_factor IS NOT NULL
+                         AND adjustment_factor != 1.0
+                   ) AS expected_event_count
+            FROM event_time_signal_provider_row_hashes
+            GROUP BY normalized_code
+        ),
+        event_time_signal_window_candidates AS (
+            SELECT signal.normalized_code,
+                   provider.coverage_start, provider.coverage_end,
+                   provider.provider_as_of, provider.source_fingerprint,
+                   count(provider.code) OVER (
+                       PARTITION BY signal.normalized_code
+                   ) AS window_count,
+                   row_number() OVER (
+                       PARTITION BY signal.normalized_code
+                       ORDER BY provider.code
+                   ) AS window_rank
             FROM event_time_signal_codes AS signal
-            CROSS JOIN event_time_signal_config AS config
-            LEFT JOIN stock_adjustment_bases AS basis
-              ON {basis_code} = signal.normalized_code
-             AND basis.valid_from <= config.signal_date
-             AND (
-                 basis.valid_to_exclusive IS NULL
-                 OR config.signal_date < basis.valid_to_exclusive
-             )
+            LEFT JOIN stock_provider_windows AS provider
+              ON {window_code} = signal.normalized_code
         ),
-        event_time_signal_selected_basis AS (
-            SELECT *,
-                status = 'ready'
-                AND materialized_through_date >= config.signal_date
-                AND adjustment_through_date = valid_from
-                AND valid_from <= config.signal_date
-                AND source_fingerprint IS NOT NULL
-                AND trim(source_fingerprint) <> ''
-                AND basis_id = (
-                    'event-pit-v1:' || normalized_code || ':' || valid_from
-                ) AS basis_is_ready
-            FROM event_time_signal_basis_candidates
+        event_time_signal_selected_window AS (
+            SELECT candidate.*,
+                   evidence.calculated_fingerprint,
+                   evidence.raw_min, evidence.raw_max,
+                   evidence.expected_event_count,
+                   candidate.window_count = 1
+                   AND regexp_full_match(
+                       coalesce(candidate.source_fingerprint, ''), '[0-9a-f]{{64}}'
+                   )
+                   AND CAST(candidate.coverage_start AS DATE) = CAST(evidence.raw_min AS DATE)
+                   AND CAST(candidate.coverage_end AS DATE) = CAST(evidence.raw_max AS DATE)
+                   AND CAST(candidate.coverage_start AS DATE) <= CAST(candidate.coverage_end AS DATE)
+                   AND CAST(candidate.coverage_end AS DATE) <= CAST(candidate.provider_as_of AS DATE)
+                   AND CAST(candidate.provider_as_of AS DATE) >= CAST(config.signal_date AS DATE)
+                   AND candidate.source_fingerprint = evidence.calculated_fingerprint
+                       AS window_is_valid,
+                   'provider-v1:' || candidate.normalized_code || ':'
+                       || candidate.provider_as_of || ':'
+                       || candidate.source_fingerprint AS provider_vintage_id
+            FROM event_time_signal_window_candidates AS candidate
+            LEFT JOIN event_time_signal_provider_evidence AS evidence USING (
+                normalized_code
+            )
             CROSS JOIN event_time_signal_config AS config
-            WHERE basis_rank = 1
+            WHERE candidate.window_rank = 1
         ),
-        event_time_signal_projection_lineage AS (
-            SELECT
-                raw.normalized_code,
-                raw.date,
-                raw.open,
-                raw.high,
-                raw.low,
-                raw.close,
-                raw.volume,
-                basis.basis_id AS signal_basis_id,
-                COUNT(segment.basis_id) AS segment_count,
-                MIN(segment.cumulative_factor) AS cumulative_factor,
-                COUNT(segment.basis_id) FILTER (
-                    WHERE segment.cumulative_factor IS NULL
-                       OR NOT isfinite(segment.cumulative_factor)
-                       OR segment.cumulative_factor <= 0
-                ) AS invalid_factor_count
-            FROM event_time_signal_raw AS raw
-            JOIN event_time_signal_selected_basis AS basis
-              ON basis.normalized_code = raw.normalized_code
-             AND basis.basis_count = 1
-             AND basis.basis_is_ready
-            LEFT JOIN stock_adjustment_basis_segments AS segment
-              ON {segment_code} = raw.normalized_code
-             AND segment.basis_id = basis.basis_id
-             AND segment.source_date_from <= raw.date
-             AND (
-                 segment.source_date_to_exclusive IS NULL
-                 OR raw.date < segment.source_date_to_exclusive
-             )
-            GROUP BY
-                raw.normalized_code,
-                raw.date,
-                raw.open,
-                raw.high,
-                raw.low,
-                raw.close,
-                raw.volume,
-                basis.basis_id
+        event_time_signal_event_evidence AS (
+            SELECT provider_window.normalized_code,
+                   count(event.code) AS event_count,
+                   count(event.code) FILTER (
+                       WHERE raw.date IS NOT NULL
+                         AND raw.adjustment_factor != 1.0
+                         AND event.adjustment_factor = raw.adjustment_factor
+                         AND event.source_fingerprint = provider_window.source_fingerprint
+                   ) AS valid_event_count
+            FROM event_time_signal_selected_window AS provider_window
+            LEFT JOIN stock_adjustment_events AS event
+              ON {event_code} = provider_window.normalized_code
+            LEFT JOIN event_time_signal_provider_rows AS raw
+              ON raw.normalized_code = provider_window.normalized_code
+             AND raw.date = event.date
+            GROUP BY provider_window.normalized_code
+        ),
+        event_time_signal_projection_evidence AS (
+            SELECT raw.normalized_code,
+                   count(*) AS raw_count,
+                   count(projection.code) AS projection_count,
+                   count(projection.code) FILTER (
+                       WHERE projection.open = raw.adjusted_open
+                         AND projection.high = raw.adjusted_high
+                         AND projection.low = raw.adjusted_low
+                         AND projection.close = raw.adjusted_close
+                         AND projection.volume = raw.adjusted_volume
+                   ) AS matching_projection_count
+            FROM event_time_signal_provider_rows AS raw
+            LEFT JOIN stock_data AS projection
+              ON {projection_code} = raw.normalized_code
+             AND projection.date = raw.date
+            GROUP BY raw.normalized_code
         ),
         event_time_signal_lineage_issues AS (
             SELECT
@@ -531,45 +596,59 @@ def build_event_time_signal_sql(request: EventTimeSignalRequest) -> EventTimeSig
             UNION ALL
             SELECT
                 CASE
-                    WHEN basis_count = 0 THEN 'signal_basis_missing'
-                    ELSE 'signal_basis_ambiguous'
+                    WHEN window_count = 0 THEN 'provider_window_missing'
+                    WHEN window_count <> 1 THEN 'provider_window_ambiguous'
+                    ELSE 'provider_window_invalid'
                 END AS issue,
-                basis.normalized_code,
+                provider.normalized_code,
                 config.signal_date AS date
-            FROM event_time_signal_selected_basis AS basis
+            FROM event_time_signal_selected_window AS provider
             CROSS JOIN event_time_signal_config AS config
-            WHERE basis.basis_count <> 1
+            WHERE provider.window_count <> 1 OR NOT provider.window_is_valid
             UNION ALL
             SELECT
-                'signal_basis_not_ready' AS issue,
-                basis.normalized_code,
+                'provider_event_ledger_mismatch' AS issue,
+                provider.normalized_code,
                 config.signal_date AS date
-            FROM event_time_signal_selected_basis AS basis
+            FROM event_time_signal_selected_window AS provider
+            JOIN event_time_signal_event_evidence AS event USING (normalized_code)
             CROSS JOIN event_time_signal_config AS config
-            WHERE basis.basis_count = 1 AND NOT basis.basis_is_ready
+            WHERE provider.window_is_valid
+              AND (
+                  event.event_count <> provider.expected_event_count
+                  OR event.valid_event_count <> provider.expected_event_count
+              )
             UNION ALL
             SELECT
-                CASE
-                    WHEN segment_count <> 1 THEN 'signal_segment_cardinality'
-                    ELSE 'signal_segment_factor'
-                END AS issue,
-                normalized_code,
-                date
-            FROM event_time_signal_projection_lineage
-            WHERE segment_count <> 1 OR invalid_factor_count <> 0
+                'provider_projection_mismatch' AS issue,
+                provider.normalized_code,
+                config.signal_date AS date
+            FROM event_time_signal_selected_window AS provider
+            JOIN event_time_signal_projection_evidence AS projection USING (
+                normalized_code
+            )
+            CROSS JOIN event_time_signal_config AS config
+            WHERE provider.window_is_valid
+              AND (
+                  projection.projection_count <> projection.raw_count
+                  OR projection.matching_projection_count <> projection.raw_count
+              )
         ),
         event_time_signal_projected AS (
             SELECT
-                normalized_code,
-                date,
-                open * cumulative_factor AS open,
-                high * cumulative_factor AS high,
-                low * cumulative_factor AS low,
-                close * cumulative_factor AS close,
-                CAST(ROUND(volume / cumulative_factor) AS BIGINT) AS volume,
-                signal_basis_id
-            FROM event_time_signal_projection_lineage
-            WHERE segment_count = 1 AND invalid_factor_count = 0
+                raw.normalized_code,
+                raw.date,
+                raw.adjusted_open AS open,
+                raw.adjusted_high AS high,
+                raw.adjusted_low AS low,
+                raw.adjusted_close AS close,
+                raw.adjusted_volume AS volume,
+                provider.provider_vintage_id AS signal_basis_id
+            FROM event_time_signal_raw AS raw
+            JOIN event_time_signal_selected_window AS provider USING (
+                normalized_code
+            )
+            WHERE provider.window_is_valid
         ),
         event_time_signal_lagged AS (
             SELECT
@@ -685,11 +764,11 @@ def build_daily_ranking_event_time_prices(
 ) -> DailyRankingPriceRelations:
     """Build research-only signal features and completion-aligned outcomes."""
 
-    require_market_v4_compatibility(
+    require_market_v5_compatibility(
         conn,
         required_tables=_RESEARCH_PRICE_REQUIRED_COLUMNS,
     )
-    _require_market_v4_price_columns(conn)
+    _require_market_v5_price_columns(conn)
     generation_namespace = f"{request.namespace}_g_{uuid4().hex}"
     names = _price_relation_names(generation_namespace)
     try:
@@ -714,6 +793,7 @@ def _build_daily_ranking_event_time_prices(
     raw_code = normalize_code_sql("raw.code")
     master_code = normalize_code_sql("smd.code")
     valuation_code = normalize_code_sql("dv.code")
+    window_code = normalize_code_sql("provider.code")
 
     raw_conditions: list[str] = []
     raw_params: list[str] = []
@@ -732,11 +812,17 @@ def _build_daily_ranking_event_time_prices(
                 {raw_code} AS code,
                 raw.code AS source_code,
                 CAST(raw.date AS DATE) AS date,
-                CAST(raw.open AS DOUBLE) AS open,
-                CAST(raw.high AS DOUBLE) AS high,
-                CAST(raw.low AS DOUBLE) AS low,
-                CAST(raw.close AS DOUBLE) AS close,
-                CAST(raw.volume AS BIGINT) AS volume,
+                CAST(raw.adjusted_open AS DOUBLE) AS open,
+                CAST(raw.adjusted_high AS DOUBLE) AS high,
+                CAST(raw.adjusted_low AS DOUBLE) AS low,
+                CAST(raw.adjusted_close AS DOUBLE) AS close,
+                CAST(raw.adjusted_volume AS BIGINT) AS volume,
+                CAST(raw.open AS DOUBLE) AS raw_open,
+                CAST(raw.high AS DOUBLE) AS raw_high,
+                CAST(raw.low AS DOUBLE) AS raw_low,
+                CAST(raw.close AS DOUBLE) AS raw_close,
+                CAST(raw.volume AS BIGINT) AS raw_volume,
+                CAST(raw.turnover_value AS DOUBLE) AS turnover_value,
                 CAST(raw.adjustment_factor AS DOUBLE) AS adjustment_factor,
                 row_number() OVER (
                     PARTITION BY {raw_code}, raw.date
@@ -750,7 +836,13 @@ def _build_daily_ranking_event_time_prices(
                     coalesce(CAST(raw.low AS VARCHAR), '<null>'),
                     coalesce(CAST(raw.close AS VARCHAR), '<null>'),
                     coalesce(CAST(raw.volume AS VARCHAR), '<null>'),
-                    coalesce(CAST(raw.adjustment_factor AS VARCHAR), '<null>')
+                    coalesce(CAST(raw.turnover_value AS VARCHAR), '<null>'),
+                    coalesce(CAST(raw.adjustment_factor AS VARCHAR), '<null>'),
+                    coalesce(CAST(raw.adjusted_open AS VARCHAR), '<null>'),
+                    coalesce(CAST(raw.adjusted_high AS VARCHAR), '<null>'),
+                    coalesce(CAST(raw.adjusted_low AS VARCHAR), '<null>'),
+                    coalesce(CAST(raw.adjusted_close AS VARCHAR), '<null>'),
+                    coalesce(CAST(raw.adjusted_volume AS VARCHAR), '<null>')
                 )) OVER (PARTITION BY {raw_code}, raw.date) AS alias_value_count
             FROM stock_data_raw raw
             {raw_where}
@@ -766,7 +858,7 @@ def _build_daily_ranking_event_time_prices(
     )
     if alias_conflicts:
         raise RuntimeError(
-            "price projection alias conflict in stock_data_raw; "
+            "provider-adjusted price alias conflict in stock_data_raw; "
             f"conflicting code/date rows={alias_conflicts}"
         )
 
@@ -794,61 +886,34 @@ def _build_daily_ranking_event_time_prices(
         """,
         signal_params,
     )
-    invalid_signal_basis = int(
-        conn.execute(
-            f"""
-            SELECT count(*)
-            FROM {names.signal_requests} signal
-            WHERE (
-                SELECT count(*) FROM stock_adjustment_bases basis
-                WHERE {normalize_code_sql("basis.code")} = signal.code
-                  AND CAST(basis.valid_from AS DATE) <= signal.date
-                  AND (basis.valid_to_exclusive IS NULL
-                       OR signal.date < CAST(basis.valid_to_exclusive AS DATE))
-            ) <> 1
-            """
-        ).fetchone()[0]
-    )
-    if invalid_signal_basis:
-        raise RuntimeError(
-            "price projection signal basis cardinality must be exactly one; "
-            f"invalid rows={invalid_signal_basis}"
-        )
+    _validate_research_provider_vintage(conn, names.signal_requests, request)
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE {names.signal_bases} AS
         SELECT
             signal.code,
             signal.date,
-            CAST(basis.basis_id AS VARCHAR) AS signal_basis_id
+            'provider-v1:' || signal.code || ':' || provider.provider_as_of || ':'
+                || provider.source_fingerprint AS signal_basis_id
         FROM {names.signal_requests} signal
-        JOIN stock_adjustment_bases basis
-          ON {normalize_code_sql("basis.code")} = signal.code
-         AND CAST(basis.valid_from AS DATE) <= signal.date
-         AND (basis.valid_to_exclusive IS NULL
-              OR signal.date < CAST(basis.valid_to_exclusive AS DATE))
-        WHERE basis.status = 'ready'
-          AND CAST(basis.materialized_through_date AS DATE) >= signal.date
-          AND CAST(basis.adjustment_through_date AS DATE)
-              = CAST(basis.valid_from AS DATE)
-          AND basis.source_fingerprint IS NOT NULL
-          AND trim(basis.source_fingerprint) <> ''
-          AND basis.basis_id = (
-              'event-pit-v1:' || signal.code || ':' || CAST(basis.valid_from AS DATE)
-          )
+        JOIN stock_provider_windows provider
+          ON {window_code} = signal.code
+         AND CAST(provider.coverage_start AS DATE) <= signal.date
+         AND signal.date <= CAST(provider.provider_as_of AS DATE)
+        WHERE regexp_full_match(provider.source_fingerprint, '[0-9a-f]{{64}}')
           AND (
               SELECT count(*) FROM daily_valuation dv
               WHERE {valuation_code} = signal.code
                 AND CAST(dv.date AS DATE) = signal.date
-                AND CAST(dv.basis_version AS VARCHAR) = CAST(basis.basis_id AS VARCHAR)
+                AND CAST(dv.price_basis_date AS DATE) = signal.date
           ) = 1
         """
     )
     signal_request_count = _aggregate_count(conn, names.signal_requests)
     if _aggregate_count(conn, names.signal_bases) != signal_request_count:
         raise RuntimeError(
-            "price projection signal basis is not ready/materialized or has a "
-            "missing cutoff-valid daily_valuation basis match"
+            "provider-adjusted signal vintage is unavailable or has a missing "
+            "current-basis daily_valuation price match"
         )
     conn.execute(
         f"""
@@ -880,13 +945,6 @@ def _build_daily_ranking_event_time_prices(
           ON raw.code = basis_range.code AND raw.date <= basis_range.max_signal_date
         """
     )
-    _validate_covering_segments(
-        conn,
-        request_relation=names.signal_projection_requests,
-        basis_column="basis_id",
-        date_column="date",
-        label="signal",
-    )
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE {names.basis_prices} AS
@@ -894,18 +952,12 @@ def _build_daily_ranking_event_time_prices(
             request.code,
             request.basis_id,
             request.date,
-            request.open * segment.cumulative_factor AS open,
-            request.high * segment.cumulative_factor AS high,
-            request.low * segment.cumulative_factor AS low,
-            request.close * segment.cumulative_factor AS close,
-            CAST(ROUND(request.volume / segment.cumulative_factor) AS BIGINT) AS volume
+            request.open,
+            request.high,
+            request.low,
+            request.close,
+            request.volume
         FROM {names.signal_projection_requests} request
-        JOIN stock_adjustment_basis_segments segment
-          ON {normalize_code_sql("segment.code")} = request.code
-         AND segment.basis_id = request.basis_id
-         AND CAST(segment.source_date_from AS DATE) <= request.date
-         AND (segment.source_date_to_exclusive IS NULL
-              OR request.date < CAST(segment.source_date_to_exclusive AS DATE))
         """
     )
     history_upper_bound = (
@@ -1142,33 +1194,23 @@ def _build_price_relation_result(
     signal_segment_hash = _ordered_sha256(
         conn,
         f"""
-        SELECT DISTINCT segment.code, segment.basis_id,
-               segment.source_date_from, segment.source_date_to_exclusive,
-               segment.cumulative_factor
+        SELECT DISTINCT event.code, event.date, event.adjustment_factor,
+               event.source_fingerprint
         FROM {names.signal_projection_requests} request
-        JOIN stock_adjustment_basis_segments segment
-          ON {normalize_code_sql("segment.code")} = request.code
-         AND segment.basis_id = request.basis_id
-         AND CAST(segment.source_date_from AS DATE) <= request.date
-         AND (segment.source_date_to_exclusive IS NULL
-              OR request.date < CAST(segment.source_date_to_exclusive AS DATE))
-        ORDER BY segment.code, segment.basis_id, segment.source_date_from
+        JOIN stock_adjustment_events event
+          ON {normalize_code_sql("event.code")} = request.code
+        ORDER BY event.code, event.date
         """,
     )
     completion_segment_hash = _ordered_sha256(
         conn,
         f"""
-        SELECT DISTINCT segment.code, segment.basis_id,
-               segment.source_date_from, segment.source_date_to_exclusive,
-               segment.cumulative_factor
+        SELECT DISTINCT event.code, event.date, event.adjustment_factor,
+               event.source_fingerprint
         FROM {names.endpoint_requests} request
-        JOIN stock_adjustment_basis_segments segment
-          ON {normalize_code_sql("segment.code")} = request.code
-         AND segment.basis_id = request.completion_basis_id
-         AND CAST(segment.source_date_from AS DATE) <= request.endpoint_date
-         AND (segment.source_date_to_exclusive IS NULL
-              OR request.endpoint_date < CAST(segment.source_date_to_exclusive AS DATE))
-        ORDER BY segment.code, segment.basis_id, segment.source_date_from
+        JOIN stock_adjustment_events event
+          ON {normalize_code_sql("event.code")} = request.code
+        ORDER BY event.code, event.date
         """,
     )
     compatibility_outcome_columns = ", ".join(
@@ -1199,17 +1241,13 @@ def _build_price_relation_result(
         f"SELECT code, date, {next_open_outcome_columns} "
         f"FROM {names.forward_outcomes} ORDER BY code, date",
     )
-    signal_segment_count = _distinct_segment_count(
+    signal_segment_count = _distinct_event_count(
         conn,
         request_relation=names.signal_projection_requests,
-        basis_column="basis_id",
-        date_column="date",
     )
-    completion_segment_count = _distinct_segment_count(
+    completion_segment_count = _distinct_event_count(
         conn,
         request_relation=names.endpoint_requests,
-        basis_column="completion_basis_id",
-        date_column="endpoint_date",
     )
     lineage = DailyRankingPriceLineage(
         canonical_raw_row_count=diagnostics.canonical_raw_rows,
@@ -1245,16 +1283,16 @@ def _build_price_relation_result(
                 f"{forward_outcome_hash}"
             ).encode("utf-8")
         ).hexdigest(),
-        signal_basis_policy="exact_signal_date_basis_across_full_lookback",
+        signal_basis_policy=(
+            "exact_provider_window_adjusted_prices_across_full_lookback"
+        ),
         completion_basis_policy=(
-            "exact_completion_date_basis_applied_to_signal_and_completion_endpoints"
+            "exact_provider_window_applied_to_signal_and_completion_endpoints"
         ),
         next_open_integrity_policy=(
             "exact_stock_entry_session_and_topix_entry_endpoint_no_backfill"
         ),
-        adjustment_formula=(
-            "ohlc=raw_ohlc*cumulative_factor;volume=round(raw_volume/cumulative_factor)"
-        ),
+        adjustment_formula="provider_adjusted_ohlcv_direct",
         verification_status="verified",
         no_stock_data_fallback=True,
     )
@@ -1267,57 +1305,138 @@ def _build_price_relation_result(
     )
 
 
-def _validate_covering_segments(
+def _validate_research_provider_vintage(
     conn: Any,
-    *,
-    request_relation: str,
-    basis_column: str,
-    date_column: str,
-    label: str,
-    endpoint_suffix: str = "",
+    signal_request_relation: str,
+    request: DailyRankingPriceRequest,
 ) -> None:
-    invalid_cardinality = int(
-        conn.execute(
-            f"""
-            SELECT count(*)
-            FROM {request_relation} request
-            WHERE (
-                SELECT count(*) FROM stock_adjustment_basis_segments segment
-                WHERE {normalize_code_sql("segment.code")} = request.code
-                  AND segment.basis_id = request.{basis_column}
-                  AND CAST(segment.source_date_from AS DATE) <= request.{date_column}
-                  AND (segment.source_date_to_exclusive IS NULL
-                       OR request.{date_column} < CAST(segment.source_date_to_exclusive AS DATE))
-            ) <> 1
-            """
-        ).fetchone()[0]
-    )
-    if invalid_cardinality:
-        raise RuntimeError(
-            f"price projection {label} segment cardinality must be exactly one"
-            f"{endpoint_suffix}; invalid rows={invalid_cardinality}"
+    raw_code = normalize_code_sql("raw.code")
+    window_code = normalize_code_sql("provider.code")
+    event_code = normalize_code_sql("event.code")
+    projection_code = normalize_code_sql("projection.code")
+    issue_rows = conn.execute(
+        f"""
+        WITH requested_codes AS (
+            SELECT DISTINCT code FROM {signal_request_relation}
+        ), provider_rows AS MATERIALIZED (
+            SELECT {raw_code} AS code, raw.code AS physical_code,
+                   raw.date, raw.open, raw.high, raw.low, raw.close, raw.volume,
+                   raw.turnover_value, raw.adjustment_factor,
+                   raw.adjusted_open, raw.adjusted_high, raw.adjusted_low,
+                   raw.adjusted_close, raw.adjusted_volume
+            FROM stock_data_raw raw
+            JOIN requested_codes requested ON requested.code = {raw_code}
+        ), row_hashes AS (
+            SELECT code, date, adjustment_factor,
+                   from_hex(sha256(to_json(struct_pack(
+                       adjusted_close := adjusted_close,
+                       adjusted_high := adjusted_high,
+                       adjusted_low := adjusted_low,
+                       adjusted_open := adjusted_open,
+                       adjusted_volume := adjusted_volume,
+                       adjustment_factor := adjustment_factor,
+                       close := close,
+                       code := physical_code,
+                       date := date,
+                       high := high,
+                       low := low,
+                       open := open,
+                       turnover_value := turnover_value,
+                       volume := volume
+                   ))))::BIT AS row_hash
+            FROM provider_rows
+        ), raw_summary AS (
+            SELECT code, min(date) AS raw_min, max(date) AS raw_max,
+                   lower(hex(bit_xor(row_hash)::BLOB)) AS calculated_fingerprint,
+                   count(*) AS raw_count,
+                   count(*) FILTER (
+                       WHERE adjustment_factor IS NOT NULL
+                         AND adjustment_factor != 1.0
+                   ) AS expected_event_count,
+                   count(*) FILTER (
+                       WHERE adjusted_open IS NULL OR NOT isfinite(adjusted_open)
+                          OR adjusted_high IS NULL OR NOT isfinite(adjusted_high)
+                          OR adjusted_low IS NULL OR NOT isfinite(adjusted_low)
+                          OR adjusted_close IS NULL OR NOT isfinite(adjusted_close)
+                          OR adjusted_volume IS NULL OR adjusted_volume < 0
+                   ) AS invalid_adjusted_count
+            FROM row_hashes
+            JOIN provider_rows USING (code, date, adjustment_factor)
+            GROUP BY code
+        ), window_candidates AS (
+            SELECT requested.code, provider.coverage_start, provider.coverage_end,
+                   provider.provider_as_of, provider.source_fingerprint,
+                   count(provider.code) OVER (PARTITION BY requested.code) AS window_count,
+                   row_number() OVER (
+                       PARTITION BY requested.code ORDER BY provider.code
+                   ) AS window_rank
+            FROM requested_codes requested
+            LEFT JOIN stock_provider_windows provider
+              ON {window_code} = requested.code
+        ), selected_window AS (
+            SELECT candidate.*, raw.raw_min, raw.raw_max,
+                   raw.calculated_fingerprint, raw.raw_count,
+                   raw.expected_event_count, raw.invalid_adjusted_count
+            FROM window_candidates candidate
+            LEFT JOIN raw_summary raw USING (code)
+            WHERE candidate.window_rank = 1
+        ), event_summary AS (
+            SELECT provider_window.code,
+                   count(event.code) AS event_count,
+                   count(event.code) FILTER (
+                       WHERE raw.date IS NOT NULL
+                         AND raw.adjustment_factor != 1.0
+                         AND event.adjustment_factor = raw.adjustment_factor
+                         AND event.source_fingerprint = provider_window.source_fingerprint
+                   ) AS valid_event_count
+            FROM selected_window provider_window
+            LEFT JOIN stock_adjustment_events event
+              ON {event_code} = provider_window.code
+            LEFT JOIN provider_rows raw
+              ON raw.code = provider_window.code AND raw.date = event.date
+            GROUP BY provider_window.code
+        ), projection_summary AS (
+            SELECT raw.code, count(*) AS raw_count,
+                   count(projection.code) AS projection_count,
+                   count(projection.code) FILTER (
+                       WHERE projection.open = raw.adjusted_open
+                         AND projection.high = raw.adjusted_high
+                         AND projection.low = raw.adjusted_low
+                         AND projection.close = raw.adjusted_close
+                         AND projection.volume = raw.adjusted_volume
+                   ) AS matching_projection_count
+            FROM provider_rows raw
+            LEFT JOIN stock_data projection
+              ON {projection_code} = raw.code AND projection.date = raw.date
+            GROUP BY raw.code
         )
-    invalid_factors = int(
-        conn.execute(
-            f"""
-            SELECT count(*)
-            FROM {request_relation} request
-            JOIN stock_adjustment_basis_segments segment
-              ON {normalize_code_sql("segment.code")} = request.code
-             AND segment.basis_id = request.{basis_column}
-             AND CAST(segment.source_date_from AS DATE) <= request.{date_column}
-             AND (segment.source_date_to_exclusive IS NULL
-                  OR request.{date_column} < CAST(segment.source_date_to_exclusive AS DATE))
-            WHERE segment.cumulative_factor IS NULL
-               OR NOT isfinite(segment.cumulative_factor)
-               OR segment.cumulative_factor <= 0
-            """
-        ).fetchone()[0]
-    )
-    if invalid_factors:
+        SELECT provider_window.code
+        FROM selected_window provider_window
+        LEFT JOIN event_summary event USING (code)
+        LEFT JOIN projection_summary projection USING (code)
+        WHERE provider_window.window_count <> 1
+           OR provider_window.raw_count IS NULL OR provider_window.raw_count = 0
+           OR NOT regexp_full_match(
+               coalesce(provider_window.source_fingerprint, ''), '[0-9a-f]{{64}}'
+           )
+           OR CAST(provider_window.coverage_start AS DATE) IS DISTINCT FROM CAST(provider_window.raw_min AS DATE)
+           OR CAST(provider_window.coverage_end AS DATE) IS DISTINCT FROM CAST(provider_window.raw_max AS DATE)
+           OR CAST(provider_window.coverage_start AS DATE) > CAST(provider_window.coverage_end AS DATE)
+           OR CAST(provider_window.coverage_end AS DATE) > CAST(provider_window.provider_as_of AS DATE)
+           OR provider_window.source_fingerprint IS DISTINCT FROM provider_window.calculated_fingerprint
+           OR provider_window.invalid_adjusted_count <> 0
+           OR event.event_count <> provider_window.expected_event_count
+           OR event.valid_event_count <> provider_window.expected_event_count
+           OR projection.projection_count <> provider_window.raw_count
+           OR projection.matching_projection_count <> provider_window.raw_count
+        ORDER BY provider_window.code
+        """,
+    ).fetchall()
+    if issue_rows:
         raise RuntimeError(
-            f"price projection {label} segment factor must be finite and positive; "
-            f"invalid rows={invalid_factors}"
+            "provider vintage lineage is missing or inconsistent for Daily Ranking; "
+            f"codes={', '.join(str(row[0]) for row in issue_rows[:10])}. "
+            "Run market_db_sync before retrying."
         )
 
 
@@ -1343,26 +1462,19 @@ def _ordered_sha256(conn: Any, query: str) -> str:
     return digest.hexdigest()
 
 
-def _distinct_segment_count(
+def _distinct_event_count(
     conn: Any,
     *,
     request_relation: str,
-    basis_column: str,
-    date_column: str,
 ) -> int:
     return int(
         conn.execute(
             f"""
             SELECT count(*) FROM (
-                SELECT DISTINCT segment.code, segment.basis_id,
-                       segment.source_date_from, segment.source_date_to_exclusive
+                SELECT DISTINCT event.code, event.date
                 FROM {request_relation} request
-                JOIN stock_adjustment_basis_segments segment
-                  ON {normalize_code_sql("segment.code")} = request.code
-                 AND segment.basis_id = request.{basis_column}
-                 AND CAST(segment.source_date_from AS DATE) <= request.{date_column}
-                 AND (segment.source_date_to_exclusive IS NULL
-                      OR request.{date_column} < CAST(segment.source_date_to_exclusive AS DATE))
+                JOIN stock_adjustment_events event
+                  ON {normalize_code_sql("event.code")} = request.code
             )
             """
         ).fetchone()[0]
@@ -1388,50 +1500,22 @@ def _materialize_daily_ranking_forward_outcomes(
     conn.execute(
         f"CREATE OR REPLACE TEMP TABLE {names.outcome_requests} AS {outcome_unions}"
     )
-    invalid_completion_basis = int(
-        conn.execute(
-            f"""
-            SELECT count(*)
-            FROM {names.outcome_requests} request
-            WHERE request.completion_date IS NOT NULL
-              AND (
-                SELECT count(*) FROM stock_adjustment_bases basis
-                WHERE {normalize_code_sql("basis.code")} = request.code
-                  AND CAST(basis.valid_from AS DATE) <= request.completion_date
-                  AND (basis.valid_to_exclusive IS NULL
-                       OR request.completion_date < CAST(basis.valid_to_exclusive AS DATE))
-              ) <> 1
-            """
-        ).fetchone()[0]
-    )
-    if invalid_completion_basis:
-        raise RuntimeError(
-            "price projection completion basis cardinality must be exactly one; "
-            f"invalid rows={invalid_completion_basis}"
-        )
+    window_code = normalize_code_sql("provider.code")
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE {names.completion_bases} AS
         SELECT
             request.code, request.signal_date, request.horizon,
             request.next_session_date, request.completion_date,
-            CAST(basis.basis_id AS VARCHAR) AS completion_basis_id
+            'provider-v1:' || request.code || ':' || provider.provider_as_of || ':'
+                || provider.source_fingerprint AS completion_basis_id
         FROM {names.outcome_requests} request
-        JOIN stock_adjustment_bases basis
-          ON {normalize_code_sql("basis.code")} = request.code
-         AND CAST(basis.valid_from AS DATE) <= request.completion_date
-         AND (basis.valid_to_exclusive IS NULL
-              OR request.completion_date < CAST(basis.valid_to_exclusive AS DATE))
+        JOIN stock_provider_windows provider
+          ON {window_code} = request.code
+         AND CAST(provider.coverage_start AS DATE) <= request.signal_date
+         AND request.completion_date <= CAST(provider.provider_as_of AS DATE)
         WHERE request.completion_date IS NOT NULL
-          AND basis.status = 'ready'
-          AND CAST(basis.materialized_through_date AS DATE) >= request.completion_date
-          AND CAST(basis.adjustment_through_date AS DATE)
-              = CAST(basis.valid_from AS DATE)
-          AND basis.source_fingerprint IS NOT NULL
-          AND trim(basis.source_fingerprint) <> ''
-          AND basis.basis_id = (
-              'event-pit-v1:' || request.code || ':' || CAST(basis.valid_from AS DATE)
-          )
+          AND regexp_full_match(provider.source_fingerprint, '[0-9a-f]{{64}}')
         """
     )
     completed_requests = _aggregate_count(
@@ -1439,7 +1523,7 @@ def _materialize_daily_ranking_forward_outcomes(
     )
     if _aggregate_count(conn, names.completion_bases) != completed_requests:
         raise RuntimeError(
-            "price projection completion basis is not ready/materialized through completion"
+            "provider-adjusted completion vintage does not cover every outcome"
         )
     conn.execute(
         f"""
@@ -1460,15 +1544,6 @@ def _materialize_daily_ranking_forward_outcomes(
         FROM {names.completion_bases}
         """
     )
-    _validate_covering_segments(
-        conn,
-        request_relation=names.endpoint_requests,
-        basis_column="completion_basis_id",
-        date_column="endpoint_date",
-        label="completion",
-        endpoint_suffix=" for all endpoints",
-    )
-
     duplicate_topix_dates = int(
         conn.execute(
             """
@@ -1529,18 +1604,12 @@ def _materialize_daily_ranking_forward_outcomes(
             SELECT
                 request.*,
                 CASE request.endpoint
-                    WHEN 'entry' THEN raw.open * segment.cumulative_factor
-                    ELSE raw.close * segment.cumulative_factor
+                    WHEN 'entry' THEN raw.open
+                    ELSE raw.close
                 END AS projected_price
             FROM {names.endpoint_requests} request
             JOIN {names.normalized_raw} raw
               ON raw.code = request.code AND raw.date = request.endpoint_date
-            JOIN stock_adjustment_basis_segments segment
-              ON {normalize_code_sql("segment.code")} = request.code
-             AND segment.basis_id = request.completion_basis_id
-             AND CAST(segment.source_date_from AS DATE) <= request.endpoint_date
-             AND (segment.source_date_to_exclusive IS NULL
-                  OR request.endpoint_date < CAST(segment.source_date_to_exclusive AS DATE))
         ),
         pivoted AS (
             SELECT

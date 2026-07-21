@@ -52,7 +52,7 @@ from src.domains.analytics.ranking_research_selection_contract import (
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
     open_readonly_analysis_connection,
-    require_market_v4_compatibility,
+    require_market_v5_compatibility,
 )
 from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
@@ -100,13 +100,14 @@ DEFAULT_SEVERE_LOSS_THRESHOLD_PCT = -10.0
 _LEADERSHIP_WINDOWS = (120, 252, 504)
 _REQUIRED_MARKET_TABLES = {
     "stock_data_raw",
+    "stock_data",
     "topix_data",
     "daily_valuation",
     "stock_master_daily",
     "indices_data",
     "index_master",
-    "stock_adjustment_bases",
-    "stock_adjustment_basis_segments",
+    "stock_provider_windows",
+    "stock_adjustment_events",
 }
 SEGMENTS: tuple[tuple[str, date, date | None], ...] = (
     ("historical_pre_reorg", date(2017, 1, 1), date(2021, 12, 31)),
@@ -309,7 +310,7 @@ def run_ranking_fixed_return_priority_evidence_research(
         str(db_path_obj),
         snapshot_prefix="ranking-fixed-return-priority-",
     ) as ctx:
-        require_market_v4_compatibility(
+        require_market_v5_compatibility(
             ctx.connection,
             required_tables=_REQUIRED_MARKET_TABLES,
         )

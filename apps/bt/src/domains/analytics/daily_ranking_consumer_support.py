@@ -173,7 +173,6 @@ def build_daily_valuation_psr_percentile_features(
             SELECT
                 {normalized_code} AS code,
                 CAST(valuation.date AS DATE) AS date,
-                CAST(valuation.basis_version AS VARCHAR) AS valuation_basis_id,
                 {psr_sql} AS psr,
                 {forward_psr_sql} AS forward_psr
             FROM daily_valuation valuation
@@ -187,7 +186,6 @@ def build_daily_valuation_psr_percentile_features(
         LEFT JOIN valuation_rows valuation
           ON valuation.code = source.code
          AND valuation.date = source.date
-         AND valuation.valuation_basis_id = source.valuation_basis_id
         GROUP BY source.code, source.date, source.market_scope
         HAVING count(valuation.code) <> 1
         LIMIT 1
@@ -234,7 +232,6 @@ def build_daily_valuation_psr_percentile_features(
                 JOIN valuation_rows valuation
                   ON valuation.code = source.code
                  AND valuation.date = source.date
-                 AND valuation.valuation_basis_id = source.valuation_basis_id
             ),
             psr_ranked AS (
                 SELECT code, date, market_scope, psr,

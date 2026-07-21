@@ -101,6 +101,20 @@ def _create_stock_master_views(conn: duckdb.DuckDBPyConnection) -> None:
     conn.execute("CREATE VIEW stocks_latest AS SELECT * FROM stocks")
 
 
+def _create_provider_adjusted_raw_view(conn: duckdb.DuckDBPyConnection) -> None:
+    conn.execute("DROP VIEW IF EXISTS stock_data_raw")
+    conn.execute("""
+        CREATE VIEW stock_data_raw AS
+        SELECT code, date, open, high, low, close, volume,
+               CAST(NULL AS DOUBLE) AS turnover_value,
+               COALESCE(adjustment_factor, 1.0) AS adjustment_factor,
+               open AS adjusted_open, high AS adjusted_high,
+               low AS adjusted_low, close AS adjusted_close,
+               volume AS adjusted_volume, created_at
+        FROM stock_data
+    """)
+
+
 @pytest.fixture
 def ranking_db(tmp_path):
     """ランキングテスト用DB"""
@@ -586,6 +600,7 @@ def ranking_db(tmp_path):
     _create_stock_master_views(conn)
     conn.commit()
     conn.close()
+    _rebuild_test_adjusted_metrics(db_path)
     return db_path
 
 
@@ -636,6 +651,42 @@ def _rebuild_test_adjusted_metrics(db_path: str) -> None:
         > 0
         and conn.execute("SELECT COUNT(*) FROM daily_valuation").fetchone()[0] > 0
     )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS market_schema_version "
+        "(version INTEGER PRIMARY KEY, applied_at TEXT)"
+    )
+    conn.execute("DELETE FROM market_schema_version")
+    conn.execute("INSERT INTO market_schema_version VALUES (5, NULL)")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS sync_metadata "
+        "(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT)"
+    )
+    conn.execute("DELETE FROM sync_metadata WHERE key = 'stock_price_adjustment_mode'")
+    conn.execute(
+        "INSERT INTO sync_metadata VALUES "
+        "('stock_price_adjustment_mode', 'provider_adjusted_v1', NULL)"
+    )
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS stock_data_raw (
+            code TEXT NOT NULL, date TEXT NOT NULL,
+            open DOUBLE NOT NULL, high DOUBLE NOT NULL,
+            low DOUBLE NOT NULL, close DOUBLE NOT NULL,
+            volume BIGINT NOT NULL, turnover_value DOUBLE,
+            adjustment_factor DOUBLE,
+            adjusted_open DOUBLE, adjusted_high DOUBLE,
+            adjusted_low DOUBLE, adjusted_close DOUBLE,
+            adjusted_volume BIGINT, created_at TEXT,
+            PRIMARY KEY (code, date)
+        )
+    """)
+    conn.execute("DELETE FROM stock_data_raw")
+    conn.execute("""
+        INSERT INTO stock_data_raw
+        SELECT code, date, open, high, low, close, volume, NULL,
+               COALESCE(adjustment_factor, 1.0),
+               open, high, low, close, volume, created_at
+        FROM stock_data
+    """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS stock_provider_windows (
             code TEXT PRIMARY KEY, coverage_start TEXT NOT NULL,
@@ -660,15 +711,67 @@ def _rebuild_test_adjusted_metrics(db_path: str) -> None:
     """)
     conn.execute("""
         INSERT OR REPLACE INTO stock_provider_windows
-        SELECT normalized_code, MIN(date), MAX(date), '2024-12-31T16:30:00+09:00',
-               'provider-fixture-' || normalized_code, '2024-12-31T17:00:00+09:00'
-        FROM (
+        WITH provider_rows AS (
             SELECT CASE WHEN length(code) = 5 AND right(code, 1) = '0'
                         THEN left(code, 4) ELSE code END AS normalized_code,
-                   date
-            FROM stock_data
+                   code, date, open, high, low, close, volume,
+                   turnover_value, adjustment_factor,
+                   adjusted_open, adjusted_high, adjusted_low,
+                   adjusted_close, adjusted_volume
+            FROM stock_data_raw
+        ), row_hashes AS (
+            SELECT normalized_code, date,
+                   from_hex(sha256(to_json(struct_pack(
+                       adjusted_close := adjusted_close,
+                       adjusted_high := adjusted_high,
+                       adjusted_low := adjusted_low,
+                       adjusted_open := adjusted_open,
+                       adjusted_volume := adjusted_volume,
+                       adjustment_factor := adjustment_factor,
+                       close := close,
+                       code := code,
+                       date := date,
+                       high := high,
+                       low := low,
+                       open := open,
+                       turnover_value := turnover_value,
+                       volume := volume
+                   ))))::BIT AS row_hash
+            FROM provider_rows
+        ), evidence AS (
+            SELECT normalized_code, MIN(date) AS coverage_start,
+                   MAX(date) AS coverage_end,
+                   lower(hex(bit_xor(row_hash)::BLOB)) AS source_fingerprint
+            FROM row_hashes
+            GROUP BY normalized_code
         )
-        GROUP BY normalized_code
+        SELECT normalized_code, coverage_start, coverage_end,
+               '2024-12-31T16:30:00+09:00', source_fingerprint,
+               '2024-12-31T17:00:00+09:00'
+        FROM evidence
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS stock_adjustment_events (
+            code TEXT NOT NULL, date TEXT NOT NULL,
+            adjustment_factor DOUBLE NOT NULL,
+            source_fingerprint TEXT NOT NULL, created_at TEXT,
+            PRIMARY KEY (code, date)
+        )
+    """)
+    conn.execute("DELETE FROM stock_adjustment_events")
+    conn.execute("""
+        INSERT INTO stock_adjustment_events
+        SELECT CASE WHEN length(raw.code) = 5 AND right(raw.code, 1) = '0'
+                    THEN left(raw.code, 4) ELSE raw.code END,
+               raw.date, raw.adjustment_factor,
+               provider.source_fingerprint, raw.created_at
+        FROM stock_data_raw AS raw
+        JOIN stock_provider_windows AS provider
+          ON provider.code = CASE
+              WHEN length(raw.code) = 5 AND right(raw.code, 1) = '0'
+              THEN left(raw.code, 4) ELSE raw.code END
+        WHERE raw.adjustment_factor IS NOT NULL
+          AND raw.adjustment_factor != 1.0
     """)
     metric_exists = (
         conn.execute(
@@ -781,7 +884,7 @@ def _rebuild_test_adjusted_metrics(db_path: str) -> None:
     if not custom_valuation:
         conn.execute("DELETE FROM daily_valuation")
         conn.execute("""
-        INSERT INTO daily_valuation (
+        INSERT OR REPLACE INTO daily_valuation (
             code, date, price_basis_date, close, eps, bps, forward_eps,
             per, forward_per, sales, forward_sales, psr, forward_psr,
             p_op, forward_p_op, pbr, market_cap, free_float_market_cap,
@@ -1210,7 +1313,7 @@ def _insert_daily_valuation(
     normalized_code = normalize_equity_code(code)
     conn.execute(
         """
-        INSERT INTO daily_valuation (
+        INSERT OR REPLACE INTO daily_valuation (
             code, date, price_basis_date, close, eps, bps, forward_eps,
             per, forward_per, sales, forward_sales, psr, forward_psr,
             p_op, forward_p_op, pbr, market_cap, free_float_market_cap,
@@ -1496,6 +1599,7 @@ class TestGetRankings:
         conn = duckdb.connect(ranking_db)
         try:
             _create_current_basis_relation_tables(conn)
+            conn.execute("DELETE FROM daily_valuation WHERE date = '2024-01-19'")
             valuation_inputs = [
                 ("72030", 10.0, 8.0, 0.5, 5.0, 0.2, 0.3),
                 ("67580", 20.0, 20.0, 1.0, 15.0, 0.8, 1.2),
@@ -1646,6 +1750,20 @@ class TestGetRankings:
                         1_000_000.0,
                     ),
                 )
+                _insert_daily_valuation(
+                    conn,
+                    code=code,
+                    eps=100.0,
+                    bps=1000.0,
+                    forward_eps=120.0,
+                    per=price / 100.0,
+                    forward_per=price / 120.0,
+                    pbr=price / 1000.0,
+                    p_op=price / 100.0,
+                    forward_p_op=price / 120.0,
+                    market_cap=price * 1_000_000.0,
+                    forward_date=disclosed_date,
+                )
         finally:
             conn.close()
 
@@ -1701,6 +1819,20 @@ class TestGetRankings:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 ("77770", "2023-01-01", 100.0, "FY", "FYFinancialStatements", 120.0, 1000.0, 1_000_000.0),
+            )
+            _insert_daily_valuation(
+                conn,
+                code="77770",
+                eps=100.0,
+                bps=1000.0,
+                forward_eps=120.0,
+                per=100.0,
+                forward_per=10_000.0 / 120.0,
+                pbr=10.0,
+                p_op=100.0,
+                forward_p_op=10_000.0 / 120.0,
+                market_cap=10_000_000_000.0,
+                forward_date="2023-01-01",
             )
         finally:
             conn.close()
@@ -1915,8 +2047,9 @@ class TestGetRankings:
             *,
             target_date,
             market_codes=None,
+            signal_sql=None,
         ):
-            del reader, target_date, market_codes
+            del reader, target_date, market_codes, signal_sql
             for collection in collections:
                 for item in collection:
                     if item.code == "67580":
@@ -2255,6 +2388,7 @@ class TestGetRankings:
                     (code, current_date, close, close + 1.0, close - 1.0, close, 1000, 1.0, None),
                 )
         _create_stock_master_views(conn)
+        _create_provider_adjusted_raw_view(conn)
         conn.close()
 
         reader = MarketDbReader(db_path)
@@ -2585,6 +2719,7 @@ class TestGetRankings:
             code TEXT, date TEXT, open REAL, high REAL, low REAL, close REAL,
             sector_name TEXT, created_at TEXT, PRIMARY KEY (code, date))""")
         _create_stock_master_views(conn)
+        _create_provider_adjusted_raw_view(conn)
         conn.commit()
         conn.close()
 
@@ -2845,6 +2980,7 @@ class TestGetFundamentalRankings:
             code TEXT, date TEXT, open REAL, high REAL, low REAL, close REAL,
             volume INTEGER, adjustment_factor REAL, created_at TEXT, PRIMARY KEY (code, date))""")
         _create_stock_master_views(conn)
+        _create_provider_adjusted_raw_view(conn)
         conn.commit()
         conn.close()
 

@@ -158,7 +158,7 @@ def event_time_signal_sql(
                 f"row limit ({EVENT_TIME_SIGNAL_MAX_ROWS})"
             ),
             reason="event_time_signal_projection_too_large",
-            recovery="adjusted_metrics_pit",
+            recovery="market_db_sync",
             status_code=409,
         )
     issues = frame.loc[frame["issue"].notna()]
@@ -170,7 +170,7 @@ def event_time_signal_sql(
                 f"{first['issue']} for {first['normalized_code']} on {first['date']}"
             ),
             reason="event_time_signal_lineage_unavailable",
-            recovery="adjusted_metrics_pit",
+            recovery="market_db_sync",
             status_code=409,
         )
 
@@ -183,7 +183,7 @@ def event_time_signal_sql(
                 f"code limit ({EVENT_TIME_SIGNAL_MAX_CODES})"
             ),
             reason="event_time_signal_projection_too_large",
-            recovery="adjusted_metrics_pit",
+            recovery="market_db_sync",
             status_code=409,
         )
     with reader.temporary_in_memory_relation(

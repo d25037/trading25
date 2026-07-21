@@ -25,6 +25,7 @@ from src.domains.analytics.ranking_trend_acceleration_conditional_lift import (
     run_ranking_trend_acceleration_conditional_lift_research,
     write_ranking_trend_acceleration_conditional_lift_bundle,
 )
+from src.shared.provider_stock_window import provider_stock_source_fingerprint
 from tests.unit.domains.analytics.test_ranking_sma5_count_long_evidence import (
     _build_sma5_count_long_db,
 )
@@ -1054,99 +1055,127 @@ def _build_mixed_market_db(db_path: Path) -> Path:
 def _mark_fixture_market_v4(db_path: Path) -> None:
     conn = duckdb.connect(str(db_path))
     try:
+        conn.execute("CREATE OR REPLACE TABLE market_schema_version(version INTEGER)")
+        conn.execute("INSERT INTO market_schema_version VALUES (5)")
         conn.execute(
-            "CREATE TABLE IF NOT EXISTS market_schema_version(version INTEGER)"
+            "CREATE OR REPLACE TABLE sync_metadata(key VARCHAR, value VARCHAR)"
         )
-        if (
-            conn.execute("SELECT count(*) FROM market_schema_version").fetchone()[0]
-            == 0
-        ):
-            conn.execute("INSERT INTO market_schema_version VALUES (4)")
         conn.execute(
-            "CREATE TABLE IF NOT EXISTS sync_metadata(key VARCHAR, value VARCHAR)"
+            "INSERT INTO sync_metadata VALUES "
+            "('stock_price_adjustment_mode', 'provider_adjusted_v1')"
         )
-        if (
-            conn.execute(
-                "SELECT count(*) FROM sync_metadata "
-                "WHERE key = 'stock_price_adjustment_mode'"
-            ).fetchone()[0]
-            == 0
-        ):
-            conn.execute(
-                "INSERT INTO sync_metadata VALUES "
-                "('stock_price_adjustment_mode', 'local_projection_v2_event_time')"
-            )
         conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS stock_adjustment_bases (
-                code TEXT,
-                basis_id TEXT,
-                valid_from TEXT,
-                valid_to_exclusive TEXT,
-                adjustment_through_date TEXT,
-                source_fingerprint TEXT,
-                materialized_through_date TEXT,
-                status TEXT
+            CREATE OR REPLACE TABLE stock_data_raw AS
+            SELECT code, date, open, high, low, close, volume,
+                   close * volume AS turnover_value,
+                   1.0::DOUBLE AS adjustment_factor,
+                   open AS adjusted_open, high AS adjusted_high,
+                   low AS adjusted_low, close AS adjusted_close,
+                   volume AS adjusted_volume
+            FROM stock_data
+            """
+        )
+        conn.execute(
+            """
+            CREATE OR REPLACE TABLE stock_provider_windows (
+                code TEXT, coverage_start TEXT, coverage_end TEXT,
+                provider_as_of TEXT, source_fingerprint TEXT, updated_at TEXT
             )
             """
         )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS stock_adjustment_basis_segments (
-                code TEXT,
-                basis_id TEXT,
-                source_date_from TEXT,
-                source_date_to_exclusive TEXT,
-                cumulative_factor DOUBLE
-            )
-            """
+        columns = (
+            "code", "date", "open", "high", "low", "close", "volume",
+            "turnover_value", "adjustment_factor", "adjusted_open",
+            "adjusted_high", "adjusted_low", "adjusted_close", "adjusted_volume",
         )
-        if (
-            conn.execute("SELECT count(*) FROM stock_adjustment_bases").fetchone()[0]
-            == 0
-        ):
-            first_date, last_date = conn.execute(
-                "SELECT min(date), max(date) FROM stock_data"
-            ).fetchone()
-            codes = [
-                str(row[0])
-                for row in conn.execute(
-                    "SELECT DISTINCT code FROM daily_valuation ORDER BY code"
-                ).fetchall()
-            ]
-            for code in codes:
-                basis_id = f"event-pit-v1:{code}:{first_date}"
-                conn.execute(
-                    "INSERT INTO stock_adjustment_bases VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    [
-                        code,
-                        basis_id,
-                        first_date,
-                        None,
-                        first_date,
-                        f"fixture-{code}",
-                        last_date,
-                        "ready",
-                    ],
-                )
-                conn.execute(
-                    "INSERT INTO stock_adjustment_basis_segments VALUES (?, ?, ?, ?, ?)",
-                    [code, basis_id, first_date, None, 1.0],
-                )
-                conn.execute(
-                    "UPDATE daily_valuation SET basis_version = ? WHERE code = ?",
-                    [basis_id, code],
-                )
-        tables = {
+        normalized_codes = [
             str(row[0])
             for row in conn.execute(
-                "SELECT table_name FROM information_schema.tables"
+                """
+                SELECT DISTINCT CASE
+                    WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                    THEN left(code, length(code) - 1) ELSE code END
+                FROM stock_data_raw ORDER BY 1
+                """
             ).fetchall()
-        }
-        if "stock_data_raw" not in tables:
+        ]
+        for code in normalized_codes:
+            raw_rows = conn.execute(
+                f"""
+                SELECT {', '.join(columns)} FROM stock_data_raw
+                WHERE CASE
+                    WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                    THEN left(code, length(code) - 1) ELSE code END = ?
+                ORDER BY date
+                """,
+                [code],
+            ).fetchall()
+            rows = [dict(zip(columns, row, strict=True)) for row in raw_rows]
+            for row in rows:
+                row["date"] = str(row["date"])
             conn.execute(
-                "CREATE TABLE stock_data_raw AS "
-                "SELECT *, 1.0::DOUBLE AS adjustment_factor FROM stock_data"
+                "INSERT INTO stock_provider_windows VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    code,
+                    rows[0]["date"],
+                    rows[-1]["date"],
+                    rows[-1]["date"],
+                    provider_stock_source_fingerprint(rows),
+                    rows[-1]["date"],
+                ],
             )
+        conn.execute(
+            """
+            CREATE OR REPLACE TABLE stock_adjustment_events (
+                code TEXT, date TEXT, adjustment_factor DOUBLE,
+                source_fingerprint TEXT
+            )
+            """
+        )
+        conn.execute(
+            "ALTER TABLE daily_valuation ADD COLUMN IF NOT EXISTS price_basis_date TEXT"
+        )
+        conn.execute(
+            "ALTER TABLE daily_valuation ADD COLUMN IF NOT EXISTS "
+            "fundamentals_adjustment_basis_date TEXT"
+        )
+        conn.execute(
+            "ALTER TABLE daily_valuation ADD COLUMN IF NOT EXISTS source_fingerprint TEXT"
+        )
+        conn.execute(
+            "UPDATE daily_valuation SET price_basis_date = date, "
+            "fundamentals_adjustment_basis_date = date, "
+            "source_fingerprint = 'fixture-current'"
+        )
     finally:
         conn.close()
+
+
+def _refresh_fixture_provider_window(
+    conn: duckdb.DuckDBPyConnection,
+    code: str,
+) -> None:
+    columns = (
+        "code", "date", "open", "high", "low", "close", "volume",
+        "turnover_value", "adjustment_factor", "adjusted_open",
+        "adjusted_high", "adjusted_low", "adjusted_close", "adjusted_volume",
+    )
+    raw_rows = conn.execute(
+        f"SELECT {', '.join(columns)} FROM stock_data_raw "
+        "WHERE code = ? ORDER BY date",
+        [code],
+    ).fetchall()
+    rows = [dict(zip(columns, row, strict=True)) for row in raw_rows]
+    for row in rows:
+        row["date"] = str(row["date"])
+    conn.execute(
+        "UPDATE stock_provider_windows SET coverage_start = ?, coverage_end = ?, "
+        "source_fingerprint = ? WHERE code = ?",
+        [
+            rows[0]["date"],
+            rows[-1]["date"],
+            provider_stock_source_fingerprint(rows),
+            code,
+        ],
+    )

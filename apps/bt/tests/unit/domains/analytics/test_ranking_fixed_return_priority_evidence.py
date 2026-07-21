@@ -25,6 +25,7 @@ from src.domains.analytics.ranking_fixed_return_priority_evidence import (
 from tests.unit.domains.analytics.test_ranking_trend_acceleration_conditional_lift import (
     _build_mixed_market_db,
     _mark_fixture_market_v4 as _mark_event_time_fixture_market_v4,
+    _refresh_fixture_provider_window,
 )
 
 
@@ -595,6 +596,11 @@ def test_fixed_observation_bundle_preserves_sparse_session_authoritative_outcome
             "DELETE FROM stock_data_raw WHERE code = ? AND CAST(date AS DATE) = ?",
             [code, nominal_completion_date.date()],
         )
+        conn.execute(
+            "DELETE FROM stock_data WHERE code = ? AND CAST(date AS DATE) = ?",
+            [code, nominal_completion_date.date()],
+        )
+        _refresh_fixture_provider_window(conn, code)
         signal_close = conn.execute(
             "SELECT close FROM stock_data_raw WHERE code = ? AND CAST(date AS DATE) = ?",
             [code, signal_date.date()],

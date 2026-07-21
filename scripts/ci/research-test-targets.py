@@ -86,7 +86,7 @@ RESEARCH_FIXTURE_CONSUMER_TESTS = {
 RESEARCH_TEST_SUPPORT_CONSUMER_TESTS = {
     (
         "apps/bt/tests/unit/domains/analytics/"
-        "daily_ranking_market_v4_fixture.py"
+        "daily_ranking_market_v5_fixture.py"
     ): (
         "tests/unit/domains/analytics/test_atr_expansion_forward_response.py",
         "tests/unit/domains/analytics/test_market_bubble_footprint.py",

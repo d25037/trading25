@@ -1041,25 +1041,25 @@ class TestScreening:
 
 
 class TestAnalyticsRouteErrorMapping:
-    def test_ranking_returns_adjusted_metrics_pit_recovery_for_missing_basis(
+    def test_ranking_returns_market_db_sync_recovery_for_provider_lineage(
         self, analytics_client, monkeypatch
     ):
         from src.application.services.market_data_errors import MarketDataError
         from src.application.services.ranking_service import RankingService
 
-        def _raise_missing_basis(self, **_kwargs):  # noqa: ANN001
+        def _raise_provider_lineage(self, **_kwargs):  # noqa: ANN001
             raise MarketDataError(
-                message="Daily Ranking signal basis is unavailable",
+                message="Daily Ranking provider lineage is unavailable",
                 reason="event_time_signal_lineage_unavailable",
-                recovery="adjusted_metrics_pit",
+                recovery="market_db_sync",
                 status_code=409,
             )
 
-        monkeypatch.setattr(RankingService, "get_rankings", _raise_missing_basis)
+        monkeypatch.setattr(RankingService, "get_rankings", _raise_provider_lineage)
         response = analytics_client.get("/api/analytics/ranking?limit=20")
 
         assert response.status_code == 409
-        assert {"field": "recovery", "message": "adjusted_metrics_pit"} in response.json()[
+        assert {"field": "recovery", "message": "market_db_sync"} in response.json()[
             "details"
         ]
 

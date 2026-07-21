@@ -27,6 +27,51 @@ def enrich_ranking_collections_with_daily_technical_metrics(
     if not target_date or not items_by_code:
         return
 
+    materialized_codes: set[str] = set()
+    table_row = reader.query_one(
+        """
+        SELECT count(*) AS table_count
+        FROM information_schema.tables
+        WHERE table_name = 'daily_technical_metrics'
+        """
+    )
+    if table_row is not None and int(table_row["table_count"]) == 1:
+        codes = tuple(items_by_code.keys())
+        placeholders = ",".join("?" for _ in codes)
+        materialized_rows = reader.query(
+            f"""
+            SELECT
+                CASE
+                    WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                    THEN left(code, length(code) - 1)
+                    ELSE code
+                END AS code,
+                sma5_above_count_5d,
+                sma5_below_streak
+            FROM daily_technical_metrics
+            WHERE date = ?
+              AND CASE
+                    WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                    THEN left(code, length(code) - 1)
+                    ELSE code
+                  END IN ({placeholders})
+            """,
+            (target_date, *codes),
+        )
+        for row in materialized_rows:
+            code = str(row["code"])
+            materialized_codes.add(code)
+            count = int_or_none(row["sma5_above_count_5d"])
+            below_streak = int_or_none(row["sma5_below_streak"])
+            for item in items_by_code.get(code, []):
+                if count is not None:
+                    item.sma5AboveCount5d = count
+                if below_streak is not None:
+                    item.sma5BelowStreak = below_streak
+
+    if materialized_codes == set(items_by_code):
+        return
+
     lower_bound_date = technical_feature_lower_bound_date(target_date)
     if signal_sql is None:
         with event_time_signal_sql(
@@ -124,6 +169,8 @@ def enrich_ranking_collections_with_daily_technical_metrics(
     )
     for row in rows:
         code = str(row["code"])
+        if code in materialized_codes:
+            continue
         count = int_or_none(row["sma5_above_count_5d"])
         below_streak = int_or_none(row["sma5_below_streak"])
         for item in items_by_code.get(code, []):

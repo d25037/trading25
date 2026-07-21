@@ -41,6 +41,7 @@ from tests.unit.domains.analytics.test_ranking_fixed_return_priority_evidence im
 )
 from tests.unit.domains.analytics.test_ranking_trend_acceleration_conditional_lift import (
     _build_mixed_market_db,
+    _mark_fixture_market_v4 as _mark_event_time_fixture_market_v5,
 )
 
 
@@ -77,54 +78,9 @@ def _mark_fixture_market_v4(db_path: Path) -> None:
     conn = duckdb.connect(str(db_path))
     try:
         _extend_technical_fit_leadership_history(conn)
-        _create_fixture_basis_catalog_tables(conn)
-        codes = [
-            str(row[0])
-            for row in conn.execute(
-                "SELECT DISTINCT code FROM daily_valuation ORDER BY code"
-            ).fetchall()
-        ]
-        first_date, last_date = conn.execute(
-            "SELECT min(date), max(date) FROM daily_valuation"
-        ).fetchone()
-        basis_rows = []
-        segment_rows = []
-        for code in codes:
-            basis_id = f"event-pit-v1:{code}:{first_date}"
-            basis_rows.append(
-                (
-                    code,
-                    basis_id,
-                    first_date,
-                    None,
-                    first_date,
-                    f"fixture-{code}",
-                    last_date,
-                    "ready",
-                )
-            )
-            segment_rows.append((code, basis_id, first_date, None, 1.0))
-            conn.execute(
-                "UPDATE daily_valuation SET basis_version = ? WHERE code = ?",
-                [basis_id, code],
-            )
-        conn.executemany(
-            "INSERT INTO stock_adjustment_bases VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            basis_rows,
-        )
-        conn.executemany(
-            "INSERT INTO stock_adjustment_basis_segments VALUES (?, ?, ?, ?, ?)",
-            segment_rows,
-        )
-        conn.execute(
-            """
-            CREATE OR REPLACE TABLE stock_data_raw AS
-            SELECT *, 1.0::DOUBLE AS adjustment_factor
-            FROM stock_data
-            """
-        )
     finally:
         conn.close()
+    _mark_event_time_fixture_market_v5(db_path)
 
 
 def _extend_technical_fit_leadership_history(
@@ -1735,16 +1691,18 @@ def test_runner_builds_unique_prime_candidates_with_raw_levels_and_outcomes(
         "forward_outcome_completion_date_20d",
         "forward_outcome_completion_date_60d",
     }.issubset(sample.columns)
-    assert result.pit_lineage.data_plane_schema_version == 4
+    assert result.pit_lineage.data_plane_schema_version == 5
     assert (
         result.pit_lineage.stock_price_adjustment_mode
-        == "local_projection_v2_event_time"
+        == "provider_adjusted_v1"
     )
     assert result.pit_lineage.universe_source == "stock_master_daily"
     assert result.pit_lineage.as_of_policy == "exact_signal_date_no_latest_fallback"
     assert result.pit_lineage.basis_dependent_sources == (
         "daily_valuation",
         "stock_data_raw",
+        "stock_provider_windows",
+        "stock_adjustment_events",
     )
     assert result.pit_lineage.verification_status == "verified"
     assert result.pit_lineage.consumed_daily_valuation_row_count > 0

@@ -14,8 +14,8 @@ from src.domains.analytics.ranking_short_sector_strength_evidence import (
     write_ranking_short_sector_strength_evidence_bundle,
 )
 
-from daily_ranking_market_v4_fixture import (
-    upgrade_daily_ranking_fixture_to_market_v4,
+from daily_ranking_market_v5_fixture import (
+    upgrade_daily_ranking_fixture_to_market_v5,
 )
 
 
@@ -400,6 +400,6 @@ def _build_short_sector_db(db_path: Path) -> Path:
         "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?)",
         index_rows,
     )
-    upgrade_daily_ranking_fixture_to_market_v4(conn)
+    upgrade_daily_ranking_fixture_to_market_v5(conn)
     conn.close()
     return db_path

@@ -50,8 +50,9 @@ from src.domains.analytics.ranking_research_selection_contract import (
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
+    normalize_code_sql,
     open_readonly_analysis_connection,
-    require_market_v4_compatibility,
+    require_market_v5_compatibility,
 )
 from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
@@ -179,17 +180,18 @@ _NIKKEI_SYNTHETIC_INDEX_CODE = "N225_UNDERPX"
 _WARMUP_CALENDAR_DAYS = 820
 _REQUIRED_MARKET_TABLES = {
     "stock_data_raw",
+    "stock_data",
     "topix_data",
     "daily_valuation",
     "stock_master_daily",
     "indices_data",
     "index_master",
-    "stock_adjustment_bases",
-    "stock_adjustment_basis_segments",
+    "stock_provider_windows",
+    "stock_adjustment_events",
 }
 
-_DATA_PLANE_SCHEMA_VERSION = 4
-_STOCK_PRICE_ADJUSTMENT_MODE = "local_projection_v2_event_time"
+_DATA_PLANE_SCHEMA_VERSION = 5
+_STOCK_PRICE_ADJUSTMENT_MODE = "provider_adjusted_v1"
 _PIT_AS_OF_POLICY = "exact_signal_date_no_latest_fallback"
 _PIT_INVALIDATION_DISPOSITION = (
     "v1_v2_historical_archive_v3_superseded_by_v4_for_price_basis_gate_ci_hardening_"
@@ -507,7 +509,12 @@ def _audit_consumed_pit_lineage(
     *,
     source_name: str = "ranking_technical_fit_candidate_source",
 ) -> PitLineageAudit:
-    """Fail closed unless every Prime panel row has exact event-time lineage."""
+    """Fail closed unless every Prime panel row has exact provider lineage."""
+
+    if price_projection is None or price_projection.verification_status != "verified":
+        raise RuntimeError(
+            "PIT lineage validation failed: provider price projection is not verified"
+        )
 
     conn.execute(
         f"""
@@ -545,136 +552,100 @@ def _audit_consumed_pit_lineage(
     if missing_basis_count:
         raise RuntimeError(
             "PIT lineage validation failed: missing cutoff-valid daily_valuation "
-            f"basis for {missing_basis_count} consumed Prime rows; no latest/current "
-            "basis fallback is allowed"
+            f"provider vintage for {missing_basis_count} consumed Prime rows; "
+            "no current/latest fallback is allowed"
         )
 
-    containing_basis_mismatch_count = int(
+    provider_code = normalize_code_sql("provider.code")
+    valuation_code = normalize_code_sql("valuation.code")
+    provider_mismatch_count = int(
         conn.execute(
-            """
+            f"""
             SELECT count(*)
             FROM ranking_technical_fit_consumed_lineage AS consumed
             WHERE (
                 SELECT count(*)
-                FROM stock_adjustment_bases AS basis
-                WHERE basis.code = consumed.code
-                  AND basis.valid_from <= consumed.date
-                  AND (
-                      basis.valid_to_exclusive IS NULL
-                      OR consumed.date < basis.valid_to_exclusive
+                FROM stock_provider_windows AS provider
+                WHERE {provider_code} = consumed.code
+                  AND CAST(provider.coverage_start AS DATE) <= CAST(consumed.date AS DATE)
+                  AND CAST(consumed.date AS DATE) <= CAST(provider.provider_as_of AS DATE)
+                  AND consumed.valuation_basis_id = (
+                      'provider-v1:' || consumed.code || ':'
+                      || provider.provider_as_of || ':' || provider.source_fingerprint
                   )
             ) <> 1
-               OR NOT EXISTS (
-                   SELECT 1
-                   FROM stock_adjustment_bases AS basis
-                   WHERE basis.code = consumed.code
-                     AND basis.basis_id = consumed.valuation_basis_id
-                     AND basis.valid_from <= consumed.date
-                     AND (
-                         basis.valid_to_exclusive IS NULL
-                         OR consumed.date < basis.valid_to_exclusive
-                     )
-               )
             """
         ).fetchone()[0]
     )
-    if containing_basis_mismatch_count:
+    if provider_mismatch_count:
         raise RuntimeError(
-            "PIT lineage validation failed: mismatched cutoff-valid basis for "
-            f"{containing_basis_mismatch_count} consumed Prime rows"
+            "PIT lineage validation failed: mismatched provider vintage for "
+            f"{provider_mismatch_count} consumed Prime rows"
         )
 
-    unready_basis_count = int(
+    valuation_mismatch_count = int(
         conn.execute(
-            """
-            SELECT count(*)
-            FROM ranking_technical_fit_consumed_lineage AS consumed
-            JOIN stock_adjustment_bases AS basis
-              ON basis.code = consumed.code
-             AND basis.basis_id = consumed.valuation_basis_id
-            WHERE basis.status <> 'ready'
-               OR basis.materialized_through_date < consumed.date
-               OR basis.source_fingerprint IS NULL
-               OR trim(basis.source_fingerprint) = ''
+            f"""
+            SELECT count(*) FROM ranking_technical_fit_consumed_lineage consumed
+            WHERE (
+                SELECT count(*) FROM daily_valuation valuation
+                WHERE {valuation_code} = consumed.code
+                  AND CAST(valuation.date AS DATE) = CAST(consumed.date AS DATE)
+                  AND CAST(valuation.price_basis_date AS DATE) = CAST(consumed.date AS DATE)
+            ) <> 1
             """
         ).fetchone()[0]
     )
-    if unready_basis_count:
+    if valuation_mismatch_count:
         raise RuntimeError(
-            "PIT lineage validation failed: basis is not ready and materialized "
-            f"through signal date for {unready_basis_count} consumed Prime rows"
+            "PIT lineage validation failed: missing current-basis daily_valuation "
+            f"row for {valuation_mismatch_count} consumed Prime rows"
         )
 
-    malformed_basis_count = int(
+    event_mismatch_count = int(
         conn.execute(
-            """
-            SELECT count(*)
-            FROM ranking_technical_fit_consumed_lineage AS consumed
-            JOIN stock_adjustment_bases AS basis
-              ON basis.code = consumed.code
-             AND basis.basis_id = consumed.valuation_basis_id
-            WHERE basis.basis_id <> (
-                'event-pit-v1:' || basis.code || ':' || basis.valid_from
+            f"""
+            WITH consumed_codes AS (
+                SELECT DISTINCT code FROM ranking_technical_fit_consumed_lineage
+            ), expected AS (
+                SELECT {normalize_code_sql("raw.code")} AS code,
+                       count(*) FILTER (
+                           WHERE raw.adjustment_factor IS NOT NULL
+                             AND raw.adjustment_factor != 1.0
+                       ) AS expected_count
+                FROM stock_data_raw raw
+                JOIN consumed_codes consumed
+                  ON consumed.code = {normalize_code_sql("raw.code")}
+                GROUP BY 1
+            ), observed AS (
+                SELECT {normalize_code_sql("event.code")} AS code,
+                       count(*) AS observed_count,
+                       count(*) FILTER (
+                           WHERE event.adjustment_factor = raw.adjustment_factor
+                             AND event.source_fingerprint = provider.source_fingerprint
+                       ) AS valid_count
+                FROM stock_adjustment_events event
+                JOIN stock_provider_windows provider
+                  ON {normalize_code_sql("provider.code")} =
+                     {normalize_code_sql("event.code")}
+                JOIN stock_data_raw raw
+                  ON {normalize_code_sql("raw.code")} =
+                     {normalize_code_sql("event.code")}
+                 AND raw.date = event.date
+                GROUP BY 1
             )
-            """
-        ).fetchone()[0]
-    )
-    if malformed_basis_count:
-        raise RuntimeError(
-            "PIT lineage validation failed: malformed event-time basis_id for "
-            f"{malformed_basis_count} consumed Prime rows"
-        )
-
-    segment_cardinality_mismatch_count = int(
-        conn.execute(
-            """
             SELECT count(*)
-            FROM ranking_technical_fit_consumed_lineage AS consumed
-            WHERE (
-                SELECT count(*)
-                FROM stock_adjustment_basis_segments AS segment
-                WHERE segment.code = consumed.code
-                  AND segment.basis_id = consumed.valuation_basis_id
-                  AND segment.source_date_from <= consumed.date
-                  AND (
-                      segment.source_date_to_exclusive IS NULL
-                      OR consumed.date < segment.source_date_to_exclusive
-                  )
-            ) <> 1
+            FROM expected
+            LEFT JOIN observed USING (code)
+            WHERE coalesce(observed_count, 0) <> expected_count
+               OR coalesce(valid_count, 0) <> expected_count
             """
         ).fetchone()[0]
     )
-    if segment_cardinality_mismatch_count:
+    if event_mismatch_count:
         raise RuntimeError(
-            "PIT lineage validation failed: expected exactly one total covering "
-            "adjustment basis segment for each consumed Prime row; invalid rows="
-            f"{segment_cardinality_mismatch_count}"
-        )
-
-    invalid_segment_factor_count = int(
-        conn.execute(
-            """
-            SELECT count(*)
-            FROM ranking_technical_fit_consumed_lineage AS consumed
-            JOIN stock_adjustment_basis_segments AS segment
-              ON segment.code = consumed.code
-             AND segment.basis_id = consumed.valuation_basis_id
-             AND segment.source_date_from <= consumed.date
-             AND (
-                 segment.source_date_to_exclusive IS NULL
-                 OR consumed.date < segment.source_date_to_exclusive
-             )
-            WHERE segment.cumulative_factor IS NULL
-               OR NOT isfinite(segment.cumulative_factor)
-               OR segment.cumulative_factor <= 0
-            """
-        ).fetchone()[0]
-    )
-    if invalid_segment_factor_count:
-        raise RuntimeError(
-            "PIT lineage validation failed: covering adjustment basis segment "
-            "cumulative_factor must be finite and positive for each consumed "
-            f"Prime row; invalid rows={invalid_segment_factor_count}"
+            "PIT lineage validation failed: provider event ledger mismatch for "
+            f"{event_mismatch_count} consumed Prime symbols"
         )
 
     basis_ids = tuple(
@@ -693,33 +664,23 @@ def _audit_consumed_pit_lineage(
             """
             SELECT count(*)
             FROM (
-                SELECT DISTINCT basis.code, basis.basis_id
+                SELECT DISTINCT consumed.code, consumed.valuation_basis_id
                 FROM ranking_technical_fit_consumed_lineage AS consumed
-                JOIN stock_adjustment_bases AS basis
-                  ON basis.code = consumed.code
-                 AND basis.basis_id = consumed.valuation_basis_id
             )
             """
         ).fetchone()[0]
     )
     verified_segment_row_count = int(
         conn.execute(
-            """
+            f"""
             SELECT count(*)
             FROM (
                 SELECT DISTINCT
-                    segment.code,
-                    segment.basis_id,
-                    segment.source_date_from
+                    event.code,
+                    event.date
                 FROM ranking_technical_fit_consumed_lineage AS consumed
-                JOIN stock_adjustment_basis_segments AS segment
-                  ON segment.code = consumed.code
-                 AND segment.basis_id = consumed.valuation_basis_id
-                 AND segment.source_date_from <= consumed.date
-                 AND (
-                     segment.source_date_to_exclusive IS NULL
-                     OR consumed.date < segment.source_date_to_exclusive
-                 )
+                JOIN stock_adjustment_events AS event
+                  ON {normalize_code_sql("event.code")} = consumed.code
             )
             """
         ).fetchone()[0]
@@ -729,7 +690,12 @@ def _audit_consumed_pit_lineage(
         stock_price_adjustment_mode=_STOCK_PRICE_ADJUSTMENT_MODE,
         universe_source="stock_master_daily",
         as_of_policy=_PIT_AS_OF_POLICY,
-        basis_dependent_sources=("daily_valuation", "stock_data_raw"),
+        basis_dependent_sources=(
+            "daily_valuation",
+            "stock_data_raw",
+            "stock_provider_windows",
+            "stock_adjustment_events",
+        ),
         basis_ids=basis_ids,
         basis_id_sha256=basis_id_sha256,
         consumed_daily_valuation_row_count=consumed_count,
@@ -786,7 +752,7 @@ def run_ranking_technical_fit_score_shape_evidence_research(
         str(db_path_obj),
         snapshot_prefix="ranking-technical-fit-score-shape-",
     ) as ctx:
-        require_market_v4_compatibility(
+        require_market_v5_compatibility(
             ctx.connection,
             required_tables=_REQUIRED_MARKET_TABLES,
         )
@@ -3775,7 +3741,7 @@ def build_summary_markdown(
         f"`{result.pit_lineage.verified_basis_row_count}` / segment rows "
         f"`{result.pit_lineage.verified_segment_row_count}`。",
         "- Catalog verification: cutoff-valid `basis_id` を "
-        "`stock_adjustment_bases` と `stock_adjustment_basis_segments` に照合済み。",
+        "`stock_provider_windows` と `stock_adjustment_events` に照合済み。",
         "- Exact basis IDs: `manifest.json.result_metadata.pit_lineage.basis_ids`。",
         f"- basis_id SHA-256: `{result.pit_lineage.basis_id_sha256}`。",
         "- Invalidation disposition: "

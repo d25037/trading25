@@ -375,7 +375,6 @@ def _create_monitor_footprint_base_tables(
                 row_number() OVER (
                     PARTITION BY {valuation_code}, dv.date
                     ORDER BY dv.price_basis_date DESC NULLS LAST,
-                             dv.basis_version DESC NULLS LAST,
                              CASE WHEN length(dv.code) = 4 THEN 0 ELSE 1 END,
                              dv.code
                 ) AS row_rank
