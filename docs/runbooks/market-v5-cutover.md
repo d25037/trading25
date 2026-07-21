@@ -205,13 +205,14 @@ It does not infer ownership from filenames. An ambiguous, duplicate, changed, or
 mismatched layout fails closed without mutation.
 
 - Failure before atomic activation is attempted leaves the active Market tree
-  unchanged. A joined failure before durable `activated` restores the exact
-  immutable backup when exchange/activation may have started but the commit has
-  not crossed the preserve-for-recovery boundary.
-- A durable `activated` or preserve-for-recovery joined failure preserves the
-  active v5 tree, exact quarantine, immutable backup, and retained recovery
-  evidence; recovery requires the exact same-ID retry. It does not roll the
-  committed v5 tree back merely because report publication was interrupted.
+  unchanged. Only an initial activation caught failure classified
+  `ROLLBACK_ALLOWED` exact-restores the immutable backup after the owned server
+  and worker are proven joined.
+- `PRESERVE_FOR_RECOVERY` or any same-ID recovery failure preserves the exact
+  active/staged/quarantine/backup/retained-runtime layout and evidence;
+  continuation requires the exact same-ID retry. This also applies when same-ID
+  recovery starts from `prepared` or `exchange_started`, resumes exchange, and
+  fails during its recovery smoke: that recovery path never restores the backup.
 - An unjoined child keeps both active and staging leases fenced and defers
   recovery. Resolve process ownership first; do not
   alter the journal, operation lock, report, staging, backup, active,

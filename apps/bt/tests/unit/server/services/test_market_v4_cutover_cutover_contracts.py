@@ -69,15 +69,16 @@ def test_active_market_v5_guidance_requires_cutover_and_same_id_recovery() -> No
         assert protected_path in guidance
     normalized_runbook = " ".join(runbook.split())
     normalized_matrix = " ".join(matrix.split())
+    assert "before durable `activated` restores" not in normalized_runbook
     assert (
-        "joined failure before durable `activated` restores the exact immutable "
-        "backup"
+        "Only an initial activation caught failure classified "
+        "`ROLLBACK_ALLOWED` exact-restores the immutable backup"
         in normalized_runbook
     )
     assert (
-        "durable `activated` or preserve-for-recovery joined failure preserves "
-        "the active v5 tree, exact quarantine, immutable backup, and retained "
-        "recovery evidence; recovery requires the exact same-ID retry"
+        "`PRESERVE_FOR_RECOVERY` or any same-ID recovery failure preserves the "
+        "exact active/staged/quarantine/backup/retained-runtime layout and "
+        "evidence; continuation requires the exact same-ID retry"
         in normalized_runbook
     )
     assert (
@@ -85,8 +86,11 @@ def test_active_market_v5_guidance_requires_cutover_and_same_id_recovery() -> No
         "recovery"
         in normalized_runbook
     )
-    assert "durable `activated` 以前の joined failure だけ" in normalized_matrix
-    assert "active v5 / exact quarantine / backup / retained recovery evidence" in (
+    assert "durable `activated` 以前" not in normalized_matrix
+    assert "initial activation の `ROLLBACK_ALLOWED` caught failure だけ" in (
+        normalized_matrix
+    )
+    assert "`PRESERVE_FOR_RECOVERY` または any same-ID recovery failure" in (
         normalized_matrix
     )
     assert "active / staging の両 lease を fence" in normalized_matrix

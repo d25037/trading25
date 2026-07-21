@@ -87,32 +87,35 @@ finding was identified in this documentation scope. Deferred issues #494, #495,
 
 Intended commit subject: `docs: align Market v5 safety and recovery guidance`.
 
-## P2 remediation: exact failure disposition boundary
+## P2 remediation: exact failure disposition and recovery-path boundary
 
-Review of the Phase A commit found that the runbook's blanket post-activation
-automatic-restore sentence and the SoT matrix's blanket `joined failure is exact
-rollback` sentence contradicted the durable activation boundary.
+Review of the Phase A commit first removed blanket post-activation rollback wording.
+An initial remediation then incorrectly substituted `before durable activated` as the
+rollback boundary. That wording is superseded: same-ID recovery from `prepared` or
+`exchange_started` appends/retains `exchange_started`, resumes exchange, and runs its
+recovery smoke before `activated`; a joined recovery-smoke failure retires its exact
+runtime and rethrows without restoring the backup.
 
-Strict docs RED added one focused guard before changing either document. It failed on
-the missing rollback/preserve/fencing distinction:
+The second strict docs RED changed the focused guard before either document. It failed
+because the incorrect time/state boundary was still present:
 
 ```text
 1 failed
 
-assert 'joined failure before durable `activated` restores the exact immutable backup'
+assert "before durable `activated` restores" not in normalized_runbook
 ```
 
-The corrected guidance now states exactly:
+The final guidance follows the implementation terminology and path:
 
-- rollback-allowed joined failure before durable `activated` restores the exact
-  immutable backup;
-- durable `activated` or preserve-for-recovery joined failure preserves active v5,
-  exact quarantine, immutable backup, and retained recovery evidence, and requires
+- only an initial activation caught failure classified `ROLLBACK_ALLOWED`
+  exact-restores the immutable backup after owned processes are proven joined;
+- `PRESERVE_FOR_RECOVERY` or any same-ID recovery failure preserves the exact current
+  active/staged/quarantine/backup/retained-runtime layout and evidence and requires
   the exact same-ID retry; and
 - an unjoined child keeps both active and staging leases fenced, defers recovery, and
   does not authorize manual artifact edits.
 
 The focused guard passed after only the runbook and SoT matrix were corrected. The
 planned 184 documentation guards, research guardrails, skill reference drift check,
-strict skill audit, focused Ruff, and `git diff --check` were rerun before the fix-only
-commit. The two P3 findings remain tracked in #498 and were not changed.
+strict skill audit, focused Ruff, and `git diff --check` were rerun before the second
+fix-only commit. The two P3 findings remain tracked in #498 and were not changed.
