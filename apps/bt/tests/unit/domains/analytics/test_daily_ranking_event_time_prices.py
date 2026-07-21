@@ -194,6 +194,10 @@ def _refresh_provider_window(conn: duckdb.DuckDBPyConnection) -> None:
         "UPDATE stock_provider_windows SET source_fingerprint = ?",
         [provider_stock_source_fingerprint(rows)],
     )
+    conn.execute(
+        "UPDATE stock_adjustment_events SET source_fingerprint = ?",
+        [provider_stock_source_fingerprint(rows)],
+    )
 
 
 def test_event_time_signal_uses_provider_adjusted_rows_and_vintage(tmp_path: Path) -> None:
@@ -357,6 +361,80 @@ def test_research_prices_allow_coverage_lagging_provider_frontier(
         conn.close()
 
     assert vintage.startswith("provider-v1:1111:2024-01-31:")
+
+
+def test_next_open_uses_stock_entry_date_and_nulls_missing_topix_endpoint(
+    tmp_path: Path,
+) -> None:
+    conn = _build_market_v5_fixture(tmp_path / "market.duckdb")
+    try:
+        complete = build_daily_ranking_event_time_prices(
+            conn, _generic_price_request("complete_next_open")
+        )
+        complete_row = conn.execute(
+            f"SELECT forward_next_open_return_1d_pct, "
+            f"forward_next_open_excess_return_1d_pct FROM {complete.forward_outcomes}"
+        ).fetchone()
+        conn.execute("DELETE FROM topix_data WHERE date = '2024-01-08'")
+        missing = build_daily_ranking_event_time_prices(
+            conn, _generic_price_request("missing_next_open_topix")
+        )
+        missing_row = conn.execute(
+            f"SELECT forward_next_open_return_1d_pct, "
+            f"forward_next_open_excess_return_1d_pct FROM {missing.forward_outcomes}"
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert complete_row == pytest.approx((0.0, 0.0))
+    assert missing_row == (pytest.approx(0.0), None)
+
+
+@pytest.mark.parametrize(
+    ("factor", "adjusted_close", "adjusted_volume", "expected_return"),
+    [(0.5, 50.0, 2_000, 20.0), (2.0, 200.0, 500, -70.0)],
+)
+def test_completion_outcome_uses_provider_split_or_reverse_split_adjustment(
+    tmp_path: Path,
+    factor: float,
+    adjusted_close: float,
+    adjusted_volume: int,
+    expected_return: float,
+) -> None:
+    conn = _build_market_v5_fixture(tmp_path / "market.duckdb")
+    try:
+        conn.execute(
+            "UPDATE stock_data_raw SET adjusted_open = 100 * ?, "
+            "adjusted_high = 102 * ?, adjusted_low = 98 * ?, "
+            "adjusted_close = ?, adjusted_volume = ? "
+            "WHERE date = '2024-01-04'",
+            [factor, factor, factor, adjusted_close, adjusted_volume],
+        )
+        conn.execute(
+            "UPDATE stock_data SET open = 100 * ?, high = 102 * ?, low = 98 * ?, "
+            "close = ?, volume = ? WHERE date = '2024-01-04'",
+            [factor, factor, factor, adjusted_close, adjusted_volume],
+        )
+        conn.execute(
+            "UPDATE stock_data_raw SET adjustment_factor = ? "
+            "WHERE date = '2024-01-08'",
+            [factor],
+        )
+        conn.execute(
+            "UPDATE stock_adjustment_events SET adjustment_factor = ?",
+            [factor],
+        )
+        _refresh_provider_window(conn)
+        relations = build_daily_ranking_event_time_prices(
+            conn, _generic_price_request(f"factor_{str(factor).replace('.', '_')}")
+        )
+        outcome = conn.execute(
+            f"SELECT forward_close_return_1d_pct FROM {relations.forward_outcomes}"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    assert outcome == pytest.approx(expected_return)
 
 
 @pytest.mark.parametrize(
