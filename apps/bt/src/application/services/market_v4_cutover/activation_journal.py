@@ -405,6 +405,31 @@ class ActivationJournalRepository:
         finally:
             os.close(directory_fd)
 
+    def load_existing(
+        self, report_id: str
+    ) -> tuple[ActivationJournalRecord, ...] | None:
+        """Load one exact report-anchored attempt without scanning for ownership."""
+
+        report_id = _validate_id(report_id, label="report")
+        self._assert_determinate(report_id)
+        directory_fd = self._open_report_directory(report_id, create=False)
+        if directory_fd is None:
+            return None
+        try:
+            prepared = self._read_record(
+                directory_fd,
+                "00000001-prepared.json",
+            )
+        finally:
+            os.close(directory_fd)
+        if (
+            prepared.sequence != 1
+            or prepared.state is not ActivationState.PREPARED
+            or prepared.attempt.report_id != report_id
+        ):
+            raise _error("prepared record does not match the anchored report ID")
+        return self.load(prepared.attempt)
+
     def append(
         self,
         attempt: ActivationAttempt,

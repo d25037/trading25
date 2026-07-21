@@ -374,6 +374,34 @@ def test_appends_exact_canonical_sequence_and_loads_it(tmp_path: Path) -> None:
         )
 
 
+def test_load_existing_anchors_exact_report_id_and_recovers_stored_attempt(
+    tmp_path: Path,
+) -> None:
+    repository_type, state_type, _, _, _ = _types()
+    operations_root = _operations_root(tmp_path)
+    repository = repository_type(operations_root)
+    attempt = _attempt(report_id="recover-exact-id")
+    expected = (
+        repository.append(attempt, state_type.PREPARED),
+        repository.append(attempt, state_type.EXCHANGE_STARTED),
+    )
+
+    loaded = repository_type(operations_root).load_existing("recover-exact-id")
+
+    assert loaded == expected
+    assert loaded is not None
+    assert loaded[0].attempt == attempt
+
+
+def test_load_existing_returns_none_only_when_exact_report_journal_is_absent(
+    tmp_path: Path,
+) -> None:
+    repository_type, _, _, _, _ = _types()
+    repository = repository_type(_operations_root(tmp_path))
+
+    assert repository.load_existing("absent-report") is None
+
+
 @pytest.mark.parametrize(
     ("existing_states", "requested_state"),
     [

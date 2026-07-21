@@ -436,7 +436,7 @@ def test_rehearsal_report_publish_failure_never_leaves_passed_evidence(
 
 
 @pytest.mark.parametrize("failure_stage", ["after_temp_fsync", "after_publish"])
-def test_active_report_publish_failure_restores_without_passed_evidence(
+def test_active_report_publish_failure_is_completed_by_exact_same_id_recovery(
     tmp_path: Path,
     failure_stage: str,
 ) -> None:
@@ -462,20 +462,71 @@ def test_active_report_publish_failure_restores_without_passed_evidence(
             raise OSError(f"injected {stage}")
 
     service._workspace._report_publish_hook = inject
-    with pytest.raises(CutoverSafetyError, match="restored backup"):
+    report_id = f"active-{failure_stage}"
+    with pytest.raises(CutoverSafetyError, match="same-ID recovery"):
         service.cutover(
-            f"active-{failure_stage}",
+            report_id,
             rehearsal_report_id="passing-before-report-failure",
             backup_id="before-report-failure",
             config=SmokeConfig("7203", "production/smoke", "primeMarket"),
             inherited_environment={},
         )
 
-    assert (data_root / "market-timeseries/market.duckdb").read_bytes() == b"duckdb-v3"
+    active_market = data_root / "market-timeseries/market.duckdb"
+    quarantine_market = (
+        data_root
+        / f"operations/market-v5-cutover/quarantine/pre-cutover-{report_id}"
+        / "market.duckdb"
+    )
+    backup_market = (
+        data_root
+        / "operations/market-v5-cutover/backups/before-report-failure/payload"
+        / "market.duckdb"
+    )
+    journal_dir = (
+        data_root
+        / f"operations/market-v5-cutover/activation-journals/{report_id}"
+    )
+    assert active_market.read_bytes() != b"duckdb-v3"
+    assert quarantine_market.read_bytes() == b"duckdb-v3"
+    assert backup_market.read_bytes() == b"duckdb-v3"
+    assert [path.name for path in sorted(journal_dir.iterdir())] == [
+        "00000001-prepared.json",
+        "00000002-exchange_started.json",
+        "00000003-activated.json",
+    ]
     report_path = (
         data_root
-        / f"operations/market-v5-cutover/reports/active-{failure_stage}/report.json"
+        / f"operations/market-v5-cutover/reports/{report_id}/report.json"
     )
-    if report_path.exists():
-        assert json.loads(report_path.read_text())["status"] != "passed"
+    assert not report_path.exists()
     assert not list(report_path.parent.glob(".report.json.*.tmp"))
+
+    fresh = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi()]),
+    )
+    result = fresh.cutover(
+        report_id,
+        rehearsal_report_id="passing-before-report-failure",
+        backup_id="before-report-failure",
+        config=SmokeConfig("7203", "production/smoke", "primeMarket"),
+        inherited_environment={},
+    )
+
+    report = json.loads(report_path.read_text())
+    assert result.report_id == report_id
+    assert report["status"] == "passed"
+    assert report["reportId"] == report_id
+    assert report["rehearsalReportId"] == "passing-before-report-failure"
+    assert report["backupId"] == "before-report-failure"
+    assert active_market.read_bytes() != b"duckdb-v3"
+    assert quarantine_market.read_bytes() == b"duckdb-v3"
+    assert backup_market.read_bytes() == b"duckdb-v3"
+    assert [path.name for path in sorted(journal_dir.iterdir())] == [
+        "00000001-prepared.json",
+        "00000002-exchange_started.json",
+        "00000003-activated.json",
+        "00000004-reported.json",
+    ]

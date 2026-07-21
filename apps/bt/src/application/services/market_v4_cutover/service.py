@@ -7,6 +7,7 @@ from typing import Callable
 
 from .backup import MarketBackupService
 from .activation import MarketActivationService
+from .activation_recovery import ActivationRecoveryService
 from .contracts import (
     AtomicExchange,
     BackupResult,
@@ -66,6 +67,15 @@ class MarketV4CutoverService:
             self._runtime_smoke,
             self._backups,
         )
+        self._activation_recovery = ActivationRecoveryService(
+            self._workspace,
+            self._evidence,
+            self._reports,
+            self._runtime_smoke,
+            self._backups,
+            self._activation,
+            self._activation._journal,
+        )
 
     def preflight(self) -> MarketSourceMetadata:
         return self._backups.preflight()
@@ -101,13 +111,25 @@ class MarketV4CutoverService:
         config: SmokeConfig,
         inherited_environment: dict[str, str],
     ) -> OperationResult:
-        return self._activation.cutover(
-            report_id,
-            rehearsal_report_id=rehearsal_report_id,
-            backup_id=backup_id,
-            config=config,
-            inherited_environment=inherited_environment,
-        )
+        with self._workspace.exclusive_operation() as code_version:
+            recovered = self._activation_recovery.recover_if_present(
+                report_id,
+                rehearsal_report_id=rehearsal_report_id,
+                backup_id=backup_id,
+                config=config,
+                inherited_environment=inherited_environment,
+                code_version=code_version,
+            )
+            if recovered is not None:
+                return recovered
+            return self._activation._cutover_under_lease(
+                report_id,
+                rehearsal_report_id=rehearsal_report_id,
+                backup_id=backup_id,
+                config=config,
+                inherited_environment=inherited_environment,
+                code_version=code_version,
+            )
 
     def rehearse(
         self,
