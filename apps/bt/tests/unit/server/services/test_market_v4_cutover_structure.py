@@ -15,6 +15,7 @@ CUTOVER_PACKAGE = SRC_ROOT / "application/services/market_v4_cutover"
 TEST_ROOT = Path(__file__).parent
 
 EXPECTED_RESPONSIBILITIES = {
+    "activation_journal.py",
     "activation_contract.py",
     "backup.py",
     "contracts.py",
@@ -28,6 +29,13 @@ EXPECTED_RESPONSIBILITIES = {
     "service.py",
     "smoke.py",
     "workspace.py",
+}
+
+FORBIDDEN_RETAINED_PROMOTION_JOURNALS = {
+    "journal.py",
+    "journal_directories.py",
+    "journal_storage.py",
+    "journal_validation.py",
 }
 
 
@@ -99,6 +107,9 @@ def test_cutover_is_a_focused_package_without_compatibility_module() -> None:
     assert EXPECTED_RESPONSIBILITIES <= {
         path.name for path in CUTOVER_PACKAGE.glob("*.py")
     }
+    assert FORBIDDEN_RETAINED_PROMOTION_JOURNALS.isdisjoint(
+        path.name for path in CUTOVER_PACKAGE.glob("*.py")
+    )
     init_source = (CUTOVER_PACKAGE / "__init__.py").read_text(encoding="utf-8")
     init_tree = ast.parse(init_source)
     assert not any(

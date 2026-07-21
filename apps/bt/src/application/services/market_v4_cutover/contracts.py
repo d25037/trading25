@@ -20,6 +20,24 @@ def _canonical_json(value: object) -> str:
     )
 
 
+class ActivationState(StrEnum):
+    """Only durable states in one Market v5 activation attempt."""
+
+    PREPARED = "prepared"
+    EXCHANGE_STARTED = "exchange_started"
+    ACTIVATED = "activated"
+    REPORTED = "reported"
+
+
+@dataclass(frozen=True)
+class MarketTreeIdentity:
+    """Exact path, directory, and payload identity for one Market tree."""
+
+    path: str
+    directory: dict[str, int]
+    payload: dict[str, object]
+
+
 class PromotionState(StrEnum):
     """Durable states in the retained Market promotion transaction."""
 
@@ -123,6 +141,31 @@ class SmokeConfig:
     symbol: str
     strategy: str
     dataset_preset: str
+
+
+@dataclass(frozen=True)
+class ActivationAttempt:
+    """Immutable arguments and tree identities bound to one activation."""
+
+    report_id: str
+    rehearsal_report_id: str
+    backup_id: str
+    code_version: str
+    config: SmokeConfig
+    source: MarketTreeIdentity
+    staged: MarketTreeIdentity
+    active_before: MarketTreeIdentity
+    backup: MarketTreeIdentity
+    expected_active: MarketTreeIdentity
+
+
+@dataclass(frozen=True)
+class ActivationJournalRecord:
+    """One canonical record from the sequential activation journal."""
+
+    sequence: int
+    state: ActivationState
+    attempt: ActivationAttempt
 
 
 @dataclass(frozen=True)
