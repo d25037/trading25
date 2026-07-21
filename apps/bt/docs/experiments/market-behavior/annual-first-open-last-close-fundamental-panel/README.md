@@ -6,16 +6,24 @@
 
 ## Published Readout
 
+> [!WARNING]
+> **Status: `historical_archive`; `rerun_required`.** This Market v3 evidence
+> is retained only as a historical candidate. It must not drive production,
+> thresholds, or Ranking decisions before a physical Market v5
+> `market.duckdb` rerun with
+> `stock_price_adjustment_mode=provider_adjusted_v1`, signal-date PIT
+> membership, and provider-vintage/current-basis provenance.
+
 ### Decision
 
-- v3 `market.duckdb` では `stock_master_daily` の entry-date 構成と `TypeOfDocument` semantics による FY financial-statement 行を使う。直近 FY financial-statement 行を actual metrics の SoT にした後も、低 `PBR`、小型、低 `forward PER` は引き続き再利用価値があるが、production へ直結させず ranking / research diagnostic として扱う。
+- この v3 `market.duckdb` readout は `stock_master_daily` の entry-date 構成と `TypeOfDocument` semantics による FY financial-statement 行を使った historical measurement である。低 `PBR`、小型、低 `forward PER` は Market v5 rerun の候補として保存するが、production、threshold、Ranking diagnostic の根拠には使わない。
 
-### Why This Research Was Run
+### Why This Historical Research Was Run
 
-- Annual first-open to last-close holding returns provide a clean calendar-year lens for testing whether PIT-safe FY fundamentals explain broad cross-sectional return differences.
+- Annual first-open to last-close holding returns provided a clean calendar-year lens for testing whether historically available FY fundamentals explained broad cross-sectional return differences.
 - The study also checks whether per-share adjustment and entry-price-dependent valuation materially change factor buckets.
 
-### Data Scope / PIT Assumptions
+### Historical Data Scope / PIT Assumptions
 
 - Complete years `2017-2025`; `32,264` realized stock-year events.
 - Entry is the first trading day `Open`; exit is the same calendar year last trading day `Close`.
@@ -25,13 +33,17 @@
 
 ### Main Findings
 
-#### Full-market baseline は年次保有の比較基準として有効だが、単体で十分な選別力はない。
+**Historical measurement only:** the following Market v3 measurements preserve
+their prior dates and provenance, but must not drive production, thresholds, or
+Ranking decisions before the required Market v5 `provider_adjusted_v1` rerun.
+
+#### Historical full-market baseline は年次保有の比較基準だったが、単体で十分な選別力はない。
 
 | Scope | CAGR | Sharpe | Sortino | Calmar | MaxDD |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Full market baseline | `11.5%` | `0.77` | `0.86` | `0.32` | `-36.0%` |
 
-#### broad market lens では `standard` が最も良い。
+#### Historical broad market lens では `standard` が最も良かった。
 
 | Market | CAGR | Sharpe |
 | --- | ---: | ---: |
@@ -39,7 +51,7 @@
 | `standard` | `15.9%` | `1.09` |
 | `growth` | `8.9%` | `0.48` |
 
-#### 再利用しやすい単独 factor は低 `PBR`、低 `forward PER`、低 `PER`、高配当/高予想配当利回り。
+#### Market v5 で再検証する単独 factor 候補は低 `PBR`、低 `forward PER`、低 `PER`、高配当/高予想配当利回り。
 
 | Factor family | Readout |
 | --- | --- |
@@ -48,7 +60,7 @@
 | low `PER` | factor bucket summary の上位に残った |
 | high dividend / forecast dividend yield | factor bucket summary の上位に残った |
 
-#### v3では低 `PBR` と低 `forward PER` が最上位の単独 spread として残る。
+#### v3では低 `PBR` と低 `forward PER` が最上位の単独 spread として記録された。
 
 | Market / factor | Preferred spread |
 | --- | ---: |
@@ -66,20 +78,20 @@
 
 ### Interpretation
 
-- The strongest signal is not simply "cheap" or "small"; it is the interaction where very low valuation and very small market cap concentrate the annual return edge.
-- `standard` looks better than `growth` on risk-adjusted annual holding metrics in this run, and the market split is now PIT-safe at each annual entry date.
-- `forward EPS / actual EPS` is weaker than expected as a broad selector. The ratio is not useless, but it does not dominate the simpler low valuation families.
-- The share-count adjustment and document semantics are not cosmetic: without them, EPS/BPS/forward EPS valuation buckets would be materially distorted for thousands of events, and forecast-only FY rows can incorrectly shadow actual BPS.
+- The historical v3 run recorded its strongest relationship in the interaction of very low valuation and very small market cap; it is a rerun hypothesis, not a current signal.
+- `standard` looked better than `growth` on risk-adjusted annual holding metrics in this historical run. Its entry-date split does not establish the required Market v5 provider-adjusted evidence.
+- `forward EPS / actual EPS` was weaker than expected as a broad selector in the historical measurement. It does not dominate the simpler low valuation families in that run.
+- The historical share-count adjustment and document semantics showed material sensitivity for thousands of events. Market v5 must instead use the current-basis `statement_metrics_adjusted` and PIT `daily_valuation` contract where applicable.
 
 ### Production Implication
 
-- Use this as a ranking research input for value/composite ranking, especially low `PBR`, low `forward PER`, and market-cap interaction diagnostics.
-- Do not promote the strongest `small-cap + low-PBR` branch directly into production before liquidity floors, turnover/capacity modeling, and realistic execution cost checks.
+- Re-evaluate low `PBR`, low `forward PER`, and market-cap interactions as historical candidates after a Market v5 rerun.
+- Do not promote any `small-cap + low-PBR` branch into production; a valid rerun still requires liquidity floors, turnover/capacity modeling, and realistic execution cost checks.
 - Treat ADV as a capacity/execution diagnostic, not as the source of alpha.
 
 ### Caveats
 
-- Factor buckets are observational and must not be copied directly into live thresholds.
+- Factor buckets are historical observations and must not be copied into live thresholds or Ranking decisions before the Market v5 rerun.
 - Legacy JPX segment labels are collapsed into current research labels for comparability, so `prime/standard/growth` before 2022 are proxy buckets rather than literal then-current market names.
 - The strongest branch is exposed to small-cap / low-ADV implementation risk.
 - Current-year incomplete annual returns are excluded by default.
@@ -89,10 +101,10 @@
 - Domain: `apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py`
 - Runner: `apps/bt/scripts/research/run_annual_first_open_last_close_fundamental_panel.py`
 - Baseline: [`baseline-2026-04-23.md`](./baseline-2026-04-23.md)
-- v3 share-basis rerun bundle: `/tmp/trading25-research/market-behavior/annual-first-open-last-close-fundamental-panel/20260502_share_basis_rerun/`
+- historical v3 share-basis bundle: `/tmp/trading25-research/market-behavior/annual-first-open-last-close-fundamental-panel/20260502_share_basis_rerun/`
 - Bundle artifacts: `manifest.json`, `results.duckdb`, `summary.md`
 
-## Current Surface
+## Historical Source Surface
 
 - Domain:
   - `apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py`
@@ -134,11 +146,11 @@
 - `annual_portfolio_daily_df`: 年次リバランス等ウェイト portfolio の daily curve。
 - `annual_portfolio_summary_df`: return / CAGR / Sharpe / Sortino / Calmar / maxDD。
 
-## Current Findings
+## Historical Findings
 
 Baseline result: [`baseline-2026-04-23.md`](./baseline-2026-04-23.md)
 
-v3 PIT stock-master + statement-document semantics rerun:
+Historical v3 stock-master + statement-document semantics run:
 `/tmp/trading25-research/market-behavior/annual-first-open-last-close-fundamental-panel/20260502_statement_doc_semantics/`
 
 - `2017-2025` complete years, `32,264` realized stock-year events.
@@ -147,18 +159,18 @@ v3 PIT stock-master + statement-document semantics rerun:
 - Market split: `standard` was the best broad market lens in this run
   (CAGR `15.9%`, Sharpe `1.09`), while `growth` had weaker risk-adjusted
   performance and deeper drawdown.
-- The strongest reusable single-factor families were low `PBR`, low
+- The single-factor candidates for a Market v5 rerun were low `PBR`, low
   `forward PER`, low `PER`, and high dividend yield / forecast dividend yield.
 - `forward EPS / actual EPS` was added as `forward_eps_to_actual_eps`; it was
   weak as a broad selector in this run. Q5 high ratio did not beat Q1 low ratio
   for `all`, `standard`, or `growth`, though `prime` had a small positive Q5
   tilt.
-- Low `PBR` and low `forward PER` remained the strongest simple spread families.
-  The next-stage composite studies still need to handle capacity and liquidity
-  outside the alpha score.
-- The small-cap / low-ADV effect is large but should be treated as an
-  implementation-risk axis, not a free live signal. Slippage and capacity
-  controls are mandatory before considering production use.
+- Low `PBR` and low `forward PER` were the strongest simple spread families in
+  this historical run. Any composite study must rerun on Market v5 and handle
+  capacity and liquidity outside the alpha score.
+- The small-cap / low-ADV effect is a historical implementation-risk axis, not
+  a live signal. Slippage and capacity controls remain mandatory after a valid
+  rerun.
 - Per-share adjustment mattered: `6,389` realized events had
   `share_adjustment_applied = true`, so ignoring post-FY share-count changes
   would materially distort EPS/BPS/forward EPS valuation buckets.
@@ -176,7 +188,7 @@ uv run --project apps/bt python apps/bt/scripts/research/run_annual_first_open_l
 
 ## Caveats
 
-- v3 rerun は `stock_master_daily` を使うが、2022年以前の legacy JPX segment は
+- historical v3 run は `stock_master_daily` を使うが、2022年以前の legacy JPX segment は
   current research label へ proxy collapse している。
 - 現在年の大納会が未到来の場合、既定では incomplete last year を除外する。
 - Factor bucket は最初の観察用であり、そのまま live threshold として使わない。

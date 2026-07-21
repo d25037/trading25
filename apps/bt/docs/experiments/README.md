@@ -22,6 +22,8 @@
   - 決算開示後の翌営業日寄り entry を、positive / negative event、FY、発表前値動き、Med ADV60-to-free-float、寄らずストップ高・安の約定不能で分解する実験。
 - [market-behavior/pre-earnings-eps120-proxy/](./market-behavior/pre-earnings-eps120-proxy/README.md)
   - 発表前までに観測できる PER / forward PER / PBR / 時価総額が、FY の `EPS 1.2x positive` 発生確率を予測できるかを見る実験。
+- [market-behavior/pre-disclosure-flow-volatility/](./market-behavior/pre-disclosure-flow-volatility/README.md)
+  - **Status: `historical_archive`; `rerun_required`.** Market v3 evidence。Market v5 `provider_adjusted_v1` rerun 前は production、threshold、Ranking decision に使わない。開示日前の価格・出来高・ATR が先に動いていたかを観察した historical experiment。
 - [market-behavior/topix-gap-intraday-distribution/](./market-behavior/topix-gap-intraday-distribution/README.md)
   - TOPIX の寄り付き gap を条件に、個別銘柄群の当日 intraday と簡易 rotation ルールを観察する実験。
 - [market-behavior/topix-close-stock-overnight/](./market-behavior/topix-close-stock-overnight/README.md)
@@ -77,11 +79,11 @@
 - [market-behavior/ranking-moving-average-replacement-evidence/](./market-behavior/ranking-moving-average-replacement-evidence/README.md)
   - Daily Ranking の `20D/60D` 定点比較と `Overheat` を、`SMA20/SMA60`・`EMA20/EMA60` 乖離・符号判定で代替した場合の forward response 変化を検証する実験。
 - [market-behavior/ranking-trend-acceleration-conditional-lift/](./market-behavior/ranking-trend-acceleration-conditional-lift/README.md)
-  - 既存 long candidate の内側で、Prime 相当 PIT universe に限定した rolling OLS trend acceleration が forward TOPIX-excess return の追加的な priority ordering になるかを検証する実験。
+  - **Status: `historical_archive`; `rerun_required`.** Market v3 evidence。Market v5 `provider_adjusted_v1` rerun 前は production、threshold、Ranking decision に使わない。既存 long candidate の内側で、Prime 相当 PIT universe に限定した rolling OLS trend acceleration を観察した historical experiment。
 - [market-behavior/ranking-fixed-return-priority-evidence/](./market-behavior/ranking-fixed-return-priority-evidence/README.md)
-  - fixed returnを使わずに抽出したPrime相当 PIT long候補内で、fixed 20D/60Dと等ウェイト合成がRanking優先度として再現するかを検証する実験。
+  - **Status: `historical_archive`; `rerun_required`.** Market v3 evidence。Market v5 `provider_adjusted_v1` rerun 前は production、threshold、Ranking decision に使わない。fixed returnを使わずに抽出したPrime相当 PIT long候補内で、fixed 20D/60Dと等ウェイト合成を観察した historical experiment。
 - [market-behavior/ranking-technical-fit-score-shape-evidence/](./market-behavior/ranking-technical-fit-score-shape-evidence/README.md)
-  - Value Score / Long Hybrid Score がともに高い三つのPrime PIT ring内で、fixed / OLSのraw five-bin shapeからprior-only Technical Fit Scoreを学習し、第三のRanking score導入可否を検証する実験。published v11 は `stock_data_raw` のsignal-date / completion-date event-time basis、authoritative completion dateに揃えたN225 sensitivity、全price lineage hash、同一near×period shape gate、hermetic CI publication contract、現行版まで閉じたsupersession lineageを検証済みで、判定は `neither`。v1–v10 はimmutable superseded archive。
+  - **Status: `historical_archive`; `rerun_required`.** Market v4 evidence。Market v5 `provider_adjusted_v1` rerun 前は production、threshold、Ranking decision に使わない。Value Score / Long Hybrid Score がともに高い三つのPrime PIT ring内で、fixed / OLSのraw five-bin shapeを観察した historical experiment。旧 run lineage は historical provenance としてのみ保持する。
 - [market-behavior/market-bubble-footprint/](./market-behavior/market-bubble-footprint/README.md)
   - breadth / concentration / valuation pressure / dispersion / 上位寄与で bubble footprint を月次監視し、終盤入口の警戒 regime を作る実験。
 - [market-behavior/rerating-bubble-regime-forward-response/](./market-behavior/rerating-bubble-regime-forward-response/README.md)
@@ -115,7 +117,7 @@
 - [market-behavior/stock-intraday-overnight-share/](./market-behavior/stock-intraday-overnight-share/README.md)
   - 個別銘柄の値幅を `open -> close` と `close -> next open` に分解し、銘柄群ごとの intraday / overnight 構成比を観察する実験。
 - [market-behavior/annual-first-open-last-close-fundamental-panel/](./market-behavior/annual-first-open-last-close-fundamental-panel/README.md)
-  - 各銘柄を大発会 `Open` で買って大納会 `Close` で売る年次保有 return を、買付時点 FY ファンダメンタルと株式数補正付きで観察する実験。
+  - **Status: `historical_archive`; `rerun_required`.** Market v3 evidence。Market v5 `provider_adjusted_v1` rerun 前は production、threshold、Ranking decision に使わない。各銘柄を大発会 `Open` で買って大納会 `Close` で売る年次保有 return を、買付時点 FY ファンダメンタルと株式数補正付きで観察した historical experiment。
 - [market-behavior/annual-fundamental-confounder-analysis/](./market-behavior/annual-fundamental-confounder-analysis/README.md)
   - 年次保有ファンダメンタル panel を土台に、低PBR・小型・低forward PER・低ADVなどの交絡と独立効果を統計的に分解する実験。
 - [market-behavior/annual-market-fundamental-divergence/](./market-behavior/annual-market-fundamental-divergence/README.md)

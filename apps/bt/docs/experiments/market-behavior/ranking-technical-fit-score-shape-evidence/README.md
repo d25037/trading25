@@ -4,17 +4,29 @@ Value Score / Long Hybrid Score の fixed-return-free candidate rings 内で、f
 
 ## Published Readout
 
+> [!WARNING]
+> **Status: `historical_archive`; `rerun_required`.** This Market v4 evidence
+> is retained only as a historical candidate. It must not drive production,
+> thresholds, or Ranking decisions before a physical Market v5
+> `market.duckdb` rerun with
+> `stock_price_adjustment_mode=provider_adjusted_v1`, signal-date PIT
+> membership, and provider-vintage/current-basis provenance.
+
 ### Decision
 
-fixed/OLS のどちらも採用しません。
+Historical v4 run の判定は fixed/OLS のどちらも採用しない、でした。Market v5 rerun 前の current Ranking decision ではありません。
 
 ### Main Findings
 
-canonical な結果値は Published Metrics 表に限定します。
+historical な結果値は Historical Metrics 表に限定します。
+
+**Historical measurement only:** the following Market v4 metrics retain their
+prior provenance, but must not drive production, thresholds, or Ranking
+decisions before the required Market v5 `provider_adjusted_v1` rerun.
 
 ### Interpretation
 
-Technical Fit Score の導入根拠として扱いません。
+Technical Fit Score の導入根拠としては扱わず、Market v5 rerun の比較候補としてのみ保存します。
 
 ### Production Implication
 
@@ -26,9 +38,9 @@ Prime 相当 universe の observation-level research です。
 
 ### Source Artifacts
 
-canonical bundle の `manifest.json`、`results.duckdb`、`summary.md` と schema-v3 publication digest を検証対象とします。
+historical bundle の `manifest.json`、`results.duckdb`、`summary.md` と schema-v3 publication digest を provenance として保持します。
 
-## Publication Identity
+## Historical Publication Identity
 
 | Field | Value |
 | --- | --- |
@@ -38,7 +50,7 @@ canonical bundle の `manifest.json`、`results.duckdb`、`summary.md` と schem
 | source_commit | `e33f76f1a8fecb1f8c3c731b3692c1e10dd123d4` |
 | git_dirty | `false` |
 
-## Published Metrics
+## Historical Metrics
 
 | Metric | Value |
 | --- | --- |
@@ -53,6 +65,6 @@ canonical bundle の `manifest.json`、`results.duckdb`、`summary.md` と schem
 
 ## Decision
 
-fixed/OLS のどちらも採用しません。上表の値は canonical `results.duckdb` から publication verifier が再計算し、README と完全一致を検証します。run 固有の数値はこの表だけを canonical readout とします。
+Historical v4 run の判定は fixed/OLS のどちらも採用しない、です。上表の値は historical `results.duckdb` から publication verifier が再計算し、README と一致した provenance である。run 固有の数値は historical readout としてのみ保持する。
 
-Market v4 `local_projection_v2_event_time`、exact signal-date universe、`daily_valuation` / `stock_data_raw` basis を検証済みです。service-local recomputation、basis fallback、`stock_data` fallback はありません。これは Research の判定であり、実運用 Daily Ranking への変更ではありません。
+Historical run は Market v4 `local_projection_v2_event_time`、exact signal-date universe、`daily_valuation` / `stock_data_raw` basis を記録した。これは Market v5 `provider_adjusted_v1` contract の検証済み evidence ではなく、実運用 Daily Ranking への変更でもない。
