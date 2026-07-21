@@ -30,8 +30,9 @@ GitHub PR state and required GitHub Actions checks are authoritative. Record the
 2. Establish one dedicated main batch worktree without publishing pre-existing local work:
    - Run `git fetch origin --prune`, then record the refreshed `origin/main` OID as the batch base.
    - Do not push commits that were already in `origin/main..main` at the initial boundary. Dependabot batch approval is not approval to publish them.
-   - The initial worktree may be the main batch worktree only when its initial branch is `main`, it is clean, and local `main` is not ahead of the batch base.
-   - If the initial branch is not `main` (even when clean), the worktree is dirty, or local `main` is ahead, leave the initial worktree untouched and create a temporary main batch worktree rooted at the refreshed `origin/main`.
+   - The initial worktree may be the main batch worktree only when its initial branch is `main`, it is clean, and local `main` exactly equals the recorded batch base.
+   - If the initial branch is not `main` (even when clean), the worktree is dirty, or local `main` does not exactly equal the batch base, leave the initial worktree untouched and create a temporary main batch worktree rooted at the refreshed `origin/main`.
+   - Immediately after designating the main batch worktree, enter it and run `git pull --ff-only origin main` before any batch-owned edit or commit. Verify `HEAD` equals `origin/main`, then record that OID as the current batch base; do not start batch work until this equality holds.
    - Run any `git pull --ff-only origin main`, batch-owned file edit, commit, and main repair only inside the designated main batch worktree. Never switch, pull, reset, rebase, stash, or commit the preserved initial worktree.
 
 3. Enumerate the batch:
