@@ -258,7 +258,26 @@ delta fingerprint. Scaling claims use observed calls, not timing thresholds.
 
 Recorded fixture-only evidence is
 `apps/bt/benchmarks/market-v5-sync-fixture-evidence.json`. Its
-`representativeEvidence` is `unavailable`: the command performed a read-only
-inspection of the configured local Market and recorded its schema/mode; it was
-not an eligible Market v5/provider-adjusted database. No live or paid requests
-were made.
+`representativeEvidence` is `measured`. Regenerate it from a repository-local
+workspace (the managed Market root safety checks intentionally reject symlinked
+temporary-directory chains) with:
+
+```bash
+BENCH_WORKSPACE=$(mktemp -d .market-v5-sync.XXXXXX)
+uv run python scripts/benchmark_market_v5_sync.py \
+  --fixture benchmarks/fixtures/market-v5-sync.json \
+  --workspace "$BENCH_WORKSPACE" \
+  --representative-fixture-comparison \
+  --output benchmarks/market-v5-sync-fixture-evidence.json
+```
+
+This committed comparison runs both sides in isolated child processes over the
+same 400-code, 100,000-row seeded fixture and identical one-day input
+fingerprint. The v4 side is the explicit production-coordinator all-code/local-
+projection semantics adapter; the v5 side is the bounded provider-adjusted
+production coordinator and DuckDB/Parquet path. Therefore the recorded
+wall/CPU/peak-RSS values are measured process resources, not declared fixture
+counters or fabricated live-provider timings. No live or paid requests are
+made. For a live representative Market, continue to use
+`--representative-market-root` plus pre-cutover `--representative-v4-evidence`
+as described above.

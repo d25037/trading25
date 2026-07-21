@@ -1846,6 +1846,66 @@ def test_normal_append_advances_rolling_provider_frontier_and_prunes_expired_row
     store.close()
 
 
+def test_dormant_code_does_not_pin_active_code_provider_frontier(tmp_path: Path) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    for code in ("7203", "6758"):
+        rows = [
+            _provider_stock_row(session, code=code)
+            for session in ("2026-01-01", "2026-01-02", "2026-01-03")
+        ]
+        store.replace_stock_provider_window(
+            code,
+            rows,
+            {"start": "2026-01-01", "end": "2026-01-03"},
+            {
+                "provider_plan": "premium",
+                "provider_as_of": "2026-01-03",
+                "provider_source_fingerprint": provider_stock_source_fingerprint(rows),
+            },
+        )
+    store.index_stock_data()
+
+    _publish_stock_data(store, [_provider_stock_row("2026-01-04", code="7203")])
+    _publish_stock_data(store, [_provider_stock_row("2026-01-05", code="7203")])
+    store.index_stock_data()
+
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, coverage_start, coverage_end "
+        "FROM stock_provider_windows ORDER BY code"
+    ).fetchall() == [
+        ("6758", "2026-01-01", "2026-01-03"),
+        ("7203", "2026-01-03", "2026-01-05"),
+    ]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, min(date), max(date), count(*) "
+        "FROM stock_data_raw GROUP BY code ORDER BY code"
+    ).fetchall() == [
+        ("6758", "2026-01-01", "2026-01-03", 3),
+        ("7203", "2026-01-03", "2026-01-05", 3),
+    ]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, min(date), max(date), count(*) FROM read_parquet(?) "
+        "GROUP BY code ORDER BY code",
+        [
+            str(
+                tmp_path
+                / "market-timeseries"
+                / "parquet"
+                / "stock_data_raw"
+                / "*"
+                / "*.parquet"
+            )
+        ],
+    ).fetchall() == [
+        ("6758", date(2026, 1, 1), date(2026, 1, 3), 3),
+        ("7203", date(2026, 1, 3), date(2026, 1, 5), 3),
+    ]
+    store.close()
+
+
 def test_new_adjustment_factor_marks_fundamentals_pending(tmp_path: Path) -> None:
     store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),

@@ -499,7 +499,7 @@ def test_validate_dataset_snapshot_rejects_parquet_checksum_mismatch(tmp_path: P
         ),
         (
             "UPDATE statement_metrics_adjusted SET fundamentals_adjustment_basis_date = '2024-01-03'",
-            "do not match pinned current basis",
+            "no exact adjusted statement provenance",
         ),
         (
             "UPDATE statement_metrics_adjusted SET statement_id = 'orphan'",

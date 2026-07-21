@@ -175,6 +175,31 @@ def test_fixture_benchmark_report_is_json_serializable(tmp_path: Path) -> None:
     assert json.loads(json.dumps(report, sort_keys=True)) == report
 
 
+def test_fixture_benchmark_can_commit_matched_v4_v5_resource_evidence(
+    tmp_path: Path,
+) -> None:
+    report = run_benchmark_fixture(
+        _fixture(),
+        evidence_source="matched_production_fixture",
+        representative_fixture_comparison=True,
+        workspace=tmp_path,
+    )
+
+    assert report["representativeEvidence"] == "measured"
+    comparison = report["representativeComparison"]
+    assert comparison["v4"]["schemaVersion"] == 4
+    assert comparison["v5"]["schemaVersion"] == 5
+    assert comparison["v4"]["inputFingerprint"] == comparison["v5"][
+        "inputFingerprint"
+    ]
+    assert "legacy_all_code_adapter" in comparison["v4"]["measurementPath"]
+    assert "provider_v5" in comparison["v5"]["measurementPath"]
+    for version in ("v4", "v5"):
+        assert comparison[version]["wallSeconds"] > 0
+        assert comparison[version]["cpuSeconds"] > 0
+        assert comparison[version]["peakRssBytes"] > 0
+
+
 def test_fixture_report_includes_measured_representative_v4_v5_comparison(
     tmp_path: Path,
 ) -> None:

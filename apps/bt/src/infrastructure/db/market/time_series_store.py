@@ -1347,14 +1347,6 @@ class DuckDbParquetTimeSeriesStore:
         existing_ledgers: dict[str, tuple[str, str, str, str] | None] = {}
         desired_ledgers: dict[str, tuple[str, str, str, str]] = {}
         expired_rows_by_code: dict[str, list[dict[str, Any]]] = {}
-        global_frontier_row = self._conn.execute(
-            "SELECT MIN(coverage_start) FROM stock_provider_windows"
-        ).fetchone()
-        global_frontier = (
-            str(global_frontier_row[0])
-            if global_frontier_row is not None and global_frontier_row[0] is not None
-            else None
-        )
         for code, code_rows in staged_by_code.items():
             ledger_row = self._conn.execute(
                 """
@@ -1381,11 +1373,31 @@ class DuckDbParquetTimeSeriesStore:
                 else max(existing_ledger[1], *dates)
             )
             desired_start = min(dates) if existing_ledger is None else existing_ledger[0]
+            listed_row = (
+                self._conn.execute(
+                    """
+                    SELECT MIN(NULLIF(listed_date, ''))
+                    FROM stock_master_daily
+                    WHERE code = ? OR code = ?
+                    """,
+                    [code, f"{code}0"],
+                ).fetchone()
+                if self._table_exists("stock_master_daily")
+                else None
+            )
+            listed_date = (
+                str(listed_row[0])
+                if listed_row is not None and listed_row[0] is not None
+                else None
+            )
+            provider_limited_frontier = (
+                listed_date is None
+                or (existing_ledger is not None and existing_ledger[0] > listed_date)
+            )
             if (
                 existing_ledger is not None
-                and global_frontier is not None
-                and existing_ledger[0] == global_frontier
                 and existing_ledger[0] < existing_ledger[1]
+                and provider_limited_frontier
                 and desired_end > existing_ledger[1]
             ):
                 elapsed = date.fromisoformat(desired_end) - date.fromisoformat(

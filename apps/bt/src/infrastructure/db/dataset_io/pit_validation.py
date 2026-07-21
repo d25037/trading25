@@ -123,7 +123,7 @@ def find_dataset_current_basis_audit_error(
         if conn.execute(
             f"""
             SELECT COUNT(*) FROM {metrics}
-            WHERE fundamentals_adjustment_basis_date <> ?
+            WHERE fundamentals_adjustment_basis_date > ?
                OR source_fingerprint IS NULL OR trim(source_fingerprint) = ''
             """,
             [fundamentals_basis_date],
@@ -163,7 +163,7 @@ def find_dataset_current_basis_audit_error(
                OR (statement_disclosed_at IS NOT NULL
                    AND statement_disclosed_at > date || 'T23:59:59+09:00')
                OR (fundamentals_adjustment_basis_date IS NOT NULL
-                   AND fundamentals_adjustment_basis_date <> ?)
+                   AND fundamentals_adjustment_basis_date > ?)
                OR (source_fingerprint IS NOT NULL AND trim(source_fingerprint) = '')
             """,
             [fundamentals_basis_date],

@@ -793,6 +793,7 @@ def run_benchmark_fixture(
     representative_evidence_reason: str | None = None,
     representative_inspection: dict[str, object] | None = None,
     representative_comparison: dict[str, object] | None = None,
+    representative_fixture_comparison: bool = False,
     workspace: Path,
 ) -> dict[str, Any]:
     if fixture.get("fixtureVersion") != 1:
@@ -863,6 +864,37 @@ def run_benchmark_fixture(
             )
         ),
     }
+    if representative_fixture_comparison:
+        if representative_comparison is not None:
+            raise ValueError(
+                "fixture representative comparison conflicts with explicit evidence"
+            )
+        representative_comparison = _representative_comparison(
+            {
+                "schemaVersion": 4,
+                "stockPriceAdjustmentMode": "local_projection_v2_event_time",
+                "measurementPath": (
+                    "matched_fixture_legacy_all_code_adapter_"
+                    "production_sync_coordinator_duckdb_parquet"
+                ),
+                "wallSeconds": legacy["wallSeconds"],
+                "cpuSeconds": legacy["cpuSeconds"],
+                "peakRssBytes": legacy["peakRssBytes"],
+                "inputFingerprint": legacy["inputFingerprint"],
+            },
+            {
+                "schemaVersion": 5,
+                "stockPriceAdjustmentMode": "provider_adjusted_v1",
+                "measurementPath": (
+                    "matched_fixture_provider_v5_"
+                    "production_sync_coordinator_duckdb_parquet"
+                ),
+                "wallSeconds": normal["wallSeconds"],
+                "cpuSeconds": normal["cpuSeconds"],
+                "peakRssBytes": normal["peakRssBytes"],
+                "inputFingerprint": normal["inputFingerprint"],
+            },
+        )
     return {
         "schemaVersion": 2,
         "benchmark": "market_v5_incremental_sync",
@@ -911,6 +943,7 @@ def main() -> int:
     parser.add_argument("--representative-evidence-reason")
     parser.add_argument("--representative-market-root", type=Path)
     parser.add_argument("--representative-v4-evidence", type=Path)
+    parser.add_argument("--representative-fixture-comparison", action="store_true")
     parser.add_argument("--child-scenario", choices=_SCENARIO_NAMES)
     parser.add_argument("--seed-scenario", choices=_SCENARIO_NAMES)
     parser.add_argument("--representative-v5-child", action="store_true")
@@ -992,9 +1025,15 @@ def main() -> int:
             representative_reason = "read-only inspection found no local market.duckdb"
     report = run_benchmark_fixture(
         fixture,
+        evidence_source=(
+            "matched_production_fixture"
+            if args.representative_fixture_comparison
+            else "production_fixture"
+        ),
         representative_evidence_reason=representative_reason,
         representative_inspection=representative_inspection,
         representative_comparison=representative_comparison,
+        representative_fixture_comparison=args.representative_fixture_comparison,
         workspace=args.workspace,
     )
     payload = json.dumps(report, indent=2, sort_keys=True) + "\n"

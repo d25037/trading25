@@ -1400,7 +1400,7 @@ class _DatasetDuckDbStore:
                     f"provider vintage dates are incoherent for {code}"
                 )
             if (
-                basis_date != coverage_end
+                basis_date > coverage_end
                 or not window_fingerprint
                 or not state_fingerprint
                 or statement_count < 0
@@ -1496,15 +1496,15 @@ class _DatasetDuckDbStore:
             raise DatasetSnapshotError(
                 "selected provider windows have no common effective coverage"
             )
-        if len(provider_as_of_values) != 1 or len(basis_dates) != 1:
+        if len(provider_as_of_values) != 1:
             raise DatasetSnapshotError(
-                "selected stocks do not share one provider/current-basis vintage"
+                "selected stocks do not share one provider vintage"
             )
         provider_as_of = next(iter(provider_as_of_values))
-        fundamentals_basis_date = next(iter(basis_dates))
-        if fundamentals_basis_date != effective_end:
+        fundamentals_basis_date = max(basis_dates)
+        if fundamentals_basis_date > effective_end:
             raise DatasetSnapshotError(
-                "fundamentals adjustment basis date differs from effective coverage end"
+                "fundamentals adjustment basis date exceeds effective coverage end"
             )
         plan_row = self._conn.execute(
             f"SELECT value FROM {source_alias}.sync_metadata "
@@ -1734,20 +1734,50 @@ class _DatasetDuckDbStore:
             "FROM _dataset_copy_target_stock_codes AS codes "
             "CROSS JOIN _dataset_provider_expected_sessions AS sessions"
         )
-        for table in (
-            "_dataset_provider_stock_data_raw",
-            "_dataset_provider_stock_master_daily",
-            "stock_data",
-            "_dataset_provider_daily_valuation",
+        master_table = "_dataset_provider_stock_master_daily"
+        if self._query_scalar_int(
+            f"""
+            SELECT COUNT(*) FROM (
+                ({expected_pairs_sql} EXCEPT ALL SELECT code, date FROM {master_table})
+                UNION ALL
+                (SELECT code, date FROM {master_table}
+                 WHERE code IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+                 EXCEPT ALL {expected_pairs_sql})
+            ) differences
+            """
         ):
+            raise DatasetSnapshotError(
+                "provider snapshot has an empty, gap, or bound mismatch: "
+                f"{master_table}"
+            )
+        raw_table = "_dataset_provider_stock_data_raw"
+        if self._query_scalar_int(
+            f"""
+            SELECT COUNT(*) FROM (
+                SELECT code FROM {_TEMP_STOCK_CODE_TABLE}
+                EXCEPT ALL SELECT DISTINCT code FROM {raw_table}
+            ) empty_codes
+            """
+        ):
+            raise DatasetSnapshotError(
+                "provider snapshot has an empty, gap, or bound mismatch: "
+                f"{raw_table}"
+            )
+        for table in (raw_table, "stock_data", "_dataset_provider_daily_valuation"):
             if self._query_scalar_int(
                 f"""
                 SELECT COUNT(*) FROM (
-                    ({expected_pairs_sql} EXCEPT ALL SELECT code, date FROM {table})
-                    UNION ALL
                     (SELECT code, date FROM {table}
                      WHERE code IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
                      EXCEPT ALL {expected_pairs_sql})
+                    UNION ALL
+                    (SELECT code, date FROM {raw_table}
+                     EXCEPT ALL SELECT code, date FROM {table}
+                     WHERE code IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE}))
+                    UNION ALL
+                    (SELECT code, date FROM {table}
+                     WHERE code IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+                     EXCEPT ALL SELECT code, date FROM {raw_table})
                 ) differences
                 """
             ):

@@ -497,7 +497,7 @@ def test_provider_copy_rejects_incoherent_selected_vintage(tmp_path: Path) -> No
     finally:
         conn.close()
     writer = DatasetWriter(str(tmp_path / "dataset"))
-    with pytest.raises(DatasetSnapshotError, match="one provider/current-basis vintage"):
+    with pytest.raises(DatasetSnapshotError, match="one provider vintage"):
         writer.copy_provider_snapshot_from_source(
             source_duckdb_path=str(source),
             normalized_codes=["7203", "6758"],
@@ -717,6 +717,89 @@ def test_provider_copy_rejects_empty_gap_and_bound_mismatch_per_physical_family(
             date_from=_THREE_DATES[0],
             date_to=_THREE_DATES[-1],
         )
+    writer.close()
+
+
+def test_provider_copy_accepts_shared_suspended_quote_session_subset(
+    tmp_path: Path,
+) -> None:
+    source = _build_v5_provider_market(tmp_path, dates=_THREE_DATES)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            "DELETE FROM stock_data_raw WHERE code = '7203' AND date = '2024-01-05'"
+        )
+        conn.execute(
+            "DELETE FROM stock_data WHERE code = '7203' AND date = '2024-01-05'"
+        )
+        _refresh_declared_provider_fingerprint(conn)
+    finally:
+        conn.close()
+    writer = _prepare_provider_copy_writer(tmp_path, source, dates=_THREE_DATES)
+
+    result = writer.copy_provider_snapshot_from_source(
+        source_duckdb_path=str(source),
+        normalized_codes=["7203"],
+        date_from=_THREE_DATES[0],
+        date_to=_THREE_DATES[-1],
+    )
+
+    assert result.raw_price_rows == 2
+    assert result.stock_master_rows == 3
+    assert result.daily_valuation_rows == 2
+    writer.close()
+
+
+def test_provider_copy_accepts_per_code_lag_valid_current_basis_dates(
+    tmp_path: Path,
+) -> None:
+    source = _build_v5_provider_market(tmp_path, two_codes=True)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            "UPDATE current_basis_fundamentals_state "
+            "SET fundamentals_adjustment_basis_date = ? WHERE code = '6758'",
+            (_DATES[0],),
+        )
+        conn.execute(
+            "UPDATE statement_metrics_adjusted "
+            "SET fundamentals_adjustment_basis_date = ? WHERE code = '6758'",
+            (_DATES[0],),
+        )
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(tmp_path / "dataset"))
+    writer.upsert_stocks(
+        [
+            {
+                "code": code,
+                "company_name": "Toyota" if code == "7203" else "Sony",
+                "market_code": "0111",
+                "market_name": "Prime",
+                "sector_17_code": "7",
+                "sector_17_name": "Transport",
+                "sector_33_code": "3050",
+                "sector_33_name": "Auto",
+                "listed_date": "1949-05-16",
+            }
+            for code in ("7203", "6758")
+        ]
+    )
+    _seed_destination_prices(writer, source, ("7203", "6758"))
+    writer.copy_topix_data_from_source(
+        source_duckdb_path=str(source),
+        date_from=_DATES[0],
+        date_to=_DATES[-1],
+    )
+
+    result = writer.copy_provider_snapshot_from_source(
+        source_duckdb_path=str(source),
+        normalized_codes=["7203", "6758"],
+        date_from=_DATES[0],
+        date_to=_DATES[-1],
+    )
+
+    assert result.statement_metric_rows == 2
     writer.close()
 
 
