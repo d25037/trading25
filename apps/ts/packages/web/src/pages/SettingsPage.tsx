@@ -382,9 +382,9 @@ function WarningRecoverySection({
           <div className="space-y-1">
             <CardTitle className="text-xl tracking-tight">Warning Recovery</CardTitle>
             <CardDescription>
-              Resolve only the DuckDB snapshot warnings that `repair` sync can actually fix. Legacy stock-price
-              adjustment drift requires initial sync with reset enabled; N225 options coverage gaps must be handled from
-              Database Sync.
+              Resolve only the DuckDB snapshot warnings that `repair` sync can actually fix. Legacy or incompatible
+              stock-price snapshots require <code>bt market-cutover cutover</code>; N225 options coverage gaps must be
+              handled from Database Sync.
             </CardDescription>
           </div>
         </div>

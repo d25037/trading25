@@ -298,12 +298,16 @@ describe('SettingsPage', () => {
       ...validationState,
       data: {
         ...validationState.data,
+        status: 'error',
         schema: {
           version: 4,
           requiredVersion: 5,
           current: false,
           resetBeforeSyncEligible: false,
         },
+        recommendations: [
+          'Run `bt market-cutover cutover` to rebuild the incompatible Market root as schema v5 (current schema version: 4)',
+        ],
       },
     });
 
@@ -312,8 +316,10 @@ describe('SettingsPage', () => {
     await user.click(screen.getByText(/Full bootstrap of the local DuckDB snapshot/i));
 
     expect(screen.getByRole('switch', { name: /Reset market\.duckdb \+ parquet first/i })).toBeDisabled();
-    expect(screen.getByText(/bt market-cutover cutover/)).toBeInTheDocument();
-    expect(screen.queryByText(/rebuild the legacy database with initial sync/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText('bt market-cutover cutover', { selector: 'code' })).toHaveLength(2);
+    expect(
+      screen.queryByText(/legacy stock-price adjustment drift requires initial sync with reset enabled/i)
+    ).not.toBeInTheDocument();
   });
 
   it('shows provider vintage as read-only sync state without standalone materialization controls', () => {

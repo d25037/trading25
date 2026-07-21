@@ -293,6 +293,7 @@ def _build_recommendations(
 def _resolve_validation_statuses(
     *,
     schema_current: bool,
+    reset_before_sync_eligible: bool,
     legacy_stock_snapshot: bool,
     initialized: bool,
     missing_dates_count: int,
@@ -321,6 +322,7 @@ def _resolve_validation_statuses(
 ]:
     core_daily_status = _resolve_core_daily_status(
         schema_current=schema_current,
+        reset_before_sync_eligible=reset_before_sync_eligible,
         legacy_stock_snapshot=legacy_stock_snapshot,
         initialized=initialized,
         missing_dates_count=missing_dates_count,
@@ -425,6 +427,7 @@ def validate_market_db(
 
     health_statuses = _resolve_validation_statuses(
         schema_current=base.schema_current,
+        reset_before_sync_eligible=base.reset_before_sync_eligible,
         legacy_stock_snapshot=base.legacy_stock_snapshot,
         initialized=base.initialized,
         missing_dates_count=_resolve_missing_dates_count(base.inspection),
@@ -921,6 +924,7 @@ def _resolve_options_225_missing_topix_coverage_dates(
 def _resolve_core_daily_status(
     *,
     schema_current: bool,
+    reset_before_sync_eligible: bool,
     legacy_stock_snapshot: bool,
     initialized: bool,
     missing_dates_count: int,
@@ -935,6 +939,7 @@ def _resolve_core_daily_status(
 ) -> Literal["healthy", "warning", "error"]:
     if (
         not schema_current
+        or not reset_before_sync_eligible
         or legacy_stock_snapshot
         or not initialized
         or provider_vintage_invalid

@@ -55,6 +55,7 @@ class DummyMarketDb:
         legacy_stock_snapshot: bool = False,
         stock_price_adjustment_mode: str | None = PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
         schema_version: int = MARKET_SCHEMA_VERSION,
+        reset_before_sync_eligible: bool | None = None,
         adjusted_metrics_snapshot: dict[str, Any] | None = None,
         adjusted_metrics_source_diagnostics: dict[str, int] | None = None,
         provider_vintage_snapshot: dict[str, Any] | None = None,
@@ -68,6 +69,7 @@ class DummyMarketDb:
         self._legacy_stock_snapshot = legacy_stock_snapshot
         self._stock_price_adjustment_mode = stock_price_adjustment_mode
         self._schema_version = schema_version
+        self._reset_before_sync_eligible = reset_before_sync_eligible
         self._adjusted_metrics_snapshot = adjusted_metrics_snapshot or {
             "currentBasisStatementCount": 4,
             "currentBasisStateCount": 2,
@@ -122,6 +124,8 @@ class DummyMarketDb:
         return self._schema_version == MARKET_SCHEMA_VERSION
 
     def is_reset_before_sync_eligible(self) -> bool:
+        if self._reset_before_sync_eligible is not None:
+            return self._reset_before_sync_eligible
         return (
             self._schema_version == MARKET_SCHEMA_VERSION
             and self._stock_price_adjustment_mode
@@ -637,7 +641,8 @@ def test_validate_market_db_recommends_cutover_for_wrong_adjustment_mode() -> No
 
     result = validate_market_db(market_db=market_db, time_series_store=store)
 
-    assert result.status == "healthy"
+    assert result.status == "error"
+    assert result.healthDomains.coreDailyStatus == "error"
     assert result.schema_.resetBeforeSyncEligible is False
     assert (
         market_db.get_stock_price_adjustment_mode()
@@ -649,6 +654,40 @@ def test_validate_market_db_recommends_cutover_for_wrong_adjustment_mode() -> No
         "Reset market-timeseries/market.duckdb" in rec for rec in result.recommendations
     )
     assert result.intradayFreshness.status == "idle"
+
+
+def test_validate_market_db_errors_when_v5_schema_validation_is_malformed() -> None:
+    market_db = DummyMarketDb(reset_before_sync_eligible=False)
+    store = DummyTimeSeriesStore(
+        TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=10,
+            topix_max="2026-03-06",
+            stock_count=10,
+            stock_max="2026-03-06",
+            stock_date_count=3,
+            indices_count=10,
+            options_225_count=4,
+            options_225_max="2026-03-06",
+            options_225_date_count=2,
+            margin_count=2,
+            margin_date_count=1,
+            statements_count=2,
+            latest_statement_disclosed_date="2026-03-06",
+            statement_codes={"1301", "7203"},
+            statement_non_null_counts={
+                column: 1 for column in db_validation_service._SIGNAL_STATEMENT_COLUMNS
+            },
+        )
+    )
+
+    result = validate_market_db(market_db=market_db, time_series_store=store)
+
+    assert result.status == "error"
+    assert result.healthDomains.coreDailyStatus == "error"
+    assert result.schema_.current is True
+    assert result.schema_.resetBeforeSyncEligible is False
+    assert any("bt market-cutover cutover" in rec for rec in result.recommendations)
 
 
 def test_validate_market_db_warns_when_intraday_data_is_stale(
