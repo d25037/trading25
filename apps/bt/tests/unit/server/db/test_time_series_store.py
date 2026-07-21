@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import builtins
 import os
+import shutil
 from datetime import date, timedelta
 from pathlib import Path
 from threading import Barrier, Lock, RLock, Thread
@@ -127,6 +128,16 @@ def _stock_minute_row(
         "turnover_value": 200.0,
         "created_at": f"{date}T00:00:00+00:00",
     }
+
+
+def _rmtree_with_injected_oserror(
+    path: str | Path,
+    ignore_errors: bool = False,
+) -> None:
+    del path
+    if ignore_errors:
+        return
+    raise OSError("injected partition deletion failure")
 
 
 def _query_rows(db_path: Path, sql: str) -> list[tuple]:
@@ -755,6 +766,52 @@ def test_partitioned_parquet_copy_failure_preserves_previous_partition(
         store.close()
 
 
+def test_daily_partition_deletion_failure_keeps_dirty_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parquet_dir = tmp_path / "market-timeseries" / "parquet"
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(parquet_dir),
+    )
+    store.publish_options_225_data([_options_225_rows()[0]])
+    store.index_options_225_data()
+    partition_dir = parquet_dir / "options_225_data" / "date=2026-02-10"
+    output = partition_dir / "data.parquet"
+    previous = output.read_bytes()
+    store._conn.execute(  # noqa: SLF001
+        "DELETE FROM options_225_data WHERE date = ?",
+        ["2026-02-10"],
+    )
+    store._dirty_tables.add("options_225_data")  # noqa: SLF001
+    store._dirty_partition_dates.setdefault("options_225_data", set()).add(  # noqa: SLF001
+        "2026-02-10"
+    )
+    original_rmtree = shutil.rmtree
+    monkeypatch.setattr(shutil, "rmtree", _rmtree_with_injected_oserror)
+    try:
+        with pytest.raises(OSError, match="partition deletion failure"):
+            store.index_options_225_data()
+
+        assert partition_dir.exists()
+        assert output.read_bytes() == previous
+        assert store._dirty_partition_dates["options_225_data"] == {  # noqa: SLF001
+            "2026-02-10"
+        }
+        assert store.has_pending_index("options_225_data") is True
+
+        monkeypatch.setattr(shutil, "rmtree", original_rmtree)
+        store.index_options_225_data()
+
+        assert not partition_dir.exists()
+        assert store._dirty_partition_dates["options_225_data"] == set()  # noqa: SLF001
+        assert store.has_pending_index("options_225_data") is False
+    finally:
+        monkeypatch.setattr(shutil, "rmtree", original_rmtree)
+        store.close()
+
+
 def test_index_stock_data_exports_large_tables_by_dirty_date(tmp_path: Path) -> None:
     parquet_dir = tmp_path / "market-timeseries" / "parquet"
     store = create_time_series_store_for_test(
@@ -839,6 +896,48 @@ def test_index_stock_minute_data_exports_partitioned_parquet(tmp_path: Path) -> 
     ).exists()
 
     store.close()
+
+
+def test_minute_partition_deletion_failure_keeps_dirty_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parquet_dir = tmp_path / "market-timeseries" / "parquet"
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(parquet_dir),
+    )
+    store.publish_stock_minute_data([_stock_minute_row()])
+    store.index_stock_minute_data()
+    partition_dir = parquet_dir / "stock_data_minute_raw" / "date=2026-02-10"
+    output = partition_dir / "data.parquet"
+    previous = output.read_bytes()
+    store._conn.execute(  # noqa: SLF001
+        "DELETE FROM stock_data_minute_raw WHERE date = ?",
+        ["2026-02-10"],
+    )
+    store._dirty_tables.add("stock_data_minute_raw")  # noqa: SLF001
+    store._dirty_stock_minute_dates.add("2026-02-10")  # noqa: SLF001
+    original_rmtree = shutil.rmtree
+    monkeypatch.setattr(shutil, "rmtree", _rmtree_with_injected_oserror)
+    try:
+        with pytest.raises(OSError, match="partition deletion failure"):
+            store.index_stock_minute_data()
+
+        assert partition_dir.exists()
+        assert output.read_bytes() == previous
+        assert store._dirty_stock_minute_dates == {"2026-02-10"}  # noqa: SLF001
+        assert store.has_pending_index("stock_data_minute_raw") is True
+
+        monkeypatch.setattr(shutil, "rmtree", original_rmtree)
+        store.index_stock_minute_data()
+
+        assert not partition_dir.exists()
+        assert store._dirty_stock_minute_dates == set()  # noqa: SLF001
+        assert store.has_pending_index("stock_data_minute_raw") is False
+    finally:
+        monkeypatch.setattr(shutil, "rmtree", original_rmtree)
+        store.close()
 
 
 def test_publish_stock_data_batch_uses_semantic_delta_kernel(tmp_path: Path) -> None:

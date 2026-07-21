@@ -44,6 +44,13 @@ from src.infrastructure.db.market.market_schema import (
 )
 
 
+def _remove_partition_directory(path: Path) -> None:
+    try:
+        shutil.rmtree(path)
+    except FileNotFoundError:
+        return
+
+
 class MarketTimeSeriesStore(Protocol):  # pragma: no cover
     """時系列 publish/index インターフェース。"""
 
@@ -2246,7 +2253,7 @@ class DuckDbParquetTimeSeriesStore:
             ).fetchone()
             row_count = int(count_row[0] or 0) if count_row else 0
             if row_count <= 0:
-                shutil.rmtree(partition_dir, ignore_errors=True)
+                _remove_partition_directory(partition_dir)
                 continue
             partition_dir.mkdir(parents=True, exist_ok=True)
             output_path = partition_dir / "data.parquet"
@@ -2298,7 +2305,7 @@ class DuckDbParquetTimeSeriesStore:
                 [date_value],
             ).fetchone()
             if not count_row or int(count_row[0] or 0) <= 0:
-                shutil.rmtree(partition_dir, ignore_errors=True)
+                _remove_partition_directory(partition_dir)
                 continue
 
             partition_dir.mkdir(parents=True, exist_ok=True)
