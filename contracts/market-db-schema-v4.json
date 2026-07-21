@@ -123,13 +123,14 @@
               "type": "object",
               "additionalProperties": false,
               "required": [
-                "code", "coverage_start", "coverage_end", "provider_as_of",
+                "code", "coverage_start", "coverage_end", "provider_plan", "provider_as_of",
                 "source_fingerprint", "updated_at"
               ],
               "properties": {
                 "code": { "const": { "type": "text", "nullable": false } },
                 "coverage_start": { "const": { "type": "text", "nullable": false } },
                 "coverage_end": { "const": { "type": "text", "nullable": false } },
+                "provider_plan": { "const": { "type": "text", "nullable": false } },
                 "provider_as_of": { "const": { "type": "text", "nullable": false } },
                 "source_fingerprint": { "const": { "type": "text", "nullable": false } },
                 "updated_at": { "const": { "type": "text", "nullable": false } }

@@ -19,6 +19,7 @@ from src.infrastructure.external_api.dataset.helpers import (
     convert_ohlcv_response,
 )
 from src.infrastructure.external_api.jquants_client import StockInfo
+from src.shared.provider_stock_window import validate_provider_plan
 from src.shared.utils.market_code_alias import expand_market_codes
 
 
@@ -95,7 +96,7 @@ def _resolve_provider_windows(
     rows = _records(
         reader.query(
             f"""
-            SELECT code, coverage_start, coverage_end, provider_as_of,
+            SELECT code, coverage_start, coverage_end, provider_plan, provider_as_of,
                    source_fingerprint, updated_at
             FROM stock_provider_windows
             WHERE code IN ({placeholders})
@@ -132,14 +133,25 @@ def _resolve_provider_windows(
             + pending_codes,
         )
 
+    provider_plans: set[str] = set()
+    provider_as_of_dates: set[date] = set()
     for code, window in by_code.items():
         coverage_start = _as_date(window["coverage_start"], field="provider coverage_start")
         coverage_end = _as_date(window["coverage_end"], field="provider coverage_end")
+        provider_as_of = _as_date(window["provider_as_of"], field="provider as-of")
+        try:
+            provider_plan = validate_provider_plan(window["provider_plan"])
+        except ValueError as exc:
+            raise FundamentalsPitSnapshotError(
+                "provider_window_required",
+                f"market_db_sync recovery required: provider window for {code} "
+                "has invalid provider plan lineage",
+            ) from exc
         if (
             coverage_start > effective_market_date
             or coverage_end < effective_market_date
             or coverage_start > coverage_end
-            or not str(window["provider_as_of"] or "").strip()
+            or provider_as_of < coverage_end
             or not str(window["source_fingerprint"] or "").strip()
         ):
             raise FundamentalsPitSnapshotError(
@@ -147,6 +159,14 @@ def _resolve_provider_windows(
                 f"market_db_sync recovery required: provider window for {code} "
                 f"does not cover {effective_market_date}",
             )
+        provider_plans.add(provider_plan)
+        provider_as_of_dates.add(provider_as_of)
+    if len(provider_plans) != 1 or len(provider_as_of_dates) != 1:
+        raise FundamentalsPitSnapshotError(
+            "provider_window_required",
+            "market_db_sync recovery required: provider windows do not share one "
+            "provider plan and as-of frontier",
+        )
     return by_code
 
 

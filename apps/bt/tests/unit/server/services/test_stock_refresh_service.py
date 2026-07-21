@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from src.application.services.stock_refresh_service import refresh_stocks
+from src.application.services.stock_refresh_service import refresh_stocks as _refresh_stocks
 from src.infrastructure.db.market.market_mutations import (
     MarketMutationStats,
     SemanticDeltaResult,
@@ -209,10 +209,23 @@ def _complete_provider_row(row: dict[str, Any]) -> dict[str, Any]:
     return completed
 
 
+async def refresh_stocks(
+    *args: Any,
+    provider_plan: str = "premium",
+    provider_as_of: str = "2026-03-01",
+    **kwargs: Any,
+) -> Any:
+    return await _refresh_stocks(
+        *args,
+        provider_plan=provider_plan,
+        provider_as_of=provider_as_of,
+        **kwargs,
+    )
+
+
 @pytest.mark.asyncio
 async def test_refresh_stocks_rejects_missing_provider_plan() -> None:
     client = DummyJQuantsClient([])
-    client.provider_plan = None  # type: ignore[assignment]
 
     with pytest.raises(ValueError, match="provider plan"):
         await refresh_stocks(
@@ -220,7 +233,42 @@ async def test_refresh_stocks_rejects_missing_provider_plan() -> None:
             DummyMarketDb(),
             DummyTimeSeriesStore(),
             client,
+            provider_plan="",
         )
+
+
+@pytest.mark.asyncio
+async def test_refresh_stocks_persists_explicit_provider_lineage_frontier() -> None:
+    store = DummyTimeSeriesStore()
+    client = DummyJQuantsClient(
+        rows=[
+            {
+                "Code": "72030",
+                "Date": "2026-02-10",
+                "O": 100.0,
+                "H": 102.0,
+                "L": 99.0,
+                "C": 101.0,
+                "Vo": 12345,
+            }
+        ]
+    )
+
+    result = await refresh_stocks(
+        ["7203"],
+        DummyMarketDb(),
+        store,
+        client,
+        provider_plan="premium",
+        provider_as_of="2026-02-12",
+    )
+
+    assert result.successCount == 1
+    assert client.calls == [
+        ("/equities/bars/daily", {"code": "72030", "to": "2026-02-12"})
+    ]
+    assert store.replacements[0][3]["provider_plan"] == "premium"
+    assert store.replacements[0][3]["provider_as_of"] == "2026-02-12"
 
 
 @pytest.mark.asyncio

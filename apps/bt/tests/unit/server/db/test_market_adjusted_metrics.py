@@ -168,7 +168,9 @@ def test_normal_price_append_keeps_current_basis_ready(market_db: MarketDb) -> N
     assert snapshot["readyProviderWindowCount"] == 1
 
 
-def test_provider_vintage_requires_provider_plan_metadata(market_db: MarketDb) -> None:
+def test_provider_vintage_does_not_require_global_provider_plan_metadata(
+    market_db: MarketDb,
+) -> None:
     _seed_current_sources(market_db)
     AdjustedMetricsMaterializer(market_db).rebuild_current_basis([])
     market_db._execute("DELETE FROM sync_metadata WHERE key = 'provider_plan'")
@@ -185,8 +187,74 @@ def test_provider_vintage_requires_provider_plan_metadata(market_db: MarketDb) -
         provider_plan=None,
     )
 
-    assert vintage.status == "invalid"
-    assert vintage.recoveryStage == "market_db_sync"
+    assert vintage.providerPlan == "premium"
+    assert vintage.status == "ready"
+    assert vintage.recoveryStage is None
+
+
+def test_provider_vintage_uses_per_window_plan_not_global_metadata(
+    market_db: MarketDb,
+) -> None:
+    _seed_current_sources(market_db)
+    AdjustedMetricsMaterializer(market_db).rebuild_current_basis([])
+    market_db.set_sync_metadata("provider_plan", "free")
+    snapshot = {
+        **market_db.get_adjusted_metrics_snapshot(),
+        **market_db.get_adjusted_metrics_source_diagnostics(),
+        **market_db.get_provider_vintage_snapshot(),
+    }
+
+    vintage = _build_provider_vintage_stats(
+        snapshot,
+        source_stock_count=1,
+        source_statement_count=1,
+        provider_plan="free",
+    )
+
+    assert snapshot["providerPlan"] == "premium"
+    assert vintage.providerPlan == "premium"
+    assert vintage.status == "ready"
+
+
+def test_provider_vintage_rejects_mixed_per_window_plans(
+    market_db: MarketDb,
+) -> None:
+    _seed_current_sources(market_db)
+    publish_stock_data(
+        market_db,
+        [
+            {
+                "code": "6758",
+                "date": "2024-12-30",
+                "open": 100.0,
+                "high": 100.0,
+                "low": 100.0,
+                "close": 100.0,
+                "volume": 100,
+                "adjustment_factor": 1.0,
+            }
+        ],
+        provider_plan="free",
+    )
+
+    snapshot = market_db.get_provider_vintage_snapshot()
+
+    assert snapshot["providerPlan"] is None
+    assert snapshot["providerWindowCoherent"] is False
+    assert snapshot["invalidProviderWindowCount"] > 0
+
+
+def test_provider_vintage_rejects_blank_per_window_plan(market_db: MarketDb) -> None:
+    _seed_current_sources(market_db)
+    market_db._execute(
+        "UPDATE stock_provider_windows SET provider_plan = '' WHERE code = '7203'"
+    )
+
+    snapshot = market_db.get_provider_vintage_snapshot()
+
+    assert snapshot["providerPlan"] is None
+    assert snapshot["providerWindowCoherent"] is False
+    assert snapshot["invalidProviderWindowCount"] == 1
 
 
 def test_provider_vintage_uses_constant_query_count_for_multiple_windows(
@@ -217,6 +285,7 @@ def test_provider_vintage_uses_constant_query_count_for_multiple_windows(
             "code": row["code"],
             "coverage_start": row["date"],
             "coverage_end": row["date"],
+            "provider_plan": "premium",
             "provider_as_of": row["date"],
             "source_fingerprint": provider_stock_source_fingerprint([row]),
         }

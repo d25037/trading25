@@ -19,6 +19,7 @@ from src.application.contracts.market_data_plane import (
     RefreshStockResult,
 )
 from src.shared.provider_stock_window import (
+    ProviderStockStage,
     provider_stock_source_fingerprint,
     validate_provider_plan,
 )
@@ -90,8 +91,9 @@ async def _fetch_complete_provider_window(
     client: StockRefreshClientLike,
     *,
     code: str,
+    provider_as_of: str,
 ) -> tuple[list[dict[str, Any]], int]:
-    params = {"code": code}
+    params = {"code": code, "to": provider_as_of}
     get_with_meta = getattr(client, "get_paginated_with_meta", None)
     if not callable(get_with_meta):
         raise RuntimeError(
@@ -115,14 +117,12 @@ async def refresh_stocks(
     time_series_store: StockRefreshTimeSeriesStoreLike,
     jquants_client: StockRefreshClientLike,
     *,
+    provider_plan: str,
+    provider_as_of: str,
     progress_callback: Callable[[int, int, str], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
 ) -> RefreshResponse:
     """銘柄データを再取得"""
-    provider_plan = validate_provider_plan(
-        getattr(jquants_client, "plan", None)
-        or getattr(jquants_client, "provider_plan", None)
-    )
     total_calls = 0
     total_stored = 0
     results: list[RefreshStockResult] = []
@@ -136,6 +136,24 @@ async def refresh_stocks(
         )
     )
     total_codes = len(unique_codes)
+    normalized_plan = validate_provider_plan(provider_plan)
+    if unique_codes:
+        stage = ProviderStockStage(
+            provider_plan=normalized_plan,
+            provider_as_of=provider_as_of,
+            provider_codes=frozenset(unique_codes),
+        )
+        normalized_as_of = stage.provider_as_of
+    else:
+        try:
+            parsed_as_of = datetime.strptime(provider_as_of, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise ValueError(
+                "Provider stock window provider as-of must be an ISO date"
+            ) from exc
+        normalized_as_of = parsed_as_of.isoformat()
+        if normalized_as_of != provider_as_of:
+            raise ValueError("Provider stock window provider as-of must be an ISO date")
 
     for index, code in enumerate(unique_codes, start=1):
         if cancel_check is not None and cancel_check():
@@ -159,6 +177,7 @@ async def refresh_stocks(
             data, fetch_calls = await _fetch_complete_provider_window(
                 jquants_client,
                 code=expanded,
+                provider_as_of=normalized_as_of,
             )
             total_calls += fetch_calls
 
@@ -188,6 +207,8 @@ async def refresh_stocks(
                     raise ValueError("Provider window contains invalid row date") from exc
                 if parsed_date.isoformat() != provider_date:
                     raise ValueError("Provider window contains invalid row date")
+                if provider_date > normalized_as_of:
+                    raise ValueError("Provider window row date exceeds provider as-of")
                 if provider_date in provider_dates:
                     raise ValueError(
                         f"Provider window contains duplicate date: {provider_date}"
@@ -232,8 +253,8 @@ async def refresh_stocks(
                     "end": max(str(row["date"]) for row in rows),
                 }
                 metadata = {
-                    METADATA_KEYS["PROVIDER_PLAN"]: provider_plan,
-                    METADATA_KEYS["PROVIDER_AS_OF"]: coverage["end"],
+                    METADATA_KEYS["PROVIDER_PLAN"]: normalized_plan,
+                    METADATA_KEYS["PROVIDER_AS_OF"]: normalized_as_of,
                     METADATA_KEYS["PROVIDER_SOURCE_FINGERPRINT"]: (
                         provider_stock_source_fingerprint(rows)
                     ),

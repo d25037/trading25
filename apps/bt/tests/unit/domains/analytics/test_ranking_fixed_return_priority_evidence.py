@@ -842,7 +842,8 @@ def test_fixed_return_price_pit_study_fails_closed_on_invalid_lineage(
             conn.execute("DELETE FROM stock_provider_windows WHERE code = '1111'")
         elif failure == "overlapping_window":
             conn.execute(
-                "INSERT INTO stock_provider_windows SELECT * "
+                "INSERT INTO stock_provider_windows (code, coverage_start, coverage_end, "
+                "provider_plan, provider_as_of, source_fingerprint, updated_at) SELECT * "
                 "FROM stock_provider_windows WHERE code = '1111'"
             )
         else:

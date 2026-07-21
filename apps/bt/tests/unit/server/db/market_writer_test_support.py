@@ -24,6 +24,7 @@ from src.infrastructure.db.market.time_series_store import (
     MarketTimeSeriesStore,
     create_time_series_store,
 )
+from src.shared.provider_stock_window import ProviderStockStage
 
 
 _TEST_WRITER_LEASES: dict[Path, tuple[MarketOperationLease, int]] = {}
@@ -234,11 +235,18 @@ def publish_stock_data(
         row.setdefault("adjusted_close", row.get("close"))
         row.setdefault("adjusted_volume", row.get("volume"))
         complete_rows.append(row)
+    if not complete_rows:
+        return SemanticDeltaResult.empty()
+    stage = ProviderStockStage(
+        provider_plan=provider_plan,
+        provider_as_of=max(str(row["date"]) for row in complete_rows),
+        provider_codes=frozenset(str(row["code"]) for row in complete_rows),
+    )
     return _publish(
         db,
         complete_rows,
         lambda store, values: store.publish_stock_data(
-            values, provider_plan=provider_plan
+            values, stage=stage
         ),
     )
 

@@ -71,7 +71,8 @@ def _build_market_v5_research_fixture(
         );
         CREATE TABLE stock_provider_windows (
             code TEXT, coverage_start DATE, coverage_end DATE,
-            provider_as_of DATE, source_fingerprint TEXT, updated_at TEXT
+            provider_plan TEXT, provider_as_of DATE,
+            source_fingerprint TEXT, updated_at TEXT
         );
         CREATE TABLE stock_adjustment_events (
             code TEXT, date DATE, adjustment_factor DOUBLE,
@@ -220,13 +221,17 @@ def _build_market_v5_research_fixture(
                 code,
                 dates[0],
                 dates[-1],
+                "premium",
                 dates[-1],
                 provider_stock_source_fingerprint(fingerprint_rows),
                 "now",
             )
         )
     conn.executemany(
-        "INSERT INTO stock_provider_windows VALUES (?, ?, ?, ?, ?, ?)", window_rows
+        "INSERT INTO stock_provider_windows (code, coverage_start, coverage_end, "
+        "provider_plan, provider_as_of, source_fingerprint, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        window_rows,
     )
     conn.executemany(
         "INSERT INTO current_basis_fundamentals_state VALUES (?, ?, ?, 0, ?)",

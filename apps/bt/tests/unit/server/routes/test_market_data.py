@@ -18,6 +18,7 @@ from src.infrastructure.db.market.market_schema import (
     METADATA_KEYS,
     PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
 )
+from src.shared.provider_stock_window import ProviderStockStage
 from tests.unit.server.db.market_writer_test_support import (
     open_market_db,
     open_time_series_store,
@@ -151,7 +152,14 @@ def _build_market_timeseries_dir(base_dir: Path) -> str:
                             "adjusted_volume": volume,
                         }
                     )
-            store.publish_stock_data(stock_rows, provider_plan="premium")
+            store.publish_stock_data(
+                stock_rows,
+                stage=ProviderStockStage(
+                    provider_plan="premium",
+                    provider_as_of=max(str(row["date"]) for row in stock_rows),
+                    provider_codes=frozenset(str(row["code"]) for row in stock_rows),
+                ),
+            )
             store.publish_stock_minute_data(
                 [
                     {

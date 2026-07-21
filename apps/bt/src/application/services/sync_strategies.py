@@ -29,6 +29,7 @@ from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
 from src.infrastructure.db.market.time_series_store import (
     TimeSeriesInspection,
 )
+from src.shared.provider_stock_window import ProviderStockStage
 from src.application.services.options_225 import (
     OPTIONS_225_SYNTHETIC_INDEX_CODE,
 )
@@ -150,6 +151,7 @@ class SyncMarketDbLike(Protocol):  # pragma: no cover
     def reconcile_stock_master_derived_codes(self, codes: set[str]) -> Any: ...
     def get_stock_master_pending_frontier_dates(self) -> set[str]: ...
     def reconcile_stock_master_frontier(self, snapshot_date: str) -> Any: ...
+    def get_stock_master_codes_for_date(self, as_of_date: str) -> list[str]: ...
     def get_topix_dates(self, *, start_date: str | None = None, end_date: str | None = None) -> list[str]: ...
     def get_missing_stock_master_dates(self, *, limit: int | None = 20) -> list[str]: ...
     def get_fundamentals_target_codes(self) -> set[str]: ...
@@ -188,7 +190,7 @@ class SyncTimeSeriesStoreLike(Protocol):  # pragma: no cover
 
     def publish_topix_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
     def publish_stock_data(
-        self, rows: list[dict[str, Any]], *, provider_plan: str | None = None
+        self, rows: list[dict[str, Any]], *, stage: ProviderStockStage
     ) -> SemanticDeltaResult: ...
     def detect_stock_provider_drift(
         self, rows: list[dict[str, Any]]
@@ -201,7 +203,7 @@ class SyncTimeSeriesStoreLike(Protocol):  # pragma: no cover
     def flush_staged_stock_data(
         self,
         *,
-        provider_plan: str | None = None,
+        stage: ProviderStockStage,
         exclude_codes: frozenset[str] = frozenset(),
     ) -> SemanticDeltaResult: ...
     def discard_staged_stock_data(self) -> None: ...
@@ -256,6 +258,22 @@ def _select_bulk_candidates_from_dates(dates: list[str]) -> tuple[str | None, st
     if not normalized:
         return None, None
     return min(normalized).isoformat(), max(normalized).isoformat()
+
+
+async def _resolve_provider_stock_stage(
+    ctx: SyncContext,
+    *,
+    provider_as_of: str,
+) -> ProviderStockStage:
+    provider_codes = await asyncio.to_thread(
+        ctx.market_db.get_stock_master_codes_for_date,
+        provider_as_of,
+    )
+    return ProviderStockStage(
+        provider_plan=str(ctx.provider_plan or ""),
+        provider_as_of=provider_as_of,
+        provider_codes=frozenset(provider_codes),
+    )
 
 
 async def _ingest_indices_only_bulk_batch(
@@ -588,6 +606,24 @@ async def _sync_initial_stock_data_stage(
     stocks_updated = 0
     failed_dates: list[str] = []
     errors: list[str] = []
+    if not trading_dates:
+        await session.discard(ctx)
+        return {
+            "api_calls": 0,
+            "stocks_updated": 0,
+            "stock_rows_appended": 0,
+            "affected_stock_codes": 0,
+            "stock_codes_replaced": 0,
+            "stock_rows_replaced": 0,
+            "stock_recomputation_errors": [],
+            "failed_dates": [],
+            "errors": [],
+            "cancelled": False,
+        }
+    provider_stage = await _resolve_provider_stock_stage(
+        ctx,
+        provider_as_of=max(trading_dates, key=_date_sort_key),
+    )
     from_date, to_date = _select_bulk_candidates_from_dates(trading_dates)
     decision = await sync_fetch_planner._plan_fetch_method(
         ctx,
@@ -668,7 +704,7 @@ async def _sync_initial_stock_data_stage(
                 "cancelled": True,
             }
 
-    commit_outcome = await session.commit(ctx)
+    commit_outcome = await session.commit(ctx, stage=provider_stage)
     api_calls += commit_outcome.api_calls
     stocks_updated += (
         commit_outcome.appended_rows + commit_outcome.replaced_rows
@@ -1036,6 +1072,23 @@ async def _sync_incremental_stock_data_stage(
         anchor=anchor,
         inspection=target_inspection,
     )
+    if not stock_target_dates:
+        return {
+            "api_calls": 0,
+            "stocks_updated": 0,
+            "stock_rows_appended": 0,
+            "affected_stock_codes": 0,
+            "stock_codes_replaced": 0,
+            "stock_rows_replaced": 0,
+            "stock_recomputation_errors": [],
+            "stock_target_dates": [],
+            "errors": [],
+            "cancelled": False,
+        }
+    provider_stage = await _resolve_provider_stock_stage(
+        ctx,
+        provider_as_of=max(stock_target_dates, key=_date_sort_key),
+    )
     from_date_new, to_date_new = _select_bulk_candidates_from_dates(stock_target_dates)
     decision = await sync_fetch_planner._plan_fetch_method(
         ctx,
@@ -1115,7 +1168,7 @@ async def _sync_incremental_stock_data_stage(
                 "cancelled": True,
             }
 
-    commit_outcome = await session.commit(ctx)
+    commit_outcome = await session.commit(ctx, stage=provider_stage)
     api_calls += commit_outcome.api_calls
     stocks_updated += (
         commit_outcome.appended_rows + commit_outcome.replaced_rows

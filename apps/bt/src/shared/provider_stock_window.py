@@ -56,6 +56,27 @@ class ProviderStockMetadata:
     provider_source_fingerprint: str
 
 
+@dataclass(frozen=True, slots=True)
+class ProviderStockStage:
+    provider_plan: str
+    provider_as_of: str
+    provider_codes: frozenset[str]
+
+    def __post_init__(self) -> None:
+        provider_plan = validate_provider_plan(self.provider_plan)
+        provider_as_of = _iso_date(self.provider_as_of, field="provider as-of")
+        provider_codes = frozenset(
+            normalized
+            for code in self.provider_codes
+            if (normalized := _normalize_stock_code(str(code).strip()))
+        )
+        if not provider_codes:
+            raise ValueError("Provider stock stage provider_codes must be non-empty")
+        object.__setattr__(self, "provider_plan", provider_plan)
+        object.__setattr__(self, "provider_as_of", provider_as_of)
+        object.__setattr__(self, "provider_codes", provider_codes)
+
+
 def validate_provider_plan(value: Any) -> str:
     raw = str(value) if value is not None else ""
     if not raw:

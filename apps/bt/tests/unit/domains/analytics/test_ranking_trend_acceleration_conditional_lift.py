@@ -155,7 +155,8 @@ def test_price_pit_study_fails_closed_on_invalid_lineage(
             conn.execute("DELETE FROM stock_provider_windows WHERE code = '1111'")
         elif failure == "overlap":
             conn.execute(
-                "INSERT INTO stock_provider_windows SELECT * "
+                "INSERT INTO stock_provider_windows (code, coverage_start, coverage_end, "
+                "provider_plan, provider_as_of, source_fingerprint, updated_at) SELECT * "
                 "FROM stock_provider_windows WHERE code = '1111'"
             )
         else:
@@ -1078,7 +1079,8 @@ def _upgrade_fixture_market_v5(db_path: Path) -> None:
             """
             CREATE OR REPLACE TABLE stock_provider_windows (
                 code TEXT, coverage_start TEXT, coverage_end TEXT,
-                provider_as_of TEXT, source_fingerprint TEXT, updated_at TEXT
+                provider_plan TEXT, provider_as_of TEXT,
+                source_fingerprint TEXT, updated_at TEXT
             )
             """
         )
@@ -1113,11 +1115,14 @@ def _upgrade_fixture_market_v5(db_path: Path) -> None:
             for row in rows:
                 row["date"] = str(row["date"])
             conn.execute(
-                "INSERT INTO stock_provider_windows VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO stock_provider_windows (code, coverage_start, coverage_end, "
+                "provider_plan, provider_as_of, source_fingerprint, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 [
                     code,
                     rows[0]["date"],
                     rows[-1]["date"],
+                    "premium",
                     rows[-1]["date"],
                     provider_stock_source_fingerprint(rows),
                     rows[-1]["date"],

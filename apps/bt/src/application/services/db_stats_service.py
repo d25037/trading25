@@ -250,7 +250,6 @@ def get_market_stats(
         },
         source_stock_count=inspection.stock_count,
         source_statement_count=inspection.statements_count,
-        provider_plan=market_db.get_sync_metadata(METADATA_KEYS["PROVIDER_PLAN"]),
     )
 
     # Topix
@@ -416,6 +415,7 @@ def _build_provider_vintage_stats(
     source_statement_count: int,
     provider_plan: str | None = None,
 ) -> ProviderVintageStats:
+    del provider_plan
     current_basis_statement_count = int(
         snapshot.get("currentBasisStatementCount", 0) or 0
     )
@@ -497,6 +497,7 @@ def _build_provider_vintage_stats(
             provider_adjusted_mismatch_count,
         )
     )
+    provider_plan = snapshot.get("providerPlan")
     provider_plan_valid = is_empty_source
     if not is_empty_source:
         try:

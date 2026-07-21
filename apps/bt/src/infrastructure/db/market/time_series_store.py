@@ -19,9 +19,9 @@ from src.shared.provider_stock_window import (
     PROVIDER_DRIFT_COLUMNS,
     ProviderStockCoverage,
     ProviderStockMetadata,
+    ProviderStockStage,
     combine_provider_stock_source_fingerprints,
     provider_stock_source_fingerprint,
-    validate_provider_plan,
     validate_provider_stock_window,
 )
 from src.infrastructure.db.market.duckdb_connection import (
@@ -35,6 +35,7 @@ from src.infrastructure.db.market.market_mutations import (
     SemanticDeltaResult,
     deterministic_last_wins,
 )
+from src.infrastructure.db.market.query_helpers import normalize_stock_code
 from src.infrastructure.db.market.market_schema import (
     IncompatibleMarketSchemaError,
     MARKET_SCHEMA_VERSION,
@@ -48,7 +49,7 @@ class MarketTimeSeriesStore(Protocol):  # pragma: no cover
 
     def publish_topix_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
     def publish_stock_data(
-        self, rows: list[dict[str, Any]], *, provider_plan: str | None = None
+        self, rows: list[dict[str, Any]], *, stage: ProviderStockStage
     ) -> SemanticDeltaResult: ...
     def detect_stock_provider_drift(
         self, rows: list[dict[str, Any]]
@@ -79,7 +80,7 @@ class MarketTimeSeriesStore(Protocol):  # pragma: no cover
     def flush_staged_stock_data(
         self,
         *,
-        provider_plan: str | None = None,
+        stage: ProviderStockStage,
         exclude_codes: frozenset[str] = frozenset(),
     ) -> SemanticDeltaResult: ...
     def discard_staged_stock_data(self) -> None: ...
@@ -557,6 +558,7 @@ class DuckDbParquetTimeSeriesStore:
                     code TEXT PRIMARY KEY,
                     coverage_start TEXT NOT NULL,
                     coverage_end TEXT NOT NULL,
+                    provider_plan TEXT NOT NULL,
                     provider_as_of TEXT NOT NULL,
                     source_fingerprint TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -875,14 +877,11 @@ class DuckDbParquetTimeSeriesStore:
         return invalid_count
 
     def publish_stock_data(
-        self, rows: list[dict[str, Any]], *, provider_plan: str | None = None
+        self, rows: list[dict[str, Any]], *, stage: ProviderStockStage
     ) -> SemanticDeltaResult:
         self._assert_writable()
-        if not rows:
-            return SemanticDeltaResult.empty()
-        normalized_plan = validate_provider_plan(provider_plan)
         with self._lock:
-            return self._publish_stock_data_locked(rows, provider_plan=normalized_plan)
+            return self._publish_stock_data_locked(rows, stage=stage)
 
     def detect_stock_provider_drift(self, rows: list[dict[str, Any]]) -> frozenset[str]:
         """Return codes requiring a full provider-window refresh before append."""
@@ -1089,12 +1088,14 @@ class DuckDbParquetTimeSeriesStore:
             desired_ledger = (
                 normalized_coverage.start,
                 normalized_coverage.end,
+                normalized_metadata.provider_plan,
                 normalized_metadata.provider_as_of,
                 normalized_metadata.provider_source_fingerprint,
             )
             existing_ledger = self._conn.execute(
                 """
-                SELECT coverage_start, coverage_end, provider_as_of, source_fingerprint
+                SELECT coverage_start, coverage_end, provider_plan, provider_as_of,
+                       source_fingerprint
                 FROM stock_provider_windows
                 WHERE code = ?
                 """,
@@ -1192,12 +1193,13 @@ class DuckDbParquetTimeSeriesStore:
                     self._conn.execute(
                         """
                         INSERT INTO stock_provider_windows (
-                            code, coverage_start, coverage_end, provider_as_of,
+                            code, coverage_start, coverage_end, provider_plan, provider_as_of,
                             source_fingerprint, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT (code) DO UPDATE SET
                             coverage_start = excluded.coverage_start,
                             coverage_end = excluded.coverage_end,
+                            provider_plan = excluded.provider_plan,
                             provider_as_of = excluded.provider_as_of,
                             source_fingerprint = excluded.source_fingerprint,
                             updated_at = excluded.updated_at
@@ -1301,13 +1303,18 @@ class DuckDbParquetTimeSeriesStore:
         )
 
     def _publish_stock_data_locked(
-        self, rows: list[dict[str, Any]], *, provider_plan: str
+        self, rows: list[dict[str, Any]], *, stage: ProviderStockStage
     ) -> SemanticDeltaResult:
-        if not rows:
-            return SemanticDeltaResult.empty()
         staged_rows = deterministic_last_wins(
             rows, key_columns=self._STOCK_DATA_RAW_UPSERT_SPEC.conflict_columns
         )
+        staged_codes = {
+            normalize_stock_code(str(row.get("code") or "")) for row in staged_rows
+        }
+        if not staged_codes <= stage.provider_codes:
+            raise ValueError("Provider stock rows must be contained in stage code scope")
+        if any(str(row.get("date") or "") > stage.provider_as_of for row in staged_rows):
+            raise ValueError("Provider stock row date must not exceed stage provider as-of")
         projected_rows = self._provider_adjusted_stock_rows(staged_rows)
         staged_by_code: dict[str, list[dict[str, Any]]] = {}
         for row in staged_rows:
@@ -1344,13 +1351,14 @@ class DuckDbParquetTimeSeriesStore:
         for row in existing_incoming_rows:
             existing_incoming_by_code.setdefault(str(row["code"]), []).append(row)
 
-        existing_ledgers: dict[str, tuple[str, str, str, str] | None] = {}
-        desired_ledgers: dict[str, tuple[str, str, str, str]] = {}
+        existing_ledgers: dict[str, tuple[str, str, str, str, str] | None] = {}
+        desired_ledgers: dict[str, tuple[str, str, str, str, str]] = {}
         expired_rows_by_code: dict[str, list[dict[str, Any]]] = {}
         for code, code_rows in staged_by_code.items():
             ledger_row = self._conn.execute(
                 """
-                SELECT coverage_start, coverage_end, provider_as_of, source_fingerprint
+                SELECT coverage_start, coverage_end, provider_plan, provider_as_of,
+                       source_fingerprint
                 FROM stock_provider_windows WHERE code = ?
                 """,
                 [code],
@@ -1363,6 +1371,7 @@ class DuckDbParquetTimeSeriesStore:
                     str(ledger_row[1]),
                     str(ledger_row[2]),
                     str(ledger_row[3]),
+                    str(ledger_row[4]),
                 )
             )
             existing_ledgers[code] = existing_ledger
@@ -1422,7 +1431,7 @@ class DuckDbParquetTimeSeriesStore:
             old_fingerprint = (
                 provider_stock_source_fingerprint(())
                 if existing_ledger is None
-                else existing_ledger[3]
+                else existing_ledger[4]
             )
             desired_fingerprint = combine_provider_stock_source_fingerprints(
                 old_fingerprint,
@@ -1435,15 +1444,42 @@ class DuckDbParquetTimeSeriesStore:
             desired_ledgers[code] = (
                 desired_start,
                 desired_end,
-                max(dates) if existing_ledger is None else max(existing_ledger[2], *dates),
+                stage.provider_plan,
+                stage.provider_as_of,
                 desired_fingerprint,
+            )
+        for code in stage.provider_codes - staged_codes:
+            ledger_row = self._conn.execute(
+                """
+                SELECT coverage_start, coverage_end, provider_plan, provider_as_of,
+                       source_fingerprint
+                FROM stock_provider_windows WHERE code = ?
+                """,
+                [code],
+            ).fetchone()
+            if ledger_row is None:
+                continue
+            existing = tuple(str(value) for value in ledger_row)
+            existing_ledgers[code] = cast(tuple[str, str, str, str, str], existing)
+            if existing[2] != stage.provider_plan:
+                continue
+            if stage.provider_as_of < existing[1]:
+                raise ValueError(
+                    "Provider stock stage provider as-of precedes existing coverage"
+                )
+            desired_ledgers[code] = (
+                existing[0],
+                existing[1],
+                existing[2],
+                max(existing[3], stage.provider_as_of),
+                existing[4],
             )
         event_rows = [
             {
                 "code": row.get("code"),
                 "date": row.get("date"),
                 "adjustment_factor": row.get("adjustment_factor"),
-                "source_fingerprint": desired_ledgers[str(row["code"])][3],
+                "source_fingerprint": desired_ledgers[str(row["code"])][4],
                 "created_at": row.get("created_at"),
             }
             for row in staged_rows
@@ -1495,7 +1531,7 @@ class DuckDbParquetTimeSeriesStore:
                     updated_at = excluded.updated_at
                 WHERE sync_metadata.value IS DISTINCT FROM excluded.value
                 """,
-                [METADATA_KEYS["PROVIDER_PLAN"], provider_plan, updated_at],
+                [METADATA_KEYS["PROVIDER_PLAN"], stage.provider_plan, updated_at],
             )
             for code, desired in desired_ledgers.items():
                 rebound_event_count += len(
@@ -1507,7 +1543,7 @@ class DuckDbParquetTimeSeriesStore:
                           AND source_fingerprint IS DISTINCT FROM ?
                         RETURNING code
                         """,
-                        [desired[3], code, desired[3]],
+                        [desired[4], code, desired[4]],
                     ).fetchall()
                 )
             for code, desired in desired_ledgers.items():
@@ -1516,12 +1552,13 @@ class DuckDbParquetTimeSeriesStore:
                 self._conn.execute(
                     """
                     INSERT INTO stock_provider_windows (
-                        code, coverage_start, coverage_end, provider_as_of,
+                        code, coverage_start, coverage_end, provider_plan, provider_as_of,
                         source_fingerprint, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT (code) DO UPDATE SET
                         coverage_start = excluded.coverage_start,
                         coverage_end = excluded.coverage_end,
+                        provider_plan = excluded.provider_plan,
                         provider_as_of = excluded.provider_as_of,
                         source_fingerprint = excluded.source_fingerprint,
                         updated_at = excluded.updated_at
@@ -1532,7 +1569,7 @@ class DuckDbParquetTimeSeriesStore:
                 self._mark_current_basis_recompute_pending_unlocked(
                     code,
                     reason="provider_basis_change",
-                    source_fingerprint=desired_ledgers[code][3],
+                    source_fingerprint=desired_ledgers[code][4],
                 )
             self._conn.execute("COMMIT")
             transaction_started = False
@@ -1605,7 +1642,7 @@ class DuckDbParquetTimeSeriesStore:
     def flush_staged_stock_data(
         self,
         *,
-        provider_plan: str | None = None,
+        stage: ProviderStockStage,
         exclude_codes: frozenset[str] = frozenset(),
     ) -> SemanticDeltaResult:
         """Append staged rows whose keys are new, excluding full-refresh codes."""
@@ -1640,16 +1677,10 @@ class DuckDbParquetTimeSeriesStore:
                     excluded,
                 ).fetchall()
             ]
-            normalized_plan = (
-                validate_provider_plan(provider_plan) if staged_rows else None
-            )
             self._conn.execute(f"DELETE FROM {self._STOCK_DATA_STAGE_TABLE}")
-            if not staged_rows:
-                return SemanticDeltaResult.empty()
-            assert normalized_plan is not None
             return self._publish_stock_data_locked(
                 staged_rows,
-                provider_plan=normalized_plan,
+                stage=stage,
             )
 
     def discard_staged_stock_data(self) -> None:

@@ -81,6 +81,7 @@ def _insert_provider_code(
     dates: tuple[str, ...] = _DATES,
     coverage_start: str | None = None,
     coverage_end: str | None = None,
+    provider_plan: str = "premium",
     provider_as_of: str | None = None,
     window_fingerprint: str | None = None,
     fundamentals_fingerprint: str = _FUNDAMENTALS_FINGERPRINT,
@@ -158,11 +159,17 @@ def _insert_provider_code(
             (session, code, name),
         )
     conn.execute(
-        "INSERT INTO stock_provider_windows VALUES (?, ?, ?, ?, ?, ?)",
+        """
+        INSERT INTO stock_provider_windows (
+            code, coverage_start, coverage_end, provider_plan, provider_as_of,
+            source_fingerprint, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
         (
             code,
             coverage_start,
             coverage_end,
+            provider_plan,
             provider_as_of,
             window_fingerprint or provider_stock_source_fingerprint(provider_rows),
             "2024-01-05T16:00:00+09:00",
@@ -235,6 +242,67 @@ def _build_readable_provider_snapshot(tmp_path: Path) -> Path:
     source = _build_v5_provider_market(tmp_path)
     snapshot, _ = _copy_snapshot(tmp_path, source)
     return snapshot
+
+
+def test_provider_copy_uses_window_plan_when_global_metadata_is_stale(
+    tmp_path: Path,
+) -> None:
+    source = _build_v5_provider_market(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            "UPDATE sync_metadata SET value = 'free' WHERE key = 'provider_plan'"
+        )
+    finally:
+        conn.close()
+
+    snapshot, _result = _copy_snapshot(tmp_path, source)
+    reader = DatasetSnapshotReader(str(snapshot))
+    try:
+        assert reader.manifest.source.providerPlan == "premium"
+    finally:
+        reader.close()
+
+
+def test_provider_copy_rejects_mixed_plans_before_destination_mutation(
+    tmp_path: Path,
+) -> None:
+    source = _build_v5_provider_market(tmp_path, two_codes=True)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            "UPDATE stock_provider_windows SET provider_plan = 'free' "
+            "WHERE code = '6758'"
+        )
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(tmp_path / "dataset"))
+
+    with pytest.raises(DatasetSnapshotError, match="provider plan"):
+        writer.copy_provider_snapshot_from_source(
+            source_duckdb_path=str(source),
+            normalized_codes=["7203", "6758"],
+            date_from=_DATES[0],
+            date_to=_DATES[-1],
+        )
+
+    assert {
+        table: writer._duckdb_store._conn.execute(  # noqa: SLF001
+            f"SELECT COUNT(*) FROM {table}"
+        ).fetchone()[0]
+        for table in (
+            "stock_data_raw",
+            "stock_master_daily",
+            "statement_metrics_adjusted",
+            "daily_valuation",
+        )
+    } == {
+        "stock_data_raw": 0,
+        "stock_master_daily": 0,
+        "statement_metrics_adjusted": 0,
+        "daily_valuation": 0,
+    }
+    writer.close()
 
 
 def _copy_snapshot(

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import builtins
 import os
-import hashlib
 from datetime import date, timedelta
 from pathlib import Path
 from threading import Barrier, Lock, RLock, Thread
@@ -14,9 +14,8 @@ import pytest
 
 from src.infrastructure.db.market.time_series_store import DuckDbParquetTimeSeriesStore
 from src.infrastructure.db.market.valuation_queries import get_provider_vintage_snapshot
-from src.shared.provider_stock_window import (
-    provider_stock_source_fingerprint,
-)
+from src.shared import provider_stock_window
+from src.shared.provider_stock_window import provider_stock_source_fingerprint
 from tests.unit.server.db.market_writer_test_support import (
     connect_market_duckdb_for_test,
     create_time_series_store_for_test,
@@ -29,8 +28,21 @@ def _publish_stock_data(
     rows: list[dict[str, Any]],
     *,
     provider_plan: str = "premium",
+    provider_as_of: str | None = None,
+    provider_codes: frozenset[str] | None = None,
 ):
-    return store.publish_stock_data(rows, provider_plan=provider_plan)
+    row_codes = {
+        str(row["code"])[:-1]
+        if len(str(row["code"])) in {5, 6} and str(row["code"]).endswith("0")
+        else str(row["code"])
+        for row in rows
+    }
+    stage = provider_stock_window.ProviderStockStage(
+        provider_plan=provider_plan,
+        provider_as_of=provider_as_of or max((str(row["date"]) for row in rows), default="2026-02-10"),
+        provider_codes=provider_codes or frozenset(row_codes or {"7203"}),
+    )
+    return store.publish_stock_data(rows, stage=stage)
 
 
 def _flush_staged_stock_data(
@@ -38,8 +50,20 @@ def _flush_staged_stock_data(
     *,
     exclude_codes: frozenset[str] = frozenset(),
 ):
+    staged = store._conn.execute(  # noqa: SLF001
+        "SELECT code, date FROM __tmp_stock_data_stage"
+    ).fetchall()
+    codes = frozenset(
+        code[:-1] if len(code) in {5, 6} and code.endswith("0") else code
+        for code, _ in staged
+    )
     return store.flush_staged_stock_data(
-        provider_plan="premium", exclude_codes=exclude_codes
+        stage=provider_stock_window.ProviderStockStage(
+            provider_plan="premium",
+            provider_as_of=max((row_date for _, row_date in staged), default="2026-02-10"),
+            provider_codes=codes or frozenset({"7203"}),
+        ),
+        exclude_codes=exclude_codes,
     )
 
 
@@ -929,9 +953,13 @@ def test_publish_stock_data_requires_and_persists_provider_plan(tmp_path: Path) 
 
     for invalid_plan in (None, "", " premium "):
         with pytest.raises(ValueError, match="provider plan"):
-            store.publish_stock_data([row], provider_plan=invalid_plan)
+            provider_stock_window.ProviderStockStage(
+                provider_plan=invalid_plan,  # type: ignore[arg-type]
+                provider_as_of="2026-02-10",
+                provider_codes=frozenset({"7203"}),
+            )
 
-    store.publish_stock_data([row], provider_plan="premium")
+    _publish_stock_data(store, [row], provider_plan="premium")
     assert store._conn.execute(  # noqa: SLF001
         "SELECT value FROM sync_metadata WHERE key = 'provider_plan'"
     ).fetchone() == ("premium",)
@@ -948,10 +976,10 @@ def test_flush_staged_stock_data_rejects_missing_plan_without_discarding_rows(
     row = _provider_stock_row("2026-02-10")
     store.stage_stock_data_rows([row])
 
-    with pytest.raises(ValueError, match="provider plan"):
+    with pytest.raises(TypeError, match="stage"):
         store.flush_staged_stock_data()
 
-    mutation = store.flush_staged_stock_data(provider_plan="premium")
+    mutation = _flush_staged_stock_data(store)
     assert mutation.stats.inserted == 1
     assert store._conn.execute(  # noqa: SLF001
         "SELECT COUNT(*) FROM stock_data_raw"
@@ -1790,6 +1818,90 @@ def test_staged_unit_factor_append_establishes_provider_window_without_pending(
     store.close()
 
 
+def test_provider_stage_advances_suspended_symbol_without_inventing_coverage(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    for code in ("7203", "6758"):
+        baseline = [_provider_stock_row("2026-02-10", code=code)]
+        store.replace_stock_provider_window(
+            code,
+            baseline,
+            {"start": "2026-02-10", "end": "2026-02-10"},
+            {
+                "provider_plan": "premium",
+                "provider_as_of": "2026-02-10",
+                "provider_source_fingerprint": provider_stock_source_fingerprint(
+                    baseline
+                ),
+            },
+        )
+
+    store.publish_stock_data(
+        [_provider_stock_row("2026-02-12", code="7203")],
+        stage=provider_stock_window.ProviderStockStage(
+            provider_plan="premium",
+            provider_as_of="2026-02-12",
+            provider_codes=frozenset({"7203", "6758"}),
+        ),
+    )
+
+    windows = store._conn.execute(  # noqa: SLF001
+        "SELECT code, coverage_end, provider_plan, provider_as_of "
+        "FROM stock_provider_windows ORDER BY code"
+    ).fetchall()
+    assert windows == [
+        ("6758", "2026-02-10", "premium", "2026-02-12"),
+        ("7203", "2026-02-12", "premium", "2026-02-12"),
+    ]
+    store.close()
+
+
+def test_provider_stage_plan_change_does_not_relabel_untouched_window(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    for code in ("7203", "6758"):
+        baseline = [_provider_stock_row("2026-02-10", code=code)]
+        store.replace_stock_provider_window(
+            code,
+            baseline,
+            {"start": "2026-02-10", "end": "2026-02-10"},
+            {
+                "provider_plan": "free",
+                "provider_as_of": "2026-02-10",
+                "provider_source_fingerprint": provider_stock_source_fingerprint(
+                    baseline
+                ),
+            },
+        )
+
+    store.publish_stock_data(
+        [_provider_stock_row("2026-02-12", code="7203")],
+        stage=provider_stock_window.ProviderStockStage(
+            provider_plan="premium",
+            provider_as_of="2026-02-12",
+            provider_codes=frozenset({"7203"}),
+        ),
+    )
+
+    windows = store._conn.execute(  # noqa: SLF001
+        "SELECT code, provider_plan, provider_as_of "
+        "FROM stock_provider_windows ORDER BY code"
+    ).fetchall()
+    assert windows == [
+        ("6758", "free", "2026-02-10"),
+        ("7203", "premium", "2026-02-12"),
+    ]
+    store.close()
+
+
 def test_normal_unit_factor_append_does_not_mark_fundamentals_pending(
     tmp_path: Path,
 ) -> None:
@@ -1918,8 +2030,22 @@ def test_new_adjustment_factor_marks_fundamentals_pending(tmp_path: Path) -> Non
     )
 
     assert store._conn.execute(  # noqa: SLF001
-        "SELECT code, reason FROM current_basis_recompute_pending"
-    ).fetchall() == [("7203", "provider_basis_change")]
+        "SELECT pending.code, pending.reason, pending.source_fingerprint, "
+        "provider_window.source_fingerprint "
+        "FROM current_basis_recompute_pending AS pending "
+        "JOIN stock_provider_windows AS provider_window USING (code)"
+    ).fetchall() == [
+        (
+            "7203",
+            "provider_basis_change",
+            provider_stock_source_fingerprint(
+                [_provider_stock_row("2026-02-10", factor=0.5)]
+            ),
+            provider_stock_source_fingerprint(
+                [_provider_stock_row("2026-02-10", factor=0.5)]
+            ),
+        )
+    ]
     store.close()
 
 

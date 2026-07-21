@@ -85,6 +85,7 @@ from src.application.services.sync_stream_manager import (
     sync_stream_manager,
 )
 from src.infrastructure.data_access.clients import close_all_cached_data_access_clients
+from src.shared.provider_stock_window import validate_provider_plan
 
 router = APIRouter(tags=["Database"])
 _MARKET_RESOURCE_LOCK = threading.RLock()
@@ -922,11 +923,21 @@ async def refresh_stocks(request: Request, body: RefreshRequest) -> market_contr
                 ),
             )
 
+        provider_plan = validate_provider_plan(getattr(jquants_client, "plan", None))
+        inspection = await asyncio.to_thread(time_series_store.inspect)
+        provider_as_of = inspection.topix_max
+        if provider_as_of is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Stock refresh requires a local TOPIX provider frontier.",
+            )
         result = await stock_refresh_service.refresh_stocks(
             body.codes,
             market_db,
             time_series_store,
             jquants_client,
+            provider_plan=provider_plan,
+            provider_as_of=provider_as_of,
         )
         refreshed_codes = [item.code for item in result.results if item.success]
         if refreshed_codes:

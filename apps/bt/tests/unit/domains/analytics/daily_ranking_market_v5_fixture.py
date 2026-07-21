@@ -89,6 +89,7 @@ def upgrade_daily_ranking_fixture_to_market_v5(conn: Any) -> None:
             code VARCHAR,
             coverage_start DATE,
             coverage_end DATE,
+            provider_plan TEXT,
             provider_as_of DATE,
             source_fingerprint VARCHAR,
             updated_at TEXT
@@ -213,7 +214,10 @@ def refresh_daily_ranking_provider_window(conn: Any, *, code: str) -> str:
     conn.execute("DELETE FROM stock_provider_windows WHERE code = ?", [code])
     conn.execute(
         """
-        INSERT INTO stock_provider_windows VALUES (?, ?, ?, ?, ?, 'unit-fixture')
+        INSERT INTO stock_provider_windows (
+            code, coverage_start, coverage_end, provider_plan, provider_as_of,
+            source_fingerprint, updated_at
+        ) VALUES (?, ?, ?, 'premium', ?, ?, 'unit-fixture')
         """,
         [code, rows[0]["date"], rows[-1]["date"], rows[-1]["date"], fingerprint],
     )

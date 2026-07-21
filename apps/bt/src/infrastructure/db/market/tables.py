@@ -124,6 +124,7 @@ stock_provider_windows = Table(
     Column("code", Text, primary_key=True),
     Column("coverage_start", Text, nullable=False),
     Column("coverage_end", Text, nullable=False),
+    Column("provider_plan", Text, nullable=False),
     Column("provider_as_of", Text, nullable=False),
     Column("source_fingerprint", Text, nullable=False),
     Column("updated_at", Text, nullable=False),

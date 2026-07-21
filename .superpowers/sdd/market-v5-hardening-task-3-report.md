@@ -1,0 +1,217 @@
+# Market v5 Hardening Task 3 Report
+
+## Result
+
+Task 3 is implemented as one indivisible Market v5 schema and lineage change on
+base `485e22e88e14349d6a8963cabc61b34772e53528`.
+
+- `ProviderStockStage` is immutable and validates plan, canonical ISO request
+  frontier, and normalized non-empty code scope.
+- `stock_provider_windows.provider_plan` is non-null in the physical schema,
+  Python table contract, JSON contract, writers, readers, and explicit fixtures.
+- Stock publish, staged flush, sync commit, and refresh require explicit provider
+  lineage. Refresh requests use `to=provider_as_of`; returned row maxima are not
+  lineage authority.
+- A same-plan in-scope symbol with no frontier quote advances its `provider_as_of`
+  without inventing coverage. A plan change never relabels an untouched window.
+- Dataset selection/copy, diagnostics, PIT fundamentals, and fundamental ranking
+  derive plan and as-of from exact per-window lineage and fail closed on blank,
+  malformed, mixed, missing, or incoherent windows.
+- Global `sync_metadata.provider_plan` remains observational metadata only. It is
+  not used as Dataset, diagnostics, PIT, or ranking lineage authority.
+
+## Scope
+
+The approved Task 3 production and contract files were changed, together with all
+test fixtures found by repository-wide search that explicitly create or insert
+`stock_provider_windows`.
+
+The two production propagation sites omitted from the plan list but explicitly
+approved in the task brief were also changed:
+
+- `apps/bt/src/application/services/sync_stock_data_fetch.py`
+- `apps/bt/src/entrypoints/http/routes/db.py`
+
+They only propagate authoritative sync/request plan and TOPIX/request frontier
+into the required interfaces. No Task 4+ corporate-action, projection, or journal
+work was absorbed.
+
+## RED/GREEN evidence
+
+### Stage and store contract
+
+Command:
+
+```bash
+uv run --directory apps/bt pytest \
+  tests/unit/server/services/test_provider_stock_window.py \
+  tests/unit/server/db/test_time_series_store.py \
+  -k 'provider_stage or suspended_symbol or plan_change' -q
+```
+
+- RED: 111 collected, 6 selected, 6 failed because `ProviderStockStage` did not
+  exist.
+- GREEN: 6 passed, 105 deselected.
+
+### Sync and refresh propagation
+
+Command:
+
+```bash
+uv run --directory apps/bt pytest \
+  tests/unit/server/services/test_stock_refresh_service.py \
+  tests/unit/server/services/test_sync_strategies.py \
+  -k 'explicit_provider_lineage_frontier' -q
+```
+
+- RED: 185 collected, 2 selected, 2 failed because refresh and session commit did
+  not accept explicit plan/frontier stage authority.
+- GREEN: 2 passed, 183 deselected.
+
+### Diagnostics
+
+Command:
+
+```bash
+uv run --directory apps/bt pytest \
+  tests/unit/server/db/test_market_adjusted_metrics.py \
+  -k 'per_window_plan' -q
+```
+
+- RED: 17 collected, 3 selected, 3 failed with missing `providerPlan`.
+- GREEN: 3 passed, 14 deselected.
+
+### Dataset selection
+
+Command:
+
+```bash
+uv run --directory apps/bt pytest \
+  tests/unit/server/services/test_dataset_snapshot_selection.py \
+  -k 'suspended_symbol or mixed_provider_plans' -q
+```
+
+- RED: 3 collected, 2 selected; suspended-symbol coverage passed, while mixed
+  plans were incorrectly accepted (1 failure).
+- GREEN: 2 passed, 1 deselected.
+
+### Dataset writer preflight
+
+Command:
+
+```bash
+uv run --directory apps/bt pytest \
+  tests/unit/server/db/test_dataset_event_time_basis_snapshot.py \
+  -k 'window_plan_when_global_metadata_is_stale or mixed_plans_before_destination_mutation' -q
+```
+
+- RED: 36 collected, 2 selected, 2 failed. A stale global plan overrode window
+  lineage, and mixed plans reached later copy work.
+- GREEN: 2 passed, 34 deselected. The mixed-plan test proves destination
+  `stock_data_raw`, `stock_master_daily`, `statement_metrics_adjusted`, and
+  `daily_valuation` remain at zero rows before failure.
+
+### PIT and ranking consumers
+
+Command:
+
+```bash
+uv run --directory apps/bt pytest \
+  tests/unit/server/db/test_fundamentals_pit_reader.py \
+  tests/unit/server/services/test_ranking_service.py \
+  -k 'provider_plan or mixed_provider_plans' -q
+```
+
+- RED: 135 collected, 4 selected, 4 failed because blank and mixed plans did not
+  fail closed in either consumer.
+- GREEN: 4 passed, 131 deselected.
+
+### Pending-lineage tuple audit
+
+Command:
+
+```bash
+uv run --directory apps/bt pytest \
+  tests/unit/server/db/test_time_series_store.py \
+  -k 'new_adjustment_factor_marks_fundamentals_pending' -q
+```
+
+- RED: 92 collected, 1 selected, 1 failed: pending `source_fingerprint` contained
+  the as-of date after the ledger tuple gained a plan field.
+- GREEN: 1 passed, 91 deselected; pending and window fingerprints are identical.
+
+## Final verification
+
+Exact required focused suite:
+
+```bash
+uv run --directory apps/bt pytest \
+  tests/unit/server/services/test_provider_stock_window.py \
+  tests/unit/server/db/test_time_series_store.py \
+  tests/unit/server/services/test_stock_refresh_service.py \
+  tests/unit/server/services/test_sync_strategies.py \
+  tests/unit/server/services/test_dataset_snapshot_selection.py \
+  tests/unit/server/db/test_dataset_event_time_basis_snapshot.py \
+  tests/unit/server/services/test_db_stats_service.py \
+  tests/unit/server/services/test_db_validation_service.py \
+  tests/unit/server/db/test_market_adjusted_metrics.py -q
+```
+
+Result: `408 passed`, one pre-existing warning.
+
+Plan-listed PIT/ranking consumers were additionally run in full:
+
+```bash
+uv run --directory apps/bt pytest \
+  tests/unit/server/db/test_fundamentals_pit_reader.py \
+  tests/unit/server/services/test_ranking_service.py -q
+```
+
+Result: `135 passed`, one pre-existing warning.
+
+Quality and contract checks:
+
+```bash
+uv run --directory apps/bt ruff check src tests
+# All checks passed!
+
+uv run --directory apps/bt pyright src
+# 0 errors, 0 warnings, 0 informations
+
+./scripts/check-contract-sync.sh
+# PASS
+
+git diff --check
+# clean
+```
+
+The repository-wide test suite was deliberately not run, per the task brief.
+
+## Generated artifacts
+
+`check-contract-sync.sh` regenerated OpenAPI/TypeScript types in its temporary
+check flow and found no committed generated-type drift. The only committed
+contract artifact changed by this task is `contracts/market-db-schema-v4.json`.
+
+## Migrations deliberately not provided
+
+No `ALTER TABLE`, automatic migration, compatibility alias, dual read, global
+metadata fallback, or latest/current fallback is provided. A database missing the
+new non-null per-window plan is incompatible Market v5 state and must be rebuilt
+through the already-approved isolated full-rebuild/cutover path.
+
+## Residual risks
+
+- This is a physical schema boundary; operators must not reuse a pre-change
+  Market v5 candidate database lacking `provider_plan`.
+- The intentionally focused verification does not claim repository-wide test
+  coverage.
+- Global provider metadata is still written for observability and older external
+  tooling may display it, but Task 3 consumers no longer treat it as authority.
+
+## Commit identity
+
+Commit subject: `fix(bt): persist exact provider lineage per stock window`.
+The exact content-addressed SHA is recorded in the delivery message after the
+commit is created; embedding a commit's own SHA in this tracked report would be
+self-referential and would change that SHA.

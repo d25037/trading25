@@ -351,6 +351,7 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         code TEXT PRIMARY KEY,
         coverage_start TEXT NOT NULL,
         coverage_end TEXT NOT NULL,
+        provider_plan TEXT NOT NULL,
         provider_as_of TEXT NOT NULL,
         source_fingerprint TEXT NOT NULL,
         updated_at TEXT NOT NULL

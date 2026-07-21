@@ -80,7 +80,8 @@ def _build_market_v5_fixture(path: Path) -> duckdb.DuckDBPyConnection:
         );
         CREATE TABLE stock_provider_windows (
             code TEXT, coverage_start TEXT, coverage_end TEXT,
-            provider_as_of TEXT, source_fingerprint TEXT, updated_at TEXT
+            provider_plan TEXT, provider_as_of TEXT,
+            source_fingerprint TEXT, updated_at TEXT
         );
         CREATE TABLE stock_adjustment_events (
             code TEXT, date TEXT, adjustment_factor DOUBLE,
@@ -137,8 +138,10 @@ def _build_market_v5_fixture(path: Path) -> duckdb.DuckDBPyConnection:
     )
     fingerprint = provider_stock_source_fingerprint(rows)
     conn.execute(
-        "INSERT INTO stock_provider_windows VALUES (?, ?, ?, ?, ?, ?)",
-        ("1111", "2024-01-04", "2024-01-08", "2024-01-08", fingerprint, "now"),
+        "INSERT INTO stock_provider_windows (code, coverage_start, coverage_end, "
+        "provider_plan, provider_as_of, source_fingerprint, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        ("1111", "2024-01-04", "2024-01-08", "premium", "2024-01-08", fingerprint, "now"),
     )
     conn.execute(
         "INSERT INTO stock_adjustment_events VALUES (?, ?, ?, ?)",

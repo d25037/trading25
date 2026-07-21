@@ -15,8 +15,8 @@ from src.application.services.jquants_bulk_service import BulkFetchResult, BulkF
 from src.application.services.sync_paginated_fetch import get_paginated_rows_with_call_count
 from src.application.services.sync_row_converters import build_target_date_set
 from src.application.services.stock_refresh_service import refresh_stocks
-from src.shared.config.settings import get_settings
 from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
+from src.shared.provider_stock_window import ProviderStockStage
 from src.application.services.sync_row_converters import convert_stock_data_rows as _convert_stock_data_rows
 from src.application.services.sync_row_converters import (
     convert_stock_bulk_rows as _convert_stock_bulk_rows,
@@ -63,42 +63,6 @@ class StockDataCommitOutcome:
 _T = TypeVar("_T")
 
 
-class _ProviderPlanClient:
-    def __init__(self, delegate: Any, *, plan: str) -> None:
-        self._delegate = delegate
-        self.plan = plan
-
-    async def get_paginated_with_meta(
-        self,
-        path: str,
-        params: dict[str, str] | None = None,
-        max_pages: int = 10,
-    ) -> tuple[list[dict[str, Any]], int]:
-        get_with_meta = getattr(self._delegate, "get_paginated_with_meta", None)
-        if not callable(get_with_meta):
-            raise RuntimeError(
-                "Affected stock refresh requires terminal pagination proof before publication"
-            )
-        fetch = cast(
-            Callable[..., Awaitable[tuple[list[dict[str, Any]], int]]],
-            get_with_meta,
-        )
-        rows, calls = await fetch(path, params=params, max_pages=max_pages)
-        return rows, int(calls)
-
-
-def _provider_plan(ctx: Any) -> str:
-    for candidate in (
-        getattr(ctx, "provider_plan", None),
-        getattr(ctx.client, "plan", None),
-        get_settings().jquants_plan,
-    ):
-        normalized = str(candidate).strip().lower() if candidate is not None else ""
-        if normalized:
-            return normalized
-    raise RuntimeError("JQUANTS_PLAN is required for provider stock refresh")
-
-
 @dataclass(slots=True)
 class StockDataIngestionSession:
     """Stage all dates, then append normal rows and replace affected codes."""
@@ -128,7 +92,9 @@ class StockDataIngestionSession:
         self.affected_codes.clear()
         self.staged_rows = 0
 
-    async def commit(self, ctx: Any) -> StockDataCommitOutcome:
+    async def commit(
+        self, ctx: Any, *, stage: ProviderStockStage
+    ) -> StockDataCommitOutcome:
         if self._finalized:
             raise RuntimeError("Stock data ingestion session is already finalized")
         affected_codes = frozenset(self.affected_codes)
@@ -153,7 +119,9 @@ class StockDataIngestionSession:
                     sorted(affected_codes),
                     ctx.market_db,
                     ctx.time_series_store,
-                    _ProviderPlanClient(ctx.client, plan=_provider_plan(ctx)),
+                    ctx.client,
+                    provider_plan=stage.provider_plan,
+                    provider_as_of=stage.provider_as_of,
                     progress_callback=_on_refresh_progress,
                     cancel_check=ctx.cancelled.is_set,
                 )
@@ -199,6 +167,7 @@ class StockDataIngestionSession:
 
         append_result = await sync_publish_helpers._flush_staged_stock_data_rows(
             ctx,
+            stage=stage,
             exclude_codes=affected_codes,
         )
         outcome = StockDataCommitOutcome(

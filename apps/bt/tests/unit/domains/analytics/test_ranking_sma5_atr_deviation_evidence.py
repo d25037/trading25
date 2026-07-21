@@ -219,8 +219,10 @@ def _build_sparse_large_atr_window_db(
             ],
         )
         conn.execute(
-            "INSERT INTO stock_provider_windows VALUES (?, ?, ?, ?, ?, ?)",
-            [code, valid_dates[0], valid_dates[-1], valid_dates[-1], "", "now"],
+            "INSERT INTO stock_provider_windows (code, coverage_start, coverage_end, "
+            "provider_plan, provider_as_of, source_fingerprint, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [code, valid_dates[0], valid_dates[-1], "premium", valid_dates[-1], "", "now"],
         )
         conn.execute(
             "INSERT INTO current_basis_fundamentals_state VALUES (?, ?, ?, 0, ?)",

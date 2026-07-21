@@ -17,6 +17,7 @@ from src.application.services.options_225 import (
 )
 from src.application.services.sync_state_helpers import _require_time_series_store
 from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
+from src.shared.provider_stock_window import ProviderStockStage
 
 
 _T = TypeVar("_T")
@@ -74,14 +75,14 @@ async def _publish_topix_rows(ctx: Any, rows: list[dict[str, Any]]) -> SemanticD
     return await asyncio.to_thread(store.publish_topix_data, rows)
 
 
-async def _publish_stock_data_rows(ctx: Any, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
-    if not rows:
-        return SemanticDeltaResult.empty()
+async def _publish_stock_data_rows(
+    ctx: Any, rows: list[dict[str, Any]], *, stage: ProviderStockStage
+) -> SemanticDeltaResult:
     store = _require_time_series_store(ctx)
     return await asyncio.to_thread(
         store.publish_stock_data,
         rows,
-        provider_plan=getattr(ctx, "provider_plan", None),
+        stage=stage,
     )
 
 
@@ -100,12 +101,12 @@ async def _stage_stock_data_rows(
 
 
 async def _flush_staged_stock_data_rows(
-    ctx: Any, *, exclude_codes: frozenset[str]
+    ctx: Any, *, stage: ProviderStockStage, exclude_codes: frozenset[str]
 ) -> SemanticDeltaResult:
     store = _require_time_series_store(ctx)
     return await _to_thread_joined(
         store.flush_staged_stock_data,
-        provider_plan=getattr(ctx, "provider_plan", None),
+        stage=stage,
         exclude_codes=exclude_codes,
     )
 

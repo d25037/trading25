@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from src.shared import provider_stock_window
 from src.shared.provider_stock_window import validate_provider_stock_window
 
 
@@ -36,6 +37,40 @@ def _metadata() -> dict[str, str]:
         "provider_as_of": "2026-02-12",
         "provider_source_fingerprint": "a" * 64,
     }
+
+
+def test_provider_stage_normalizes_non_empty_code_scope() -> None:
+    stage = provider_stock_window.ProviderStockStage(
+        provider_plan="premium",
+        provider_as_of="2026-02-12",
+        provider_codes=frozenset({"72030", "131A0"}),
+    )
+
+    assert stage.provider_plan == "premium"
+    assert stage.provider_as_of == "2026-02-12"
+    assert stage.provider_codes == frozenset({"7203", "131A"})
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"provider_plan": ""}, "provider plan"),
+        ({"provider_as_of": "2026-2-12"}, "provider as-of"),
+        ({"provider_codes": frozenset()}, "provider_codes"),
+    ],
+)
+def test_provider_stage_rejects_invalid_lineage(
+    overrides: dict[str, object], message: str
+) -> None:
+    values: dict[str, object] = {
+        "provider_plan": "premium",
+        "provider_as_of": "2026-02-12",
+        "provider_codes": frozenset({"7203"}),
+    }
+    values.update(overrides)
+
+    with pytest.raises(ValueError, match=message):
+        provider_stock_window.ProviderStockStage(**values)
 
 
 def test_validate_provider_stock_window_uses_only_strictly_future_factors() -> None:

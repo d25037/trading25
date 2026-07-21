@@ -114,13 +114,13 @@ def v5_market(tmp_path: Path) -> Path:
         conn.executemany(
             """
             INSERT INTO stock_provider_windows (
-                code, coverage_start, coverage_end, provider_as_of,
+                code, coverage_start, coverage_end, provider_plan, provider_as_of,
                 source_fingerprint, updated_at
-            ) VALUES (?, '2024-04-01', '2024-07-01', ?, ?, '2024-07-01T17:00:00+09:00')
+            ) VALUES (?, '2024-04-01', '2024-07-01', 'premium', ?, ?, '2024-07-01T17:00:00+09:00')
             """,
             [
-                ("7203", "2024-07-01T16:30:00+09:00", "provider-7203"),
-                ("6758", "2024-07-01T16:31:00+09:00", "provider-6758"),
+                ("7203", "2024-07-01", "provider-7203"),
+                ("6758", "2024-07-01", "provider-6758"),
             ],
         )
         conn.executemany(
@@ -317,7 +317,7 @@ def test_snapshot_resolves_weekend_with_provider_metadata_and_exact_master(
     assert snapshot.effective_market_date == date(2024, 6, 28)
     assert snapshot.stock_master_snapshot_date == date(2024, 6, 28)
     assert snapshot.fundamentals_adjustment_basis_date == date(2024, 7, 1)
-    assert snapshot.provider_as_of == "2024-07-01T16:30:00+09:00"
+    assert snapshot.provider_as_of == "2024-07-01"
     assert snapshot.provider_coverage_start == date(2024, 4, 1)
     assert snapshot.provider_coverage_end == date(2024, 7, 1)
     assert snapshot.stock_info.code == "72030"
@@ -423,6 +423,10 @@ def test_snapshot_accepts_suspended_prime_peer_without_exact_price(
     [
         ("DELETE FROM stock_provider_windows WHERE code = '7203'", "provider_window_required"),
         (
+            "UPDATE stock_provider_windows SET provider_plan = '' WHERE code = '7203'",
+            "provider_window_required",
+        ),
+        (
             "INSERT INTO current_basis_recompute_pending VALUES ('7203', 'provider_refresh', 'pending-fp', '2024-07-01')",
             "current_adjusted_metrics_required",
         ),
@@ -512,6 +516,18 @@ def test_snapshot_fails_closed_when_prime_peer_provider_window_is_missing(
     monkeypatch: pytest.MonkeyPatch, v5_market: Path
 ) -> None:
     _update(v5_market, "DELETE FROM stock_provider_windows WHERE code = '6758'")
+
+    with pytest.raises(FundamentalsPitSnapshotError) as exc_info:
+        _reader_client(monkeypatch, v5_market).get_fundamentals_pit_snapshot(
+            "7203", date(2024, 6, 30)
+        )
+    assert exc_info.value.reason == "provider_window_required"
+
+
+def test_snapshot_fails_closed_when_prime_peers_have_mixed_provider_plans(
+    monkeypatch: pytest.MonkeyPatch, v5_market: Path
+) -> None:
+    _update(v5_market, "UPDATE stock_provider_windows SET provider_plan = 'free' WHERE code = '6758'")
 
     with pytest.raises(FundamentalsPitSnapshotError) as exc_info:
         _reader_client(monkeypatch, v5_market).get_fundamentals_pit_snapshot(

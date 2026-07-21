@@ -85,6 +85,7 @@ class DummyMarketDb:
             self._adjusted_metrics_snapshot.get("providerWindowCount", 0) or 0
         )
         self._provider_vintage_snapshot = provider_vintage_snapshot or {
+            "providerPlan": "standard",
             "providerAsOf": "2026-02-27",
             "providerAsOfMin": "2026-02-27",
             "providerAsOfMax": "2026-02-27",

@@ -696,7 +696,8 @@ def _rebuild_test_adjusted_metrics(db_path: str) -> None:
     conn.execute("""
         CREATE TABLE IF NOT EXISTS stock_provider_windows (
             code TEXT PRIMARY KEY, coverage_start TEXT NOT NULL,
-            coverage_end TEXT NOT NULL, provider_as_of TEXT NOT NULL,
+            coverage_end TEXT NOT NULL, provider_plan TEXT NOT NULL,
+            provider_as_of TEXT NOT NULL,
             source_fingerprint TEXT NOT NULL, updated_at TEXT NOT NULL
         )
     """)
@@ -716,7 +717,10 @@ def _rebuild_test_adjusted_metrics(db_path: str) -> None:
         )
     """)
     conn.execute("""
-        INSERT OR REPLACE INTO stock_provider_windows
+        INSERT OR REPLACE INTO stock_provider_windows (
+            code, coverage_start, coverage_end, provider_plan, provider_as_of,
+            source_fingerprint, updated_at
+        )
         WITH provider_rows AS (
             SELECT CASE WHEN length(code) = 5 AND right(code, 1) = '0'
                         THEN left(code, 4) ELSE code END AS normalized_code,
@@ -751,8 +755,8 @@ def _rebuild_test_adjusted_metrics(db_path: str) -> None:
             FROM row_hashes
             GROUP BY normalized_code
         )
-        SELECT normalized_code, coverage_start, coverage_end,
-               '2024-12-31T16:30:00+09:00', source_fingerprint,
+        SELECT normalized_code, coverage_start, coverage_end, 'premium',
+               '2024-12-31', source_fingerprint,
                '2024-12-31T17:00:00+09:00'
         FROM evidence
     """)
@@ -1000,7 +1004,8 @@ def _create_current_basis_relation_tables(
     conn.execute("""
         CREATE TABLE IF NOT EXISTS stock_provider_windows (
             code TEXT PRIMARY KEY, coverage_start TEXT NOT NULL,
-            coverage_end TEXT NOT NULL, provider_as_of TEXT NOT NULL,
+            coverage_end TEXT NOT NULL, provider_plan TEXT NOT NULL,
+            provider_as_of TEXT NOT NULL,
             source_fingerprint TEXT NOT NULL, updated_at TEXT NOT NULL
         )
     """)
@@ -1070,7 +1075,7 @@ def test_target_date_adjusted_valuation_uses_current_provider_relation(
 
     assert not frame.empty
     assert "basis_version" not in frame.columns
-    assert set(frame["provider_as_of"]) == {"2024-12-31T16:30:00+09:00"}
+    assert set(frame["provider_as_of"]) == {"2024-12-31"}
 
 
 def test_ranking_valuation_preserves_canonical_nulls_and_close_verbatim(
@@ -1155,6 +1160,45 @@ def test_provider_window_resolution_fails_closed_for_under_coverage(
         reader.close()
 
 
+def test_provider_window_resolution_fails_closed_for_blank_provider_plan(
+    ranking_db: str,
+) -> None:
+    _rebuild_test_adjusted_metrics(ranking_db)
+    conn = duckdb.connect(ranking_db)
+    conn.execute("UPDATE stock_provider_windows SET provider_plan = '' WHERE code = '7203'")
+    conn.close()
+
+    reader = MarketDbReader(ranking_db)
+    try:
+        with pytest.raises(ValueError, match="market_db_sync"):
+            resolve_provider_windows(reader, ["7203"], "2024-01-19")
+    finally:
+        reader.close()
+
+
+def test_provider_window_resolution_fails_closed_for_mixed_provider_plans(
+    ranking_db: str,
+) -> None:
+    _rebuild_test_adjusted_metrics(ranking_db)
+    conn = duckdb.connect(ranking_db)
+    codes = [str(row[0]) for row in conn.execute(
+        "SELECT code FROM stock_provider_windows ORDER BY code LIMIT 2"
+    ).fetchall()]
+    assert len(codes) == 2
+    conn.execute(
+        "UPDATE stock_provider_windows SET provider_plan = 'free' WHERE code = ?",
+        (codes[1],),
+    )
+    conn.close()
+
+    reader = MarketDbReader(ranking_db)
+    try:
+        with pytest.raises(ValueError, match="market_db_sync"):
+            resolve_provider_windows(reader, codes, "2024-01-19")
+    finally:
+        reader.close()
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -1206,7 +1250,8 @@ def test_ranking_metric_rows_preserve_same_day_statement_identity_and_cutoff(
     conn.execute("""
         CREATE TABLE stock_provider_windows (
             code TEXT PRIMARY KEY, coverage_start TEXT, coverage_end TEXT,
-            provider_as_of TEXT, source_fingerprint TEXT, updated_at TEXT
+            provider_plan TEXT, provider_as_of TEXT,
+            source_fingerprint TEXT, updated_at TEXT
         )
     """)
     conn.execute("""
@@ -1250,8 +1295,9 @@ def test_ranking_metric_rows_preserve_same_day_statement_identity_and_cutoff(
         "('72030', '2024-01-19', 100, 100, 100, 100, 1000)"
     )
     conn.execute(
-        "INSERT INTO stock_provider_windows VALUES "
-        "('7203', '2024-01-01', '2024-01-31', '2024-01-31T16:30:00+09:00', "
+        "INSERT INTO stock_provider_windows (code, coverage_start, coverage_end, "
+        "provider_plan, provider_as_of, source_fingerprint, updated_at) VALUES "
+        "('7203', '2024-01-01', '2024-01-31', 'premium', '2024-01-31', "
         "'provider-fp', '2024-01-31')"
     )
     conn.execute(
@@ -2500,7 +2546,8 @@ class TestGetRankings:
                 FROM provider_rows
             )
             SELECT normalized_code AS code, min(date) AS coverage_start,
-                   max(date) AS coverage_end, max(date) AS provider_as_of,
+                   max(date) AS coverage_end, 'premium' AS provider_plan,
+                   max(date) AS provider_as_of,
                    lower(hex(bit_xor(row_hash)::BLOB)) AS source_fingerprint,
                    max(date) AS updated_at
             FROM row_hashes GROUP BY normalized_code

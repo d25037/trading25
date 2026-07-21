@@ -1799,10 +1799,14 @@ def _build_consumed_lineage_connection() -> duckdb.DuckDBPyConnection:
         f"""
         CREATE TABLE stock_provider_windows (
             code TEXT, coverage_start DATE, coverage_end DATE,
-            provider_as_of DATE, source_fingerprint TEXT, updated_at TEXT
+            provider_plan TEXT, provider_as_of DATE,
+            source_fingerprint TEXT, updated_at TEXT
         );
-        INSERT INTO stock_provider_windows VALUES (
-            '1111', DATE '2024-06-20', DATE '2024-06-20', DATE '2024-06-21',
+        INSERT INTO stock_provider_windows (
+            code, coverage_start, coverage_end, provider_plan, provider_as_of,
+            source_fingerprint, updated_at
+        ) VALUES (
+            '1111', DATE '2024-06-20', DATE '2024-06-20', 'premium', DATE '2024-06-21',
             '{provider_fingerprint}', 'unit-fixture'
         );
         CREATE TABLE stock_adjustment_events (
@@ -1880,7 +1884,10 @@ def test_consumed_pit_lineage_audit_rejects_ambiguous_provider_window() -> None:
     try:
         conn.execute(
             """
-            INSERT INTO stock_provider_windows
+            INSERT INTO stock_provider_windows (
+                code, coverage_start, coverage_end, provider_plan, provider_as_of,
+                source_fingerprint, updated_at
+            )
             SELECT * FROM stock_provider_windows WHERE code = '1111'
             """
         )

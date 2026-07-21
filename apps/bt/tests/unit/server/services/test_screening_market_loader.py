@@ -56,7 +56,8 @@ def _create_screening_current_basis_fixture(
     conn.execute("""
         CREATE TABLE stock_provider_windows (
             code TEXT PRIMARY KEY, coverage_start TEXT, coverage_end TEXT,
-            provider_as_of TEXT, source_fingerprint TEXT, updated_at TEXT
+            provider_plan TEXT, provider_as_of TEXT,
+            source_fingerprint TEXT, updated_at TEXT
         )
     """)
     conn.execute("""
@@ -91,9 +92,10 @@ def _create_screening_current_basis_fixture(
         )
     """)
     conn.execute(
-        "INSERT INTO stock_provider_windows VALUES "
+        "INSERT INTO stock_provider_windows (code, coverage_start, coverage_end, "
+        "provider_plan, provider_as_of, source_fingerprint, updated_at) VALUES "
         "('7203', '2024-01-04', '2024-07-31', "
-        "'2024-07-31T16:30:00+09:00', 'provider-fp', '2024-07-31')"
+        "'premium', '2024-07-31', 'provider-fp', '2024-07-31')"
     )
     conn.execute(
         "INSERT INTO current_basis_fundamentals_state VALUES (?, ?, ?, ?, ?)",

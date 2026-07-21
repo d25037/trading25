@@ -346,11 +346,14 @@ def analytics_timeseries_dir(tmp_path_factory):
             [dict(zip(provider_columns, row, strict=True)) for row in rows]
         )
         conn.execute(
-            "INSERT INTO stock_provider_windows VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO stock_provider_windows (code, coverage_start, coverage_end, "
+            "provider_plan, provider_as_of, source_fingerprint, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 normalized_code,
                 dates[0],
                 dates[-1],
+                "premium",
                 dates[-1],
                 source_fingerprint,
                 "2024-03-01T17:00:00+09:00",

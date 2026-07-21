@@ -26,7 +26,10 @@ from src.infrastructure.db.dataset_io.snapshot_contract import (
 from src.infrastructure.db.dataset_io.pit_validation import (
     find_dataset_snapshot_audit_error,
 )
-from src.shared.provider_stock_window import provider_stock_source_fingerprint
+from src.shared.provider_stock_window import (
+    provider_stock_source_fingerprint,
+    validate_provider_plan,
+)
 
 _SOURCE_ALIAS = "market_source"
 _TEMP_STOCK_CODE_TABLE = "_dataset_copy_target_stock_codes"
@@ -1322,13 +1325,6 @@ class _DatasetDuckDbStore:
             raise DatasetSnapshotError(
                 "Dataset v4 snapshots require provider_adjusted_v1"
             )
-        plan = self._conn.execute(
-            f"SELECT value FROM {source_alias}.sync_metadata "
-            "WHERE key = 'provider_plan'"
-        ).fetchone()
-        if plan is None or not str(plan[0]).strip():
-            raise DatasetSnapshotError("Market v5 provider plan metadata is missing")
-
     def _load_provider_vintage(
         self,
         source_alias: str,
@@ -1340,7 +1336,8 @@ class _DatasetDuckDbStore:
             f"""
             SELECT {normalized_window_code} AS code,
                    provider_window.coverage_start, provider_window.coverage_end,
-                   provider_window.provider_as_of, provider_window.source_fingerprint,
+                   provider_window.provider_plan, provider_window.provider_as_of,
+                   provider_window.source_fingerprint,
                    basis_state.fundamentals_adjustment_basis_date,
                    basis_state.source_fingerprint, basis_state.statement_count
             FROM {source_alias}.stock_provider_windows AS provider_window
@@ -1368,6 +1365,7 @@ class _DatasetDuckDbStore:
 
         starts: list[str] = []
         ends: list[str] = []
+        provider_plan_values: set[str] = set()
         provider_as_of_values: set[str] = set()
         basis_dates: set[str] = set()
         fingerprint_rows: list[dict[str, object]] = []
@@ -1379,15 +1377,21 @@ class _DatasetDuckDbStore:
             coverage_end = self._validated_snapshot_date(
                 str(row[2]), field=f"provider coverage end for {code}"
             )
+            try:
+                provider_plan = validate_provider_plan(row[3])
+            except ValueError as exc:
+                raise DatasetSnapshotError(
+                    f"provider plan is invalid for {code}"
+                ) from exc
             provider_as_of = self._validated_snapshot_date(
-                str(row[3]), field=f"provider as-of for {code}"
+                str(row[4]), field=f"provider as-of for {code}"
             )
             basis_date = self._validated_snapshot_date(
-                str(row[5]), field=f"fundamentals adjustment basis date for {code}"
+                str(row[6]), field=f"fundamentals adjustment basis date for {code}"
             )
-            window_fingerprint = str(row[4] or "").strip()
-            state_fingerprint = str(row[6] or "").strip()
-            statement_count = int(row[7]) if row[7] is not None else -1
+            window_fingerprint = str(row[5] or "").strip()
+            state_fingerprint = str(row[7] or "").strip()
+            statement_count = int(row[8]) if row[8] is not None else -1
             if (
                 coverage_start is None
                 or coverage_end is None
@@ -1475,6 +1479,7 @@ class _DatasetDuckDbStore:
                 )
             starts.append(coverage_start)
             ends.append(coverage_end)
+            provider_plan_values.add(provider_plan)
             provider_as_of_values.add(provider_as_of)
             basis_dates.add(basis_date)
             fingerprint_rows.append(
@@ -1482,6 +1487,7 @@ class _DatasetDuckDbStore:
                     "code": code,
                     "coverageStart": coverage_start,
                     "coverageEnd": coverage_end,
+                    "providerPlan": provider_plan,
                     "providerAsOf": provider_as_of,
                     "providerFingerprint": window_fingerprint,
                     "fundamentalsBasisDate": basis_date,
@@ -1500,17 +1506,17 @@ class _DatasetDuckDbStore:
             raise DatasetSnapshotError(
                 "selected stocks do not share one provider vintage"
             )
+        if len(provider_plan_values) != 1:
+            raise DatasetSnapshotError(
+                "selected stocks do not share one provider plan"
+            )
+        plan = next(iter(provider_plan_values))
         provider_as_of = next(iter(provider_as_of_values))
         fundamentals_basis_date = max(basis_dates)
         if fundamentals_basis_date > effective_end:
             raise DatasetSnapshotError(
                 "fundamentals adjustment basis date exceeds effective coverage end"
             )
-        plan_row = self._conn.execute(
-            f"SELECT value FROM {source_alias}.sync_metadata "
-            "WHERE key = 'provider_plan'"
-        ).fetchone()
-        plan = str(plan_row[0]).strip() if plan_row is not None else ""
         normalized = json.dumps(
             fingerprint_rows,
             ensure_ascii=False,

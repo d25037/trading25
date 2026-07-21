@@ -110,6 +110,7 @@ class DummyMarketDb:
 
     def get_provider_vintage_snapshot(self) -> dict[str, Any]:
         snapshot = {
+            "providerPlan": "standard",
             "providerAsOf": "2026-02-27",
             "providerAsOfMin": "2026-02-27",
             "providerAsOfMax": "2026-02-27",
@@ -125,6 +126,7 @@ class DummyMarketDb:
             if key
             in {
                 "providerAsOf",
+                "providerPlan",
                 "effectiveCoverageStart",
                 "effectiveCoverageEnd",
                 "providerSourceFingerprint",
@@ -508,6 +510,7 @@ def test_get_market_stats_exposes_provider_vintage_metadata_and_pending_recovery
 
         def get_provider_vintage_snapshot(self) -> dict[str, Any]:
             return {
+                "providerPlan": "standard",
                 "providerAsOf": "2026-07-20",
                 "providerAsOfMin": "2026-07-20",
                 "providerAsOfMax": "2026-07-20",
@@ -573,11 +576,15 @@ def test_get_market_stats_marks_incomplete_provider_vintage_metadata_invalid() -
     assert result.providerVintage.sourceFingerprint == "a" * 64
 
 
-def test_get_market_stats_rejects_padded_provider_plan_metadata() -> None:
+def test_get_market_stats_rejects_padded_provider_window_plan() -> None:
+    class PaddedPlanMarketDb(DummyMarketDb):
+        def get_provider_vintage_snapshot(self) -> dict[str, Any]:
+            snapshot = super().get_provider_vintage_snapshot()
+            snapshot["providerPlan"] = " standard "
+            return snapshot
+
     result = db_stats_service.get_market_stats(
-        market_db=DummyMarketDb(
-            metadata={METADATA_KEYS["PROVIDER_PLAN"]: " standard "}
-        ),
+        market_db=PaddedPlanMarketDb(),
         time_series_store=DummyStore(
             TimeSeriesInspection(
                 source="duckdb-parquet",

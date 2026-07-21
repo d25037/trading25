@@ -201,7 +201,8 @@ def load_selected_price_range(
         coverage AS (
             SELECT selected.code,
                    provider_window.coverage_start, provider_window.coverage_end,
-                   provider_window.provider_as_of, provider_window.source_fingerprint,
+                   provider_window.provider_plan, provider_window.provider_as_of,
+                   provider_window.source_fingerprint,
                    basis_state.fundamentals_adjustment_basis_date,
                    basis_state.source_fingerprint AS fundamentals_source_fingerprint,
                    count(raw.date) AS quote_count
@@ -235,7 +236,8 @@ def load_selected_price_range(
               AND raw.adjusted_low IS NOT NULL AND raw.adjusted_close IS NOT NULL
               AND raw.adjusted_volume IS NOT NULL
             GROUP BY selected.code, provider_window.coverage_start,
-                     provider_window.coverage_end, provider_window.provider_as_of,
+                     provider_window.coverage_end, provider_window.provider_plan,
+                     provider_window.provider_as_of,
                      provider_window.source_fingerprint,
                      basis_state.fundamentals_adjustment_basis_date,
                      basis_state.source_fingerprint
@@ -251,6 +253,7 @@ def load_selected_price_range(
         if row.get("coverage_start") is None
         or row.get("coverage_end") is None
         or int(row.get("quote_count") or 0) == 0
+        or not str(row.get("provider_plan") or "").strip()
         or not str(row.get("provider_as_of") or "").strip()
         or not str(row.get("source_fingerprint") or "").strip()
         or not str(row.get("fundamentals_source_fingerprint") or "").strip()
@@ -266,6 +269,11 @@ def load_selected_price_range(
         )
     date_from = max(str(row["coverage_start"]) for row in coverage)
     date_to = min(str(row["coverage_end"]) for row in coverage)
+    provider_plan_values = {str(row["provider_plan"]) for row in coverage}
+    if len(provider_plan_values) != 1:
+        raise DatasetSnapshotSelectionError(
+            "Selected stocks do not share one provider plan"
+        )
     provider_as_of_values = {str(row["provider_as_of"]) for row in coverage}
     if len(provider_as_of_values) != 1:
         raise DatasetSnapshotSelectionError(

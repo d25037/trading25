@@ -36,9 +36,9 @@ def _seed_provider_basis(
     db._execute(
         """
         INSERT INTO stock_provider_windows (
-            code, coverage_start, coverage_end, provider_as_of,
+            code, coverage_start, coverage_end, provider_plan, provider_as_of,
             source_fingerprint, updated_at
-        ) VALUES (?, '2020-01-01', ?, ?, 'window-fingerprint', '2025-01-01T00:00:00Z')
+        ) VALUES (?, '2020-01-01', ?, 'premium', ?, 'window-fingerprint', '2025-01-01T00:00:00Z')
         """,
         [code, basis_date, basis_date],
     )

@@ -15,6 +15,7 @@ from src.infrastructure.db.market.query_helpers import normalize_stock_code
 from src.shared.provider_stock_window import (
     combine_provider_stock_source_fingerprints,
     provider_stock_source_fingerprint,
+    validate_provider_plan,
 )
 
 
@@ -44,6 +45,7 @@ def get_provider_vintage_snapshot(
 ) -> dict[str, Any]:
     """Recompute provider-vintage ownership from bounded per-code source windows."""
     defaults: dict[str, Any] = {
+        "providerPlan": None,
         "providerAsOf": None,
         "providerAsOfMin": None,
         "providerAsOfMax": None,
@@ -76,6 +78,7 @@ def get_provider_vintage_snapshot(
             END AS code,
             coverage_start,
             coverage_end,
+            provider_plan,
             provider_as_of,
             source_fingerprint
         FROM stock_provider_windows
@@ -239,6 +242,7 @@ def get_provider_vintage_snapshot(
     valid_fingerprints: list[str] = []
     starts: list[str] = []
     ends: list[str] = []
+    plans: list[str] = []
     as_ofs: list[str] = []
     valid_window_count = 0
     event_count = 0
@@ -256,11 +260,16 @@ def get_provider_vintage_snapshot(
         window = code_windows[0] if len(code_windows) == 1 else {}
         coverage_start = str(window.get("coverage_start", ""))
         coverage_end = str(window.get("coverage_end", ""))
+        provider_plan = str(window.get("provider_plan", ""))
         provider_as_of = str(window.get("provider_as_of", ""))
         owned_fingerprint = str(window.get("source_fingerprint", ""))
         metadata_valid = len(code_windows) == 1 and bool(
             re.fullmatch(r"[0-9a-f]{64}", owned_fingerprint)
         )
+        try:
+            validate_provider_plan(provider_plan)
+        except ValueError:
+            metadata_valid = False
         try:
             parsed_start = date.fromisoformat(coverage_start)
             parsed_end = date.fromisoformat(coverage_end)
@@ -291,6 +300,7 @@ def get_provider_vintage_snapshot(
             valid_fingerprints.append(calculated_fingerprint)
             starts.append(coverage_start)
             ends.append(coverage_end)
+            plans.append(provider_plan)
             as_ofs.append(provider_as_of)
 
         code_event_count = int(evidence.get("adjustment_event_count", 0) or 0)
@@ -314,10 +324,13 @@ def get_provider_vintage_snapshot(
         valid_window_count == len(ownership_codes)
         and bool(starts)
         and max(starts) <= min(ends)
+        and len(set(plans)) == 1
+        and len(set(as_ofs)) == 1
     )
     return {
         **defaults,
-        "providerAsOf": as_ofs[0] if coherent and len(set(as_ofs)) == 1 else None,
+        "providerPlan": plans[0] if coherent else None,
+        "providerAsOf": as_ofs[0] if coherent else None,
         "providerAsOfMin": min(as_ofs) if as_ofs else None,
         "providerAsOfMax": max(as_ofs) if as_ofs else None,
         "effectiveCoverageStart": max(starts) if coherent else None,
@@ -329,7 +342,11 @@ def get_provider_vintage_snapshot(
         ),
         "providerWindowCoherent": coherent,
         "providerWindowFingerprintCount": valid_window_count,
-        "invalidProviderWindowCount": len(ownership_codes) - valid_window_count,
+        "invalidProviderWindowCount": (
+            len(ownership_codes) - valid_window_count
+            if coherent or valid_window_count < len(ownership_codes)
+            else len(ownership_codes)
+        ),
         "adjustmentEventCount": event_count,
         "adjustmentEventFingerprintCount": valid_event_count,
         "invalidAdjustmentEventCount": invalid_event_count,
@@ -359,6 +376,9 @@ def get_adjusted_metrics_source_diagnostics(
                 FROM stock_provider_windows AS provider_window
                 LEFT JOIN raw_bounds AS raw USING (code)
                 WHERE trim(provider_window.source_fingerprint) = ''
+                   OR trim(provider_window.provider_plan) = ''
+                   OR (SELECT COUNT(DISTINCT provider_plan)
+                       FROM stock_provider_windows) <> 1
                    OR provider_window.coverage_start > provider_window.coverage_end
                    OR provider_window.provider_as_of < provider_window.coverage_end
                    OR raw.code IS NULL

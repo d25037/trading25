@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date
 from typing import Any, Literal
 
 import pandas as pd
@@ -23,6 +24,7 @@ from src.domains.analytics.fundamental_ranking import (
     normalize_period_label,
 )
 from src.infrastructure.db.market.market_reader import MarketDbQueryable, MarketDbReader
+from src.shared.provider_stock_window import validate_provider_plan
 from src.shared.utils.pit_guard import filter_records_as_of
 from src.shared.utils.share_adjustment import (
     ShareCountSnapshot,
@@ -40,6 +42,7 @@ class ProviderWindow:
     code: str
     coverage_start: str
     coverage_end: str
+    provider_plan: str
     provider_as_of: str
     source_fingerprint: str
     fundamentals_adjustment_basis_date: str
@@ -63,6 +66,7 @@ def resolve_provider_windows(
         f"""
         SELECT {provider_code} AS code,
                provider.coverage_start, provider.coverage_end,
+               provider.provider_plan,
                provider.provider_as_of,
                provider.source_fingerprint AS provider_source_fingerprint,
                state.fundamentals_adjustment_basis_date,
@@ -151,6 +155,8 @@ def resolve_provider_windows(
     }
 
     resolved: dict[str, ProviderWindow] = {}
+    provider_plans: set[str] = set()
+    provider_as_of_dates: set[date] = set()
     for code in normalized_codes:
         row = by_code.get(code)
         if row is None:
@@ -160,6 +166,16 @@ def resolve_provider_windows(
             )
         coverage_start = str(row["coverage_start"])
         coverage_end = str(row["coverage_end"])
+        try:
+            coverage_start_date = date.fromisoformat(coverage_start)
+            coverage_end_date = date.fromisoformat(coverage_end)
+            provider_as_of_date = date.fromisoformat(str(row["provider_as_of"]))
+            provider_plan = validate_provider_plan(row["provider_plan"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"market_db_sync unavailable for {code} on {effective_market_date}: "
+                "provider window lineage is invalid"
+            ) from exc
         state_basis_date = row["fundamentals_adjustment_basis_date"]
         state_fingerprint = row["fundamentals_source_fingerprint"]
         state_count = row["statement_count"]
@@ -167,7 +183,8 @@ def resolve_provider_windows(
         if (
             coverage_start > effective_market_date
             or coverage_end < effective_market_date
-            or not str(row["provider_as_of"] or "").strip()
+            or coverage_start_date > coverage_end_date
+            or provider_as_of_date < coverage_end_date
             or not str(row["provider_source_fingerprint"] or "").strip()
         ):
             raise ValueError(
@@ -194,12 +211,20 @@ def resolve_provider_windows(
             code=code,
             coverage_start=coverage_start,
             coverage_end=coverage_end,
+            provider_plan=provider_plan,
             provider_as_of=str(row["provider_as_of"]),
             source_fingerprint=str(row["provider_source_fingerprint"]),
             fundamentals_adjustment_basis_date=str(state_basis_date),
             fundamentals_source_fingerprint=str(state_fingerprint),
             statement_count=int(state_count),
             materialized_at=str(materialized_at),
+        )
+        provider_plans.add(provider_plan)
+        provider_as_of_dates.add(provider_as_of_date)
+    if len(provider_plans) != 1 or len(provider_as_of_dates) != 1:
+        raise ValueError(
+            "market_db_sync unavailable: provider windows do not share one provider "
+            "plan and as-of frontier"
         )
     return resolved
 
