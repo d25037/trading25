@@ -20,7 +20,7 @@ class MarketOHLCVRecord(BaseModel):
     high: float
     low: float
     close: float
-    volume: int
+    volume: float
 
 
 class MarketMinuteBarRecord(BaseModel):

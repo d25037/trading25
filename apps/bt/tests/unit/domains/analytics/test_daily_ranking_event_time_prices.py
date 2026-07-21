@@ -69,11 +69,11 @@ def _build_market_v5_fixture(path: Path) -> duckdb.DuckDBPyConnection:
             close DOUBLE, volume BIGINT, turnover_value DOUBLE,
             adjustment_factor DOUBLE, adjusted_open DOUBLE,
             adjusted_high DOUBLE, adjusted_low DOUBLE, adjusted_close DOUBLE,
-            adjusted_volume BIGINT
+            adjusted_volume DOUBLE
         );
         CREATE TABLE stock_data (
             code TEXT, date TEXT, open DOUBLE, high DOUBLE, low DOUBLE,
-            close DOUBLE, volume BIGINT
+            close DOUBLE, volume DOUBLE
         );
         CREATE TABLE stock_master_daily (
             date TEXT, code TEXT, company_name TEXT, market_code TEXT
@@ -224,6 +224,32 @@ def test_event_time_signal_uses_provider_adjusted_rows_and_vintage(tmp_path: Pat
     assert rows[0][2:7] == pytest.approx((50.0, 51.0, 49.0, 50.0, 2_000))
     assert rows[1][2:7] == pytest.approx((60.0, 61.0, 59.0, 60.0, 2_000))
     assert rows[1][-1].startswith("provider-v1:1111:2024-01-08:")
+
+
+def test_event_time_signal_preserves_fractional_adjusted_volume(tmp_path: Path) -> None:
+    conn = _build_market_v5_fixture(tmp_path / "market.duckdb")
+    try:
+        conn.execute(
+            "UPDATE stock_data_raw SET adjusted_volume = 87308.9 "
+            "WHERE date = '2024-01-04'"
+        )
+        conn.execute(
+            "UPDATE stock_data SET volume = 87308.9 WHERE date = '2024-01-04'"
+        )
+        _refresh_provider_window(conn)
+        relations = build_daily_ranking_event_time_prices(
+            conn,
+            _generic_price_request("fractional_adjusted_volume"),
+        )
+        row = conn.execute(
+            f"SELECT volume FROM {relations.price_history} "
+            "WHERE date = '2024-01-04'"
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert row == pytest.approx((87308.9,))
+    assert isinstance(row[0], float)
 
 
 @pytest.mark.parametrize(

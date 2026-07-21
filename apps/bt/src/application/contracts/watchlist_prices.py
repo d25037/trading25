@@ -8,7 +8,7 @@ class WatchlistStockPrice(BaseModel):
     close: float
     prevClose: float | None = None
     changePercent: float | None = None
-    volume: int
+    volume: float
     date: str
 
 

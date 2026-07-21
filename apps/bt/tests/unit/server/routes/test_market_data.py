@@ -133,7 +133,11 @@ def _build_market_timeseries_dir(base_dir: Path) -> str:
                         if code == "72030"
                         else 13000.0 + offset * 50
                     )
-                    volume = 1_000_000 + offset * 100
+                    volume = (
+                        87308.9
+                        if code == "72030" and date_value == "2024-01-15"
+                        else 1_000_000 + offset * 100
+                    )
                     stock_rows.append(
                         {
                             "code": code,
@@ -588,7 +592,8 @@ class TestGetStockOhlcv:
         assert data[0]["date"] == "2024-01-15"
         assert "open" in data[0]
         assert "volume" in data[0]
-        assert isinstance(data[0]["volume"], int)
+        assert data[0]["volume"] == pytest.approx(87308.9)
+        assert isinstance(data[0]["volume"], float)
 
     def test_200_with_date_range(self, client_with_market_db):
         """日付範囲指定"""
@@ -620,6 +625,7 @@ class TestGetStockMinuteBars:
         assert len(data) == 2
         assert data[0]["time"] == "09:00"
         assert data[0]["volume"] == 1000
+        assert isinstance(data[0]["volume"], int)
         assert data[0]["turnoverValue"] == 2502000.0
         assert data[1]["time"] == "09:01"
 

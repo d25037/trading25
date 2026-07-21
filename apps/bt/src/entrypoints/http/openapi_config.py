@@ -314,7 +314,7 @@ def _is_dataset_ohlcv(candidate: dict | None) -> bool:
     if not isinstance(props, dict):
         return False
     volume_type = props.get("volume", {}).get("type")
-    return candidate.get("description") is None and volume_type == "integer"
+    return candidate.get("description") is None and volume_type == "number"
 
 
 def _is_indicators_ohlcv(candidate: dict | None) -> bool:

@@ -38,8 +38,25 @@ class MarketDataService:
         self._reader = reader
 
     @staticmethod
-    def _coerce_volume(value: object) -> int:
-        """Convert DB volume value to int with safe fallback for null/invalid values."""
+    def _coerce_daily_volume(value: object) -> float:
+        """Convert adjusted daily DB volume to float without losing fractions."""
+        if value is None:
+            return 0.0
+
+        if isinstance(value, (int, float)):
+            return float(value)
+
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                return 0.0
+
+        return 0.0
+
+    @staticmethod
+    def _coerce_minute_volume(value: object) -> int:
+        """Convert raw minute DB volume to integer with a safe fallback."""
         if value is None:
             return 0
 
@@ -189,7 +206,7 @@ class MarketDataService:
                 high=row["high"],
                 low=row["low"],
                 close=row["close"],
-                volume=self._coerce_volume(row["volume"]),
+                volume=self._coerce_daily_volume(row["volume"]),
             )
             for row in rows
         ]
@@ -234,7 +251,7 @@ class MarketDataService:
                         high=float(row["high"]),
                         low=float(row["low"]),
                         close=float(row["close"]),
-                        volume=self._coerce_volume(row["volume"]),
+                        volume=self._coerce_minute_volume(row["volume"]),
                         turnoverValue=(
                             float(row["turnover_value"])
                             if row["turnover_value"] is not None
@@ -330,7 +347,7 @@ class MarketDataService:
                                 high=r["high"],
                                 low=r["low"],
                                 close=r["close"],
-                                volume=self._coerce_volume(r["volume"]),
+                                volume=self._coerce_daily_volume(r["volume"]),
                             )
                             for r in data_rows
                         ],

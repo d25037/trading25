@@ -343,7 +343,7 @@ class _DatasetDuckDbStore:
                     high DOUBLE,
                     low DOUBLE,
                     close DOUBLE,
-                    volume BIGINT,
+                    volume DOUBLE,
                     adjustment_factor DOUBLE,
                     created_at TEXT,
                     PRIMARY KEY (code, date)
@@ -445,7 +445,7 @@ class _DatasetDuckDbStore:
                     adjusted_high DOUBLE,
                     adjusted_low DOUBLE,
                     adjusted_close DOUBLE,
-                    adjusted_volume BIGINT,
+                    adjusted_volume DOUBLE,
                     created_at TEXT,
                     PRIMARY KEY (code, date)
                 )
@@ -778,7 +778,7 @@ class _DatasetDuckDbStore:
                     high,
                     low,
                     close,
-                    CAST(volume AS BIGINT),
+                    CAST(volume AS DOUBLE),
                     adjustment_factor,
                     COALESCE(created_at, ?)
                 FROM {_TEMP_STOCK_DATA_TABLE}

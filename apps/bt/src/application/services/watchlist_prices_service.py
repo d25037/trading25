@@ -47,7 +47,7 @@ class WatchlistPricesService:
             )
 
             # 同日の4桁/5桁重複がある場合は先頭（4桁優先）を採用
-            entries: list[tuple[str, float, int]] = []
+            entries: list[tuple[str, float, float]] = []
             seen_dates: set[str] = set()
             for row in rows:
                 d = row["date"]

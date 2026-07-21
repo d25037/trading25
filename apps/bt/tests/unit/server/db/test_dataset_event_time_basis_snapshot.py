@@ -445,6 +445,43 @@ def test_copy_provider_snapshot_is_bounded_and_drops_basis_graph(tmp_path: Path)
         conn.close()
 
 
+def test_copy_provider_snapshot_preserves_fractional_adjusted_volume_in_duckdb_and_parquet(
+    tmp_path: Path,
+) -> None:
+    source = _build_v5_provider_market(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            "UPDATE stock_data_raw SET adjusted_volume = 87308.9 "
+            "WHERE code = '7203' AND date = '2024-01-04'"
+        )
+        conn.execute(
+            "UPDATE stock_data SET volume = 87308.9 "
+            "WHERE code = '7203' AND date = '2024-01-04'"
+        )
+        _refresh_declared_provider_fingerprint(conn)
+    finally:
+        conn.close()
+
+    snapshot, _ = _copy_snapshot(tmp_path, source)
+    conn = duckdb.connect(str(snapshot / "dataset.duckdb"), read_only=True)
+    try:
+        assert conn.execute(
+            "SELECT volume FROM stock_data WHERE code = '7203' AND date = '2024-01-04'"
+        ).fetchone() == pytest.approx((87308.9,))
+        assert conn.execute(
+            "SELECT adjusted_volume FROM stock_data_raw "
+            "WHERE code = '7203' AND date = '2024-01-04'"
+        ).fetchone() == pytest.approx((87308.9,))
+        assert conn.execute(
+            "SELECT adjusted_volume FROM read_parquet(?) "
+            "WHERE code = '7203' AND date = '2024-01-04'",
+            (str(snapshot / "parquet" / "stock_data_raw.parquet"),),
+        ).fetchone() == pytest.approx((87308.9,))
+    finally:
+        conn.close()
+
+
 def test_manifest_pins_provider_vintage_and_reader_uses_current_metrics(
     tmp_path: Path,
 ) -> None:

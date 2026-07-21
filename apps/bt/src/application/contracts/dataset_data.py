@@ -19,7 +19,7 @@ class OHLCVRecord(BaseModel):
     high: float
     low: float
     close: float
-    volume: int
+    volume: float
 
 
 class OHLCRecord(BaseModel):

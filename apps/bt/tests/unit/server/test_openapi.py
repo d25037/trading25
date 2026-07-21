@@ -220,6 +220,7 @@ class TestOpenAPISchema:
     def test_ohlcv_refs_are_stable_and_legacy_compatible(self, openapi_schema) -> None:
         """OHLCV系の $ref が baseline 互換キーへ固定されること"""
         schemas = openapi_schema.get("components", {}).get("schemas", {})
+        assert schemas["OHLCVRecord"]["properties"]["volume"]["type"] == "number"
 
         ohlcv_resample = schemas.get("OHLCVResampleResponse", {})
         resample_ref = (

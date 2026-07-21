@@ -650,7 +650,7 @@
                   "$ref": "#/$defs/real_nullable"
                 },
                 "volume": {
-                  "$ref": "#/$defs/integer_nullable"
+                  "$ref": "#/$defs/real_nullable"
                 },
                 "adjustment_factor": {
                   "$ref": "#/$defs/real_nullable"
@@ -741,7 +741,7 @@
                   "$ref": "#/$defs/real_nullable"
                 },
                 "adjusted_volume": {
-                  "$ref": "#/$defs/integer_nullable"
+                  "$ref": "#/$defs/real_nullable"
                 },
                 "created_at": {
                   "$ref": "#/$defs/text_nullable"

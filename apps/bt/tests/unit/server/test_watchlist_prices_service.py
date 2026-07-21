@@ -19,12 +19,12 @@ def _create_market_db(path: str) -> None:
         CREATE TABLE stock_data (
             code TEXT NOT NULL, date TEXT NOT NULL,
             open REAL, high REAL, low REAL,
-            close REAL NOT NULL, volume INTEGER NOT NULL,
+            close REAL NOT NULL, volume DOUBLE NOT NULL,
             adjustment_factor REAL, created_at TEXT,
             PRIMARY KEY (code, date)
         );
         INSERT INTO stock_data VALUES ('72030', '2024-01-04', 100, 110, 90, 2500, 1000000, 1.0, NULL);
-        INSERT INTO stock_data VALUES ('72030', '2024-01-05', 100, 110, 90, 2600, 1200000, 1.0, NULL);
+        INSERT INTO stock_data VALUES ('72030', '2024-01-05', 100, 110, 90, 2600, 87308.9, 1.0, NULL);
         INSERT INTO stock_data VALUES ('67580', '2024-01-04', 100, 110, 90, 1500, 500000, 1.0, NULL);
         INSERT INTO stock_data VALUES ('67580', '2024-01-05', 100, 110, 90, 1450, 600000, 1.0, NULL);
     """)
@@ -69,6 +69,17 @@ class TestWatchlistPricesService:
         assert p.prevClose == 1500
         assert p.changePercent is not None
         assert p.changePercent < 0
+
+    def test_preserves_fractional_daily_volume(
+        self, service: WatchlistPricesService, pdb: PortfolioDb
+    ) -> None:
+        pdb.create_watchlist("Tech")
+        pdb.add_watchlist_item(1, "7203", "トヨタ")
+
+        result = service.get_prices(1)
+
+        assert result.prices[0].volume == pytest.approx(87308.9)
+        assert isinstance(result.prices[0].volume, float)
 
     def test_empty_watchlist(self, service: WatchlistPricesService, pdb: PortfolioDb) -> None:
         pdb.create_watchlist("Empty")
