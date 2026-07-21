@@ -853,6 +853,10 @@ def test_trend_observation_bundle_preserves_sparse_session_authoritative_outcome
         conn.execute(
             "DELETE FROM stock_data_raw WHERE code = '1111' AND date = '2024-03-08'"
         )
+        conn.execute(
+            "DELETE FROM stock_data WHERE code = '1111' AND date = '2024-03-08'"
+        )
+        _refresh_fixture_provider_window(conn, "1111")
         conn.execute("DELETE FROM indices_data WHERE upper(code) = 'N225_UNDERPX'")
         conn.execute(
             "INSERT INTO indices_data "
@@ -1204,4 +1208,14 @@ def _refresh_fixture_provider_window(
             provider_stock_source_fingerprint(rows),
             code,
         ],
+    )
+    conn.execute(
+        "UPDATE current_basis_fundamentals_state "
+        "SET fundamentals_adjustment_basis_date = ? WHERE code = ?",
+        [rows[-1]["date"], code],
+    )
+    conn.execute(
+        "UPDATE daily_valuation SET fundamentals_adjustment_basis_date = ? "
+        "WHERE code = ?",
+        [rows[-1]["date"], code],
     )
