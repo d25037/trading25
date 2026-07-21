@@ -1481,7 +1481,8 @@ class DuckDbParquetTimeSeriesStore:
             existing_ledgers[code] = cast(tuple[str, str, str, str, str], existing)
             if existing[2] != stage.provider_plan:
                 continue
-            if stage.provider_as_of < existing[1]:
+            desired_provider_as_of = max(existing[3], stage.provider_as_of)
+            if desired_provider_as_of < existing[1]:
                 raise ValueError(
                     "Provider stock stage provider as-of precedes existing coverage"
                 )
@@ -1489,7 +1490,7 @@ class DuckDbParquetTimeSeriesStore:
                 existing[0],
                 existing[1],
                 existing[2],
-                max(existing[3], stage.provider_as_of),
+                desired_provider_as_of,
                 existing[4],
             )
         event_rows = [

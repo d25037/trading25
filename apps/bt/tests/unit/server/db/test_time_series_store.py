@@ -1995,6 +1995,80 @@ def test_same_plan_older_backfill_preserves_monotonic_provider_frontier(
     store.close()
 
 
+def test_same_plan_older_backfill_preserves_no_row_peer_window(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    initial_by_code = {
+        code: [
+            _provider_stock_row("2026-02-04", code=code),
+            _provider_stock_row("2026-02-06", code=code),
+        ]
+        for code in ("7203", "6758")
+    }
+    for code, initial in initial_by_code.items():
+        store.replace_stock_provider_window(
+            code,
+            initial,
+            {"start": "2026-02-04", "end": "2026-02-06"},
+            {
+                "provider_plan": "premium",
+                "provider_as_of": "2026-02-06",
+                "provider_source_fingerprint": provider_stock_source_fingerprint(
+                    initial
+                ),
+            },
+        )
+    backfill = _provider_stock_row("2026-02-05", code="7203")
+
+    result = store.publish_stock_data(
+        [backfill],
+        stage=provider_stock_window.ProviderStockStage(
+            provider_plan="premium",
+            provider_as_of="2026-02-05",
+            provider_codes=frozenset({"7203", "6758"}),
+        ),
+    )
+
+    assert result.stats.inserted == 1
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT date FROM stock_data_raw WHERE code = '7203' ORDER BY date"
+    ).fetchall() == [
+        ("2026-02-04",),
+        ("2026-02-05",),
+        ("2026-02-06",),
+    ]
+    windows = store._conn.execute(  # noqa: SLF001
+        "SELECT code, coverage_start, coverage_end, provider_plan, provider_as_of, "
+        "source_fingerprint FROM stock_provider_windows ORDER BY code"
+    ).fetchall()
+    assert windows == [
+        (
+            "6758",
+            "2026-02-04",
+            "2026-02-06",
+            "premium",
+            "2026-02-06",
+            provider_stock_source_fingerprint(initial_by_code["6758"]),
+        ),
+        (
+            "7203",
+            "2026-02-04",
+            "2026-02-06",
+            "premium",
+            "2026-02-06",
+            provider_stock_source_fingerprint(
+                [*initial_by_code["7203"], backfill]
+            ),
+        ),
+    ]
+    assert all(provider_as_of >= coverage_end for _, _, coverage_end, _, provider_as_of, _ in windows)
+    store.close()
+
+
 def test_normal_unit_factor_append_does_not_mark_fundamentals_pending(
     tmp_path: Path,
 ) -> None:

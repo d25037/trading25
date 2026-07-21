@@ -178,6 +178,30 @@ The existing alias, suspended/no-row, plan-change, mixed-plan, and
 pending/fingerprint subset was then run across the store, Dataset, PIT, and
 ranking consumers: `19 passed, 268 deselected`.
 
+### Independent re-review remediation
+
+A remaining Important finding was reproduced on clean remediation head
+`a574ef5fc3931c438e3edf448a1fdc682715d04a` before production changes:
+
+```bash
+uv run --directory apps/bt pytest \
+  tests/unit/server/db/test_time_series_store.py::test_same_plan_older_backfill_preserves_no_row_peer_window -q
+```
+
+- RED: 1 collected, 1 failed with `Provider stock stage provider as-of precedes
+  existing coverage`. A valid 7203 missing-date backfill at older frontier
+  `2026-02-05` was globally aborted because the same-plan 6758 peer had no staged
+  row and existing coverage/as-of through `2026-02-06`.
+- GREEN: 1 passed. The same-plan no-row branch now validates and stores
+  `max(existing_as_of, stage_as_of)`. The 7203 row is inserted, while the 6758
+  coverage, plan, as-of, and fingerprint remain unchanged and its frontier stays
+  on or after coverage end.
+
+The relation subset covering alias canonicalization, last-wins input accounting,
+older touched and no-row-peer backfills, newer suspended advancement, untouched
+plan-change windows, mixed plans, and pending fingerprints passed `15 passed,
+273 deselected`.
+
 ## Final verification
 
 Exact required focused suite:
@@ -195,7 +219,7 @@ uv run --directory apps/bt pytest \
   tests/unit/server/db/test_market_adjusted_metrics.py -q
 ```
 
-Result after independent-review remediation: `410 passed`, one pre-existing
+Result after independent re-review remediation: `411 passed`, one pre-existing
 warning.
 
 Plan-listed PIT/ranking consumers were additionally run in full:
