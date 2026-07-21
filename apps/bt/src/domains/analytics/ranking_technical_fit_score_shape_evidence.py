@@ -188,6 +188,10 @@ _REQUIRED_MARKET_TABLES = {
     "index_master",
     "stock_provider_windows",
     "stock_adjustment_events",
+    "current_basis_fundamentals_state",
+    "current_basis_recompute_pending",
+    "statements",
+    "statement_metrics_adjusted",
 }
 
 _DATA_PLANE_SCHEMA_VERSION = 5
@@ -583,12 +587,106 @@ def _audit_consumed_pit_lineage(
             f"{provider_mismatch_count} consumed Prime rows"
         )
 
+    pending_code = normalize_code_sql("pending.code")
+    pending_count = int(
+        conn.execute(
+            f"""
+            SELECT count(DISTINCT consumed.code)
+            FROM ranking_technical_fit_consumed_lineage AS consumed
+            JOIN current_basis_recompute_pending AS pending
+              ON {pending_code} = consumed.code
+            """
+        ).fetchone()[0]
+    )
+    if pending_count:
+        raise RuntimeError(
+            "PIT lineage validation failed: current-basis recompute is pending for "
+            f"{pending_count} consumed Prime symbols"
+        )
+
+    state_code = normalize_code_sql("state.code")
+    metric_code = normalize_code_sql("metric.code")
+    source_code = normalize_code_sql("source.code")
+    current_basis_mismatch_count = int(
+        conn.execute(
+            f"""
+            WITH consumed_codes AS (
+                SELECT DISTINCT code
+                FROM ranking_technical_fit_consumed_lineage
+            )
+            SELECT count(*)
+            FROM consumed_codes AS consumed
+            WHERE (
+                SELECT count(*)
+                FROM current_basis_fundamentals_state AS state
+                JOIN stock_provider_windows AS provider
+                  ON {provider_code} = consumed.code
+                 AND CAST(provider.coverage_end AS DATE) =
+                     CAST(state.fundamentals_adjustment_basis_date AS DATE)
+                WHERE {state_code} = consumed.code
+                  AND trim(coalesce(state.source_fingerprint, '')) <> ''
+                  AND trim(coalesce(state.materialized_at, '')) <> ''
+                  AND state.statement_count = (
+                      SELECT count(DISTINCT source.statement_id)
+                      FROM statements AS source
+                      WHERE {source_code} = consumed.code
+                  )
+                  AND state.statement_count = (
+                      SELECT count(DISTINCT metric.statement_id)
+                      FROM statement_metrics_adjusted AS metric
+                      WHERE {metric_code} = consumed.code
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM statement_metrics_adjusted AS metric
+                      LEFT JOIN statements AS source
+                        ON {source_code} = {metric_code}
+                       AND source.statement_id = metric.statement_id
+                      WHERE {metric_code} = consumed.code
+                        AND (
+                            metric.fundamentals_adjustment_basis_date
+                                IS DISTINCT FROM
+                                state.fundamentals_adjustment_basis_date
+                            OR metric.source_fingerprint
+                                IS DISTINCT FROM state.source_fingerprint
+                            OR source.statement_id IS NULL
+                            OR metric.disclosed_date
+                                IS DISTINCT FROM source.disclosed_date
+                            OR metric.disclosed_at
+                                IS DISTINCT FROM source.disclosed_at
+                            OR metric.period_end IS DISTINCT FROM source.period_end
+                            OR upper(coalesce(metric.period_type, ''))
+                                IS DISTINCT FROM upper(
+                                    coalesce(source.type_of_current_period, '')
+                                )
+                        )
+                  )
+            ) <> 1
+            """
+        ).fetchone()[0]
+    )
+    if current_basis_mismatch_count:
+        raise RuntimeError(
+            "PIT lineage validation failed: current-basis provenance is stale or "
+            f"incomplete for {current_basis_mismatch_count} consumed Prime symbols"
+        )
+
     valuation_mismatch_count = int(
         conn.execute(
             f"""
             SELECT count(*) FROM ranking_technical_fit_consumed_lineage consumed
             WHERE (
-                SELECT count(*) FROM daily_valuation valuation
+                SELECT count(*)
+                FROM daily_valuation valuation
+                JOIN current_basis_fundamentals_state state
+                  ON {state_code} = consumed.code
+                 AND valuation.fundamentals_adjustment_basis_date =
+                     state.fundamentals_adjustment_basis_date
+                 AND valuation.source_fingerprint = state.source_fingerprint
+                JOIN stock_provider_windows provider
+                  ON {provider_code} = consumed.code
+                 AND CAST(provider.coverage_end AS DATE) =
+                     CAST(state.fundamentals_adjustment_basis_date AS DATE)
                 WHERE {valuation_code} = consumed.code
                   AND CAST(valuation.date AS DATE) = CAST(consumed.date AS DATE)
                   AND CAST(valuation.price_basis_date AS DATE) = CAST(consumed.date AS DATE)
@@ -695,6 +793,10 @@ def _audit_consumed_pit_lineage(
             "stock_data_raw",
             "stock_provider_windows",
             "stock_adjustment_events",
+            "current_basis_fundamentals_state",
+            "current_basis_recompute_pending",
+            "statement_metrics_adjusted",
+            "statements",
         ),
         basis_ids=basis_ids,
         basis_id_sha256=basis_id_sha256,
@@ -3729,19 +3831,24 @@ def build_summary_markdown(
         "",
         "## PIT Lineage",
         "",
-        "- Data plane: physical `market.duckdb` schema v4。",
+        "- Data plane: physical `market.duckdb` schema v5 / `provider_adjusted_v1`。",
         "- Adjustment mode: "
         f"`stock_price_adjustment_mode={result.pit_lineage.stock_price_adjustment_mode}`。",
         "- Universe source: `stock_master_daily` exact signal-date membership。latest/current fallback なし。",
-        "- Basis-dependent sources: `daily_valuation`, `stock_data_raw`。service-local recomputation / fallback なし。",
+        "- Basis-dependent sources: `daily_valuation`, `stock_data_raw`, "
+        "`stock_provider_windows`, `stock_adjustment_events`, "
+        "`current_basis_fundamentals_state`, `current_basis_recompute_pending`, "
+        "`statement_metrics_adjusted`, `statements`。service-local recomputation / "
+        "fallback なし。",
         *price_projection_lines,
         "- Event-time basis verification: consumed Prime rows "
         f"`{result.pit_lineage.consumed_daily_valuation_row_count}` / basis IDs "
         f"`{len(result.pit_lineage.basis_ids)}` / basis rows "
-        f"`{result.pit_lineage.verified_basis_row_count}` / segment rows "
+        f"`{result.pit_lineage.verified_basis_row_count}` / adjustment event rows "
         f"`{result.pit_lineage.verified_segment_row_count}`。",
-        "- Catalog verification: cutoff-valid `basis_id` を "
-        "`stock_provider_windows` と `stock_adjustment_events` に照合済み。",
+        "- Provider/current-basis verification: cutoff-valid provider vintage を "
+        "`stock_provider_windows` / `stock_adjustment_events` と照合し、"
+        "`current_basis_fundamentals_state` / raw statement identity の完全性を検証済み。",
         "- Exact basis IDs: `manifest.json.result_metadata.pit_lineage.basis_ids`。",
         f"- basis_id SHA-256: `{result.pit_lineage.basis_id_sha256}`。",
         "- Invalidation disposition: "

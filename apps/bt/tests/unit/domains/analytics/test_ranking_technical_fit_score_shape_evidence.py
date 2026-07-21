@@ -15,6 +15,9 @@ import pytest
 
 import src.domains.analytics.ranking_technical_fit_score_shape_evidence as technical_fit
 
+from src.domains.analytics.daily_ranking_event_time_prices import (
+    DailyRankingPriceLineage,
+)
 from src.domains.analytics.ranking_technical_fit_score_shape_evidence import (
     RAW_SCORE_REGISTRY,
     REQUIRED_BUNDLE_TABLES,
@@ -36,51 +39,20 @@ from src.domains.analytics.ranking_technical_fit_score_shape_evidence import (
     write_ranking_technical_fit_score_shape_evidence_bundle,
 )
 from src.domains.analytics.trend_slope_features import rolling_log_slope_features
-from tests.unit.domains.analytics.test_ranking_fixed_return_priority_evidence import (
-    _mark_fixture_market_v4 as _mark_base_fixture_market_v4,
-)
 from tests.unit.domains.analytics.test_ranking_trend_acceleration_conditional_lift import (
     _build_mixed_market_db,
-    _mark_fixture_market_v4 as _mark_event_time_fixture_market_v5,
+    _refresh_fixture_provider_window,
+    _upgrade_fixture_market_v5,
 )
 
 
-def _create_fixture_basis_catalog_tables(conn: duckdb.DuckDBPyConnection) -> None:
-    conn.execute(
-        """
-        CREATE OR REPLACE TABLE stock_adjustment_bases (
-            code TEXT,
-            basis_id TEXT,
-            valid_from TEXT,
-            valid_to_exclusive TEXT,
-            adjustment_through_date TEXT,
-            source_fingerprint TEXT,
-            materialized_through_date TEXT,
-            status TEXT
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE OR REPLACE TABLE stock_adjustment_basis_segments (
-            code TEXT,
-            basis_id TEXT,
-            source_date_from TEXT,
-            source_date_to_exclusive TEXT,
-            cumulative_factor DOUBLE
-        )
-        """
-    )
-
-
-def _mark_fixture_market_v4(db_path: Path) -> None:
-    _mark_base_fixture_market_v4(db_path)
+def _mark_fixture_market_v5(db_path: Path) -> None:
     conn = duckdb.connect(str(db_path))
     try:
         _extend_technical_fit_leadership_history(conn)
     finally:
         conn.close()
-    _mark_event_time_fixture_market_v5(db_path)
+    _upgrade_fixture_market_v5(db_path)
 
 
 def _extend_technical_fit_leadership_history(
@@ -122,7 +94,7 @@ def _extend_technical_fit_leadership_history(
     ).fetchall()
     valuation_seed = conn.execute(
         f"SELECT code, price_basis_date, per, forward_per, pbr, p_op, "
-        f"forward_p_op, market_cap, free_float_market_cap, basis_version "
+        f"forward_p_op, market_cap, free_float_market_cap "
         f"FROM daily_valuation WHERE date = ? AND code IN ({placeholders}) "
         "ORDER BY code",
         [first_date.strftime("%Y-%m-%d"), *leadership_codes],
@@ -149,7 +121,10 @@ def _extend_technical_fit_leadership_history(
         [(day, *row) for day in dates for row in master_seed],
     )
     conn.executemany(
-        "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO daily_valuation ("
+        "code, date, price_basis_date, per, forward_per, pbr, p_op, forward_p_op, "
+        "market_cap, free_float_market_cap"
+        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [(code, day, *rest) for day in dates for code, *rest in valuation_seed],
     )
     conn.executemany(
@@ -166,7 +141,7 @@ def test_technical_fit_fixture_crosses_504_prior_session_boundary(
     tmp_path: Path,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
-    _mark_fixture_market_v4(db_path)
+    _mark_fixture_market_v5(db_path)
     conn = duckdb.connect(str(db_path))
     try:
         boundary = conn.execute(
@@ -1657,7 +1632,7 @@ def test_runner_builds_unique_prime_candidates_with_raw_levels_and_outcomes(
     tmp_path: Path,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
-    _mark_fixture_market_v4(db_path)
+    _mark_fixture_market_v5(db_path)
 
     result = _run_fixture_research(db_path)
     sample = result.observation_sample_df
@@ -1703,6 +1678,10 @@ def test_runner_builds_unique_prime_candidates_with_raw_levels_and_outcomes(
         "stock_data_raw",
         "stock_provider_windows",
         "stock_adjustment_events",
+        "current_basis_fundamentals_state",
+        "current_basis_recompute_pending",
+        "statement_metrics_adjusted",
+        "statements",
     )
     assert result.pit_lineage.verification_status == "verified"
     assert result.pit_lineage.consumed_daily_valuation_row_count > 0
@@ -1716,11 +1695,11 @@ def test_runner_builds_unique_prime_candidates_with_raw_levels_and_outcomes(
     assert result.pit_lineage.price_projection.completion_basis_sha256
 
 
-def test_runner_technical_features_and_outcomes_ignore_poisoned_stock_data(
+def test_runner_fails_closed_when_stock_data_projection_is_poisoned(
     tmp_path: Path,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
-    _mark_fixture_market_v4(db_path)
+    _mark_fixture_market_v5(db_path)
     before = _run_fixture_research(db_path).observation_sample_df
     conn = duckdb.connect(str(db_path))
     try:
@@ -1733,29 +1712,46 @@ def test_runner_technical_features_and_outcomes_ignore_poisoned_stock_data(
     finally:
         conn.close()
 
-    after = _run_fixture_research(db_path).observation_sample_df
-    stable_columns = [
-        "date",
-        "code",
-        "ring",
-        "liquidity_residual_z",
-        "atr20_pct",
-        "atr20_change_20d_pct",
-        "recent_return_20d_pct",
-        "recent_return_60d_pct",
-        "fixed_equal_level",
-        "ols_equal_level",
-        "forward_close_return_20d_pct",
-        "forward_close_excess_return_20d_pct",
-    ]
-    pd.testing.assert_frame_equal(
-        before[stable_columns].reset_index(drop=True),
-        after[stable_columns].reset_index(drop=True),
+    assert not before.empty
+    with pytest.raises(RuntimeError, match="provider vintage lineage"):
+        _run_fixture_research(db_path)
+
+
+def _verified_price_projection() -> DailyRankingPriceLineage:
+    return DailyRankingPriceLineage(
+        canonical_raw_row_count=1,
+        signal_feature_row_count=1,
+        outcome_request_row_count=1,
+        completed_outcome_row_count=1,
+        signal_basis_row_count=1,
+        signal_segment_row_count=1,
+        completion_basis_row_count=1,
+        completion_segment_row_count=1,
+        signal_basis_sha256="1" * 64,
+        signal_segment_sha256="2" * 64,
+        completion_basis_sha256="3" * 64,
+        completion_segment_sha256="4" * 64,
+        forward_outcome_sha256="5" * 64,
+        next_open_outcome_sha256="6" * 64,
+        price_projection_sha256="7" * 64,
+        signal_basis_policy="exact_provider_window_adjusted_prices_across_full_lookback",
+        completion_basis_policy=(
+            "exact_provider_window_applied_to_signal_and_completion_endpoints"
+        ),
+        next_open_integrity_policy=(
+            "exact_stock_entry_session_and_topix_entry_endpoint_no_backfill"
+        ),
+        adjustment_formula="provider_adjusted_ohlcv_direct",
+        verification_status="verified",
+        no_stock_data_fallback=True,
     )
 
 
 def _build_consumed_lineage_connection() -> duckdb.DuckDBPyConnection:
     conn = duckdb.connect()
+    provider_fingerprint = "a" * 64
+    fundamentals_fingerprint = "f" * 64
+    basis_id = f"provider-v1:1111:2024-06-21:{provider_fingerprint}"
     conn.execute(
         """
         CREATE TABLE ranking_color_panel (
@@ -1767,125 +1763,160 @@ def _build_consumed_lineage_connection() -> duckdb.DuckDBPyConnection:
     )
     conn.execute(
         """
-        CREATE TABLE stock_adjustment_bases (
-            code TEXT,
-            basis_id TEXT,
-            valid_from TEXT,
-            valid_to_exclusive TEXT,
-            adjustment_through_date TEXT,
-            source_fingerprint TEXT,
-            materialized_through_date TEXT,
-            status TEXT
+        CREATE TABLE stock_data_raw (
+            code TEXT, date DATE, open DOUBLE, high DOUBLE, low DOUBLE,
+            close DOUBLE, volume BIGINT, turnover_value DOUBLE,
+            adjustment_factor DOUBLE, adjusted_open DOUBLE,
+            adjusted_high DOUBLE, adjusted_low DOUBLE, adjusted_close DOUBLE,
+            adjusted_volume BIGINT
         )
         """
     )
     conn.execute(
         """
-        CREATE TABLE stock_adjustment_basis_segments (
-            code TEXT,
-            basis_id TEXT,
-            source_date_from TEXT,
-            source_date_to_exclusive TEXT,
-            cumulative_factor DOUBLE
+        CREATE TABLE stock_data (
+            code TEXT, date DATE, open DOUBLE, high DOUBLE, low DOUBLE,
+            close DOUBLE, volume BIGINT
         )
         """
     )
-    basis_id = "event-pit-v1:1111:2024-01-01"
     conn.execute(
         "INSERT INTO ranking_color_panel VALUES ('1111', '2024-06-20', ?)",
         [basis_id],
     )
     conn.execute(
         """
-        INSERT INTO stock_adjustment_bases VALUES (
-            '1111', ?, '2024-01-01', NULL, '2024-01-01',
-            'fixture-fingerprint', '2024-12-31', 'ready'
-        )
+        INSERT INTO stock_data_raw VALUES (
+            '1111', DATE '2024-06-20', 200, 202, 198, 200, 1000,
+            200000, 0.5, 100, 101, 99, 100, 2000
+        );
+        INSERT INTO stock_data VALUES (
+            '1111', DATE '2024-06-20', 100, 101, 99, 100, 2000
+        );
         """,
-        [basis_id],
     )
     conn.execute(
+        f"""
+        CREATE TABLE stock_provider_windows (
+            code TEXT, coverage_start DATE, coverage_end DATE,
+            provider_as_of DATE, source_fingerprint TEXT, updated_at TEXT
+        );
+        INSERT INTO stock_provider_windows VALUES (
+            '1111', DATE '2024-06-20', DATE '2024-06-20', DATE '2024-06-21',
+            '{provider_fingerprint}', 'unit-fixture'
+        );
+        CREATE TABLE stock_adjustment_events (
+            code TEXT, date DATE, adjustment_factor DOUBLE,
+            source_fingerprint TEXT
+        );
+        INSERT INTO stock_adjustment_events VALUES (
+            '1111', DATE '2024-06-20', 0.5, '{provider_fingerprint}'
+        );
         """
-        INSERT INTO stock_adjustment_basis_segments
-        VALUES ('1111', ?, '2024-01-01', NULL, 1.0)
-        """,
-        [basis_id],
+    )
+    conn.execute(
+        f"""
+        CREATE TABLE current_basis_fundamentals_state (
+            code TEXT, fundamentals_adjustment_basis_date DATE,
+            source_fingerprint TEXT, statement_count BIGINT,
+            materialized_at TEXT
+        );
+        INSERT INTO current_basis_fundamentals_state VALUES (
+            '1111', DATE '2024-06-20', '{fundamentals_fingerprint}', 1,
+            'unit-fixture'
+        );
+        CREATE TABLE current_basis_recompute_pending (code TEXT);
+        CREATE TABLE statements (
+            code TEXT, statement_id TEXT, disclosed_date DATE,
+            disclosed_at TEXT, period_end DATE, type_of_current_period TEXT
+        );
+        INSERT INTO statements VALUES (
+            '1111', 'statement-1', DATE '2024-05-10', '2024-05-10T06:00:00Z',
+            DATE '2024-03-31', 'FY'
+        );
+        CREATE TABLE statement_metrics_adjusted (
+            code TEXT, statement_id TEXT, disclosed_date DATE,
+            disclosed_at TEXT, period_end DATE, period_type TEXT,
+            fundamentals_adjustment_basis_date DATE, source_fingerprint TEXT
+        );
+        INSERT INTO statement_metrics_adjusted VALUES (
+            '1111', 'statement-1', DATE '2024-05-10', '2024-05-10T06:00:00Z',
+            DATE '2024-03-31', 'FY', DATE '2024-06-20',
+            '{fundamentals_fingerprint}'
+        );
+        CREATE TABLE daily_valuation (
+            code TEXT, date DATE, price_basis_date DATE,
+            fundamentals_adjustment_basis_date DATE, source_fingerprint TEXT
+        );
+        INSERT INTO daily_valuation VALUES (
+            '1111', DATE '2024-06-20', DATE '2024-06-20',
+            DATE '2024-06-20', '{fundamentals_fingerprint}'
+        );
+        """
     )
     return conn
 
 
-def test_consumed_pit_lineage_audit_accepts_exact_ready_basis_and_segment() -> None:
+def test_consumed_pit_lineage_audit_accepts_verified_provider_and_current_basis() -> None:
     conn = _build_consumed_lineage_connection()
     try:
         audit = technical_fit._audit_consumed_pit_lineage(
-            conn, source_name="ranking_color_panel"
+            conn,
+            _verified_price_projection(),
+            source_name="ranking_color_panel",
         )
     finally:
         conn.close()
 
-    assert audit.basis_ids == ("event-pit-v1:1111:2024-01-01",)
+    assert audit.basis_ids[0].startswith("provider-v1:1111:2024-06-21:")
     assert audit.consumed_daily_valuation_row_count == 1
     assert audit.verified_basis_row_count == 1
     assert audit.verified_segment_row_count == 1
     assert len(audit.basis_id_sha256) == 64
 
 
-def test_consumed_pit_lineage_audit_counts_invalid_overlapping_segment() -> None:
+def test_consumed_pit_lineage_audit_rejects_ambiguous_provider_window() -> None:
     conn = _build_consumed_lineage_connection()
     try:
         conn.execute(
             """
-            INSERT INTO stock_adjustment_basis_segments
-            VALUES (
-                '1111', 'event-pit-v1:1111:2024-01-01',
-                '2024-06-01', '2024-07-01', -1.0
-            )
+            INSERT INTO stock_provider_windows
+            SELECT * FROM stock_provider_windows WHERE code = '1111'
             """
         )
-        with pytest.raises(RuntimeError, match="exactly one total covering"):
+        with pytest.raises(RuntimeError, match="mismatched provider vintage"):
             technical_fit._audit_consumed_pit_lineage(
-                conn, source_name="ranking_color_panel"
+                conn,
+                _verified_price_projection(),
+                source_name="ranking_color_panel",
             )
     finally:
         conn.close()
 
 
-def test_consumed_pit_lineage_audit_counts_multiple_invalid_segments() -> None:
+def test_consumed_pit_lineage_audit_rejects_provider_event_mismatch() -> None:
     conn = _build_consumed_lineage_connection()
     try:
-        conn.execute(
-            "UPDATE stock_adjustment_basis_segments SET cumulative_factor = -1.0"
-        )
-        conn.execute(
-            """
-            INSERT INTO stock_adjustment_basis_segments
-            VALUES (
-                '1111', 'event-pit-v1:1111:2024-01-01',
-                '2024-06-01', '2024-07-01', -2.0
-            )
-            """
-        )
-        with pytest.raises(RuntimeError, match="exactly one total covering"):
+        conn.execute("UPDATE stock_adjustment_events SET adjustment_factor = 2.0")
+        with pytest.raises(RuntimeError, match="provider event ledger mismatch"):
             technical_fit._audit_consumed_pit_lineage(
-                conn, source_name="ranking_color_panel"
+                conn,
+                _verified_price_projection(),
+                source_name="ranking_color_panel",
             )
     finally:
         conn.close()
 
 
-@pytest.mark.parametrize("invalid_factor", [0.0, -1.0, float("inf")])
-def test_consumed_pit_lineage_audit_rejects_invalid_single_segment_factor(
-    invalid_factor: float,
-) -> None:
+def test_consumed_pit_lineage_audit_rejects_pending_current_basis() -> None:
     conn = _build_consumed_lineage_connection()
     try:
-        conn.execute(
-            "UPDATE stock_adjustment_basis_segments SET cumulative_factor = ?",
-            [invalid_factor],
-        )
-        with pytest.raises(RuntimeError, match="finite and positive"):
+        conn.execute("INSERT INTO current_basis_recompute_pending VALUES ('1111')")
+        with pytest.raises(RuntimeError, match="current-basis recompute is pending"):
             technical_fit._audit_consumed_pit_lineage(
-                conn, source_name="ranking_color_panel"
+                conn,
+                _verified_price_projection(),
+                source_name="ranking_color_panel",
             )
     finally:
         conn.close()
@@ -1896,23 +1927,23 @@ def test_consumed_pit_lineage_audit_rejects_invalid_single_segment_factor(
     [
         (
             "UPDATE ranking_color_panel SET valuation_basis_id = NULL",
-            "missing cutoff-valid daily_valuation basis",
+            "missing cutoff-valid daily_valuation provider vintage",
         ),
         (
             "UPDATE ranking_color_panel SET valuation_basis_id = 'mismatched-basis'",
-            "mismatched cutoff-valid basis",
+            "mismatched provider vintage",
         ),
         (
-            "DELETE FROM stock_adjustment_bases",
-            "mismatched cutoff-valid basis",
+            "DELETE FROM stock_provider_windows",
+            "mismatched provider vintage",
         ),
         (
-            "DELETE FROM stock_adjustment_basis_segments",
-            "exactly one total covering adjustment basis segment",
+            "UPDATE daily_valuation SET price_basis_date = DATE '2024-06-19'",
+            "missing current-basis daily_valuation",
         ),
         (
-            "UPDATE stock_adjustment_bases SET materialized_through_date = '2024-06-19'",
-            "ready and materialized through signal date",
+            "UPDATE daily_valuation SET source_fingerprint = repeat('0', 64)",
+            "missing current-basis daily_valuation",
         ),
     ],
 )
@@ -1925,23 +1956,50 @@ def test_consumed_pit_lineage_audit_fails_closed_on_missing_or_mismatched_lineag
         conn.execute(mutation_sql)
         with pytest.raises(RuntimeError, match=message):
             technical_fit._audit_consumed_pit_lineage(
-                conn, source_name="ranking_color_panel"
+                conn,
+                _verified_price_projection(),
+                source_name="ranking_color_panel",
             )
     finally:
         conn.close()
 
 
-def test_runner_rejects_market_v4_without_basis_catalog_tables(tmp_path: Path) -> None:
-    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
-    _mark_base_fixture_market_v4(db_path)
-    conn = duckdb.connect(str(db_path))
+@pytest.mark.parametrize(
+    "mutation_sql",
+    [
+        "UPDATE current_basis_fundamentals_state SET statement_count = 2",
+        "UPDATE statement_metrics_adjusted SET disclosed_date = DATE '2024-05-09'",
+        "DELETE FROM statements",
+        "UPDATE current_basis_fundamentals_state "
+        "SET fundamentals_adjustment_basis_date = DATE '2024-06-19'",
+    ],
+)
+def test_consumed_pit_lineage_audit_rejects_incomplete_current_basis(
+    mutation_sql: str,
+) -> None:
+    conn = _build_consumed_lineage_connection()
     try:
-        conn.execute("DROP TABLE IF EXISTS stock_adjustment_basis_segments")
-        conn.execute("DROP TABLE IF EXISTS stock_adjustment_bases")
+        conn.execute(mutation_sql)
+        with pytest.raises(RuntimeError, match="current-basis provenance is stale"):
+            technical_fit._audit_consumed_pit_lineage(
+                conn,
+                _verified_price_projection(),
+                source_name="ranking_color_panel",
+            )
     finally:
         conn.close()
 
-    with pytest.raises(RuntimeError, match="stock_adjustment_bases"):
+
+def test_runner_rejects_market_v5_without_provider_lineage_tables(tmp_path: Path) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    _mark_fixture_market_v5(db_path)
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute("DROP TABLE stock_provider_windows")
+    finally:
+        conn.close()
+
+    with pytest.raises(RuntimeError, match="stock_provider_windows"):
         _run_fixture_research(db_path)
 
 
@@ -1949,18 +2007,16 @@ def test_runner_filters_daily_valuation_to_cutoff_valid_basis_and_fails_closed(
     tmp_path: Path,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
-    _mark_fixture_market_v4(db_path)
+    _mark_fixture_market_v5(db_path)
     conn = duckdb.connect(str(db_path))
     try:
-        conn.execute(
-            "UPDATE daily_valuation SET basis_version = 'future-or-latest-fallback' "
-            "WHERE code = '1111'"
-        )
+        conn.execute("UPDATE daily_valuation SET source_fingerprint = repeat('0', 64) "
+                     "WHERE code = '1111'")
     finally:
         conn.close()
 
     with pytest.raises(
-        RuntimeError, match="missing cutoff-valid daily_valuation basis"
+        RuntimeError, match="current fundamentals lineage is missing or inconsistent"
     ):
         _run_fixture_research(db_path)
 
@@ -1969,7 +2025,7 @@ def test_outcome_completion_date_is_exact_stock_twenty_session_lead(
     tmp_path: Path,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
-    _mark_fixture_market_v4(db_path)
+    _mark_fixture_market_v5(db_path)
     future_dates = pd.bdate_range("2024-07-01", periods=25).strftime("%Y-%m-%d")
     conn = duckdb.connect(str(db_path))
     try:
@@ -1988,9 +2044,29 @@ def test_outcome_completion_date_is_exact_stock_twenty_session_lead(
                     f"WHERE date = (SELECT max(date) FROM {table_name})",
                     [future_date],
                 )
+        provider_codes = [
+            str(row[0])
+            for row in conn.execute(
+                "SELECT code FROM stock_provider_windows ORDER BY code"
+            ).fetchall()
+        ]
+        for code in provider_codes:
+            _refresh_fixture_provider_window(conn, code)
         conn.execute(
-            "UPDATE stock_adjustment_bases SET materialized_through_date = ?",
+            "UPDATE stock_provider_windows SET provider_as_of = ?",
             [future_dates[-1]],
+        )
+        conn.execute(
+            "UPDATE current_basis_fundamentals_state "
+            "SET fundamentals_adjustment_basis_date = ?",
+            [future_dates[-1]],
+        )
+        conn.execute(
+            "UPDATE daily_valuation SET price_basis_date = date, "
+            "fundamentals_adjustment_basis_date = state.fundamentals_adjustment_basis_date, "
+            "source_fingerprint = state.source_fingerprint "
+            "FROM current_basis_fundamentals_state state "
+            "WHERE daily_valuation.code = state.code"
         )
     finally:
         conn.close()
@@ -2033,49 +2109,18 @@ def test_outcome_completion_date_is_exact_stock_twenty_session_lead(
             str(complete["date"])[:10]
         )
         completion_date = str(session_dates.iloc[signal_index + 20])[:10]
-        completion_basis_id = conn.execute(
-            """
-            SELECT basis_id
-            FROM stock_adjustment_bases
-            WHERE code = ?
-              AND CAST(valid_from AS DATE) <= CAST(? AS DATE)
-              AND (valid_to_exclusive IS NULL
-                   OR CAST(? AS DATE) < CAST(valid_to_exclusive AS DATE))
-            """,
-            [str(complete["code"]), completion_date, completion_date],
-        ).fetchone()[0]
         projected_signal_close, projected_completion_close = conn.execute(
             """
-            SELECT
-                signal.close * signal_segment.cumulative_factor,
-                completion.close * completion_segment.cumulative_factor
+            SELECT signal.adjusted_close, completion.adjusted_close
             FROM stock_data_raw signal
-            JOIN stock_adjustment_basis_segments signal_segment
-              ON signal_segment.code = signal.code
-             AND signal_segment.basis_id = ?
-             AND CAST(signal_segment.source_date_from AS DATE)
-                   <= CAST(signal.date AS DATE)
-             AND (signal_segment.source_date_to_exclusive IS NULL
-                  OR CAST(signal.date AS DATE)
-                       < CAST(signal_segment.source_date_to_exclusive AS DATE))
             JOIN stock_data_raw completion
               ON completion.code = signal.code
              AND CAST(completion.date AS DATE) = CAST(? AS DATE)
-            JOIN stock_adjustment_basis_segments completion_segment
-              ON completion_segment.code = completion.code
-             AND completion_segment.basis_id = ?
-             AND CAST(completion_segment.source_date_from AS DATE)
-                   <= CAST(completion.date AS DATE)
-             AND (completion_segment.source_date_to_exclusive IS NULL
-                  OR CAST(completion.date AS DATE)
-                       < CAST(completion_segment.source_date_to_exclusive AS DATE))
             WHERE signal.code = ?
               AND CAST(signal.date AS DATE) = CAST(? AS DATE)
             """,
             [
-                completion_basis_id,
                 completion_date,
-                completion_basis_id,
                 str(complete["code"]),
                 str(complete["date"])[:10],
             ],
@@ -2201,8 +2246,8 @@ def test_candidate_outcomes_share_full_stock_session_leg_and_independent_n225() 
 @pytest.mark.parametrize(
     ("schema_version", "adjustment_mode", "message"),
     [
-        (3, "local_projection_v2_event_time", "required schema version 4"),
-        (4, "legacy_adjusted", "stock_price_adjustment_mode"),
+        (4, "provider_adjusted_v1", "required schema version 5"),
+        (5, "legacy_adjusted", "stock_price_adjustment_mode"),
     ],
 )
 def test_runner_rejects_incompatible_market_metadata(
@@ -2212,6 +2257,7 @@ def test_runner_rejects_incompatible_market_metadata(
     message: str,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    _mark_fixture_market_v5(db_path)
     conn = duckdb.connect(str(db_path))
     try:
         conn.execute("CREATE OR REPLACE TABLE market_schema_version(version INTEGER)")
@@ -2223,14 +2269,6 @@ def test_runner_rejects_incompatible_market_metadata(
             "INSERT INTO sync_metadata VALUES ('stock_price_adjustment_mode', ?)",
             [adjustment_mode],
         )
-        conn.execute(
-            """
-            CREATE OR REPLACE TABLE stock_data_raw AS
-            SELECT *, 1.0::DOUBLE AS adjustment_factor
-            FROM stock_data
-            """
-        )
-        _create_fixture_basis_catalog_tables(conn)
     finally:
         conn.close()
 
@@ -2242,7 +2280,7 @@ def test_appending_future_rows_does_not_change_earlier_rings_or_raw_levels(
     tmp_path: Path,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
-    _mark_fixture_market_v4(db_path)
+    _mark_fixture_market_v5(db_path)
     before = _run_fixture_research(db_path).observation_sample_df
     conn = duckdb.connect(str(db_path))
     try:
@@ -2309,7 +2347,7 @@ def test_bundle_writes_exact_typed_table_contract_and_frozen_provenance(
     tmp_path: Path,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
-    _mark_fixture_market_v4(db_path)
+    _mark_fixture_market_v5(db_path)
     result = _run_fixture_research(db_path)
 
     bundle = write_ranking_technical_fit_score_shape_evidence_bundle(
@@ -2353,11 +2391,20 @@ def test_bundle_writes_exact_typed_table_contract_and_frozen_provenance(
         == "completed_outcomes_strictly_before_evaluation_year"
     )
     lineage = manifest["result_metadata"]["pit_lineage"]
-    assert lineage["data_plane"] == "physical_market.duckdb_schema_v4"
-    assert lineage["stock_price_adjustment_mode"] == "local_projection_v2_event_time"
+    assert lineage["data_plane"] == "physical_market.duckdb_schema_v5"
+    assert lineage["stock_price_adjustment_mode"] == "provider_adjusted_v1"
     assert lineage["universe_source"] == "stock_master_daily"
     assert lineage["as_of_policy"] == "exact_signal_date_no_latest_fallback"
-    assert lineage["basis_dependent_sources"] == ["daily_valuation", "stock_data_raw"]
+    assert lineage["basis_dependent_sources"] == [
+        "daily_valuation",
+        "stock_data_raw",
+        "stock_provider_windows",
+        "stock_adjustment_events",
+        "current_basis_fundamentals_state",
+        "current_basis_recompute_pending",
+        "statement_metrics_adjusted",
+        "statements",
+    ]
     assert lineage["basis_ids"] == list(result.pit_lineage.basis_ids)
     price_lineage = lineage["price_projection"]
     assert price_lineage["physical_price_source"] == "stock_data_raw"
@@ -2410,7 +2457,7 @@ def test_bundle_contract_rejects_column_drift_for_every_table() -> None:
 
 def test_bundle_writer_rejects_nonempty_frame_column_drift(tmp_path: Path) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
-    _mark_fixture_market_v4(db_path)
+    _mark_fixture_market_v5(db_path)
     result = _run_fixture_research(db_path)
     drifted_result = replace(
         result,
@@ -2452,7 +2499,7 @@ def test_empty_custom_horizon_observation_bundle_uses_matching_duckdb_schema(
     tmp_path: Path,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
-    _mark_fixture_market_v4(db_path)
+    _mark_fixture_market_v5(db_path)
     baseline = _run_fixture_research(db_path)
     result = replace(
         baseline,
@@ -2486,7 +2533,7 @@ def test_summary_is_japanese_decision_first_and_matches_decision_gate(
     tmp_path: Path,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
-    _mark_fixture_market_v4(db_path)
+    _mark_fixture_market_v5(db_path)
     result = _run_fixture_research(db_path)
     final_decision = result.decision_gate_df.loc[
         result.decision_gate_df["decision_key"].eq("fixed_vs_ols"), "decision"
@@ -2504,9 +2551,10 @@ def test_summary_is_japanese_decision_first_and_matches_decision_gate(
     assert "family=`fixed` / ring=`core_high_high`" in summary
     assert "shape_classification=" in summary
     assert "## PIT Lineage" in summary
-    assert "physical `market.duckdb` schema v4" in summary
-    assert "stock_adjustment_bases" in summary
-    assert "stock_adjustment_basis_segments" in summary
+    assert "physical `market.duckdb` schema v5 / `provider_adjusted_v1`" in summary
+    assert "stock_provider_windows" in summary
+    assert "stock_adjustment_events" in summary
+    assert "current_basis_fundamentals_state" in summary
     assert "Physical price source: `stock_data_raw`" in summary
     assert "`stock_data` fallback なし" in summary
     assert result.pit_lineage.basis_id_sha256 in summary
