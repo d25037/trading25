@@ -61,7 +61,10 @@ description: Minimal market-backed example
 
 shared_config:
   data_source: market
-  universe_preset: primeMarket
+  universe_preset: prime
+  start_date: "2024-01-04"
+  end_date: "2024-12-30"
+  universe_as_of_date: "2024-01-04"
 
 entry_filter_params:
   buy_and_hold:
