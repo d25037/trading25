@@ -80,7 +80,6 @@ class MarketSchemaStats(BaseModel):
     version: int | None = None
     requiredVersion: int = 5
     current: bool = False
-    resetBeforeSyncEligible: bool = False
 
 
 class StockMasterCoverageStats(BaseModel):
@@ -347,7 +346,7 @@ class MarketValidationResponse(BaseModel):
 # --- Sync ---
 
 
-SyncModeLiteral = Literal["auto", "initial", "incremental", "repair"]
+SyncModeLiteral = Literal["initial", "incremental"]
 IntradaySyncModeLiteral = Literal["auto", "bulk", "rest"]
 
 

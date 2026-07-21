@@ -36,16 +36,10 @@ class DummyMarketDb:
         *,
         legacy_stock_snapshot: bool = False,
         schema_version: int | None = MARKET_SCHEMA_VERSION,
-        adjustment_mode: str | None = PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
-        schema_valid: bool = True,
-        reset_eligibility_error: Exception | None = None,
     ) -> None:
         self._last_sync_date = last_sync_date
         self._legacy_stock_snapshot = legacy_stock_snapshot
         self._schema_version = schema_version
-        self._adjustment_mode = adjustment_mode
-        self._schema_valid = schema_valid
-        self._reset_eligibility_error = reset_eligibility_error
         self.ensure_schema_calls = 0
         self.metadata: dict[str, str] = {}
 
@@ -70,17 +64,6 @@ class DummyMarketDb:
 
     def is_market_schema_current(self) -> bool:
         return self._schema_version == MARKET_SCHEMA_VERSION
-
-    def is_reset_before_sync_eligible(self) -> bool:
-        if self._reset_eligibility_error is not None:
-            raise self._reset_eligibility_error
-        return (
-            self._schema_version == MARKET_SCHEMA_VERSION
-            and self._adjustment_mode == PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
-            and self._schema_valid
-            and not self._legacy_stock_snapshot
-        )
-
 
 class DummyTimeSeriesStore:
     def __init__(
@@ -127,9 +110,6 @@ def _market_db(
     *,
     legacy_stock_snapshot: bool = False,
     schema_version: int | None = MARKET_SCHEMA_VERSION,
-    adjustment_mode: str | None = PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
-    schema_valid: bool = True,
-    reset_eligibility_error: Exception | None = None,
 ) -> sync_service.SyncServiceMarketDbLike:
     return cast(
         sync_service.SyncServiceMarketDbLike,
@@ -137,9 +117,6 @@ def _market_db(
             last_sync_date=last_sync_date,
             legacy_stock_snapshot=legacy_stock_snapshot,
             schema_version=schema_version,
-            adjustment_mode=adjustment_mode,
-            schema_valid=schema_valid,
-            reset_eligibility_error=reset_eligibility_error,
         ),
     )
 
@@ -260,13 +237,6 @@ def isolated_manager(monkeypatch: pytest.MonkeyPatch) -> GenericJobManager:
     return manager
 
 
-def test_resolve_mode_prefers_requested_non_auto() -> None:
-    market_db = _market_db(last_sync_date=None)
-    assert sync_service._resolve_mode(SyncMode.INITIAL, market_db) == "initial"
-    assert sync_service._resolve_mode(SyncMode.INCREMENTAL, market_db) == "incremental"
-    assert sync_service._resolve_mode(SyncMode.REPAIR, market_db) == "repair"
-
-
 def test_sync_result_separates_append_and_affected_code_replacement_counters() -> None:
     result = SyncResult(
         success=True,
@@ -320,17 +290,6 @@ async def test_start_sync_publishes_structured_stock_commit_progress_counters(
     assert stored.progress.stockRowsReplaced == 5
 
 
-def test_resolve_mode_auto_uses_metadata_anchor() -> None:
-    assert (
-        sync_service._resolve_mode(
-            SyncMode.AUTO,
-            _market_db(last_sync_date="2026-03-01T00:00:00+00:00"),
-            time_series_store=_time_series_store(),
-        )
-        == "incremental"
-    )
-
-
 def test_publish_sync_job_event_closes_stream_only_when_requested(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -344,59 +303,6 @@ def test_publish_sync_job_event_closes_stream_only_when_requested(
     stream_manager.close.assert_called_once_with("job-2")
 
 
-def test_resolve_mode_auto_defaults_to_initial_without_timeseries_store() -> None:
-    assert (
-        sync_service._resolve_mode(
-            SyncMode.AUTO,
-            _market_db(last_sync_date=None),
-            time_series_store=None,
-        )
-        == "initial"
-    )
-
-
-def test_resolve_mode_auto_uses_timeseries_snapshot_when_last_sync_missing() -> None:
-    empty_store = _time_series_store(
-        inspection=TimeSeriesInspection(source="duckdb-parquet")
-    )
-    assert (
-        sync_service._resolve_mode(
-            SyncMode.AUTO,
-            _market_db(last_sync_date=None),
-            time_series_store=empty_store,
-        )
-        == "initial"
-    )
-
-    populated_store = _time_series_store(
-        inspection=TimeSeriesInspection(
-            source="duckdb-parquet",
-            stock_count=10,
-            stock_max="2026-03-04",
-        )
-    )
-    assert (
-        sync_service._resolve_mode(
-            SyncMode.AUTO,
-            _market_db(last_sync_date=None),
-            time_series_store=populated_store,
-        )
-        == "incremental"
-    )
-
-
-def test_resolve_mode_auto_raises_when_inspection_fails() -> None:
-    failing_store = _time_series_store(inspect_error=RuntimeError("inspect failed"))
-    with pytest.raises(
-        RuntimeError, match="DuckDB inspection failed while resolving AUTO sync mode"
-    ):
-        sync_service._resolve_mode(
-            SyncMode.AUTO,
-            _market_db(last_sync_date=None),
-            time_series_store=failing_store,
-        )
-
-
 @pytest.mark.asyncio
 async def test_start_sync_requires_duckdb_store(
     isolated_manager: GenericJobManager,
@@ -406,7 +312,7 @@ async def test_start_sync_requires_duckdb_store(
         RuntimeError, match="DuckDB time-series store is required for sync"
     ):
         await sync_service.start_sync(
-            SyncMode.AUTO,
+            SyncMode.INCREMENTAL,
             _market_db(),
             DummyJQuantsClient(),
             time_series_store=None,
@@ -446,7 +352,7 @@ async def test_start_sync_rejects_reset_before_sync_outside_initial_mode(
 ) -> None:
     del isolated_manager
     with pytest.raises(
-        RuntimeError, match="resetBeforeSync is supported only for initial sync"
+        RuntimeError, match="incremental sync requires resetBeforeSync=false"
     ):
         await sync_service.start_sync(
             SyncMode.INCREMENTAL,
@@ -472,109 +378,6 @@ async def test_start_sync_requires_reset_callback_when_reset_enabled(
         )
 
 
-@pytest.mark.parametrize(
-    (
-        "schema_version",
-        "adjustment_mode",
-        "schema_valid",
-        "legacy_stock_snapshot",
-        "reset_eligibility_error",
-    ),
-    [
-        pytest.param(4, "local_projection_v2_event_time", True, False, None, id="v4"),
-        pytest.param(3, None, True, False, None, id="v3"),
-        pytest.param(None, None, True, False, None, id="missing-schema"),
-        pytest.param(5, None, True, False, None, id="missing-adjustment-mode"),
-        pytest.param(
-            5,
-            "local_projection_v2_event_time",
-            True,
-            False,
-            None,
-            id="wrong-adjustment-mode",
-        ),
-        pytest.param(
-            5,
-            PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
-            False,
-            False,
-            None,
-            id="malformed-schema-validation",
-        ),
-        pytest.param(
-            5,
-            PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
-            True,
-            True,
-            None,
-            id="legacy-snapshot",
-        ),
-        pytest.param(
-            5,
-            PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
-            True,
-            False,
-            RuntimeError("malformed DuckDB metadata"),
-            id="predicate-error",
-        ),
-    ],
-)
-@pytest.mark.asyncio
-async def test_start_sync_rejects_incompatible_reset_before_job_creation(
-    monkeypatch: pytest.MonkeyPatch,
-    isolated_manager: GenericJobManager,
-    schema_version: int | None,
-    adjustment_mode: str | None,
-    schema_valid: bool,
-    legacy_stock_snapshot: bool,
-    reset_eligibility_error: Exception | None,
-) -> None:
-    market_db = _market_db(
-        schema_version=schema_version,
-        adjustment_mode=adjustment_mode,
-        schema_valid=schema_valid,
-        legacy_stock_snapshot=legacy_stock_snapshot,
-        reset_eligibility_error=reset_eligibility_error,
-    )
-    create_job_calls = 0
-    reset_calls = 0
-
-    async def track_create_job(_data: Any) -> None:
-        nonlocal create_job_calls
-        create_job_calls += 1
-        return None
-
-    def reset_market_snapshot() -> tuple[
-        sync_service.SyncServiceMarketDbLike,
-        sync_service.SyncServiceTimeSeriesStoreLike,
-    ]:
-        nonlocal reset_calls
-        reset_calls += 1
-        return market_db, _time_series_store()
-
-    monkeypatch.setattr(isolated_manager, "create_job", track_create_job)
-
-    with pytest.raises(
-        RuntimeError,
-        match=(
-            "resetBeforeSync is maintenance for an already-compatible Market v5 "
-            "root only.*market-cutover cutover"
-        ),
-    ) as caught:
-        await sync_service.start_sync(
-            SyncMode.INITIAL,
-            market_db,
-            DummyJQuantsClient(),
-            time_series_store=_time_series_store(),
-            reset_before_sync=True,
-            reset_market_snapshot=reset_market_snapshot,
-        )
-
-    assert type(caught.value).__name__ == "IncompatibleMarketResetError"
-    assert create_job_calls == 0
-    assert reset_calls == 0
-
-
 @pytest.mark.asyncio
 async def test_start_sync_returns_none_when_manager_rejects_job(
     monkeypatch: pytest.MonkeyPatch,
@@ -589,7 +392,7 @@ async def test_start_sync_returns_none_when_manager_rejects_job(
     monkeypatch.setattr(isolated_manager, "create_job", _reject_new_job)
 
     job = await sync_service.start_sync(
-        SyncMode.AUTO,
+        SyncMode.INCREMENTAL,
         _market_db(),
         DummyJQuantsClient(),
         time_series_store=_time_series_store(),
@@ -610,7 +413,7 @@ async def test_start_sync_completes_job_and_passes_bulk_enforcement(
     market_db = _market_db(last_sync_date="2026-03-01T00:00:00+00:00")
     store = _time_series_store()
     job = await sync_service.start_sync(
-        SyncMode.AUTO,
+        SyncMode.INCREMENTAL,
         market_db,
         DummyJQuantsClient(),
         time_series_store=store,
@@ -650,9 +453,7 @@ async def test_start_sync_completes_job_and_passes_bulk_enforcement(
 @pytest.mark.parametrize(
     ("mode", "last_sync_date"),
     [
-        (SyncMode.INITIAL, None),
         (SyncMode.INCREMENTAL, "2026-03-01T00:00:00+00:00"),
-        (SyncMode.REPAIR, "2026-03-01T00:00:00+00:00"),
     ],
 )
 async def test_start_sync_injects_affected_code_current_basis_materializer(
@@ -686,11 +487,7 @@ async def test_start_sync_injects_affected_code_current_basis_materializer(
 @pytest.mark.parametrize(
     ("mode", "last_sync_date", "expected_timeout_minutes"),
     [
-        (SyncMode.INITIAL, None, 240),
         (SyncMode.INCREMENTAL, "2026-03-01T00:00:00+00:00", 35),
-        (SyncMode.REPAIR, "2026-03-01T00:00:00+00:00", 35),
-        (SyncMode.AUTO, None, 240),
-        (SyncMode.AUTO, "2026-03-01T00:00:00+00:00", 35),
     ],
 )
 async def test_start_sync_uses_timeout_for_resolved_mode(
@@ -967,11 +764,6 @@ async def test_start_sync_resets_market_snapshot_before_initial_sync(
     strategy = StrategyProbe(emit_progress=False)
     monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
 
-    old_market_db = DummyMarketDb(
-        schema_version=MARKET_SCHEMA_VERSION,
-        adjustment_mode=PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
-    )
-    old_store = DummyTimeSeriesStore()
     reset_market_db = DummyMarketDb()
     reset_store = DummyTimeSeriesStore()
     reset_calls = 0
@@ -989,9 +781,9 @@ async def test_start_sync_resets_market_snapshot_before_initial_sync(
 
     job = await sync_service.start_sync(
         SyncMode.INITIAL,
-        cast(sync_service.SyncServiceMarketDbLike, old_market_db),
+        None,
         DummyJQuantsClient(),
-        time_series_store=cast(sync_service.SyncServiceTimeSeriesStoreLike, old_store),
+        time_series_store=None,
         reset_before_sync=True,
         reset_market_snapshot=reset_snapshot,
     )
@@ -1002,8 +794,6 @@ async def test_start_sync_resets_market_snapshot_before_initial_sync(
     assert stored is not None
     assert stored.status.value == "completed"
     assert reset_calls == 1
-    assert old_market_db.ensure_schema_calls == 0
-    assert METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"] not in old_market_db.metadata
     assert reset_market_db.ensure_schema_calls == 1
     assert reset_market_db.metadata[METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"]] == (
         PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
@@ -1014,6 +804,42 @@ async def test_start_sync_resets_market_snapshot_before_initial_sync(
     assert stored.progress is not None
     assert stored.progress.stage == "reset"
     assert stored.progress.percentage == 100.0
+
+
+@pytest.mark.asyncio
+async def test_start_sync_preserves_reset_failure_without_writer_finalizer(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    monkeypatch.setattr(
+        sync_service, "get_strategy", lambda _mode: StrategyProbe(emit_progress=False)
+    )
+
+    def fail_reset() -> tuple[
+        sync_service.SyncServiceMarketDbLike,
+        sync_service.SyncServiceTimeSeriesStoreLike,
+    ]:
+        raise RuntimeError("original reset failure")
+
+    def missing_finalizer() -> Any:
+        raise RuntimeError("Market writer session is missing at finalization")
+
+    job = await sync_service.start_sync(
+        SyncMode.INITIAL,
+        None,
+        DummyJQuantsClient(),
+        time_series_store=None,
+        reset_before_sync=True,
+        reset_market_snapshot=fail_reset,
+        market_finalizer=missing_finalizer,
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    stored = isolated_manager.get_job(job.job_id)
+    assert stored is not None
+    assert stored.status is JobStatus.FAILED
+    assert stored.error == "original reset failure"
 
 
 @pytest.mark.asyncio
@@ -1101,7 +927,7 @@ async def test_start_sync_commits_cancelled_terminal_before_closing_stream_after
     monkeypatch.setattr(isolated_manager, "is_cancelled", lambda _job_id: True)
 
     job = await sync_service.start_sync(
-        SyncMode.INITIAL,
+        SyncMode.INCREMENTAL,
         _market_db(),
         DummyJQuantsClient(),
         time_series_store=_time_series_store(),
@@ -1134,7 +960,7 @@ async def test_start_sync_marks_failed_on_timeout(
     monkeypatch.setattr(sync_service.asyncio, "wait_for", _timeout)
 
     job = await sync_service.start_sync(
-        SyncMode.INITIAL,
+        SyncMode.INCREMENTAL,
         _market_db(),
         DummyJQuantsClient(),
         time_series_store=_time_series_store(),
@@ -1204,7 +1030,7 @@ async def test_sync_cancel_waits_for_market_finalizer_before_terminal_and_stream
             return decision
 
     job = await sync_service.start_sync(
-        SyncMode.INITIAL,
+        SyncMode.INCREMENTAL,
         _market_db(),
         DummyJQuantsClient(),
         time_series_store=_time_series_store(),
@@ -1272,7 +1098,7 @@ async def test_start_sync_commits_cancelled_terminal_when_job_already_cancelled(
     monkeypatch.setattr(isolated_manager, "is_cancelled", lambda _job_id: True)
 
     job = await sync_service.start_sync(
-        SyncMode.INITIAL,
+        SyncMode.INCREMENTAL,
         _market_db(),
         DummyJQuantsClient(),
         time_series_store=_time_series_store(),
@@ -1300,7 +1126,7 @@ async def test_start_sync_joins_requested_cancel_and_publishes_cancelled_termina
     monkeypatch.setattr(isolated_manager, "is_cancelled", lambda _job_id: True)
 
     job = await sync_service.start_sync(
-        SyncMode.INITIAL,
+        SyncMode.INCREMENTAL,
         _market_db(),
         DummyJQuantsClient(),
         time_series_store=_time_series_store(),
@@ -1324,7 +1150,7 @@ async def test_start_sync_unexpected_cancel_finalizes_stream_before_propagating(
     monkeypatch.setattr(isolated_manager, "is_cancelled", lambda _job_id: False)
 
     job = await sync_service.start_sync(
-        SyncMode.INITIAL,
+        SyncMode.INCREMENTAL,
         _market_db(),
         DummyJQuantsClient(),
         time_series_store=_time_series_store(),

@@ -101,6 +101,7 @@ class MarketDb:
         self._lock = threading.RLock()
         if not read_only:
             try:
+                self._assert_adjusted_daily_volume_schema_compatible()
                 self.ensure_schema()
             except BaseException as initialization_error:
                 try:
@@ -210,6 +211,41 @@ class MarketDb:
         """不足テーブルを補完する（DuckDB SoT）。"""
         ensure_market_schema(self)
 
+    def _assert_adjusted_daily_volume_schema_compatible(self) -> None:
+        """Reject pre-change schema-v5 adjusted-volume columns before any write."""
+        if not self._table_exists("market_schema_version"):
+            return
+        version = self.get_market_schema_version()
+        if version != MARKET_SCHEMA_VERSION:
+            return
+
+        required_columns = {
+            ("stock_data_raw", "adjusted_volume"): "DOUBLE",
+            ("stock_data", "volume"): "DOUBLE",
+        }
+        incompatible: list[str] = []
+        for (table_name, column_name), expected_type in required_columns.items():
+            if not self._table_exists(table_name):
+                incompatible.append(f"{table_name}.{column_name}=missing")
+                continue
+            column_types = {
+                str(row[1]): str(row[2]).upper()
+                for row in self._fetchall(f"PRAGMA table_info('{table_name}')")
+                if row and len(row) > 2
+            }
+            observed_type = column_types.get(column_name)
+            if observed_type != expected_type:
+                incompatible.append(
+                    f"{table_name}.{column_name}={observed_type or 'missing'}"
+                )
+        if incompatible:
+            details = ", ".join(incompatible)
+            raise IncompatibleMarketSchemaError(
+                "Incompatible Market v5 daily adjusted-volume schema "
+                f"({details}). Run RESET initial (mode='initial', "
+                "resetBeforeSync=true) to rebuild; in-place migration is not supported."
+            )
+
     # --- Read ---
 
     def get_stats(self) -> dict[str, Any]:
@@ -285,17 +321,6 @@ class MarketDb:
         if adjustment_mode != PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE:
             return True
         return raw_count <= 0 and stock_count > 0
-
-    def is_reset_before_sync_eligible(self) -> bool:
-        """Return whether this root may be reset as Market v5 maintenance."""
-        validation = self.validate_schema()
-        return (
-            self.get_market_schema_version() == MARKET_SCHEMA_VERSION
-            and self.get_stock_price_adjustment_mode()
-            == PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
-            and validation.get("valid") is True
-            and not self.is_legacy_stock_price_snapshot()
-        )
 
     def get_sync_metadata(self, key: str) -> str | None:
         """sync_metadata からキーの値を取得。"""

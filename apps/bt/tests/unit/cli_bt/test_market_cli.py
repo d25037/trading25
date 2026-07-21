@@ -22,7 +22,7 @@ def test_bt_market_maintain_uses_writer_session_and_reports_evidence(tmp_path) -
     initial = MarketWriterResourceFactory(
         data_root=data_root,
         market_root=market_root,
-    ).reset_and_open_v4()
+    ).reset_and_open()
     initial_token = initial.close_writable_handles()
     initial_read_only = initial.reopen_read_only(initial_token)
     initial.release_after_read_only_reopen(initial_token)
@@ -78,7 +78,7 @@ def test_bt_market_maintain_releases_retryable_failure_before_second_invocation(
     initial = MarketWriterResourceFactory(
         data_root=data_root,
         market_root=market_root,
-    ).reset_and_open_v4()
+    ).reset_and_open()
     initial_token = initial.close_writable_handles()
     initial_read_only = initial.reopen_read_only(initial_token)
     initial.release_after_read_only_reopen(initial_token)

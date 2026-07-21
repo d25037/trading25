@@ -135,7 +135,7 @@ def _closed_v4_session(tmp_path: Path):
     market_root = data_root / "market-timeseries"
     session = MarketWriterResourceFactory(
         data_root=data_root, market_root=market_root
-    ).reset_and_open_v4()
+    ).reset_and_open()
     session.handles.market_db._execute(
         """INSERT INTO stocks(
         code, company_name, market_code, market_name, sector_17_code,
@@ -180,7 +180,7 @@ def _managed_v5_writer_session(tmp_path: Path) -> Iterator[MarketWriterSession]:
     session = MarketWriterResourceFactory(
         data_root=data_root,
         market_root=data_root / "market-timeseries",
-    ).reset_and_open_v4()
+    ).reset_and_open()
     try:
         yield session
     finally:
@@ -374,7 +374,7 @@ def test_candidate_verifier_counts_all_schema_qualified_persistent_tables(
     market_root = data_root / "market-timeseries"
     session = MarketWriterResourceFactory(
         data_root=data_root, market_root=market_root
-    ).reset_and_open_v4()
+    ).reset_and_open()
     session.handles.market_db._execute("CREATE SCHEMA extra")
     session.handles.market_db._execute("CREATE TABLE extra.audit(id INTEGER)")
     session.handles.market_db._execute("INSERT INTO extra.audit VALUES (1), (2)")
@@ -424,7 +424,7 @@ def test_candidate_verifier_fingerprints_persisted_macro_and_user_type(
     market_root = data_root / "market-timeseries"
     session = MarketWriterResourceFactory(
         data_root=data_root, market_root=market_root
-    ).reset_and_open_v4()
+    ).reset_and_open()
     session.handles.market_db._execute("CREATE SCHEMA extra")
     session.handles.market_db._execute("CREATE TYPE extra.side AS ENUM ('buy', 'sell')")
     session.handles.market_db._execute("CREATE MACRO extra.bump(x) AS x + 1")
@@ -466,7 +466,7 @@ def test_candidate_table_counts_are_injective_for_dotted_identifiers(
     market_root = data_root / "market-timeseries"
     session = MarketWriterResourceFactory(
         data_root=data_root, market_root=market_root
-    ).reset_and_open_v4()
+    ).reset_and_open()
     session.handles.market_db._execute('CREATE SCHEMA "a"')
     session.handles.market_db._execute('CREATE SCHEMA "a.b"')
     session.handles.market_db._execute('CREATE TABLE "a"."b.c"(id INTEGER)')

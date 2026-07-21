@@ -25,7 +25,6 @@ class DummyMarketDb:
         fundamentals_target_codes: set[str] | None = None,
         metadata: dict[str, str] | None = None,
         *,
-        reset_before_sync_eligible: bool = False,
         schema_version: int = 3,
     ) -> None:
         self._fundamentals_target_codes = fundamentals_target_codes or set()
@@ -33,7 +32,6 @@ class DummyMarketDb:
             "last_sync_date": "2026-03-01T00:00:00+00:00",
             METADATA_KEYS["PROVIDER_PLAN"]: "standard",
         }
-        self._reset_before_sync_eligible = reset_before_sync_eligible
         self._schema_version = schema_version
 
     def is_initialized(self) -> bool:
@@ -50,9 +48,6 @@ class DummyMarketDb:
 
     def is_market_schema_current(self) -> bool:
         return self._schema_version == 5
-
-    def is_reset_before_sync_eligible(self) -> bool:
-        return self._reset_before_sync_eligible
 
     def get_stock_master_coverage(self) -> dict[str, Any]:
         return {
@@ -162,27 +157,6 @@ class DummyStore:
     def get_storage_stats(self) -> Any:
         self.storage_stats_calls += 1
         return self._storage_stats
-
-
-@pytest.mark.parametrize(
-    ("schema_version", "eligible"),
-    [(3, False), (5, True)],
-)
-def test_get_market_stats_exposes_reset_before_sync_eligibility(
-    schema_version: int,
-    eligible: bool,
-) -> None:
-    result = db_stats_service.get_market_stats(
-        market_db=DummyMarketDb(
-            reset_before_sync_eligible=eligible,
-            schema_version=schema_version,
-        ),
-        time_series_store=DummyStore(
-            TimeSeriesInspection(source="duckdb-parquet")
-        ),
-    )
-
-    assert result.schema_.resetBeforeSyncEligible is eligible
 
 
 def test_resolve_duckdb_size_bytes_returns_zero_when_path_is_missing() -> None:

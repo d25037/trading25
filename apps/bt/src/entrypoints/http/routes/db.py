@@ -74,7 +74,6 @@ from src.application.services import (
 )
 from src.application.services.generic_job_manager import JobInfo
 from src.application.services.sync_service import (
-    IncompatibleMarketResetError,
     SyncJobData,
     SyncMode,
     sync_job_manager,
@@ -381,7 +380,7 @@ def _prepare_market_write_resources(
             lease = _shared_operation_lease(request)
             factory = _writer_factory(duckdb_path)
             if not duckdb_path.exists() and lease is not None and lease.exclusive:
-                session = factory.reset_and_open_v4(
+                session = factory.reset_and_open(
                     blocking=False,
                     lease=lease,
                 )
@@ -418,7 +417,7 @@ def _reset_market_resources(request: Request) -> tuple[MarketDb, MarketTimeSerie
         duckdb_path, _parquet_dir = _market_timeseries_paths()
         _clear_market_resources(request)
         try:
-            session = _writer_factory(duckdb_path).reset_and_open_v4(
+            session = _writer_factory(duckdb_path).reset_and_open(
                 blocking=False,
                 lease=_shared_operation_lease(request),
             )
@@ -519,24 +518,6 @@ def _job_maintenance(data: object) -> maintenance_contracts.MarketMaintenanceRec
     )
 
 
-def _resolve_time_series_store(
-    request: Request,
-    body: SyncRequest,
-) -> MarketTimeSeriesStore:
-    """Sync request に応じた DuckDB time-series store を解決する。"""
-    default_store = _get_market_time_series_store(request)
-    data_plane = body.dataPlane
-    if data_plane is None:
-        return default_store
-
-    if data_plane.backend != "duckdb-parquet":
-        raise HTTPException(
-            status_code=422,
-            detail=("Unsupported dataPlane backend. Only duckdb-parquet is available."),
-        )
-    return default_store
-
-
 @router.post(
     "/api/db/sync",
     response_model=CreateSyncJobResponse,
@@ -546,12 +527,19 @@ def _resolve_time_series_store(
 async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
     jquants_client = _get_jquants_client(request)
     sync_mode = SyncMode(body.mode)
-    market_db: MarketDb
-    time_series_store: MarketTimeSeriesStore
+    market_db: MarketDb | None
+    time_series_store: MarketTimeSeriesStore | None
 
     if body.resetBeforeSync:
-        market_db = _get_market_db(request)
-        time_series_store = _resolve_time_series_store(request, body)
+        if body.dataPlane is not None and body.dataPlane.backend != "duckdb-parquet":
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Unsupported dataPlane backend. Only duckdb-parquet is available."
+                ),
+            )
+        market_db = None
+        time_series_store = None
     else:
         if body.dataPlane is not None and body.dataPlane.backend != "duckdb-parquet":
             raise HTTPException(
@@ -581,10 +569,8 @@ async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
                 f"{sync_mode.value}_sync",
             ),
         )
-    except IncompatibleMarketResetError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except asyncio.CancelledError:
-        if not body.resetBeforeSync and isinstance(
+        if isinstance(
             getattr(request.app.state, "market_writer_session", None),
             MarketWriterSession,
         ):
@@ -596,7 +582,7 @@ async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
             )
         raise
     except Exception as exc:
-        if not body.resetBeforeSync and isinstance(
+        if isinstance(
             getattr(request.app.state, "market_writer_session", None),
             MarketWriterSession,
         ):
@@ -609,7 +595,10 @@ async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
         raise
 
     if job is None:
-        if not body.resetBeforeSync:
+        if isinstance(
+            getattr(request.app.state, "market_writer_session", None),
+            MarketWriterSession,
+        ):
             await _finalize_direct_market_write(
                 request,
                 operation=f"{sync_mode.value}_sync",

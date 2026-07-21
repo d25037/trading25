@@ -382,7 +382,7 @@ class MarketWriterResourceFactory:
             process_lock.release()
             raise
 
-    def reset_and_open_v4(
+    def reset_and_open(
         self,
         *,
         blocking: bool = True,

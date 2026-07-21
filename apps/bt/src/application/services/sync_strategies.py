@@ -1,14 +1,14 @@
 """
 Sync Strategies
 
-DuckDB market data 同期のための 3 つの戦略。
+DuckDB market data 同期のための initial / incremental 戦略。
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable, Iterable, Protocol, cast
 
@@ -1616,72 +1616,6 @@ class IncrementalSyncStrategy:
             )
 
 
-class RepairSyncStrategy:
-    """warning 解消向け: fundamentals / metadata warnings の backfill"""
-
-    def estimate_api_calls(self) -> int:
-        return 200
-
-    async def execute(self, ctx: SyncContext) -> SyncResult:
-        total_calls = 0
-        stocks_updated = 0
-        fundamentals_updated = 0
-        fundamentals_dates_processed = 0
-        errors: list[str] = []
-
-        try:
-            ctx.on_progress("repair", 0, 200, "Inspecting DuckDB warning repair targets...")
-            if ctx.cancelled.is_set():
-                return _cancelled_sync_result(total_calls)
-
-            fundamentals_target_rows = await asyncio.to_thread(
-                ctx.market_db.get_fundamentals_target_stock_rows
-            )
-
-            if fundamentals_target_rows:
-                def _on_fundamentals_progress(stage: str, current: int, total: int, message: str) -> None:
-                    ctx.on_progress(
-                        stage,
-                        _scale_repair_progress(current, total, base=0),
-                        200,
-                        message,
-                    )
-
-                fundamentals_ctx = replace(ctx, on_progress=_on_fundamentals_progress)
-                fundamentals_sync = await _sync_fundamentals_incremental(
-                    fundamentals_ctx,
-                    fundamentals_target_rows,
-                )
-                total_calls += fundamentals_sync["api_calls"]
-                fundamentals_updated += fundamentals_sync["updated"]
-                fundamentals_dates_processed += fundamentals_sync["dates_processed"]
-                errors.extend(fundamentals_sync["errors"])
-                if fundamentals_sync["cancelled"]:
-                    return _cancelled_sync_result(total_calls)
-            else:
-                ctx.on_progress("fundamentals", 200, 200, "No listed-market fundamentals repair needed.")
-
-            await _recompute_changed_fundamentals(ctx)
-
-            ctx.on_progress("complete", 200, 200, "Repair sync complete!")
-            return SyncResult(
-                success=len(errors) == 0,
-                totalApiCalls=total_calls,
-                stocksUpdated=stocks_updated,
-                datesProcessed=0,
-                fundamentalsUpdated=fundamentals_updated,
-                fundamentalsDatesProcessed=fundamentals_dates_processed,
-                errors=errors,
-            )
-        except Exception as e:
-            return SyncResult(success=False, totalApiCalls=total_calls, errors=[str(e)])
-
-
-def _scale_repair_progress(current: int, total: int, *, base: int) -> int:
-    ratio = current / total if total > 0 else 1.0
-    return base + round(min(max(ratio, 0.0), 1.0) * 100)
-
-
 def _cancelled_sync_result(
     total_api_calls: int,
     *,
@@ -1754,11 +1688,9 @@ def get_strategy(resolved_mode: str) -> SyncStrategy:
     """モード名から戦略インスタンスを返す"""
     if resolved_mode == "initial":
         return InitialSyncStrategy()
-    elif resolved_mode == "incremental":
+    if resolved_mode == "incremental":
         return IncrementalSyncStrategy()
-    elif resolved_mode == "repair":
-        return RepairSyncStrategy()
-    return InitialSyncStrategy()
+    raise ValueError(f"Unknown sync strategy: {resolved_mode}")
 
 
 async def _seed_index_master_from_catalog(ctx: SyncContext) -> set[str]:

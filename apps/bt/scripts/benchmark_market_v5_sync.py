@@ -413,9 +413,7 @@ def _open_scenario(root: Path) -> MarketWriterSession:
     return MarketWriterResourceFactory(
         data_root=data_root,
         market_root=data_root / "market-timeseries",
-        # Historical factory method name is retained, but HEAD initializes the
-        # current Market schema (v5/provider_adjusted_v1).
-    ).reset_and_open_v4()
+    ).reset_and_open()
 
 
 def _open_seeded_scenario(root: Path) -> MarketWriterSession:

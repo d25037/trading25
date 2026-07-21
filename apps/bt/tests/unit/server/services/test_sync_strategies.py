@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock
 import pytest
 import httpx
 
-from src.application.services.adjusted_metrics_materializer import AdjustedMetricsMaterializer
 from src.application.services.jquants_bulk_service import BulkFetchPlan, BulkFetchResult, BulkFileInfo
 from src.application.services.sync_fetch_planner import (
     BulkFetchRequiredError,
@@ -81,7 +80,6 @@ from src.application.services.sync_strategies import (
     IncrementalSyncStrategy,
     IndicesOnlySyncStrategy,
     InitialSyncStrategy,
-    RepairSyncStrategy,
     SyncContext,
     _build_fallback_index_master_rows,
     _convert_margin_rows,
@@ -7335,259 +7333,6 @@ async def test_incremental_sync_margin_filters_non_listed_market_backfill_target
 
 
 @pytest.mark.asyncio
-async def test_repair_sync_backfills_fundamentals_without_stock_refresh(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    market_db = DummyMarketDb(
-        latest_trading_date="20260206",
-        stocks_needing_refresh=["7203"],
-    )
-    market_db._fundamentals_target_codes = {"7203"}
-    market_db.topix_rows = [
-        {"date": "2026-02-05", "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0},
-        {"date": "2026-02-06", "open": 101.0, "high": 102.0, "low": 100.0, "close": 101.0},
-    ]
-
-    client = DummyClient(
-        daily_quotes=[
-            {"Code": "72030", "Date": "2026-02-05", "O": 10.0, "H": 11.0, "L": 9.0, "C": 10.0, "Vo": 1000, "AdjFactor": 1.0},
-            {"Code": "72030", "Date": "2026-02-06", "O": 5.0, "H": 6.0, "L": 4.0, "C": 5.0, "Vo": 1000, "AdjFactor": 0.5},
-        ],
-        fins_by_code={
-            "72030": [{"Code": "72030", "DiscDate": "2026-02-10", "EPS": 100.0}],
-        },
-    )
-
-    monkeypatch.setattr(
-        "src.application.services.sync_state_helpers._build_incremental_date_targets",
-        lambda _anchor, _retry: [],
-    )
-
-    events: list[str] = []
-
-    class EventStore(DummyTimeSeriesStore):
-        def publish_statements(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
-            events.append("fundamentals_published")
-            return super().publish_statements(rows)
-
-    ctx = _build_ctx(
-        client=client,
-        market_db=market_db,
-        cancelled=asyncio.Event(),
-        on_progress=lambda stage, *_: events.append(stage),
-        time_series_store=EventStore(market_db),
-    )
-
-    result = await RepairSyncStrategy().execute(ctx)
-
-    assert result.success
-    assert result.stocksUpdated == 0
-    assert result.fundamentalsUpdated == 1
-    assert market_db.stock_rows == []
-    assert {row["code"] for row in market_db.statements_rows} == {"7203"}
-    assert "fundamentals" in events
-    assert "adjusted_metrics_pit" not in events
-    assert events.index("fundamentals_published") < events.index("complete")
-
-
-@pytest.mark.asyncio
-async def test_repair_sync_has_no_all_basis_stage_when_fundamentals_publish_zero_rows(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    market_db = DummyMarketDb()
-    market_db._fundamentals_target_codes = {"7203"}
-    progress_events: list[tuple[str, int, int, str]] = []
-
-    async def _sync_without_updates(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
-        return {
-            "api_calls": 1,
-            "updated": 0,
-            "dates_processed": 0,
-            "errors": [],
-            "cancelled": False,
-        }
-
-    monkeypatch.setattr(
-        "src.application.services.sync_strategies._sync_fundamentals_incremental",
-        _sync_without_updates,
-    )
-    ctx = _build_ctx(
-        client=DummyClient(),
-        market_db=market_db,
-        on_progress=lambda stage, current, total, message: progress_events.append(
-            (stage, current, total, message)
-        ),
-    )
-
-    result = await RepairSyncStrategy().execute(ctx)
-
-    assert result.success
-    assert result.fundamentalsUpdated == 0
-    assert all(stage != "adjusted_metrics_pit" for stage, *_ in progress_events)
-
-
-def _seed_pending_current_basis_recompute(market_db: MarketDb) -> None:
-    market_db._execute(
-        """
-        INSERT INTO stock_provider_windows (
-            code, coverage_start, coverage_end, provider_plan, provider_as_of,
-            source_fingerprint, updated_at
-        ) VALUES ('7203', '2024-01-01', '2024-12-30', 'premium', '2024-12-30',
-                  'window-fp', '2025-01-01T00:00:00Z')
-        """
-    )
-    market_db._execute(
-        """
-        INSERT INTO statements (
-            code, statement_id, disclosed_date, disclosed_at,
-            period_start, period_end, earnings_per_share,
-            type_of_current_period, type_of_document
-        ) VALUES ('7203', 'disclosure-1', '2024-05-10',
-                  '2024-05-10T15:30:00+09:00', '2023-04-01', '2024-03-31',
-                  100, 'FY', 'FYFinancialStatements')
-        """
-    )
-    market_db._execute(
-        """
-        INSERT INTO current_basis_recompute_pending
-            (code, reason, source_fingerprint, updated_at)
-        VALUES ('7203', 'statement_change', 'statement-fp', '2025-01-01T00:00:00Z')
-        """
-    )
-
-
-@pytest.mark.asyncio
-async def test_repair_zero_targets_retries_and_clears_durable_pending(tmp_path) -> None:
-    market_db = open_market_db(str(tmp_path / "repair-pending.duckdb"))
-    try:
-        _seed_pending_current_basis_recompute(market_db)
-
-        async def recompute(codes: frozenset[str]) -> None:
-            AdjustedMetricsMaterializer(market_db).rebuild_current_basis(codes)
-
-        ctx = _build_ctx(
-            client=DummyClient(),
-            market_db=market_db,  # type: ignore[arg-type]
-            recompute_affected_stock_codes=recompute,
-        )
-
-        result = await RepairSyncStrategy().execute(ctx)
-
-        assert result.success
-        assert market_db._fetchone(
-            "SELECT COUNT(*) FROM current_basis_recompute_pending"
-        ) == (0,)
-        assert market_db._fetchone(
-            "SELECT COUNT(*) FROM statement_metrics_adjusted WHERE code = '7203'"
-        ) == (1,)
-    finally:
-        market_db.close()
-
-
-@pytest.mark.asyncio
-async def test_repair_zero_targets_keeps_pending_when_recompute_fails(tmp_path) -> None:
-    market_db = open_market_db(str(tmp_path / "repair-pending-failure.duckdb"))
-    try:
-        _seed_pending_current_basis_recompute(market_db)
-
-        async def fail_recompute(_codes: frozenset[str]) -> None:
-            raise RuntimeError("injected pending retry failure")
-
-        ctx = _build_ctx(
-            client=DummyClient(),
-            market_db=market_db,  # type: ignore[arg-type]
-            recompute_affected_stock_codes=fail_recompute,
-        )
-
-        result = await RepairSyncStrategy().execute(ctx)
-
-        assert not result.success
-        assert result.errors == ["injected pending retry failure"]
-        assert market_db._fetchone(
-            "SELECT COUNT(*) FROM current_basis_recompute_pending"
-        ) == (1,)
-    finally:
-        market_db.close()
-
-
-@pytest.mark.asyncio
-async def test_repair_sync_completes_without_all_basis_materializer_after_publish(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    market_db = DummyMarketDb()
-    market_db._fundamentals_target_codes = {"7203"}
-
-    async def _sync_with_update(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
-        return {
-            "api_calls": 1,
-            "updated": 1,
-            "dates_processed": 1,
-            "errors": [],
-            "cancelled": False,
-        }
-
-    monkeypatch.setattr(
-        "src.application.services.sync_strategies._sync_fundamentals_incremental",
-        _sync_with_update,
-    )
-    ctx = _build_ctx(client=DummyClient(), market_db=market_db)
-
-    result = await RepairSyncStrategy().execute(ctx)
-
-    assert result.success
-    assert result.fundamentalsUpdated == 1
-    assert result.errors == []
-
-
-@pytest.mark.asyncio
-async def test_repair_sync_stops_after_cancel_during_fundamentals(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    market_db = DummyMarketDb(
-        latest_trading_date="20260206",
-        stocks_needing_refresh=["7203", "6758"],
-    )
-    market_db._fundamentals_target_codes = {"7203", "6758"}
-    market_db.topix_rows = [
-        {"date": "2026-02-05", "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0},
-        {"date": "2026-02-06", "open": 101.0, "high": 102.0, "low": 100.0, "close": 101.0},
-    ]
-    client = DummyClient(
-        daily_quotes=[
-            {"Code": "72030", "Date": "2026-02-05", "O": 10.0, "H": 11.0, "L": 9.0, "C": 10.0, "Vo": 1000, "AdjFactor": 1.0},
-            {"Code": "72030", "Date": "2026-02-06", "O": 5.0, "H": 6.0, "L": 4.0, "C": 5.0, "Vo": 1000, "AdjFactor": 0.5},
-        ],
-    )
-
-    monkeypatch.setattr(
-        "src.application.services.sync_state_helpers._build_incremental_date_targets",
-        lambda _anchor, _retry: [],
-    )
-
-    cancelled = asyncio.Event()
-
-    def _on_progress(stage: str, current: int, total: int, message: str) -> None:
-        del current, total
-        if stage == "fundamentals" and message:
-            cancelled.set()
-
-    ctx = _build_ctx(
-        client=client,
-        market_db=market_db,
-        cancelled=cancelled,
-        on_progress=_on_progress,
-    )
-
-    result = await RepairSyncStrategy().execute(ctx)
-
-    assert result.success is False
-    assert result.errors == ["Cancelled"]
-    assert client.calls == []
-    assert market_db.stock_rows == []
-    assert market_db.statements_rows == []
-
-
-@pytest.mark.asyncio
 async def test_incremental_sync_fundamentals_uses_latest_disclosed_when_metadata_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -7635,13 +7380,14 @@ async def test_incremental_sync_fundamentals_uses_latest_disclosed_when_metadata
 def test_strategy_selection_and_api_call_estimates() -> None:
     assert isinstance(get_strategy("initial"), InitialSyncStrategy)
     assert isinstance(get_strategy("incremental"), IncrementalSyncStrategy)
-    assert isinstance(get_strategy("repair"), RepairSyncStrategy)
-    assert isinstance(get_strategy("unknown"), InitialSyncStrategy)
+    with pytest.raises(ValueError, match="Unknown sync strategy: repair"):
+        get_strategy("repair")
+    with pytest.raises(ValueError, match="Unknown sync strategy: unknown"):
+        get_strategy("unknown")
 
     assert IndicesOnlySyncStrategy().estimate_api_calls() == 70
     assert InitialSyncStrategy().estimate_api_calls() == 3200
     assert IncrementalSyncStrategy().estimate_api_calls() == 180
-    assert RepairSyncStrategy().estimate_api_calls() == 200
 
 
 def test_data_conversion_helpers_handle_aliases_and_invalid_rows() -> None:

@@ -55,7 +55,7 @@ class DummyMarketDb:
         legacy_stock_snapshot: bool = False,
         stock_price_adjustment_mode: str | None = PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
         schema_version: int = MARKET_SCHEMA_VERSION,
-        reset_before_sync_eligible: bool | None = None,
+        schema_valid: bool = True,
         adjusted_metrics_snapshot: dict[str, Any] | None = None,
         adjusted_metrics_source_diagnostics: dict[str, int] | None = None,
         provider_vintage_snapshot: dict[str, Any] | None = None,
@@ -69,7 +69,7 @@ class DummyMarketDb:
         self._legacy_stock_snapshot = legacy_stock_snapshot
         self._stock_price_adjustment_mode = stock_price_adjustment_mode
         self._schema_version = schema_version
-        self._reset_before_sync_eligible = reset_before_sync_eligible
+        self._schema_valid = schema_valid
         self._adjusted_metrics_snapshot = adjusted_metrics_snapshot or {
             "currentBasisStatementCount": 4,
             "currentBasisStateCount": 2,
@@ -124,15 +124,8 @@ class DummyMarketDb:
     def is_market_schema_current(self) -> bool:
         return self._schema_version == MARKET_SCHEMA_VERSION
 
-    def is_reset_before_sync_eligible(self) -> bool:
-        if self._reset_before_sync_eligible is not None:
-            return self._reset_before_sync_eligible
-        return (
-            self._schema_version == MARKET_SCHEMA_VERSION
-            and self._stock_price_adjustment_mode
-            == PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
-            and not self._legacy_stock_snapshot
-        )
+    def validate_schema(self) -> dict[str, Any]:
+        return {"valid": self._schema_valid}
 
     def get_stock_master_coverage(self) -> dict[str, Any]:
         return {
@@ -236,7 +229,6 @@ def test_validate_market_db_uses_missing_dates_total_count_from_inspection() -> 
     )
 
     assert result.margin.count == 0
-    assert result.schema_.resetBeforeSyncEligible is True
     assert result.stockData.missingDatesCount == 2438
     assert result.sampleWindows.stockDataMissingDates.truncated is True
     issue = next(
@@ -279,7 +271,7 @@ def test_validate_market_db_warns_when_adjusted_metrics_are_missing_with_raw_sou
     assert result.healthDomains.coreDailyStatus == "warning"
     assert result.providerVintage.status == "missing"
     assert result.providerVintage.recoveryStage == "market_db_sync"
-    assert any("normal Market DB sync" in rec for rec in result.recommendations)
+    assert any("incremental sync" in rec for rec in result.recommendations)
     assert not any("adjusted_metrics_pit" in rec for rec in result.recommendations)
 
 
@@ -431,7 +423,7 @@ def test_validate_market_db_reports_pending_current_basis_health() -> None:
     assert result.status == "warning"
     assert result.providerVintage.status == "pending"
     assert result.providerVintage.recoveryStage == "market_db_sync"
-    assert any("normal Market DB sync" in rec for rec in result.recommendations)
+    assert any("incremental sync" in rec for rec in result.recommendations)
     assert not any("adjusted_metrics_pit" in rec for rec in result.recommendations)
 
 
@@ -485,7 +477,7 @@ def test_validate_market_db_maps_source_diagnostics_to_recovery_status(
     assert result.providerVintage.status == expected_provider_status
     assert result.providerVintage.recoveryStage == "market_db_sync"
     assert result.status == expected_health
-    assert any("normal Market DB sync" in rec for rec in result.recommendations)
+    assert any("incremental sync" in rec for rec in result.recommendations)
     assert not any("adjusted_metrics_pit" in rec for rec in result.recommendations)
 
 
@@ -524,8 +516,8 @@ def test_validate_market_db_returns_error_and_recommendations_for_uninitialized_
     result = validate_market_db(market_db=market_db, time_series_store=store)
 
     assert result.status == "error"
-    assert any("Run initial sync" in rec for rec in result.recommendations)
-    assert any("repair sync to backfill fundamentals" in rec for rec in result.recommendations)
+    assert any("RESET initial sync" in rec for rec in result.recommendations)
+    assert any("incremental sync to backfill fundamentals" in rec for rec in result.recommendations)
     assert any("failed fundamentals dates" in rec for rec in result.recommendations)
     assert any("failed fundamentals codes" in rec for rec in result.recommendations)
     assert result.adjustmentEventsCount == 1
@@ -557,7 +549,7 @@ def test_validate_market_db_warns_when_failed_dates_metadata_exists() -> None:
     assert any("failed sync dates" in rec for rec in result.recommendations)
 
 
-def test_validate_market_db_flags_legacy_stock_snapshot_for_cutover() -> None:
+def test_validate_market_db_flags_legacy_stock_snapshot_for_reset_initial() -> None:
     market_db = DummyMarketDb(
         initialized=True,
         legacy_stock_snapshot=True,
@@ -582,12 +574,11 @@ def test_validate_market_db_flags_legacy_stock_snapshot_for_cutover() -> None:
     assert result.stocksNeedingRefreshCount == 0
     assert result.stocksNeedingRefresh == []
     assert result.sampleWindows.stocksNeedingRefresh.totalCount == 0
-    assert result.schema_.resetBeforeSyncEligible is False
-    assert any("bt market-cutover cutover" in rec for rec in result.recommendations)
-    assert not any("initial sync" in rec.lower() for rec in result.recommendations)
+    assert any("RESET initial sync" in rec for rec in result.recommendations)
+    assert not any("market-cutover" in rec for rec in result.recommendations)
 
 
-def test_validate_market_db_v3_recommends_only_market_cutover() -> None:
+def test_validate_market_db_v3_recommends_only_reset_initial() -> None:
     market_db = DummyMarketDb(schema_version=3)
     store = DummyTimeSeriesStore(
         TimeSeriesInspection(
@@ -605,13 +596,12 @@ def test_validate_market_db_v3_recommends_only_market_cutover() -> None:
     result = validate_market_db(market_db=market_db, time_series_store=store)
 
     assert result.status == "error"
-    assert result.schema_.resetBeforeSyncEligible is False
     assert len(result.recommendations) == 1
-    assert "bt market-cutover cutover" in result.recommendations[0]
-    assert "initial sync" not in result.recommendations[0].lower()
+    assert "RESET initial sync" in result.recommendations[0]
+    assert "market-cutover" not in result.recommendations[0]
 
 
-def test_validate_market_db_recommends_cutover_for_wrong_adjustment_mode() -> None:
+def test_validate_market_db_recommends_reset_initial_for_wrong_adjustment_mode() -> None:
     market_db = DummyMarketDb(
         initialized=True,
         legacy_stock_snapshot=False,
@@ -644,21 +634,17 @@ def test_validate_market_db_recommends_cutover_for_wrong_adjustment_mode() -> No
 
     assert result.status == "error"
     assert result.healthDomains.coreDailyStatus == "error"
-    assert result.schema_.resetBeforeSyncEligible is False
     assert (
         market_db.get_stock_price_adjustment_mode()
         != PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
     )
-    assert any("bt market-cutover cutover" in rec for rec in result.recommendations)
-    assert not any("initial sync" in rec.lower() for rec in result.recommendations)
-    assert not any(
-        "Reset market-timeseries/market.duckdb" in rec for rec in result.recommendations
-    )
+    assert any("RESET initial sync" in rec for rec in result.recommendations)
+    assert not any("market-cutover" in rec for rec in result.recommendations)
     assert result.intradayFreshness.status == "idle"
 
 
 def test_validate_market_db_errors_when_v5_schema_validation_is_malformed() -> None:
-    market_db = DummyMarketDb(reset_before_sync_eligible=False)
+    market_db = DummyMarketDb(schema_valid=False)
     store = DummyTimeSeriesStore(
         TimeSeriesInspection(
             source="duckdb-parquet",
@@ -687,8 +673,8 @@ def test_validate_market_db_errors_when_v5_schema_validation_is_malformed() -> N
     assert result.status == "error"
     assert result.healthDomains.coreDailyStatus == "error"
     assert result.schema_.current is True
-    assert result.schema_.resetBeforeSyncEligible is False
-    assert any("bt market-cutover cutover" in rec for rec in result.recommendations)
+    assert any("RESET initial sync" in rec for rec in result.recommendations)
+    assert not any("market-cutover" in rec for rec in result.recommendations)
 
 
 def test_validate_market_db_warns_when_intraday_data_is_stale(

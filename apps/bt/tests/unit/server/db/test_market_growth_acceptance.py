@@ -294,7 +294,7 @@ def _managed_writer_session(
     *,
     reset: bool,
 ) -> Iterator[MarketWriterSession]:
-    session = factory.reset_and_open_v4() if reset else factory.open_existing()
+    session = factory.reset_and_open() if reset else factory.open_existing()
     try:
         yield session
     finally:

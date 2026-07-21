@@ -33,7 +33,6 @@ from src.infrastructure.db.market.market_db import (
     METADATA_KEYS,
     MarketDb,
 )
-from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.application.contracts.market_data_plane import SyncProgress, SyncResult
 from src.application.services.generic_job_manager import GenericJobManager, JobInfo
 from src.application.services.sync_stream_manager import (
@@ -57,7 +56,6 @@ from src.shared.config.settings import get_settings
 class SyncServiceMarketDbLike(SyncMarketDbLike, Protocol):
     def ensure_schema(self) -> None: ...
     def is_legacy_stock_price_snapshot(self) -> bool: ...
-    def is_reset_before_sync_eligible(self) -> bool: ...
     def get_market_schema_version(self) -> int | None: ...
     def is_market_schema_current(self) -> bool: ...
 
@@ -79,21 +77,8 @@ type RecomputeAffectedStockCodes = Callable[[frozenset[str]], Awaitable[None]]
 
 
 class SyncMode(str, Enum):
-    AUTO = "auto"
     INITIAL = "initial"
     INCREMENTAL = "incremental"
-    REPAIR = "repair"
-
-
-class IncompatibleMarketResetError(RuntimeError):
-    """Raised when resetBeforeSync targets a non-Market-v5 root."""
-
-
-_INCOMPATIBLE_MARKET_RESET_MESSAGE = (
-    "resetBeforeSync is maintenance for an already-compatible Market v5 root only. "
-    "Run bt market-cutover cutover for Market v4, older, malformed, or "
-    "adjustment-mode-incompatible roots."
-)
 
 
 @dataclass
@@ -118,50 +103,6 @@ def _publish_sync_job_event(job_id: str, *, close_stream: bool = False) -> None:
     sync_stream_manager.publish(job_id, SyncStreamEvent(event="job"))
     if close_stream:
         sync_stream_manager.close(job_id)
-
-
-def _inspection_has_existing_snapshot(inspection: TimeSeriesInspection) -> bool:
-    return any(
-        (
-            inspection.topix_count > 0,
-            inspection.stock_count > 0,
-            inspection.indices_count > 0,
-            inspection.margin_count > 0,
-            inspection.statements_count > 0,
-            bool(inspection.topix_max),
-            bool(inspection.stock_max),
-            bool(inspection.indices_max),
-            bool(inspection.margin_max),
-            bool(inspection.latest_statement_disclosed_date),
-        )
-    )
-
-
-def _resolve_mode(
-    mode: SyncMode,
-    market_db: SyncServiceMarketDbLike,
-    *,
-    time_series_store: SyncServiceTimeSeriesStoreLike | None = None,
-) -> str:
-    """auto モードを実際の戦略に解決"""
-    if mode != SyncMode.AUTO:
-        return mode.value
-
-    last_sync = market_db.get_sync_metadata(METADATA_KEYS["LAST_SYNC_DATE"])
-    if last_sync:
-        return "incremental"
-
-    if time_series_store is None:
-        return "initial"
-
-    try:
-        inspection = time_series_store.inspect(missing_stock_dates_limit=1)
-    except Exception as e:  # noqa: BLE001 - preserve backend failure details
-        raise RuntimeError(
-            f"DuckDB inspection failed while resolving AUTO sync mode: {e}"
-        ) from e
-
-    return "incremental" if _inspection_has_existing_snapshot(inspection) else "initial"
 
 
 def _legacy_stock_snapshot_message() -> str:
@@ -197,7 +138,7 @@ def _prepare_market_db_for_sync(market_db: SyncServiceMarketDbLike) -> None:
 
 async def start_sync(
     mode: SyncMode,
-    market_db: SyncServiceMarketDbLike,
+    market_db: SyncServiceMarketDbLike | None,
     jquants_client: SyncServiceClientLike,
     time_series_store: SyncServiceTimeSeriesStoreLike | None = None,
     enforce_bulk_for_stock_data: bool = False,
@@ -209,27 +150,21 @@ async def start_sync(
     recompute_affected_stock_codes: RecomputeAffectedStockCodes | None = None,
 ) -> JobInfo[SyncJobData, SyncProgress, SyncResult] | None:
     """Sync ジョブを作成して開始。アクティブジョブがある場合は None。"""
-    if time_series_store is None:
-        raise RuntimeError("DuckDB time-series store is required for sync")
-    if reset_before_sync:
-        if mode is not SyncMode.INITIAL:
-            raise RuntimeError("resetBeforeSync is supported only for initial sync")
+    if mode is SyncMode.INITIAL:
+        if not reset_before_sync:
+            raise RuntimeError("initial sync requires resetBeforeSync=true")
         if reset_market_snapshot is None:
             raise RuntimeError("resetBeforeSync requires a reset callback")
-        try:
-            reset_eligible = market_db.is_reset_before_sync_eligible()
-        except Exception as exc:  # noqa: BLE001 - normalize malformed roots
-            raise IncompatibleMarketResetError(
-                _INCOMPATIBLE_MARKET_RESET_MESSAGE
-            ) from exc
-        if not reset_eligible:
-            raise IncompatibleMarketResetError(_INCOMPATIBLE_MARKET_RESET_MESSAGE)
         resolved_mode = SyncMode.INITIAL.value
     else:
+        if reset_before_sync:
+            raise RuntimeError("incremental sync requires resetBeforeSync=false")
+        if market_db is None:
+            raise RuntimeError("Market database is required for incremental sync")
+        if time_series_store is None:
+            raise RuntimeError("DuckDB time-series store is required for sync")
         _prepare_market_db_for_sync(market_db)
-        resolved_mode = _resolve_mode(
-            mode, market_db, time_series_store=time_series_store
-        )
+        resolved_mode = SyncMode.INCREMENTAL.value
     data = SyncJobData(
         mode=mode,
         resolved_mode=resolved_mode,
@@ -250,6 +185,7 @@ async def start_sync(
     async def _run() -> None:
         current_market_db = market_db
         current_time_series_store = time_series_store
+        writer_resources_ready = not reset_before_sync
         stock_progress = {
             "stockRowsAppended": 0,
             "affectedStockCodes": 0,
@@ -327,8 +263,12 @@ async def start_sync(
                 current_market_db, current_time_series_store = await asyncio.to_thread(
                     reset_market_snapshot
                 )
+                writer_resources_ready = True
                 on_progress("reset", 1, 1, "Reset complete. Starting initial sync...")
                 _prepare_market_db_for_sync(current_market_db)
+
+            if current_market_db is None or current_time_series_store is None:
+                raise RuntimeError("Market writer resources are unavailable for sync")
 
             async def rebuild_current_basis(codes: frozenset[str]) -> None:
                 await asyncio.to_thread(
@@ -416,7 +356,7 @@ async def start_sync(
                 )
                 raise RuntimeError(publication_error) from exc
 
-        if market_finalizer is not None:
+        if market_finalizer is not None and writer_resources_ready:
             resolved_finalizer = (
                 market_finalizer() if callable(market_finalizer) else market_finalizer
             )

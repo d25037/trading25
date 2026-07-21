@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import os
 import shutil
 from collections.abc import Generator
@@ -15,23 +14,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from src.entrypoints.http.app import create_app
 from src.entrypoints.http.routes import db as db_routes
-from src.entrypoints.http.schemas.db import SyncDataPlaneRequest, SyncRequest
+from src.entrypoints.http.schemas.db import SyncRequest
 from src.application.contracts.jobs import JobStatus
 from src.application.services.sync_stream_manager import SyncStreamEvent
 from src.shared.contracts import market_maintenance as maintenance_contracts
 from tests.unit.server.db.market_writer_test_support import open_market_db
+from tests.unit.server.db.market_writer_test_support import (
+    connect_market_duckdb_for_test,
+)
 from tests.unit.server.db.market_writer_test_support import publish_topix_data
-
-
-def _regular_file_sha256s(root: Path) -> dict[str, str]:
-    return {
-        str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in sorted(root.rglob("*"))
-        if path.is_file()
-    }
 
 
 @pytest.mark.asyncio
@@ -278,6 +273,18 @@ def client(
 
 
 class TestSyncRoutes:
+    @pytest.mark.parametrize("mode", ["auto", "repair", "unknown"])
+    def test_sync_request_rejects_removed_modes(self, mode: str) -> None:
+        with pytest.raises(ValidationError):
+            SyncRequest(mode=mode)  # type: ignore[arg-type]
+
+    def test_sync_request_defaults_to_incremental(self) -> None:
+        assert SyncRequest().mode == "incremental"
+
+    def test_sync_request_requires_reset_for_initial(self) -> None:
+        with pytest.raises(ValidationError, match="requires resetBeforeSync=true"):
+            SyncRequest(mode="initial")
+
     def test_remember_market_paths_normalizes_owned_runtime_relative_db_path(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -320,7 +327,7 @@ class TestSyncRoutes:
             time_series_store=MagicMock(),
         )
         factory = MagicMock()
-        factory.reset_and_open_v4.return_value = session
+        factory.reset_and_open.return_value = session
         monkeypatch.setattr(
             db_routes,
             "_remember_market_paths",
@@ -333,7 +340,7 @@ class TestSyncRoutes:
             request
         )
 
-        factory.reset_and_open_v4.assert_called_once_with(
+        factory.reset_and_open.assert_called_once_with(
             blocking=False,
             lease=lease,
         )
@@ -590,7 +597,7 @@ class TestSyncRoutes:
             )
         )
         factory = MagicMock()
-        factory.reset_and_open_v4.return_value = session
+        factory.reset_and_open.return_value = session
         monkeypatch.setattr(
             db_routes, "_writer_factory", MagicMock(return_value=factory)
         )
@@ -611,7 +618,7 @@ class TestSyncRoutes:
         assert request.app.state.market_db is new_market_db
         assert request.app.state.market_time_series_store is new_store
         install_services.assert_not_called()
-        factory.reset_and_open_v4.assert_called_once_with(blocking=False, lease=None)
+        factory.reset_and_open.assert_called_once_with(blocking=False, lease=None)
 
     def test_get_db_stats_routes_to_service(
         self, monkeypatch: pytest.MonkeyPatch
@@ -740,64 +747,108 @@ class TestSyncRoutes:
 
             assert resp.status_code == 202
             assert mock_start.await_count == 1
+            assert mock_start.await_args.args[1] is None
+            assert mock_start.await_args.kwargs["time_series_store"] is None
             assert mock_start.await_args.kwargs["reset_before_sync"] is True
             assert callable(mock_start.await_args.kwargs["reset_market_snapshot"])
 
-    def test_sync_start_rejects_incompatible_reset_without_mutating_files(
+    def test_sync_start_reset_initial_does_not_open_existing_market_handles(
         self,
         app_client: TestClient,
         monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
     ) -> None:
-        from src.application.services import sync_service
-
-        market_root = tmp_path / "market-timeseries"
-        parquet_dir = market_root / "parquet"
-        parquet_dir.mkdir(parents=True)
-        db_path = market_root / "market.duckdb"
-        seeded_db = open_market_db(str(db_path), read_only=False)
-        seeded_db._execute("DELETE FROM market_schema_version")
-        seeded_db._execute(
-            """
-            INSERT INTO market_schema_version (version, applied_at, notes)
-            VALUES (?, ?, ?)
-            """,
-            [4, "2026-07-21T00:00:00+00:00", "Market v4 test fixture"],
-        )
-        seeded_db.set_sync_metadata(
-            "stock_price_adjustment_mode", "local_projection_v2_event_time"
-        )
-        seeded_db.close()
-        (parquet_dir / "legacy-marker.parquet").write_bytes(b"legacy-parquet-bytes")
-
-        market_db = open_market_db(str(db_path), read_only=True)
-        create_job = AsyncMock(return_value=None)
-        monkeypatch.setattr(
-            sync_service,
-            "sync_job_manager",
-            SimpleNamespace(create_job=create_job),
-        )
-        app_client.app.state.market_db = market_db
-        app_client.app.state.market_time_series_store = MagicMock()
+        app_client.app.state.market_db = None
+        app_client.app.state.market_time_series_store = None
         app_client.app.state.jquants_client = MagicMock(has_api_key=True)
-        app_client.app.state.market_writer_session = None
-        before = _regular_file_sha256s(market_root)
+        monkeypatch.setattr(
+            db_routes,
+            "_get_market_db",
+            MagicMock(side_effect=AssertionError("old MarketDb must not be opened")),
+        )
+        monkeypatch.setattr(
+            db_routes,
+            "_get_market_time_series_store",
+            MagicMock(side_effect=AssertionError("old store must not be opened")),
+        )
 
-        try:
+        with patch(
+            "src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock
+        ) as mock_start:
+            mock_job = MagicMock()
+            mock_job.job_id = "test-job-reset-missing-root"
+            mock_job.data.resolved_mode = "initial"
+            mock_start.return_value = mock_job
+
             response = app_client.post(
                 "/api/db/sync",
                 json={"mode": "initial", "resetBeforeSync": True},
             )
 
-            assert response.status_code == 409
-            assert _regular_file_sha256s(market_root) == before
-            assert "market-cutover cutover" in response.json()["message"]
-            assert create_job.await_count == 0
+        assert response.status_code == 202, response.text
+        assert mock_start.await_args.args[1] is None
+        assert mock_start.await_args.kwargs["time_series_store"] is None
+
+    def test_incremental_rejects_legacy_bigint_adjusted_volume_before_schema_write(
+        self,
+        app_client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        market_root = tmp_path / "market-timeseries"
+        db_path = market_root / "market.duckdb"
+        seeded_db = open_market_db(str(db_path), read_only=False)
+        seeded_db.close()
+        with connect_market_duckdb_for_test(str(db_path)) as connection:
+            connection.execute(
+                "ALTER TABLE stock_data_raw ALTER adjusted_volume TYPE BIGINT"
+            )
+            connection.execute("ALTER TABLE stock_data ALTER volume TYPE BIGINT")
+
+        app_client.app.state.market_db = open_market_db(str(db_path), read_only=True)
+        app_client.app.state.market_time_series_store = None
+        app_client.app.state.jquants_client = MagicMock(has_api_key=True)
+        ensure_schema_calls = 0
+        original_ensure_schema = db_routes.MarketDb.ensure_schema
+
+        def track_ensure_schema(market_db: object) -> None:
+            nonlocal ensure_schema_calls
+            ensure_schema_calls += 1
+            original_ensure_schema(market_db)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(db_routes.MarketDb, "ensure_schema", track_ensure_schema)
+
+        try:
+            with patch(
+                "src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock
+            ) as mock_start:
+                mock_job = MagicMock()
+                mock_job.job_id = "must-not-start"
+                mock_job.data.resolved_mode = "incremental"
+                mock_start.return_value = mock_job
+                response = app_client.post(
+                    "/api/db/sync",
+                    json={"mode": "incremental"},
+                )
+
+            assert response.status_code == 422, response.text
+            assert "RESET initial" in response.json()["message"]
+            assert ensure_schema_calls == 0
+            mock_start.assert_not_awaited()
         finally:
-            market_db.close()
+            session = getattr(app_client.app.state, "market_writer_session", None)
+            if session is not None:
+                token = session.close_writable_handles()
+                read_only = session.reopen_read_only(token)
+                session.release_after_read_only_reopen(token)
+                read_only.close()
+                app_client.app.state.market_writer_session = None
+            current_db = getattr(app_client.app.state, "market_db", None)
+            if current_db is not None:
+                current_db.close()
             app_client.app.state.market_db = None
             app_client.app.state.market_time_series_store = None
             app_client.app.state.jquants_client = None
+
 
     def test_sync_start_rejects_reset_before_sync_outside_initial_mode(
         self, client: TestClient
@@ -901,7 +952,7 @@ class TestSyncRoutes:
             "src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock
         ) as mock_start:
             mock_start.return_value = None  # Active job exists
-            resp = client.post("/api/db/sync", json={"mode": "auto"})
+            resp = client.post("/api/db/sync", json={"mode": "incremental"})
             assert resp.status_code == 409
 
     def test_sync_conflict_restores_read_only_resources(
@@ -945,21 +996,6 @@ class TestSyncRoutes:
             assert resp.status_code == 500
             assert client.app.state.market_writer_session is None
             assert client.app.state.market_time_series_store is not None
-
-    def test_resolve_time_series_store_rejects_unsupported_backend(
-        self, client: TestClient
-    ) -> None:
-        request = MagicMock()
-        request.app.state.market_time_series_store = MagicMock()
-        body = SyncRequest.model_construct(
-            mode="incremental",
-            dataPlane=SyncDataPlaneRequest.model_construct(backend="sqlite"),
-        )
-
-        with pytest.raises(HTTPException) as exc_info:
-            db_routes._resolve_time_series_store(request, body)
-
-        assert "Unsupported dataPlane backend" in str(exc_info.value.detail)
 
     def test_get_sync_job_not_found(self, client: TestClient) -> None:
         resp = client.get("/api/db/sync/jobs/nonexistent-id")
@@ -1012,7 +1048,7 @@ class TestSyncRoutes:
             job.job_id = "job-1"
             job.status = JobStatus.RUNNING
             job.data.resolved_mode = ""
-            job.data.mode.value = "auto"
+            job.data.mode.value = "incremental"
             job.data.enforce_bulk_for_stock_data = False
             job.progress = None
             job.result = None

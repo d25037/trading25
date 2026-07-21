@@ -18,15 +18,17 @@ class SyncDataPlaneRequest(BaseModel):
 
 
 class SyncRequest(BaseModel):
-    mode: market_contracts.SyncModeLiteral = "auto"
+    mode: market_contracts.SyncModeLiteral = "incremental"
     dataPlane: SyncDataPlaneRequest | None = None
     enforceBulkForStockData: bool = False
     resetBeforeSync: bool = False
 
     @model_validator(mode="after")
     def validate_reset_before_sync(self) -> SyncRequest:
-        if self.resetBeforeSync and self.mode != "initial":
-            raise ValueError("resetBeforeSync is supported only when mode='initial'")
+        if self.mode == "initial" and not self.resetBeforeSync:
+            raise ValueError("initial sync requires resetBeforeSync=true")
+        if self.mode == "incremental" and self.resetBeforeSync:
+            raise ValueError("incremental sync requires resetBeforeSync=false")
         return self
 
 
