@@ -3,7 +3,7 @@
 ## Identity and scope
 
 - Clean base: `d1d03f1270899ce95dbbd8cfc6a66a38f522a68c`.
-- Worktree: `/Users/mirage/dev/trading25/.worktrees/market-v5-cutover`.
+- Worktree: repository-relative root `.` (Market v5 cutover worktree).
 - Production scope is limited to full-rebuild activation, workspace exchange,
   backup/tree identity, report publication, and activation report contracts.
 - Test scope is the activation/atomic-exchange/caught-failure files named by Task 8.

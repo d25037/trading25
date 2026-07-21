@@ -3,7 +3,7 @@
 ## Identity and boundary
 
 - Clean base: `a2b98a2d86d592f7812616dec74cac8a9dc5b106`.
-- Worktree: `/Users/mirage/dev/trading25/.worktrees/market-v5-cutover`.
+- Worktree: repository-relative root `.` (Market v5 cutover worktree).
 - This commit is Task 10 Phase A only: active documentation, two financial-analysis
   skills, current experiment rerun clauses, and their guard tests.
 - No production code, API/OpenAPI contract, generated TypeScript artifact, data,

@@ -1,4 +1,205 @@
 {
   "version": 1,
-  "approvals": []
+  "approvals": [
+    {
+      "fingerprint": "sha256:97f256bc5e0c0fb829dca38305e8e35c3b55d239ed76b74e6b2438929f307486",
+      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:3ff416e3d2a4a14164a60f6e3637d6dc18dc84eec9e8fc0a27067d85e89333e7",
+      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:00b3efab51064f400a0e1cf0288e3323d429f7e82f8f2f3482d18f001ecceef0",
+      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:93ca8469c0c7777958654991b08bc22fcd9b4ba4f99eef4f6e4054582643df3d",
+      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:651b559623ad7c21ad877238dc7b1bcacbbd12af49bd053661052e9c18c60367",
+      "reason": "Market v5 provider-adjusted/current-basis responses remove legacy price-basis and valuation-basis fields in favor of provider lineage.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:6751d9b81f51e6e07c049b9452364cdccbd76cb235d2c5d34409835c208bf667",
+      "reason": "Market v5 provider-adjusted/current-basis responses remove legacy price-basis and valuation-basis fields in favor of provider lineage.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:e04e18bf3eecc40ad865f740cf976fcce35d36d9936622cfbaf2dc3738326a68",
+      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:fc6e99b6dfc564216376e99e8e7d7d03c1e512111e795ee5dc203d7ce2c27c8e",
+      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:a15d41df443d0c838e2df6f4fbc32db8c05127a3bfe71527a8547b676b876c27",
+      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:1aa5fc1fc3b39f6d1137a69bae0acf50aa034ec67ab77ce27f47d3f084420252",
+      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:74f03d0d7d17f4e22d33ec1d16a51d532ce37fa0deda049c8b1c7284932cb511",
+      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:e74bd85e821d19c6b03c613bd6ae4e4c19c925406fd89afaa860c254f038e9ed",
+      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:f09156f058d2e0771b77dd52c833c2adda43977d259914f5ae758dfd1243e940",
+      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:5c05102e034f2681a3ffc7015adb3e3b192ae59469e596b1d0f11412c35468c5",
+      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:d408410325ce4b075477b2798c94502a76c2635c7fefda690e3504189f40f2f0",
+      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:4c1a4829ab2690e1ebbd8435ac184a5016341c60e8148ae4399d75caefc4dc8c",
+      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:02c69c23f00d38bfb8ab813577a36a66ac451445161535218748a54722c911ed",
+      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:2d7879404cef89279b4db06400834aad8bc023d91b0b1824b4c1a190235aacc9",
+      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:f15d3e305e5df7368a1c04348cdadbf115cb478ca80b195748431200310b1632",
+      "reason": "Market v5 provider-adjusted/current-basis responses remove legacy price-basis and valuation-basis fields in favor of provider lineage.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:a085eb7854ae07d760d31dc4c3c5dc79e8a32ed71bd137033e399569ddf1610d",
+      "reason": "Market v5 provider-adjusted/current-basis responses remove legacy price-basis and valuation-basis fields in favor of provider lineage.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:ab0188c4395bd2ac6c79ff5f6892bf837b9c61d7361d0ec93b19a554f2ea2d32",
+      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:1ef2fc6113e6da9cd83a08f632ef8d8f2601276fe7cb8d4a0c518fa88e50b08c",
+      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:c33c0ec06f1f8f815bbc842a6170cd0513bae8aae0efacdfcddd87b907ab1cec",
+      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:3239174ed6403c3a19acf91d1c300d191e9f73f6db9ad88bf62d09ac67352d2d",
+      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:cc840fdcaf094f6ef83f3d1d76ee419f9437a444ebfd2898bd00268d1e778071",
+      "reason": "Market v5 provider-adjusted/current-basis responses remove legacy price-basis and valuation-basis fields in favor of provider lineage.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:5b3e370e66d6d4ff7e6b7fa6832a5d21c60c3679819f21027fb46d3e0fc052d7",
+      "reason": "Market v5 provider-adjusted/current-basis responses remove legacy price-basis and valuation-basis fields in favor of provider lineage.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:62f4ece1afc90c5813390fe9eef92577296244b943e310c1e75fe82e0e5ffced",
+      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:b34456129ffafd310fe3a241e7c2d49c104f56539516a1098c60c0f318c43624",
+      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:d5d59eb44ea3d382855a1215d5d4dd636958b94db1fc0f969de07bad02466b36",
+      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:2f508eccb70351ec3a5c7af952169487a6b908c48664b15680d56dec51b2dce2",
+      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:c5abda3212b5ef375f1295cb6646fd7ea3b562de25a9b3f6bb50640289945e38",
+      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:be15221f51b52cc945d61e2c8b5ce4b6c8e401326e5be28961c695f1ac26a631",
+      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:2e3b5507c44d714e45e84e77ed0a3e45c42eaf7c7b9071514493fce25c23061d",
+      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:ea4cde745fb069a3fca2a2bbc4fce5c0863eedb1074b932ebddc1ec1d75f0fb0",
+      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:77bc0cede38e3d55e27e59114f72fba059896cc63017543821ab7535d0215348",
+      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:ee24b17e23df7bdbeafd2c45eb16e892ba921ce0b38f54616a1cfddcaeb4c71b",
+      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:dc5732508aaa59dd21a6ec623433df9f19eafc28537d371d9346a81e8674a7a8",
+      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:dc7f3057bc36d15b8504cd9292c0429f59ee11d3b50906f6a9e12524c5f0c490",
+      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:da013172e584357dbe0466b4e6500b5b3258f75ca24cb4587660518663e068b8",
+      "reason": "Market v5 provider-adjusted/current-basis responses remove legacy price-basis and valuation-basis fields in favor of provider lineage.",
+      "expiresOn": "2026-08-21"
+    },
+    {
+      "fingerprint": "sha256:135fdcb735292b56bb69ca6843a473fb9e2f2fd09f9426d007f4a736210d85f0",
+      "reason": "Market v5 provider-adjusted/current-basis responses remove legacy price-basis and valuation-basis fields in favor of provider lineage.",
+      "expiresOn": "2026-08-21"
+    }
+  ]
 }

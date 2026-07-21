@@ -3,7 +3,7 @@
 ## Identity and scope
 
 - Clean base: `cf351627688abab33ec5ccc8fede3402c0c8ac92`.
-- Worktree: `/Users/mirage/dev/trading25/.worktrees/market-v5-cutover`.
+- Worktree: repository-relative root `.` (Market v5 cutover worktree).
 - Production changes are limited to exact same-ID activation recovery, secure
   report-ID-anchored journal discovery, and facade dispatch before new preparation.
 - No API, OpenAPI, CLI, schema, frontend, sync, refresh, rebuild, compatibility,

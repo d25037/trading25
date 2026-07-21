@@ -19,72 +19,72 @@
     "nesting_warn_depth": 5
   },
   "totals": {
-    "files": 1059,
-    "functions": 10470,
-    "total_lines": 362839,
-    "code_lines": 287844
+    "files": 1048,
+    "functions": 10404,
+    "total_lines": 359248,
+    "code_lines": 284263
   },
   "languages": {
     "python": {
-      "files": 790,
-      "total_lines": 313308,
-      "code_lines": 255622
+      "files": 779,
+      "total_lines": 309817,
+      "code_lines": 252134
     },
     "tsx": {
       "files": 138,
-      "total_lines": 32216,
-      "code_lines": 17657
+      "total_lines": 32172,
+      "code_lines": 17614
     },
     "typescript": {
       "files": 131,
-      "total_lines": 17315,
-      "code_lines": 14565
+      "total_lines": 17259,
+      "code_lines": 14515
     }
   },
   "file_buckets": {
-    "critical_1000_plus": 90,
+    "critical_1000_plus": 89,
     "high_800_plus": 147,
-    "warn_500_plus": 245
+    "warn_500_plus": 236
   },
   "function_buckets": {
-    "critical_180_plus": 53,
-    "high_120_plus": 209,
-    "warn_80_plus": 540,
+    "critical_180_plus": 57,
+    "high_120_plus": 201,
+    "warn_80_plus": 522,
     "branch_50_plus": 5
   },
   "top_files": [
     {
       "path": "apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py",
       "language": "python",
-      "total_lines": 3812,
-      "code_lines": 3316,
-      "branch_score": 319,
+      "total_lines": 3885,
+      "code_lines": 3375,
+      "branch_score": 321,
       "max_nesting": 8,
       "function_count": 51,
       "max_function_lines": 217,
-      "hotspot_score": 9669
+      "hotspot_score": 9764
     },
     {
       "path": "apps/bt/src/infrastructure/db/market/time_series_store.py",
       "language": "python",
-      "total_lines": 2001,
-      "code_lines": 1509,
-      "branch_score": 229,
+      "total_lines": 2679,
+      "code_lines": 2118,
+      "branch_score": 334,
       "max_nesting": 4,
-      "function_count": 82,
-      "max_function_lines": 148,
-      "hotspot_score": 5935
+      "function_count": 84,
+      "max_function_lines": 280,
+      "hotspot_score": 8830
     },
     {
       "path": "apps/bt/src/domains/analytics/daily_ranking_research_base.py",
       "language": "python",
-      "total_lines": 1907,
-      "code_lines": 1544,
+      "total_lines": 1916,
+      "code_lines": 1549,
       "branch_score": 218,
       "max_nesting": 2,
       "function_count": 53,
       "max_function_lines": 208,
-      "hotspot_score": 5902
+      "hotspot_score": 5907
     },
     {
       "path": "apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py",
@@ -155,13 +155,13 @@
     {
       "path": "apps/bt/src/domains/analytics/ranking_fixed_return_priority_evidence.py",
       "language": "python",
-      "total_lines": 1920,
-      "code_lines": 1789,
+      "total_lines": 1921,
+      "code_lines": 1790,
       "branch_score": 156,
       "max_nesting": 6,
       "function_count": 29,
       "max_function_lines": 221,
-      "hotspot_score": 5170
+      "hotspot_score": 5171
     },
     {
       "path": "apps/bt/src/domains/analytics/annual_value_breakout_periodic_rebalance.py",
@@ -173,17 +173,6 @@
       "function_count": 32,
       "max_function_lines": 214,
       "hotspot_score": 4871
-    },
-    {
-      "path": "apps/bt/src/infrastructure/db/market/valuation_writers.py",
-      "language": "python",
-      "total_lines": 1012,
-      "code_lines": 824,
-      "branch_score": 176,
-      "max_nesting": 4,
-      "function_count": 24,
-      "max_function_lines": 337,
-      "hotspot_score": 4863
     },
     {
       "path": "apps/bt/src/domains/analytics/standard_missing_forecast_cfo_non_positive_deep_dive.py",
@@ -241,6 +230,28 @@
       "hotspot_score": 4418
     },
     {
+      "path": "apps/bt/src/application/services/sync_strategies.py",
+      "language": "python",
+      "total_lines": 1778,
+      "code_lines": 1616,
+      "branch_score": 121,
+      "max_nesting": 5,
+      "function_count": 78,
+      "max_function_lines": 244,
+      "hotspot_score": 4411
+    },
+    {
+      "path": "apps/bt/src/infrastructure/db/dataset_io/dataset_writer.py",
+      "language": "python",
+      "total_lines": 2139,
+      "code_lines": 1444,
+      "branch_score": 142,
+      "max_nesting": 3,
+      "function_count": 72,
+      "max_function_lines": 181,
+      "hotspot_score": 4378
+    },
+    {
       "path": "apps/bt/src/domains/analytics/recent_return_threshold_forward_response.py",
       "language": "python",
       "total_lines": 2012,
@@ -254,13 +265,13 @@
     {
       "path": "apps/bt/src/domains/analytics/ranking_trend_acceleration_conditional_lift.py",
       "language": "python",
-      "total_lines": 1922,
-      "code_lines": 1757,
+      "total_lines": 1923,
+      "code_lines": 1758,
       "branch_score": 113,
       "max_nesting": 4,
       "function_count": 21,
       "max_function_lines": 213,
-      "hotspot_score": 4290
+      "hotspot_score": 4291
     },
     {
       "path": "apps/ts/packages/web/src/lib/routeSearch.ts",
@@ -307,39 +318,18 @@
       "hotspot_score": 4196
     },
     {
-      "path": "apps/bt/src/domains/analytics/free_float_liquidity_gap.py",
+      "path": "apps/bt/src/infrastructure/db/market/dataset_snapshot_reader.py",
       "language": "python",
-      "total_lines": 1408,
-      "code_lines": 1200,
-      "branch_score": 154,
-      "max_nesting": 4,
-      "function_count": 45,
-      "max_function_lines": 118,
-      "hotspot_score": 4186
-    },
-    {
-      "path": "apps/bt/src/domains/analytics/topix100_price_vs_sma_rank_future_close.py",
-      "language": "python",
-      "total_lines": 1488,
-      "code_lines": 1370,
-      "branch_score": 129,
-      "max_nesting": 6,
-      "function_count": 31,
-      "max_function_lines": 141,
-      "hotspot_score": 4025
+      "total_lines": 1335,
+      "code_lines": 1048,
+      "branch_score": 170,
+      "max_nesting": 3,
+      "function_count": 72,
+      "max_function_lines": 83,
+      "hotspot_score": 4192
     }
   ],
   "top_functions": [
-    {
-      "path": "apps/bt/src/infrastructure/db/market/valuation_writers.py",
-      "name": "publish_adjusted_basis_materialization",
-      "language": "python",
-      "start_line": 120,
-      "end_line": 471,
-      "lines": 337,
-      "branch_score": 77,
-      "max_nesting": 4
-    },
     {
       "path": "apps/bt/src/application/services/ranking_service.py",
       "name": "get_rankings",
@@ -349,6 +339,16 @@
       "lines": 307,
       "branch_score": 22,
       "max_nesting": 2
+    },
+    {
+      "path": "apps/bt/src/infrastructure/db/market/time_series_store.py",
+      "name": "_publish_stock_data_locked",
+      "language": "python",
+      "start_line": 1339,
+      "end_line": 1661,
+      "lines": 280,
+      "branch_score": 61,
+      "max_nesting": 3
     },
     {
       "path": "apps/ts/packages/web/src/components/Chart/StockChart.tsx",
@@ -371,14 +371,44 @@
       "max_nesting": 3
     },
     {
+      "path": "apps/bt/src/application/services/dataset_builder_service.py",
+      "name": "_build_dataset_from_pinned_source",
+      "language": "python",
+      "start_line": 408,
+      "end_line": 685,
+      "lines": 255,
+      "branch_score": 19,
+      "max_nesting": 3
+    },
+    {
       "path": "apps/bt/src/application/services/sync_service.py",
       "name": "start_sync",
       "language": "python",
-      "start_line": 375,
-      "end_line": 637,
-      "lines": 245,
-      "branch_score": 34,
+      "start_line": 198,
+      "end_line": 469,
+      "lines": 254,
+      "branch_score": 38,
       "max_nesting": 3
+    },
+    {
+      "path": "apps/bt/src/application/services/stock_refresh_service.py",
+      "name": "refresh_stocks",
+      "language": "python",
+      "start_line": 114,
+      "end_line": 374,
+      "lines": 251,
+      "branch_score": 49,
+      "max_nesting": 5
+    },
+    {
+      "path": "apps/bt/src/infrastructure/db/market/time_series_store.py",
+      "name": "replace_stock_provider_window",
+      "language": "python",
+      "start_line": 1007,
+      "end_line": 1286,
+      "lines": 248,
+      "branch_score": 39,
+      "max_nesting": 4
     },
     {
       "path": "apps/bt/src/domains/analytics/nt_ratio_change_topix_close_stock_overnight_distribution.py",
@@ -388,6 +418,16 @@
       "end_line": 1137,
       "lines": 245,
       "branch_score": 8,
+      "max_nesting": 2
+    },
+    {
+      "path": "apps/bt/src/application/services/sync_strategies.py",
+      "name": "execute",
+      "language": "python",
+      "start_line": 1345,
+      "end_line": 1616,
+      "lines": 244,
+      "branch_score": 18,
       "max_nesting": 2
     },
     {
@@ -411,16 +451,6 @@
       "max_nesting": 3
     },
     {
-      "path": "apps/bt/src/application/services/dataset_builder_service.py",
-      "name": "_build_dataset_from_pinned_source",
-      "language": "python",
-      "start_line": 410,
-      "end_line": 665,
-      "lines": 233,
-      "branch_score": 16,
-      "max_nesting": 3
-    },
-    {
       "path": "apps/bt/src/domains/analytics/standard_negative_eps_right_tail_decomposition.py",
       "name": "_build_event_ledger",
       "language": "python",
@@ -434,21 +464,11 @@
       "path": "apps/bt/src/domains/analytics/ranking_sma5_atr_deviation_evidence.py",
       "name": "run_ranking_sma5_atr_deviation_evidence_research",
       "language": "python",
-      "start_line": 192,
-      "end_line": 424,
+      "start_line": 195,
+      "end_line": 427,
       "lines": 231,
       "branch_score": 7,
       "max_nesting": 1
-    },
-    {
-      "path": "apps/bt/src/entrypoints/http/app.py",
-      "name": "_lifespan_impl",
-      "language": "python",
-      "start_line": 150,
-      "end_line": 408,
-      "lines": 221,
-      "branch_score": 43,
-      "max_nesting": 2
     },
     {
       "path": "apps/bt/src/domains/analytics/topix_downside_return_standard_deviation_family_committee_walkforward.py",
@@ -464,8 +484,8 @@
       "path": "apps/bt/src/domains/analytics/ranking_fixed_return_priority_evidence.py",
       "name": "run_ranking_fixed_return_priority_evidence_research",
       "language": "python",
-      "start_line": 284,
-      "end_line": 507,
+      "start_line": 285,
+      "end_line": 508,
       "lines": 221,
       "branch_score": 12,
       "max_nesting": 2
@@ -484,8 +504,8 @@
       "path": "apps/bt/src/application/services/sync_fundamentals_data.py",
       "name": "sync_fundamentals_initial",
       "language": "python",
-      "start_line": 206,
-      "end_line": 433,
+      "start_line": 218,
+      "end_line": 445,
       "lines": 219,
       "branch_score": 27,
       "max_nesting": 4
@@ -494,8 +514,8 @@
       "path": "apps/bt/src/domains/analytics/ranking_sma5_count_short_evidence.py",
       "name": "run_ranking_sma5_count_short_evidence_research",
       "language": "python",
-      "start_line": 113,
-      "end_line": 333,
+      "start_line": 116,
+      "end_line": 336,
       "lines": 219,
       "branch_score": 2,
       "max_nesting": 1
@@ -511,11 +531,21 @@
       "max_nesting": 2
     },
     {
+      "path": "apps/bt/src/entrypoints/http/app.py",
+      "name": "_lifespan_impl",
+      "language": "python",
+      "start_line": 150,
+      "end_line": 404,
+      "lines": 217,
+      "branch_score": 43,
+      "max_nesting": 2
+    },
+    {
       "path": "apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py",
       "name": "run_ranking_technical_fit_score_shape_evidence_research",
       "language": "python",
-      "start_line": 748,
-      "end_line": 979,
+      "start_line": 816,
+      "end_line": 1047,
       "lines": 217,
       "branch_score": 17,
       "max_nesting": 2
@@ -524,8 +554,8 @@
       "path": "apps/bt/src/domains/analytics/ranking_color_evidence.py",
       "name": "run_ranking_color_evidence_research",
       "language": "python",
-      "start_line": 237,
-      "end_line": 452,
+      "start_line": 242,
+      "end_line": 457,
       "lines": 215,
       "branch_score": 5,
       "max_nesting": 2
@@ -544,65 +574,35 @@
       "path": "apps/bt/src/domains/analytics/ranking_trend_acceleration_conditional_lift.py",
       "name": "run_ranking_trend_acceleration_conditional_lift_research",
       "language": "python",
-      "start_line": 190,
-      "end_line": 405,
+      "start_line": 191,
+      "end_line": 406,
       "lines": 213,
       "branch_score": 6,
-      "max_nesting": 2
-    },
-    {
-      "path": "apps/bt/src/domains/analytics/ranking_moving_average_replacement_evidence.py",
-      "name": "run_ranking_moving_average_replacement_evidence_research",
-      "language": "python",
-      "start_line": 247,
-      "end_line": 462,
-      "lines": 212,
-      "branch_score": 2,
-      "max_nesting": 1
-    },
-    {
-      "path": "apps/bt/src/domains/analytics/volume_trading_value_conditioning.py",
-      "name": "run_volume_trading_value_conditioning_research",
-      "language": "python",
-      "start_line": 832,
-      "end_line": 1052,
-      "lines": 210,
-      "branch_score": 25,
-      "max_nesting": 3
-    },
-    {
-      "path": "apps/bt/src/domains/analytics/daily_ranking_research_base.py",
-      "name": "build_daily_ranking_research_base",
-      "language": "python",
-      "start_line": 600,
-      "end_line": 811,
-      "lines": 208,
-      "branch_score": 9,
       "max_nesting": 2
     }
   ],
   "branch_hotspots": [
     {
+      "path": "apps/bt/src/infrastructure/db/market/time_series_store.py",
+      "language": "python",
+      "total_lines": 2679,
+      "code_lines": 2118,
+      "branch_score": 334,
+      "max_nesting": 4,
+      "function_count": 84,
+      "max_function_lines": 280,
+      "hotspot_score": 8830
+    },
+    {
       "path": "apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py",
       "language": "python",
-      "total_lines": 3812,
-      "code_lines": 3316,
-      "branch_score": 319,
+      "total_lines": 3885,
+      "code_lines": 3375,
+      "branch_score": 321,
       "max_nesting": 8,
       "function_count": 51,
       "max_function_lines": 217,
-      "hotspot_score": 9669
-    },
-    {
-      "path": "apps/bt/src/infrastructure/db/market/time_series_store.py",
-      "language": "python",
-      "total_lines": 2001,
-      "code_lines": 1509,
-      "branch_score": 229,
-      "max_nesting": 4,
-      "function_count": 82,
-      "max_function_lines": 148,
-      "hotspot_score": 5935
+      "hotspot_score": 9764
     },
     {
       "path": "apps/bt/src/domains/analytics/earnings_holdthrough_expectancy.py",
@@ -618,13 +618,13 @@
     {
       "path": "apps/bt/src/domains/analytics/daily_ranking_research_base.py",
       "language": "python",
-      "total_lines": 1907,
-      "code_lines": 1544,
+      "total_lines": 1916,
+      "code_lines": 1549,
       "branch_score": 218,
       "max_nesting": 2,
       "function_count": 53,
       "max_function_lines": 208,
-      "hotspot_score": 5902
+      "hotspot_score": 5907
     },
     {
       "path": "scripts/openapi_compat.py",
@@ -671,17 +671,6 @@
       "hotspot_score": 5313
     },
     {
-      "path": "apps/bt/src/infrastructure/db/market/valuation_writers.py",
-      "language": "python",
-      "total_lines": 1012,
-      "code_lines": 824,
-      "branch_score": 176,
-      "max_nesting": 4,
-      "function_count": 24,
-      "max_function_lines": 337,
-      "hotspot_score": 4863
-    },
-    {
       "path": "apps/bt/src/domains/analytics/volume_ratio_future_return_regime.py",
       "language": "python",
       "total_lines": 1898,
@@ -693,17 +682,6 @@
       "hotspot_score": 5464
     },
     {
-      "path": "scripts/skills/audit_skills.py",
-      "language": "python",
-      "total_lines": 835,
-      "code_lines": 739,
-      "branch_score": 173,
-      "max_nesting": 5,
-      "function_count": 22,
-      "max_function_lines": 61,
-      "hotspot_score": 3978
-    },
-    {
       "path": "apps/bt/src/domains/fundamentals/calculator.py",
       "language": "python",
       "total_lines": 1094,
@@ -713,6 +691,17 @@
       "function_count": 76,
       "max_function_lines": 105,
       "hotspot_score": 4233
+    },
+    {
+      "path": "apps/bt/src/infrastructure/db/market/dataset_snapshot_reader.py",
+      "language": "python",
+      "total_lines": 1335,
+      "code_lines": 1048,
+      "branch_score": 170,
+      "max_nesting": 3,
+      "function_count": 72,
+      "max_function_lines": 83,
+      "hotspot_score": 4192
     },
     {
       "path": "apps/bt/src/domains/analytics/accumulation_flow_followthrough.py",
@@ -746,30 +735,30 @@
       "function_count": 26,
       "max_function_lines": 83,
       "hotspot_score": 3725
+    },
+    {
+      "path": "apps/bt/src/domains/analytics/standard_missing_forecast_cfo_non_positive_deep_dive.py",
+      "language": "python",
+      "total_lines": 1508,
+      "code_lines": 1378,
+      "branch_score": 160,
+      "max_nesting": 5,
+      "function_count": 44,
+      "max_function_lines": 205,
+      "hotspot_score": 4758
     }
   ],
   "nesting_hotspots": [
     {
-      "path": "apps/bt/src/application/services/db_stats_service.py",
-      "language": "python",
-      "total_lines": 535,
-      "code_lines": 490,
-      "branch_score": 111,
-      "max_nesting": 8,
-      "function_count": 21,
-      "max_function_lines": 189,
-      "hotspot_score": 3015
-    },
-    {
       "path": "apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py",
       "language": "python",
-      "total_lines": 3812,
-      "code_lines": 3316,
-      "branch_score": 319,
+      "total_lines": 3885,
+      "code_lines": 3375,
+      "branch_score": 321,
       "max_nesting": 8,
       "function_count": 51,
       "max_function_lines": 217,
-      "hotspot_score": 9669
+      "hotspot_score": 9764
     },
     {
       "path": "apps/bt/src/domains/analytics/volume_trading_value_conditioning.py",
@@ -807,13 +796,13 @@
     {
       "path": "apps/bt/src/domains/analytics/ranking_sma5_position_state_evidence.py",
       "language": "python",
-      "total_lines": 1509,
-      "code_lines": 1365,
+      "total_lines": 1513,
+      "code_lines": 1369,
       "branch_score": 102,
       "max_nesting": 7,
       "function_count": 37,
       "max_function_lines": 196,
-      "hotspot_score": 3724
+      "hotspot_score": 3728
     },
     {
       "path": "apps/ts/packages/web/src/components/Backtest/DefaultConfigEditor.tsx",
@@ -893,26 +882,37 @@
       "hotspot_score": 1965
     },
     {
-      "path": "apps/bt/src/application/services/market_v4_cutover/journal.py",
+      "path": "apps/bt/src/application/services/db_stats_service.py",
       "language": "python",
-      "total_lines": 495,
-      "code_lines": 473,
-      "branch_score": 78,
+      "total_lines": 583,
+      "code_lines": 538,
+      "branch_score": 111,
       "max_nesting": 6,
-      "function_count": 9,
-      "max_function_lines": 154,
-      "hotspot_score": 2249
+      "function_count": 24,
+      "max_function_lines": 190,
+      "hotspot_score": 3016
     },
     {
-      "path": "apps/bt/src/application/services/market_v4_cutover/promotion_artifacts.py",
+      "path": "apps/bt/src/domains/analytics/annual_forward_per_regime_decomposition.py",
       "language": "python",
-      "total_lines": 443,
-      "code_lines": 427,
-      "branch_score": 55,
+      "total_lines": 1352,
+      "code_lines": 1278,
+      "branch_score": 129,
       "max_nesting": 6,
-      "function_count": 7,
-      "max_function_lines": 177,
-      "hotspot_score": 1858
+      "function_count": 28,
+      "max_function_lines": 152,
+      "hotspot_score": 3966
+    },
+    {
+      "path": "apps/bt/src/domains/analytics/annual_sector_relative_value_composite.py",
+      "language": "python",
+      "total_lines": 786,
+      "code_lines": 740,
+      "branch_score": 57,
+      "max_nesting": 6,
+      "function_count": 16,
+      "max_function_lines": 85,
+      "hotspot_score": 1931
     }
   ],
   "target_metrics": {
