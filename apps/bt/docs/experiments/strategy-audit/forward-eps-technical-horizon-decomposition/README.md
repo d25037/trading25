@@ -2,8 +2,8 @@
 
 > Historical pre-v4 readout. The recorded schema v3 results remain only as
 > provenance and are not current production evidence. Any rerun or adoption
-> decision must use Market schema v4 / `local_projection_v2_event_time` with
-> exact event-time basis lineage and publish a new readout.
+> decision must use Market schema v5 / `provider_adjusted_v1` with exact
+> provider-window/current-basis lineage and publish a new readout.
 
 ## Published Readout
 
@@ -22,7 +22,7 @@
 - Strategy: `production/forward_eps_driven`
 - Universe preset: `primeExTopix500`
 - Historical data source: `market.duckdb` v3 (retired)
-- Current rerun requirement: Market schema v4 / `local_projection_v2_event_time`
+- Current rerun requirement: Market schema v5 / `provider_adjusted_v1`
 - Period: `2016-05-02` -> `2026-04-30`
 - Holdout: recent 6 calendar months, `2025-10-30` -> `2026-04-30`
 - Entry enrichment: entry 日の前営業日までの price series だけで `RSI` / `run-up` / `risk-adjusted-return` を計算

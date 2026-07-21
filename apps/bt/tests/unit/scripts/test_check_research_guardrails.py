@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
@@ -34,6 +35,41 @@ def _write_empty_catalog(repo_root: Path) -> None:
     )
     catalog.parent.mkdir(parents=True, exist_ok=True)
     catalog.write_text("[experiments]\n", encoding="utf-8")
+
+
+def test_current_experiment_rerun_guidance_uses_market_v5_provider_contract() -> None:
+    repo_root = Path(__file__).resolve().parents[5]
+    experiments_root = repo_root / "apps/bt/docs/experiments"
+    current_rerun_clause = re.compile(
+        r"(?:Any rerun or\s+adoption decision|Current rerun requirement|"
+        r"current runner|再実行する場合|高価値候補として残す場合).{0,300}",
+        re.IGNORECASE | re.DOTALL,
+    )
+    invalid_clauses: list[str] = []
+
+    for readme in sorted(experiments_root.rglob("README.md")):
+        content = readme.read_text(encoding="utf-8")
+        for match in current_rerun_clause.finditer(content):
+            clause = match.group(0)
+            has_current_contract = re.search(r"Market(?: schema)? v5", clause) and (
+                "provider_adjusted_v1" in clause
+                or "provider-window/current-basis" in clause
+            )
+            mentions_market_contract = (
+                "Market v" in clause
+                or "Market schema v" in clause
+                or "local_projection_v2_event_time" in clause
+            )
+            if (
+                "Market v4" in clause
+                or "local_projection_v2_event_time" in clause
+                or (mentions_market_contract and not has_current_contract)
+            ):
+                invalid_clauses.append(
+                    f"{readme.relative_to(repo_root)}: {clause.splitlines()[0]}"
+                )
+
+    assert invalid_clauses == []
 
 
 def test_daily_ranking_guardrail_rejects_legacy_bridge_and_stock_data() -> None:

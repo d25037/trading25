@@ -3,7 +3,7 @@
 ## Decision
 - `J-Quants` は ingest/proxy 専用であり、verification path の SoT ではない。
 - `market.duckdb` は screening / charts / analytics / normal backtest / optimize / attribution / lab の SoT である。
-- Market Data Plane は schema v5 / `provider_adjusted_v1` のみを受理する。旧schemaは自動移行せず、reset付きinitial syncで再構築する。
+- Market Data Plane は schema v5 / `provider_adjusted_v1` のみを受理する。Market v4以前、malformed schema、または adjustment-mode-incompatible root は live reset で移行せず、`bt market-cutover cutover` の isolated full rebuild だけで再構築する。`resetBeforeSync` は既に compatible な Market v5 root の保守専用である。
 - `market.duckdb.stock_data_raw` は provider publication の SoT であり、raw `O/H/L/C/Vo + adjustment_factor` と provider-adjusted `AdjO/H/L/C/Vo` を同じper-code windowで保持する。
 - `market.duckdb.stock_data` は provider-adjusted current convenience projectionである。cutoff-aware Fundamentals / liquidityの入力には使わない。
 - `stock_provider_windows` はper-code coverage / provider as-of / canonical source fingerprintのSoT、`stock_adjustment_events`はそのwindowに所有されるevent ledgerのSoTである。
@@ -28,7 +28,7 @@
 - `shared_config.dataset` は normal run で unsupported。`shared_config.universe_preset` を使い、物理 snapshot は `dataset_snapshot` として明示する。
 - chart overlay は `strategy_name` 指定時に `SignalProcessor` ベースで screening/backtest と同じ signal semantics を使う。
 - research readout は historical universe に latest membership を固定した headline を production / Ranking / Screening evidence として使わない。
-- cutover report / backup / staging / quarantine artifact は `operations/market-v5-cutover` だけを使い、旧namespaceへのfallback、in-place migration、dual readを行わない。activation後のfailureはexact backupへrollbackし、unjoined childがある場合はoperation leaseを保持してoperatorの手動artifact変更を禁止する。
+- cutover report / journal / backup / staging / retained-runtime / quarantine artifact は `operations/market-v5-cutover` だけを使い、旧namespaceへのfallback、in-place migration、dual readを行わない。journal は `prepared` / `exchange_started` / `activated` / `reported` を durable に記録し、fresh service は新規 preparation より先に exact same-ID recovery を行う。operator は journal / operation lock / staging / backup / active / retained-runtime / quarantine を手動変更しない。joined failure は exact rollback、unjoined child は両 lease を保持した deferred fencing とする。
 
 ## Provenance Contract
 - screening / fundamentals / ROE / margin / signal responses は共通 `provenance` を返す。

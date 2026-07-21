@@ -31,7 +31,10 @@ to the former v4 operation namespace.
   rehearsal, fresh cutover staging tree, Parquet exports, and quarantine.
 - Select a liquid symbol and a production smoke strategy that are valid for
   the configured provider plan and coverage.
-- Use new IDs. Reports and backups are immutable and IDs are never reused.
+- Use new IDs for a new attempt. Reports and backups are immutable. If an exact
+  attempt journal already exists, do not invent replacement IDs: rerun the same
+  `cutover` command with the same report, rehearsal, backup, smoke configuration,
+  and clean code identity so same-ID recovery runs before any new preparation.
 
 Example operator shell:
 
@@ -182,14 +185,36 @@ them as separate operator work; cutover does not inherit their price rows.
 
 ## Failure behavior and exact rollback
 
+Activation uses a create-only, fsynced journal with these durable states:
+
+- `prepared`: exact source, staged, active, backup, configuration, and code
+  identities are recorded; exchange has not committed.
+- `exchange_started`: recovery inspects the exact active, staged, quarantine,
+  and runtime identities and accepts only a single legal ownership layout.
+- `activated`: the expected v5 tree is active; recovery must complete a fresh
+  owned smoke and success publication.
+- `reported`: the exact create-only success report is verified and adopted;
+  the same command is idempotent and performs no external API work.
+
+After a process death or a message requiring exact same-ID recovery, keep all
+writers stopped and rerun the command from section 4 with the exact same IDs and
+arguments. A fresh service loads the exact report-ID-anchored journal before new
+preparation. It validates the caller arguments, code/configuration fingerprints,
+backup, active/staged/quarantine identities, and any exact journal-owned runtime.
+It does not infer ownership from filenames. An ambiguous, duplicate, changed, or
+mismatched layout fails closed without mutation.
+
 - Failure before atomic activation leaves the active Market tree unchanged.
 - Failure after activation triggers automatic restore from the exact immutable
   backup when the owned server and worker are proven joined.
 - If an owned child is not proven joined, the operation lease remains fenced
   and automatic restore is deferred. Resolve process ownership first; do not
-  alter the operation lock, report, staging, or quarantine files manually.
+  alter the journal, operation lock, report, staging, backup, active,
+  retained-runtime, or quarantine paths manually.
 - Failed staging trees, reports, logs, and quarantined trees remain for
-  diagnosis. Do not treat them as activation candidates.
+  diagnosis. An atomically retired recovery runtime remains under
+  `operations/market-v5-cutover/recovery-runtime-quarantine/<REPORT_ID>`.
+  Do not delete it or treat any retained artifact as an activation candidate.
 
 For an operator-requested exact rollback, stop FastAPI and workers and run:
 

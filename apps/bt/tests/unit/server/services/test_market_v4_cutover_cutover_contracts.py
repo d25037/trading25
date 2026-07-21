@@ -36,6 +36,45 @@ from tests.unit.server.services.market_v4_cutover_test_support import (
 )
 
 
+def test_active_market_v5_guidance_requires_cutover_and_same_id_recovery() -> None:
+    repo_root = Path(__file__).resolve().parents[6]
+    agents = (repo_root / "AGENTS.md").read_text(encoding="utf-8")
+    matrix = (repo_root / "docs/architecture-sot-matrix.md").read_text(
+        encoding="utf-8"
+    )
+    runbook = (repo_root / "docs/runbooks/market-v5-cutover.md").read_text(
+        encoding="utf-8"
+    )
+    guidance = "\n".join((agents, matrix, runbook))
+
+    assert "schema v5" in guidance
+    assert "provider_adjusted_v1" in guidance
+    assert "bt market-cutover cutover" in guidance
+    assert "reset付きinitial syncで再構築" not in matrix
+    assert "live reset で移行せず" in matrix
+    assert "Market v5 root の保守専用" in matrix
+    assert "only supported operator path" in runbook
+    for state in ("prepared", "exchange_started", "activated", "reported"):
+        assert f"`{state}`" in guidance
+    assert "same-ID recovery" in guidance
+    for protected_path in (
+        "journal",
+        "lock",
+        "staging",
+        "backup",
+        "active",
+        "retained-runtime",
+        "quarantine",
+    ):
+        assert protected_path in guidance
+    normalized_runbook = " ".join(runbook.split())
+    assert (
+        "do not alter the journal, operation lock, report, staging, backup, "
+        "active, retained-runtime, or quarantine paths manually"
+        in normalized_runbook
+    )
+
+
 def _contract_identity(
     path: str,
     seed: int,

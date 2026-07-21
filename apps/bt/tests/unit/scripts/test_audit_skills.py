@@ -122,6 +122,20 @@ def test_repository_skill_descriptions_are_discovery_compliant() -> None:
     assert errors == []
 
 
+def test_financial_analysis_skills_use_current_market_v5_contract() -> None:
+    repo_root = _repo_root()
+    for skill_name in ("bt-financial-analysis", "ts-financial-analysis"):
+        content = (
+            repo_root / f".codex/skills/{skill_name}/SKILL.md"
+        ).read_text(encoding="utf-8")
+
+        assert "Market v5" in content
+        assert "provider_adjusted_v1" in content
+        assert "bt market-cutover cutover" in content
+        assert "Market v4" not in content
+        assert "local_projection_v2_event_time" not in content
+
+
 def test_description_without_use_when_trigger_is_rejected(tmp_path: Path) -> None:
     module = _load_audit_module()
     skill_file = _workflow_skill(
