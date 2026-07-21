@@ -1067,10 +1067,15 @@ def test_replace_stock_provider_window_prunes_coverage_and_is_idempotent(
     store.close()
 
 
-@pytest.mark.parametrize("corruption", ["delete", "update"])
+@pytest.mark.parametrize(
+    ("corruption", "expected_inserted", "expected_updated"),
+    [("delete", 1, 0), ("update", 0, 1)],
+)
 def test_replace_stock_provider_window_repairs_missing_or_corrupt_consumer_projection(
     tmp_path: Path,
     corruption: str,
+    expected_inserted: int,
+    expected_updated: int,
 ) -> None:
     store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
@@ -1120,11 +1125,14 @@ def test_replace_stock_provider_window_repairs_missing_or_corrupt_consumer_proje
         "SELECT * FROM stock_data WHERE code = '7203'"
     ).fetchall() == corrupt_projection
 
+    replayed_row = {**row, "created_at": "2026-02-11T00:00:00+00:00"}
     result = store.replace_stock_provider_window(
-        "7203", [row], {"start": "2026-02-10", "end": "2026-02-10"}, metadata
+        "7203",
+        [replayed_row],
+        {"start": "2026-02-10", "end": "2026-02-10"},
+        metadata,
     )
 
-    assert result.mutated_rows == 0
     assert repr(
         store._conn.execute(  # noqa: SLF001
             "SELECT * FROM stock_data_raw ORDER BY code, date"
@@ -1148,9 +1156,24 @@ def test_replace_stock_provider_window_repairs_missing_or_corrupt_consumer_proje
             "2026-02-10T00:00:00+00:00",
         )
     ]
+    assert result.stats.inserted == expected_inserted
+    assert result.stats.updated == expected_updated
+    assert result.stats.unchanged == 0
+    assert result.mutated_rows == 1
     assert store._dirty_tables == {"stock_data"}  # noqa: SLF001
     assert store._dirty_partition_dates.get("stock_data_raw", set()) == set()  # noqa: SLF001
     assert store._dirty_partition_dates["stock_data"] == {"2026-02-10"}  # noqa: SLF001
+
+    no_op = store.replace_stock_provider_window(
+        "7203",
+        [replayed_row],
+        {"start": "2026-02-10", "end": "2026-02-10"},
+        metadata,
+    )
+    assert no_op.stats.inserted == 0
+    assert no_op.stats.updated == 0
+    assert no_op.stats.unchanged == 1
+    assert no_op.mutated_rows == 0
     store.close()
 
 

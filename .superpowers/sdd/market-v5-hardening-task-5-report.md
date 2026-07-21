@@ -89,3 +89,85 @@ Projection repair uses the existing DuckDB transaction. Relation registration pr
 No repository-wide suite was run, as required. Residual risk is limited to behavior outside the three scoped test files; the full relevant files, relation subsets, Ruff, and scoped Pyright cover the changed surfaces.
 
 Intended commit subject: `fix(bt): repair and validate provider stock projection`
+
+## Reviewer I1/I2 remediation
+
+Base: `337042dcc2a5558b6d3328d2ab882308bb63ffac`
+
+Root cause: projection repair was classified independently, but its desired rows
+were still built from the incoming replay payload. Because `created_at` is excluded
+from semantic equality, an otherwise-identical replay could repair `stock_data`
+with the incoming timestamp rather than the authoritative timestamp already stored
+in `stock_data_raw`. The method also always returned the raw delta even when only
+the projection mutated.
+
+The regression now replays identical provider semantics with a different incoming
+`created_at`. Before the production edit, the exact focused command produced two
+true failures:
+
+```text
+uv run --directory apps/bt pytest tests/unit/server/db/test_time_series_store.py \
+  -k repairs_missing_or_corrupt_consumer_projection -q
+collected 97; selected 2; deselected 95; 2 failed
+```
+
+Both DELETE and corrupt UPDATE repairs wrote
+`2026-02-11T00:00:00+00:00` into `stock_data`, while the authoritative persisted
+raw timestamp was `2026-02-10T00:00:00+00:00`. The pre-fix return value was the
+clean raw delta (`inserted=0`, `updated=0`, `unchanged=1`, `mutated_rows=0`) in
+both cases.
+
+When the raw semantic delta is clean, projection rows are now derived from the
+persisted authoritative raw rows. When raw mutates, the validated desired raw rows
+remain the authoritative source for the same transaction. The method returns the
+raw delta when raw mutates, otherwise the projection delta when projection mutates.
+The regression asserts DELETE returns `inserted=1` / `mutated_rows=1`, corrupt
+UPDATE returns `updated=1` / `mutated_rows=1`, and the following true no-op returns
+`unchanged=1` / `mutated_rows=0`. Raw bytes and raw `created_at` remain unchanged,
+and projection-only repair still dirties only `stock_data`.
+
+Fresh remediation verification:
+
+```text
+uv run --directory apps/bt pytest tests/unit/server/db/test_time_series_store.py \
+  -k repairs_missing_or_corrupt_consumer_projection -q
+2 passed, 95 deselected
+
+uv run --directory apps/bt pytest tests/unit/server/db/test_time_series_store.py \
+  -k 'replace_stock_provider_window' -q
+10 passed, 87 deselected
+
+uv run --directory apps/bt pytest tests/unit/server/db/test_time_series_store.py \
+  -k 'provider_stage or provider_frontier or provider_window' -q
+17 passed, 80 deselected
+
+uv run --directory apps/bt pytest \
+  tests/unit/server/services/test_stock_data_row_builder.py \
+  tests/unit/server/services/test_stock_refresh_service.py \
+  -k 'no_trade and factor' -q
+14 passed, 40 deselected
+
+uv run --directory apps/bt pytest \
+  tests/unit/server/db/test_time_series_store.py \
+  tests/unit/server/db/test_market_adjusted_metrics.py \
+  tests/unit/server/db/test_market_compaction.py -q
+163 passed, 1 warning
+
+uv run --directory apps/bt ruff check \
+  src/infrastructure/db/market/time_series_store.py \
+  src/infrastructure/db/market/valuation_queries.py \
+  src/infrastructure/db/market/market_compaction.py \
+  tests/unit/server/db/test_time_series_store.py \
+  tests/unit/server/db/test_market_adjusted_metrics.py \
+  tests/unit/server/db/test_market_compaction.py
+All checks passed!
+
+uv run --directory apps/bt pyright \
+  src/infrastructure/db/market/time_series_store.py \
+  src/infrastructure/db/market/valuation_queries.py \
+  src/infrastructure/db/market/market_compaction.py
+0 errors, 0 warnings, 0 informations
+
+git diff --check
+exit 0
+```

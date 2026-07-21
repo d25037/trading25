@@ -1028,20 +1028,6 @@ class DuckDbParquetTimeSeriesStore:
         raw_columns = self._STOCK_DATA_RAW_UPSERT_SPEC.columns
         projection_columns = self._STOCK_DATA_UPSERT_SPEC.columns
         event_columns = self._STOCK_ADJUSTMENT_EVENTS_UPSERT_SPEC.columns
-        projected_rows = [
-            {
-                "code": row["code"],
-                "date": row["date"],
-                "open": row["adjusted_open"],
-                "high": row["adjusted_high"],
-                "low": row["adjusted_low"],
-                "close": row["adjusted_close"],
-                "volume": row["adjusted_volume"],
-                "adjustment_factor": row["adjustment_factor"],
-                "created_at": row.get("created_at"),
-            }
-            for row in normalized_rows
-        ]
         event_rows = [
             {
                 "code": row["code"],
@@ -1067,6 +1053,23 @@ class DuckDbParquetTimeSeriesStore:
                 desired_rows=normalized_rows,
                 columns=raw_columns,
             )
+            authoritative_rows = (
+                normalized_rows if result.mutated_rows else existing_rows
+            )
+            projected_rows = [
+                {
+                    "code": row["code"],
+                    "date": row["date"],
+                    "open": row["adjusted_open"],
+                    "high": row["adjusted_high"],
+                    "low": row["adjusted_low"],
+                    "close": row["adjusted_close"],
+                    "volume": row["adjusted_volume"],
+                    "adjustment_factor": row["adjustment_factor"],
+                    "created_at": row.get("created_at"),
+                }
+                for row in authoritative_rows
+            ]
             existing_projection_rows = [
                 dict(zip(projection_columns, row, strict=True))
                 for row in self._conn.execute(
@@ -1273,7 +1276,7 @@ class DuckDbParquetTimeSeriesStore:
                 )
             if events_changed:
                 self._dirty_tables.add("stock_adjustment_events")
-            return result
+            return result if result.mutated_rows else projection_result
 
     @classmethod
     def _classify_provider_window_delta(
