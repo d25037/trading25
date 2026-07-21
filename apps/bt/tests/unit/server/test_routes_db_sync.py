@@ -60,8 +60,10 @@ async def test_job_start_cancellation_finalizes_reserved_writer_before_reraise(
     request.state = SimpleNamespace()
 
     def reserve(_request: object) -> tuple[object, object]:
+        owner = object()
         app.state.market_writer_session = session
-        app.state.market_writer_owner = object()
+        app.state.market_writer_owner = owner
+        request.state.market_writer_owner = owner
         return MagicMock(), MagicMock()
 
     async def cancel_during_job_create(*_args: object, **_kwargs: object) -> None:
@@ -94,6 +96,39 @@ async def test_job_start_cancellation_finalizes_reserved_writer_before_reraise(
     ]
     assert app.state.market_writer_session is None
     assert app.state.market_writer_owner is None
+
+
+@pytest.mark.asyncio
+async def test_reset_initial_job_conflict_does_not_finalize_active_incremental_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    active_owner = object()
+    active_session = object.__new__(db_routes.MarketWriterSession)
+    active_session.close_writable_handles = MagicMock()
+    app = SimpleNamespace(
+        state=SimpleNamespace(
+            market_writer_session=active_session,
+            market_writer_owner=active_owner,
+            jquants_client=MagicMock(),
+        )
+    )
+    request = MagicMock(app=app)
+    request.state = SimpleNamespace()
+    finalize = AsyncMock()
+    monkeypatch.setattr(db_routes, "start_sync", AsyncMock(return_value=None))
+    monkeypatch.setattr(db_routes, "_finalize_direct_market_write", finalize)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await db_routes.start_sync_job(
+            request,
+            SyncRequest(mode="initial", resetBeforeSync=True),
+        )
+
+    assert exc_info.value.status_code == 409
+    finalize.assert_not_awaited()
+    active_session.close_writable_handles.assert_not_called()
+    assert app.state.market_writer_session is active_session
+    assert app.state.market_writer_owner is active_owner
 
 
 @pytest.mark.asyncio
@@ -305,7 +340,7 @@ class TestSyncRoutes:
         assert request.app.state.market_duckdb_path == str(duckdb_path)
         assert request.app.state.market_parquet_dir == str(parquet_dir)
 
-    def test_owned_exclusive_runtime_initializes_missing_v4_market_source(
+    def test_incremental_missing_market_fails_without_resetting_orphan_parquet(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: Path,
@@ -313,6 +348,10 @@ class TestSyncRoutes:
         market_root = tmp_path / "market-timeseries"
         market_root.mkdir()
         duckdb_path = market_root / "market.duckdb"
+        parquet_dir = market_root / "parquet"
+        parquet_dir.mkdir()
+        orphan = parquet_dir / "orphan.parquet"
+        orphan.write_bytes(b"must survive")
         request = MagicMock()
         request.state = SimpleNamespace()
         lease = SimpleNamespace(exclusive=True)
@@ -321,36 +360,28 @@ class TestSyncRoutes:
             market_writer_owner=None,
             market_operation_lease=lease,
         )
-        session = object.__new__(db_routes.MarketWriterSession)
-        session.handles = SimpleNamespace(
-            market_db=MagicMock(),
-            time_series_store=MagicMock(),
-        )
         factory = MagicMock()
-        factory.reset_and_open.return_value = session
         monkeypatch.setattr(
             db_routes,
             "_remember_market_paths",
-            MagicMock(return_value=(duckdb_path, market_root / "parquet")),
+            MagicMock(return_value=(duckdb_path, parquet_dir)),
         )
-        monkeypatch.setattr(db_routes, "_clear_market_resources", MagicMock())
+        clear = MagicMock()
+        monkeypatch.setattr(db_routes, "_clear_market_resources", clear)
         monkeypatch.setattr(db_routes, "_writer_factory", MagicMock(return_value=factory))
 
-        market_db, time_series_store = db_routes._prepare_market_write_resources(
-            request
-        )
+        with pytest.raises(RuntimeError, match="RESET initial"):
+            db_routes._prepare_market_write_resources(request)
 
-        factory.reset_and_open.assert_called_once_with(
-            blocking=False,
-            lease=lease,
-        )
+        clear.assert_not_called()
+        factory.reset_and_open.assert_not_called()
         factory.open_existing.assert_not_called()
-        assert market_db is session.handles.market_db
-        assert time_series_store is session.handles.time_series_store
+        assert orphan.read_bytes() == b"must survive"
 
     def test_second_writer_request_does_not_clear_or_close_owner_session(
         self,
         monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         owner_request = MagicMock()
         owner_request.state = SimpleNamespace()
@@ -369,10 +400,12 @@ class TestSyncRoutes:
         session.close_writable_handles = MagicMock()
         factory = MagicMock()
         factory.open_existing.return_value = session
+        duckdb_path = tmp_path / "market.duckdb"
+        duckdb_path.touch()
         monkeypatch.setattr(
             db_routes,
             "_remember_market_paths",
-            MagicMock(return_value=(Path("/tmp/market.duckdb"), Path("/tmp/parquet"))),
+            MagicMock(return_value=(duckdb_path, tmp_path / "parquet")),
         )
         clear = MagicMock()
         monkeypatch.setattr(db_routes, "_clear_market_resources", clear)
@@ -395,6 +428,7 @@ class TestSyncRoutes:
     async def test_writer_reservation_keeps_event_loop_live_across_await_window(
         self,
         monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         app = SimpleNamespace(
             state=SimpleNamespace(market_writer_session=None, market_writer_owner=None)
@@ -410,10 +444,12 @@ class TestSyncRoutes:
         )
         factory = MagicMock()
         factory.open_existing.return_value = session
+        duckdb_path = tmp_path / "market.duckdb"
+        duckdb_path.touch()
         monkeypatch.setattr(
             db_routes,
             "_remember_market_paths",
-            MagicMock(return_value=(Path("/tmp/market.duckdb"), Path("/tmp/parquet"))),
+            MagicMock(return_value=(duckdb_path, tmp_path / "parquet")),
         )
         clear = MagicMock()
         monkeypatch.setattr(db_routes, "_clear_market_resources", clear)

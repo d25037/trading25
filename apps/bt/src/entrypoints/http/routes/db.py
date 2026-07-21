@@ -287,13 +287,30 @@ def _release_finalized_market_ownership(
             state.market_writer_owner = None
 
 
+def _request_owned_market_writer_session(
+    request: Request,
+) -> MarketWriterSession | None:
+    """Return the active writer only when this request owns its reservation."""
+    with _MARKET_RESOURCE_LOCK:
+        request_owner = getattr(request.state, "market_writer_owner", None)
+        session = getattr(request.app.state, "market_writer_session", None)
+        if (
+            request_owner is None
+            or getattr(request.app.state, "market_writer_owner", None)
+            is not request_owner
+            or not isinstance(session, MarketWriterSession)
+        ):
+            return None
+        return session
+
+
 def _build_market_finalizer(
     request: Request, operation: str
 ) -> MarketMaintenanceFinalizer:
     with _MARKET_RESOURCE_LOCK:
-        session = getattr(request.app.state, "market_writer_session", None)
-        owner = getattr(request.app.state, "market_writer_owner", None)
-        if not isinstance(session, MarketWriterSession) or owner is None:
+        session = _request_owned_market_writer_session(request)
+        owner = getattr(request.state, "market_writer_owner", None)
+        if session is None or owner is None:
             raise RuntimeError("Market writer session is missing at finalization")
         app = request.app
     return MarketMaintenanceFinalizer(
@@ -375,20 +392,20 @@ def _prepare_market_write_resources(
                 status_code=409, detail="Another Market write is already running"
             )
         duckdb_path, _parquet_dir = _remember_market_paths(request)
+        if not duckdb_path.exists():
+            raise RuntimeError(
+                "market.duckdb is missing. Run RESET initial "
+                "(mode='initial', resetBeforeSync=true); incremental sync "
+                "does not create or reset the Market root."
+            )
         _clear_market_resources(request)
         try:
             lease = _shared_operation_lease(request)
             factory = _writer_factory(duckdb_path)
-            if not duckdb_path.exists() and lease is not None and lease.exclusive:
-                session = factory.reset_and_open(
-                    blocking=False,
-                    lease=lease,
-                )
-            else:
-                session = factory.open_existing(
-                    blocking=False,
-                    lease=lease,
-                )
+            session = factory.open_existing(
+                blocking=False,
+                lease=lease,
+            )
         except MarketOperationLeaseError as exc:
             _restore_unreserved_read_only_resources(request)
             raise HTTPException(
@@ -570,10 +587,7 @@ async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
             ),
         )
     except asyncio.CancelledError:
-        if isinstance(
-            getattr(request.app.state, "market_writer_session", None),
-            MarketWriterSession,
-        ):
+        if _request_owned_market_writer_session(request) is not None:
             await _finalize_direct_market_write(
                 request,
                 operation=f"{sync_mode.value}_sync",
@@ -582,10 +596,7 @@ async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
             )
         raise
     except Exception as exc:
-        if isinstance(
-            getattr(request.app.state, "market_writer_session", None),
-            MarketWriterSession,
-        ):
+        if _request_owned_market_writer_session(request) is not None:
             await _finalize_direct_market_write(
                 request,
                 operation=f"{sync_mode.value}_sync",
@@ -595,10 +606,7 @@ async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
         raise
 
     if job is None:
-        if isinstance(
-            getattr(request.app.state, "market_writer_session", None),
-            MarketWriterSession,
-        ):
+        if _request_owned_market_writer_session(request) is not None:
             await _finalize_direct_market_write(
                 request,
                 operation=f"{sync_mode.value}_sync",
