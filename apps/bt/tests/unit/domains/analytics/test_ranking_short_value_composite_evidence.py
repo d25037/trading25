@@ -109,19 +109,10 @@ def _run_test_research(db_path: Path) -> RankingShortValueCompositeEvidenceResul
 def _build_short_value_composite_db(db_path: Path) -> Path:
     _build_short_sector_db(db_path)
     conn = duckdb.connect(str(db_path))
-    conn.execute(
-        """
-        CREATE TABLE statements (
-            code TEXT,
-            disclosed_date TEXT,
-            sales DOUBLE,
-            type_of_current_period TEXT,
-            type_of_document TEXT
-        )
-        """
-    )
+    conn.execute("ALTER TABLE statements ADD COLUMN sales DOUBLE")
+    conn.execute("ALTER TABLE statements ADD COLUMN type_of_document TEXT")
     code_rows = conn.execute(
-        "SELECT DISTINCT code FROM stock_data ORDER BY code"
+        "SELECT DISTINCT code FROM stock_data_raw ORDER BY code"
     ).fetchall()
     statement_rows = []
     for index, (code,) in enumerate(code_rows):
@@ -131,7 +122,41 @@ def _build_short_value_composite_db(db_path: Path) -> Path:
         statement_rows.append(
             (str(code), "2023-05-15", sales, "FY", "FinancialStatements")
         )
-    conn.executemany("INSERT INTO statements VALUES (?, ?, ?, ?, ?)", statement_rows)
-    assert conn.execute("SELECT version FROM market_schema_version").fetchone() == (4,)
+    conn.executemany(
+        "INSERT INTO statements VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            (
+                code,
+                f"statement-{code}",
+                disclosed_date,
+                f"{disclosed_date}T15:00:00+09:00",
+                "2023-03-31",
+                period_type,
+                sales,
+                document_type,
+            )
+            for code, disclosed_date, sales, period_type, document_type in statement_rows
+        ],
+    )
+    conn.execute(
+        """
+        INSERT INTO statement_metrics_adjusted
+        SELECT statement.code, statement.statement_id, statement.disclosed_date,
+               statement.disclosed_at, statement.period_end,
+               statement.type_of_current_period,
+               state.fundamentals_adjustment_basis_date,
+               state.source_fingerprint
+        FROM statements AS statement
+        JOIN current_basis_fundamentals_state AS state USING (code)
+        """
+    )
+    conn.execute(
+        """
+        UPDATE current_basis_fundamentals_state
+        SET statement_count = 1
+        WHERE code IN (SELECT code FROM statements)
+        """
+    )
+    assert conn.execute("SELECT version FROM market_schema_version").fetchone() == (5,)
     conn.close()
     return db_path
