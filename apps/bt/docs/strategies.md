@@ -1,212 +1,197 @@
-# Trading25-BT 戦略システムドキュメント
+# Strategy Guide
 
-## 📊 概要
+## Sources of truth
 
-**統一Signalsシステム**ベースの高速戦略バックテストプラットフォーム。VectorBTによる100倍以上の高速化と、柔軟なYAML設定システム、静的HTMLレポート生成を組み合わせた投資戦略ツールです。
+- Runtime loading, category resolution, merge behavior, and strict validation live under
+  [`src/domains/strategy/runtime/`](../src/domains/strategy/runtime/).
+- The repository baseline is [`config/default.yaml`](../config/default.yaml). A runtime
+  override from `TRADING25_DEFAULT_CONFIG_PATH` or
+  `~/.local/share/trading25/config/default.yaml` takes precedence.
+- `experimental`, `production`, and `legacy` strategies are normally stored under
+  `~/.local/share/trading25/strategies/`. Project-owned `reference` examples live in
+  [`config/strategies/reference/`](../config/strategies/reference/). Use the category-qualified
+  name when a basename may be shadowed.
+- The backend strict validator is authoritative. The Web editor displays backend validation,
+  schema guidance, and metadata; it does not implement a separate strategy validator.
+- [`contracts/strategy-config-v3.schema.json`](../../../contracts/strategy-config-v3.schema.json)
+  is the current stable strategy contract. Runtime behavior and SoT boundaries also follow
+  [`AGENTS.md`](../AGENTS.md) and the
+  [architecture SoT matrix](../../../docs/architecture-sot-matrix.md).
 
-## 🚀 主要特徴
+## Shipped examples
 
-### **統一Signalsアーキテクチャ**
-- **SignalProcessor**: エントリーAND結合・エグジットOR結合による統合処理
-- **10種類シグナル**: 出来高・財務・β値・プライスアクション・信用残高・ボラティリティ・相対パフォーマンス・セクター等
-- **Entry/Exit両用設計**: 同一シグナルでエントリー絞り込み・エグジット発火両対応
+- [`buy_and_hold.yaml`](../config/strategies/reference/buy_and_hold.yaml) is the smallest
+  reference strategy.
+- [`sma_cross.yaml`](../config/strategies/reference/sma_cross.yaml) demonstrates entry and exit
+  signals.
+- [`strategy_template.yaml`](../config/strategies/reference/strategy_template.yaml) is an
+  authoring reference, not a promise that every commented combination is suitable for every
+  execution policy or data scope.
 
-### **高速実行システム**
-- **VectorBT基盤**: 100倍以上の高速化実現
-- **静的HTMLレポート**: backtest / optimization の結果を notebook runtime なしで生成
-- **マルチアセット対応**: 大規模ポートフォリオ一括処理
+`bt list` is the current inventory because it combines project-owned examples with the local
+XDG strategy directories. Do not infer availability from a fixed list in documentation.
 
-### **柔軟な設定システム**
-- **YAML設定**: 戦略パラメータ・シグナル条件の柔軟な調整
-- **型安全性**: Pydantic統合による実行時バリデーション
-- **テンプレートベース**: 一貫した分析フローの自動生成
+## List, validate, and run
 
-## 📋 利用可能戦略一覧
+Run commands from `apps/bt`:
 
-現在14戦略が実装・動作確認済みです：
-
-| 戦略名 | 説明 | 主要特徴 |
-|--------|------|----------|
-| **buy_and_hold** | Buy&Hold戦略 | ベンチマーク・長期投資戦略 |
-| **sma_cross** | SMAクロス戦略 | ゴールデン/デッドクロス戦略 |
-| **sma_break** | SMAブレイク戦略 | SMAブレイクアウト戦略 |
-| **rsi_cross** | RSIクロス戦略 | RSI過買い/過売り戦略 |
-| **range_break** | レンジブレイク戦略 | ボラティリティブレイクアウト |
-| **range_break_v4** | レンジブレイクv4 | 最高値未更新エグジット版 |
-| **range_break_v5** | レンジブレイクv5 | 長期・短期高値一致+ATR |
-| **bnf_mean_reversion** | BNF平均回帰戦略 | SMA乖離平均回帰 |
-| **bnf_mean_reversion_v2** | BNF平均回帰v2 | 改良版平均回帰 |
-| **bnf_mean_reversion_v3** | BNF平均回帰v3 | ボリンジャーバンドベース |
-| **macd_cross** | MACDクロス戦略 | MACDクロスオーバー |
-| **macd_cross_v2** | MACDクロスv2 | ボリンジャーバンド統合版 |
-| **macd_deadcross** | MACDデッドクロス戦略 | MACDデッドクロス戦略 |
-| **atr_support_break** | ATRサポートブレイク戦略 | ATR基準サポートブレイク |
-
-## 🛠️ 基本使用方法
-
-### **戦略一覧表示**
 ```bash
 uv run bt list
+uv run bt validate reference/buy_and_hold
 ```
 
-### **基本戦略実行**
+Before running a custom strategy, save a market-backed YAML such as the minimal example below
+under the XDG `experimental` category. Then use its category-qualified name:
+
 ```bash
-# シンプル実行（全銘柄・デフォルト設定）
-uv run bt backtest buy_and_hold
-uv run bt backtest sma_cross
-uv run bt backtest range_break
-
-# 短縮形（run コマンド）
-uv run bt run buy_and_hold
-
-# 設定ファイル指定実行
-uv run bt backtest sma_cross --config config/strategies/sma_cross.yaml
-
-# 出力先指定実行
-uv run bt backtest range_break --output-dir custom_results
+uv run bt validate experimental/my_strategy
+uv run bt backtest experimental/my_strategy
 ```
 
-### **設定ファイル検証**
-```bash
-uv run bt validate sma_cross
-```
+`bt backtest` writes the normal result artifact set, including the static HTML report and
+metrics JSON.
 
-### **古いHTML削除**
-```bash
-uv run bt cleanup --days 7
-```
+## YAML and backend validation
 
-## ⚙️ 設定システム
+A minimal market-backed strategy can use this shape:
 
-### **YAML設定ファイル構造**
 ```yaml
-# config/strategies/example.yaml
+display_name: My Strategy
+description: Minimal market-backed example
+
 shared_config:
-  initial_cash: 10000000      # 初期資金
-  fees: 0.001                 # 手数料
-  stock_codes: ["all"]        # 対象銘柄
-  direction: "longonly"       # 取引方向
+  data_source: market
+  universe_preset: primeMarket
 
-strategy_params:
-  name: "example_strategy"    # 戦略名
-
-entry_filter_params:          # エントリーシグナル（AND結合）
-  volume_ratio_above:
+entry_filter_params:
+  buy_and_hold:
     enabled: true
-    ratio_threshold: 1.5
-  fundamental:
-    per:
-      enabled: true           # PERフィルター
-      threshold: 15.0         # PER閾値
 
-exit_trigger_params:          # エグジットシグナル（OR結合）
-  volume_ratio_below:
+exit_trigger_params: {}
+```
+
+`entry_filter_params` are combined as entry filters; enabled `exit_trigger_params` extend exit
+behavior as triggers. The selected execution policy can impose additional rules, including an
+empty exit block for round-trip modes.
+
+Validate a saved file with `bt validate`. The Web authoring flow and API use
+`POST /api/strategies/{strategy_name}/validate`, which performs strict nested-key validation,
+production requirements, and compiled-strategy validation. Saving through
+`PUT /api/strategies/{strategy_name}` also uses backend validation. `production` and
+`experimental` YAML may be updated; rename and delete remain limited to `experimental`.
+
+Normal backtest, research, lab, and screening strategies use `shared_config.data_source: market`
+and an explicit `shared_config.universe_preset`. A physical dataset snapshot is only for an
+archived reproducibility run with `data_source: dataset_snapshot`, `dataset_snapshot`, and
+`static_universe: true` set together. Production YAML must declare its universe preset in the
+strategy file rather than relying only on the default config.
+
+## Signal registry and metadata
+
+[`SIGNAL_REGISTRY`](../src/domains/strategy/signals/registry.py) is the runtime registry for
+signal functions, parameter keys, categories, data requirements, availability policy, and
+entry/exit support. [`SignalParams`](../src/shared/models/signals/composite.py) is the typed
+parameter model used by strict YAML validation.
+
+The backend derives authoring metadata from those sources:
+
+- `GET /api/signals/reference` returns signal descriptions, fields, requirements, and usage
+  guidance.
+- `GET /api/signals/schema` returns the generated `SignalParams` JSON Schema.
+- `GET /api/strategies/editor/reference` returns metadata used by the Strategy Editor.
+
+Treat these responses as current metadata. Do not copy a fixed signal count or reimplement
+parameter validation in the frontend or documentation.
+
+## Optimization block
+
+The strategy YAML top-level `optimization` block is the only normal runtime SoT for parameter
+ranges:
+
+```yaml
+entry_filter_params:
+  crossover:
     enabled: true
-    ratio_threshold: 0.7
+    type: sma
+    direction: golden
+    fast_period: 20
+    slow_period: 100
+
+optimization:
+  description: SMA period search
+  parameter_ranges:
+    entry_filter_params:
+      crossover:
+        fast_period: [10, 20, 30]
+        slow_period: [50, 100, 200]
 ```
 
-### **利用可能シグナル種類**
+Candidate lists must target parameters present in the strategy and must satisfy dependency
+constraints such as `slow_period > fast_period`. The Web `Backtest > Strategies > Optimize`
+flow can generate a draft, validate it, save it into the strategy YAML, and execute it. See
+[`parameter-optimization.md`](./parameter-optimization.md) for the current contract.
 
-#### **エントリーシグナル（絞り込み）**
-- **volume_ratio_above**: 出来高比率上昇による絞り込み
-- **fundamental**: 財務指標（PER・ROE・EPS成長率・PEG Ratio）
-- **beta**: 市場感応度β値（Numba最適化で10-50倍高速）
-- **price_action**: プライスアクション（サポート維持・ブレイク）
-- **margin**: 信用残高（需給判定）
-- **volatility**: ボラティリティ（ベンチマーク比較）
-- **trend**: トレンド（EMA傾きベース）
+Run a saved specification with:
 
-#### **エグジットシグナル（発火）**
-- **volume_ratio_below**: 出来高比率低下によるエグジット
-- **fundamental**: 財務悪化による警告
-- **beta**: 市場相関変化による警告
-- **price_action**: サポート割れ・抵抗接近警告
-
-## 🏗️ アーキテクチャ詳細
-
-### **統一Signalsシステム**
-```
-src/domains/strategy/signals/
-├── processor.py              # SignalProcessor統合処理クラス
-├── volume.py                 # volume_ratio_above / volume_ratio_below
-├── baseline.py               # baseline_deviation / position / cross
-├── breakout.py               # period_extrema / atr_support / retracement
-├── volatility.py             # bollinger_position / bollinger_cross
-├── fundamental.py            # 財務指標シグナル
-├── beta.py                   # β値シグナル
-├── margin.py                 # 信用残高シグナル
-└── sector_strength.py        # セクターシグナル
+```bash
+uv run bt backtest experimental/my_strategy --optimize
 ```
 
-### **実行フロー**
-1. **設定読み込み**: YAML→Pydanticモデル変換・バリデーション
-2. **データロード**: マルチアセット株価・財務・信用データロード
-3. **戦略実行**: 各戦略固有のエントリー・エグジットロジック実行
-4. **シグナル統合**: SignalProcessorによるエントリー（AND）・エグジット（OR）結合
-5. **VectorBTバックテスト**: 高速ベクトル化バックテスト実行
-6. **結果出力**: HTML形式での詳細分析結果生成
+Legacy `*_grid.yaml` files are not read by normal execution. Migrate them once into their
+strategy YAML files with:
 
-### **パフォーマンス最適化**
-- **VectorBT基盤**: 全データ一括処理による100倍以上高速化
-- **Numba最適化**: β値計算等で10-50倍個別最適化
-- **メモリ効率**: 大規模データセット対応最適化
-- **並行処理**: マルチアセット並行シグナル処理
+```bash
+uv run bt migrate-optimization-specs
+```
 
-## 📊 戦略別詳細
+## Adding a strategy or signal
 
-### **SMAクロス戦略**
-**基本概念**: 短期・長期移動平均のクロスオーバーによる売買判定
-- **エントリー**: ゴールデンクロス（短期SMA > 長期SMA）
-- **エグジット**: デッドクロス（短期SMA < 長期SMA）
-- **シグナル拡張**: 出来高・財務フィルターで精度向上
+To add a strategy:
 
-### **レンジブレイク戦略**
-**基本概念**: ボラティリティブレイクアウトによる順張り戦略
-- **エントリー**: 過去N日間の高値/安値ブレイク
-- **エグジット**: 逆方向ブレイクまたはATR基準ストップ
-- **バリエーション**: v2-v5で段階的改良・最適化
+1. Start from a shipped reference and save the new YAML in the XDG `experimental` category.
+2. Give it a distinct category-qualified name and set the intended market universe and signal
+   parameters explicitly.
+3. Validate it through the backend, then run a representative backtest before moving it to
+   `production`.
+4. Keep `reference` files project-owned. Confirm the resolver's actual path before editing a
+   basename that can be shadowed by an XDG strategy.
 
-### **平均回帰戦略**
-**基本概念**: 価格の統計的平均回帰特性を活用
-- **エントリー**: SMA/ボリンジャーバンドからの過度乖離
-- **エグジット**: 平均回帰完了または損切り条件
-- **BNF版**: 特定の乖離率・期間設定による最適化
+To add a signal:
 
-## 🧪 テスト・検証
+1. Implement the calculation in `src/domains/strategy/signals/` and add its typed parameters to
+   `SignalParams`.
+2. Register the function, parameter key, data requirements, availability policy, and entry/exit
+   capability in `SIGNAL_REGISTRY`.
+3. Update the stable strategy contract when the public YAML shape changes, and regenerate the
+   OpenAPI/TypeScript contract if an API schema changes.
+4. Add domain, validation, metadata, and execution tests. Confirm the generated reference and
+   schema expose the new signal before authoring production YAML.
 
-### **品質保証**
-- **ユニットテスト**: 各シグナル・戦略の個別テスト
-- **統合テスト**: エンドツーエンド戦略実行テスト
-- **型安全性**: Pydantic・pyright・mypyによる型チェック
+## Verification
 
-### **パフォーマンステスト**
-- **実行時間**: 戦略実行時間の継続監視
-- **メモリ使用量**: 大規模データセット処理の効率性
-- **正確性**: 従来実装との数値一致検証
+For a strategy-only change, validate and exercise the exact category-qualified strategy:
 
-## 📚 参考ドキュメント
+```bash
+uv run bt validate experimental/my_strategy
+uv run bt backtest experimental/my_strategy
+```
 
-- **[AGENTS.md](../AGENTS.md)**: プロジェクト統合ドキュメント
-- **[migration-roadmap.md](refactoring/migration-roadmap.md)**: アーキテクチャ移行完了レポート
-- **[VectorBTドキュメント](vectorbt/)**: VectorBT使用方法・最適化技法
-- **設定ファイル例**: `config/strategies/` 内の各戦略YAML
+For runtime, signal, schema, or optimization changes, run the relevant focused tests first and
+then the repository-root quality commands required by the change. The normal repository-root
+test entry points are:
 
-## 🔧 開発・拡張
+```bash
+./scripts/test-packages.sh
+./scripts/test-apps.sh
+```
 
-### **新戦略追加**
-1. `src/strategies/implementations/` に戦略クラス実装
-2. `config/strategies/` に設定YAMLファイル作成
-3. `src/domains/strategy/core/factory.py` に戦略登録
-4. テストケース作成・動作確認
+If the FastAPI schema changed, run this from `apps/ts` and commit both the OpenAPI snapshot and
+generated TypeScript types:
 
-### **新シグナル追加**
-1. `src/strategies/signals/` に新シグナルファイル実装
-2. `src/models/signals.py` にパラメータモデル追加
-3. `SignalProcessor` に統合処理ロジック追加
-4. 設定YAML・テストケース対応
+```bash
+bun run --filter @trading25/contracts bt:sync
+```
 
----
-
-## 🎯 まとめ
-
-trading25-btは**統一Signalsシステム**により、高速・柔軟・拡張可能な戦略バックテストプラットフォームを実現しています。VectorBTの高速化、YAML設定の柔軟性、静的HTML分析出力を組み合わせ、投資戦略開発をサポートします。
+`bt:sync` requires a successful source export; it does not use a running server or a stale
+snapshot as fallback. Use `bt:generate-offline` only when intentionally regenerating types from
+the already committed snapshot.

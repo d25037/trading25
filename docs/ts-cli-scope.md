@@ -1,7 +1,7 @@
 # ts CLI Scope
 
 `apps/ts/packages/cli` は廃止済みです。  
-TypeScript workspace は `web / contracts / domain / utils / api-clients` を管理します。
+TypeScript workspace は `web / contracts / utils / api-clients` を管理します。
 
 ## Current Policy
 

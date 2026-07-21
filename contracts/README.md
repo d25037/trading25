@@ -77,7 +77,10 @@ bun run --filter @trading25/contracts bt:sync
 ## OpenAPI Snapshot
 
 - `apps/ts/packages/contracts/openapi/bt-openapi.json`  
-  `bt:sync` で更新される FastAPI 契約スナップショット（`apps/bt` ソースからの直接生成を優先し、失敗時のみ `/openapi.json` 取得にフォールバック）。
+  `bt:sync` で更新される FastAPI 契約スナップショット。`bt:sync` は `apps/bt`
+  ソースからの export に失敗するとエラー終了し、起動中サーバーや既存の stale
+  snapshot を代替入力にしない。既存 snapshot だけから TypeScript 型を再生成する
+  明示的な offline path は `bt:generate-offline`。
 
 ## Run Registry Compatibility
 

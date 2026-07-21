@@ -43,9 +43,9 @@ uv run pytest tests
 
 ## Test Modes
 
-- Full verification: `./scripts/test-packages.sh` and `./scripts/test-apps.sh`
-- Fast local loop: `BT_PYTEST_FAST=1 ./scripts/test-packages.sh`
-- Runtime profiling: `BT_PYTEST_DURATIONS=25 ./scripts/test-packages.sh`
+- Full verification（repository root）: `./scripts/test-packages.sh` and `./scripts/test-apps.sh`
+- Fast local loop（repository root）: `BT_PYTEST_FAST=1 ./scripts/test-packages.sh`
+- Runtime profiling（repository root）: `BT_PYTEST_DURATIONS=25 ./scripts/test-packages.sh`
 - Policy and current runtime notes: `docs/test-runtime.md`
 
 ## API
@@ -109,5 +109,6 @@ BT_VECTORBT_ENGINE=rust uv run bt backtest <strategy>
 
 - `AGENTS.md` - 運用ルールと責務
 - `../../docs/bt-src-layering-guide.md` - `src` 5層構成の配置ルール
-- `docs/` - 戦略・コマンド・仕様メモ
+- `docs/strategies.md` - 戦略YAML・CLI・signal metadata・optimizationの現行ガイド
+- `docs/` - 戦略・コマンド・仕様メモの索引
 - `docs/vectorbt/` - VectorBT リファレンス

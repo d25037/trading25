@@ -5,8 +5,10 @@
 ## Primary References
 
 - [AGENTS.md](../AGENTS.md): 運用ルール・責務・開発ガイド
+- [strategies.md](./strategies.md): 戦略YAML・CLI・signal metadata・optimizationの現行ガイド
 - [experiments/](./experiments/README.md): runner / bundle / notebook / baseline 実験の索引
 - [vectorbt/](./vectorbt/README.md): VectorBT 関連リファレンス
+- [Market v5 cutover runbook](../../../docs/runbooks/market-v5-cutover.md): pre-v5 Market から Market v5 へ移行する唯一の operator path
 
 ## Notes
 
