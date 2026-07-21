@@ -21,6 +21,7 @@ from src.application.contracts.jobs import JobStatus
 from src.application.contracts.jobs import JobEvent
 from src.application.contracts.ranking import MarketRankingResponse, Rankings
 from src.application.services.run_contracts import build_parameterized_run_spec
+from src.shared.provider_stock_window import provider_stock_source_fingerprint
 
 
 def _generate_dates(n: int, start: str = "2023-01-02") -> list[str]:
@@ -213,6 +214,18 @@ def analytics_timeseries_dir(tmp_path_factory):
                 "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
                 (code, d, o, h, lo, price, vol, 1.0, None),
             )
+    conn.execute(
+        """
+        INSERT INTO stock_data_raw (
+            code, date, open, high, low, close, volume, turnover_value,
+            adjustment_factor, adjusted_open, adjusted_high, adjusted_low,
+            adjusted_close, adjusted_volume
+        )
+        SELECT code, date, open, high, low, close, volume, close * volume,
+               1.0, open, high, low, close, volume
+        FROM stock_data
+        """
+    )
 
     conn.execute("""
         INSERT INTO stock_master_daily
@@ -303,22 +316,46 @@ def analytics_timeseries_dir(tmp_path_factory):
             ("33330", "3333-fy-2024", "2024-01-20", "2024-01-20T15:00:00+09:00", "2023-04-01", "2024-03-31", 200.0, "FY", 250.0, 250.0, 100.0),
         ],
     )
-    conn.execute(
-        """
-        INSERT INTO stock_provider_windows
-        SELECT normalized_code, MIN(date), MAX(date),
-               '2024-03-01T16:30:00+09:00',
-               'analytics-fixture-' || normalized_code,
-               '2024-03-01T17:00:00+09:00'
-        FROM (
-            SELECT CASE WHEN length(code) = 5 AND right(code, 1) = '0'
-                        THEN left(code, 4) ELSE code END AS normalized_code,
-                   date
-            FROM stock_data
-        )
-        GROUP BY normalized_code
-        """
+    provider_columns = (
+        "code",
+        "date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "turnover_value",
+        "adjustment_factor",
+        "adjusted_open",
+        "adjusted_high",
+        "adjusted_low",
+        "adjusted_close",
+        "adjusted_volume",
     )
+    for normalized_code, source_code in (
+        ("7203", "72030"),
+        ("6758", "67580"),
+        ("3333", "33330"),
+    ):
+        rows = conn.execute(
+            f"SELECT {', '.join(provider_columns)} FROM stock_data_raw "
+            "WHERE code = ? ORDER BY date",
+            (source_code,),
+        ).fetchall()
+        source_fingerprint = provider_stock_source_fingerprint(
+            [dict(zip(provider_columns, row, strict=True)) for row in rows]
+        )
+        conn.execute(
+            "INSERT INTO stock_provider_windows VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                normalized_code,
+                dates[0],
+                dates[-1],
+                dates[-1],
+                source_fingerprint,
+                "2024-03-01T17:00:00+09:00",
+            ),
+        )
     conn.execute(
         """
         INSERT INTO current_basis_recompute_pending
