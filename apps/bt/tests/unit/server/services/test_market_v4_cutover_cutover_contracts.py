@@ -421,7 +421,10 @@ def test_full_rebuild_runbook_and_repository_smoke_strategy_are_operational() ->
         assert required_text in runbook
     assert "promote-retained" not in runbook
     assert "rehearse-retained" not in runbook
-    assert "local_projection_v2_event_time" not in runbook
+    benchmark_section = runbook.split("## Benchmark evidence", maxsplit=1)[1]
+    operational_section = runbook.split("## Benchmark evidence", maxsplit=1)[0]
+    assert "local_projection_v2_event_time" not in operational_section
+    assert benchmark_section.count("local_projection_v2_event_time") == 1
 
     loader = ConfigLoader(str(repository_root / "apps/bt/config"))
     strategy_config = loader.load_strategy_config("production/cutover_smoke")

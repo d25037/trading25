@@ -215,7 +215,11 @@ def test_time_series_store_has_one_semantic_delta_writer_kernel() -> None:
     assert "_build_executemany_upsert_sql" not in source
     assert "dirty_all or not dirty_dates" not in source
     assert "_dirty_stock_minute_dates or" not in source
-    assert source.count("DELETE FROM stock_data WHERE code") == 1
+    # One full-code replacement kernel is allowed. Provider-window expiry also
+    # performs a bounded ``date < frontier`` delete and is not a second
+    # semantic replacement writer.
+    assert source.count("DELETE FROM stock_data WHERE code = ?\"") == 1
+    assert source.count("DELETE FROM stock_data WHERE code = ? AND date < ?") == 1
 
 
 def test_time_series_publish_contracts_do_not_return_legacy_int_counts() -> None:
