@@ -357,7 +357,7 @@ def test_manifest_source_must_match_immutable_dataset_info(tmp_path: Path) -> No
     [
         (DATASET_PROVIDER_AS_OF_INFO_KEY, "2024-1-04"),
         (DATASET_PROVIDER_COVERAGE_START_INFO_KEY, "2026-03-10"),
-        (DATASET_FUNDAMENTALS_BASIS_DATE_INFO_KEY, "2026-03-08"),
+        (DATASET_FUNDAMENTALS_BASIS_DATE_INFO_KEY, "2026-03-10"),
     ],
 )
 def test_dataset_info_rejects_invalid_provider_vintage_dates(

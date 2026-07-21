@@ -766,7 +766,7 @@ def test_provider_copy_accepts_shared_suspended_quote_session_subset(
         reader.close()
 
 
-def test_provider_copy_accepts_per_code_lag_valid_current_basis_dates(
+def test_writer_snapshot_with_all_lag_valid_basis_dates_resolves_in_reader(
     tmp_path: Path,
 ) -> None:
     source = _build_v5_provider_market(tmp_path, two_codes=True)
@@ -774,12 +774,12 @@ def test_provider_copy_accepts_per_code_lag_valid_current_basis_dates(
     try:
         conn.execute(
             "UPDATE current_basis_fundamentals_state "
-            "SET fundamentals_adjustment_basis_date = ? WHERE code = '6758'",
+            "SET fundamentals_adjustment_basis_date = ?",
             (_DATES[0],),
         )
         conn.execute(
             "UPDATE statement_metrics_adjusted "
-            "SET fundamentals_adjustment_basis_date = ? WHERE code = '6758'",
+            "SET fundamentals_adjustment_basis_date = ?",
             (_DATES[0],),
         )
     finally:
@@ -831,7 +831,8 @@ def test_provider_copy_accepts_per_code_lag_valid_current_basis_dates(
             for code in ("7203", "6758")
             for row in reader.get_adjusted_statement_metrics(code)
         }
-        assert metrics == {"7203": _DATES[-1], "6758": _DATES[0]}
+        assert metrics == {"7203": _DATES[0], "6758": _DATES[0]}
+        assert reader.manifest.source.fundamentalsAdjustmentBasisDate == _DATES[0]
     finally:
         reader.close()
 

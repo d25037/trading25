@@ -317,7 +317,7 @@ def _read_source_from_dataset_info(conn: Any) -> DatasetSourceV4:
         source.fundamentalsAdjustmentBasisDate,
         field="fundamentalsAdjustmentBasisDate",
     )
-    if start > end or end > as_of or basis != end:
+    if start > end or end > as_of or basis > end:
         raise DatasetManifestValidationError(
             "Dataset provider vintage dates are incoherent"
         )
