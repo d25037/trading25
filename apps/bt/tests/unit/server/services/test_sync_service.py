@@ -35,11 +35,17 @@ class DummyMarketDb:
         last_sync_date: str | None = None,
         *,
         legacy_stock_snapshot: bool = False,
-        schema_version: int = MARKET_SCHEMA_VERSION,
+        schema_version: int | None = MARKET_SCHEMA_VERSION,
+        adjustment_mode: str | None = PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
+        schema_valid: bool = True,
+        reset_eligibility_error: Exception | None = None,
     ) -> None:
         self._last_sync_date = last_sync_date
         self._legacy_stock_snapshot = legacy_stock_snapshot
         self._schema_version = schema_version
+        self._adjustment_mode = adjustment_mode
+        self._schema_valid = schema_valid
+        self._reset_eligibility_error = reset_eligibility_error
         self.ensure_schema_calls = 0
         self.metadata: dict[str, str] = {}
 
@@ -64,6 +70,16 @@ class DummyMarketDb:
 
     def is_market_schema_current(self) -> bool:
         return self._schema_version == MARKET_SCHEMA_VERSION
+
+    def is_reset_before_sync_eligible(self) -> bool:
+        if self._reset_eligibility_error is not None:
+            raise self._reset_eligibility_error
+        return (
+            self._schema_version == MARKET_SCHEMA_VERSION
+            and self._adjustment_mode == PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
+            and self._schema_valid
+            and not self._legacy_stock_snapshot
+        )
 
 
 class DummyTimeSeriesStore:
@@ -110,7 +126,10 @@ def _market_db(
     last_sync_date: str | None = None,
     *,
     legacy_stock_snapshot: bool = False,
-    schema_version: int = MARKET_SCHEMA_VERSION,
+    schema_version: int | None = MARKET_SCHEMA_VERSION,
+    adjustment_mode: str | None = PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
+    schema_valid: bool = True,
+    reset_eligibility_error: Exception | None = None,
 ) -> sync_service.SyncServiceMarketDbLike:
     return cast(
         sync_service.SyncServiceMarketDbLike,
@@ -118,6 +137,9 @@ def _market_db(
             last_sync_date=last_sync_date,
             legacy_stock_snapshot=legacy_stock_snapshot,
             schema_version=schema_version,
+            adjustment_mode=adjustment_mode,
+            schema_valid=schema_valid,
+            reset_eligibility_error=reset_eligibility_error,
         ),
     )
 
@@ -448,6 +470,109 @@ async def test_start_sync_requires_reset_callback_when_reset_enabled(
             time_series_store=_time_series_store(),
             reset_before_sync=True,
         )
+
+
+@pytest.mark.parametrize(
+    (
+        "schema_version",
+        "adjustment_mode",
+        "schema_valid",
+        "legacy_stock_snapshot",
+        "reset_eligibility_error",
+    ),
+    [
+        pytest.param(4, "local_projection_v2_event_time", True, False, None, id="v4"),
+        pytest.param(3, None, True, False, None, id="v3"),
+        pytest.param(None, None, True, False, None, id="missing-schema"),
+        pytest.param(5, None, True, False, None, id="missing-adjustment-mode"),
+        pytest.param(
+            5,
+            "local_projection_v2_event_time",
+            True,
+            False,
+            None,
+            id="wrong-adjustment-mode",
+        ),
+        pytest.param(
+            5,
+            PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
+            False,
+            False,
+            None,
+            id="malformed-schema-validation",
+        ),
+        pytest.param(
+            5,
+            PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
+            True,
+            True,
+            None,
+            id="legacy-snapshot",
+        ),
+        pytest.param(
+            5,
+            PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
+            True,
+            False,
+            RuntimeError("malformed DuckDB metadata"),
+            id="predicate-error",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_start_sync_rejects_incompatible_reset_before_job_creation(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+    schema_version: int | None,
+    adjustment_mode: str | None,
+    schema_valid: bool,
+    legacy_stock_snapshot: bool,
+    reset_eligibility_error: Exception | None,
+) -> None:
+    market_db = _market_db(
+        schema_version=schema_version,
+        adjustment_mode=adjustment_mode,
+        schema_valid=schema_valid,
+        legacy_stock_snapshot=legacy_stock_snapshot,
+        reset_eligibility_error=reset_eligibility_error,
+    )
+    create_job_calls = 0
+    reset_calls = 0
+
+    async def track_create_job(_data: Any) -> None:
+        nonlocal create_job_calls
+        create_job_calls += 1
+        return None
+
+    def reset_market_snapshot() -> tuple[
+        sync_service.SyncServiceMarketDbLike,
+        sync_service.SyncServiceTimeSeriesStoreLike,
+    ]:
+        nonlocal reset_calls
+        reset_calls += 1
+        return market_db, _time_series_store()
+
+    monkeypatch.setattr(isolated_manager, "create_job", track_create_job)
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "resetBeforeSync is maintenance for an already-compatible Market v5 "
+            "root only.*market-cutover cutover"
+        ),
+    ) as caught:
+        await sync_service.start_sync(
+            SyncMode.INITIAL,
+            market_db,
+            DummyJQuantsClient(),
+            time_series_store=_time_series_store(),
+            reset_before_sync=True,
+            reset_market_snapshot=reset_market_snapshot,
+        )
+
+    assert type(caught.value).__name__ == "IncompatibleMarketResetError"
+    assert create_job_calls == 0
+    assert reset_calls == 0
 
 
 @pytest.mark.asyncio
@@ -842,7 +967,10 @@ async def test_start_sync_resets_market_snapshot_before_initial_sync(
     strategy = StrategyProbe(emit_progress=False)
     monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
 
-    old_market_db = DummyMarketDb(legacy_stock_snapshot=True)
+    old_market_db = DummyMarketDb(
+        schema_version=MARKET_SCHEMA_VERSION,
+        adjustment_mode=PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
+    )
     old_store = DummyTimeSeriesStore()
     reset_market_db = DummyMarketDb()
     reset_store = DummyTimeSeriesStore()

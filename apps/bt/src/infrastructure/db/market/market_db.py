@@ -286,6 +286,17 @@ class MarketDb:
             return True
         return raw_count <= 0 and stock_count > 0
 
+    def is_reset_before_sync_eligible(self) -> bool:
+        """Return whether this root may be reset as Market v5 maintenance."""
+        validation = self.validate_schema()
+        return (
+            self.get_market_schema_version() == MARKET_SCHEMA_VERSION
+            and self.get_stock_price_adjustment_mode()
+            == PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
+            and validation.get("valid") is True
+            and not self.is_legacy_stock_price_snapshot()
+        )
+
     def get_sync_metadata(self, key: str) -> str | None:
         """sync_metadata からキーの値を取得。"""
         if not self._table_exists("sync_metadata"):

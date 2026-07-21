@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import shutil
 from collections.abc import Generator
@@ -23,6 +24,14 @@ from src.application.services.sync_stream_manager import SyncStreamEvent
 from src.shared.contracts import market_maintenance as maintenance_contracts
 from tests.unit.server.db.market_writer_test_support import open_market_db
 from tests.unit.server.db.market_writer_test_support import publish_topix_data
+
+
+def _regular_file_sha256s(root: Path) -> dict[str, str]:
+    return {
+        str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
 
 
 @pytest.mark.asyncio
@@ -732,6 +741,62 @@ class TestSyncRoutes:
             assert mock_start.await_count == 1
             assert mock_start.await_args.kwargs["reset_before_sync"] is True
             assert callable(mock_start.await_args.kwargs["reset_market_snapshot"])
+
+    def test_sync_start_rejects_incompatible_reset_without_mutating_files(
+        self,
+        app_client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        from src.application.services import sync_service
+
+        market_root = tmp_path / "market-timeseries"
+        parquet_dir = market_root / "parquet"
+        parquet_dir.mkdir(parents=True)
+        db_path = market_root / "market.duckdb"
+        seeded_db = open_market_db(str(db_path), read_only=False)
+        seeded_db._execute("DELETE FROM market_schema_version")
+        seeded_db._execute(
+            """
+            INSERT INTO market_schema_version (version, applied_at, notes)
+            VALUES (?, ?, ?)
+            """,
+            [4, "2026-07-21T00:00:00+00:00", "Market v4 test fixture"],
+        )
+        seeded_db.set_sync_metadata(
+            "stock_price_adjustment_mode", "local_projection_v2_event_time"
+        )
+        seeded_db.close()
+        (parquet_dir / "legacy-marker.parquet").write_bytes(b"legacy-parquet-bytes")
+
+        market_db = open_market_db(str(db_path), read_only=True)
+        create_job = AsyncMock(return_value=None)
+        monkeypatch.setattr(
+            sync_service,
+            "sync_job_manager",
+            SimpleNamespace(create_job=create_job),
+        )
+        app_client.app.state.market_db = market_db
+        app_client.app.state.market_time_series_store = MagicMock()
+        app_client.app.state.jquants_client = MagicMock(has_api_key=True)
+        app_client.app.state.market_writer_session = None
+        before = _regular_file_sha256s(market_root)
+
+        try:
+            response = app_client.post(
+                "/api/db/sync",
+                json={"mode": "initial", "resetBeforeSync": True},
+            )
+
+            assert response.status_code == 409
+            assert _regular_file_sha256s(market_root) == before
+            assert "market-cutover cutover" in response.json()["message"]
+            assert create_job.await_count == 0
+        finally:
+            market_db.close()
+            app_client.app.state.market_db = None
+            app_client.app.state.market_time_series_store = None
+            app_client.app.state.jquants_client = None
 
     def test_sync_start_rejects_reset_before_sync_outside_initial_mode(
         self, client: TestClient

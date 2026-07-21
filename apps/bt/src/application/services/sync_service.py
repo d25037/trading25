@@ -57,6 +57,7 @@ from src.shared.config.settings import get_settings
 class SyncServiceMarketDbLike(SyncMarketDbLike, Protocol):
     def ensure_schema(self) -> None: ...
     def is_legacy_stock_price_snapshot(self) -> bool: ...
+    def is_reset_before_sync_eligible(self) -> bool: ...
     def get_market_schema_version(self) -> int | None: ...
     def is_market_schema_current(self) -> bool: ...
 
@@ -82,6 +83,17 @@ class SyncMode(str, Enum):
     INITIAL = "initial"
     INCREMENTAL = "incremental"
     REPAIR = "repair"
+
+
+class IncompatibleMarketResetError(RuntimeError):
+    """Raised when resetBeforeSync targets a non-Market-v5 root."""
+
+
+_INCOMPATIBLE_MARKET_RESET_MESSAGE = (
+    "resetBeforeSync is maintenance for an already-compatible Market v5 root only. "
+    "Run bt market-cutover cutover for Market v4, older, malformed, or "
+    "adjustment-mode-incompatible roots."
+)
 
 
 @dataclass
@@ -204,6 +216,14 @@ async def start_sync(
             raise RuntimeError("resetBeforeSync is supported only for initial sync")
         if reset_market_snapshot is None:
             raise RuntimeError("resetBeforeSync requires a reset callback")
+        try:
+            reset_eligible = market_db.is_reset_before_sync_eligible()
+        except Exception as exc:  # noqa: BLE001 - normalize malformed roots
+            raise IncompatibleMarketResetError(
+                _INCOMPATIBLE_MARKET_RESET_MESSAGE
+            ) from exc
+        if not reset_eligible:
+            raise IncompatibleMarketResetError(_INCOMPATIBLE_MARKET_RESET_MESSAGE)
         resolved_mode = SyncMode.INITIAL.value
     else:
         _prepare_market_db_for_sync(market_db)

@@ -74,6 +74,7 @@ from src.application.services import (
 )
 from src.application.services.generic_job_manager import JobInfo
 from src.application.services.sync_service import (
+    IncompatibleMarketResetError,
     SyncJobData,
     SyncMode,
     sync_job_manager,
@@ -579,6 +580,8 @@ async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
                 f"{sync_mode.value}_sync",
             ),
         )
+    except IncompatibleMarketResetError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except asyncio.CancelledError:
         if not body.resetBeforeSync and isinstance(
             getattr(request.app.state, "market_writer_session", None),
