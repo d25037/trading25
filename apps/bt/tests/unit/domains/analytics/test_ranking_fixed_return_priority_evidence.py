@@ -22,10 +22,12 @@ from src.domains.analytics.ranking_fixed_return_priority_evidence import (
     run_ranking_fixed_return_priority_evidence_research,
     write_ranking_fixed_return_priority_evidence_bundle,
 )
+from tests.unit.domains.analytics.daily_ranking_market_v5_fixture import (
+    refresh_daily_ranking_provider_window,
+)
 from tests.unit.domains.analytics.test_ranking_trend_acceleration_conditional_lift import (
     _build_mixed_market_db,
-    _mark_fixture_market_v4 as _mark_event_time_fixture_market_v4,
-    _refresh_fixture_provider_window,
+    _upgrade_fixture_market_v5,
 )
 
 
@@ -494,7 +496,7 @@ def test_runner_uses_exact_date_prime_membership_and_writes_all_tables(
     tmp_path,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
-    _mark_price_pit_fixture_market_v4(db_path)
+    _upgrade_fixture_market_v5(db_path)
 
     result = run_ranking_fixed_return_priority_evidence_research(
         db_path,
@@ -584,7 +586,7 @@ def test_fixed_observation_bundle_preserves_sparse_session_authoritative_outcome
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
-    _mark_price_pit_fixture_market_v4(db_path)
+    _upgrade_fixture_market_v5(db_path)
     signal_date = pd.Timestamp("2024-03-01")
     nominal_completion_date = pd.Timestamp("2024-03-08")
     completion_date = pd.Timestamp("2024-03-11")
@@ -600,7 +602,7 @@ def test_fixed_observation_bundle_preserves_sparse_session_authoritative_outcome
             "DELETE FROM stock_data WHERE code = ? AND CAST(date AS DATE) = ?",
             [code, nominal_completion_date.date()],
         )
-        _refresh_fixture_provider_window(conn, code)
+        refresh_daily_ranking_provider_window(conn, code=code)
         signal_close = conn.execute(
             "SELECT close FROM stock_data_raw WHERE code = ? AND CAST(date AS DATE) = ?",
             [code, signal_date.date()],
@@ -702,7 +704,7 @@ def test_fixed_observation_bundle_preserves_sparse_session_authoritative_outcome
     assert persisted[2] == pytest.approx(expected_aligned)
 
 
-def test_poisoned_stock_data_cannot_change_fixed_return_price_pit_study(
+def test_poisoned_stock_data_fails_closed_fixed_return_provider_projection(
     tmp_path: Path,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
@@ -725,75 +727,46 @@ def test_poisoned_stock_data_cannot_change_fixed_return_price_pit_study(
     finally:
         conn.close()
 
-    after = _run_price_pit_fixture(db_path)
-
-    assert before.price_projection == after.price_projection
-    pd.testing.assert_frame_equal(
-        before.observation_sample_df.reset_index(drop=True),
-        after.observation_sample_df.reset_index(drop=True),
-    )
+    with pytest.raises(RuntimeError, match="provider vintage lineage"):
+        _execute_price_pit_fixture(db_path)
 
 
-def test_completion_basis_outcome_applies_completion_basis_to_both_endpoints(
+def test_provider_split_outcome_applies_current_vintage_to_both_endpoints(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
-    _mark_price_pit_fixture_market_v4(db_path)
+    _upgrade_fixture_market_v5(db_path)
     split_date = "2024-03-05"
     conn = duckdb.connect(str(db_path))
     try:
-        first_date, last_date = conn.execute(
-            "SELECT min(date), max(date) FROM stock_data_raw WHERE code = '1111'"
-        ).fetchone()
-        old_basis = f"event-pit-v1:1111:{first_date}"
-        new_basis = f"event-pit-v1:1111:{split_date}"
-        conn.execute("DELETE FROM stock_adjustment_basis_segments WHERE code = '1111'")
-        conn.execute("DELETE FROM stock_adjustment_bases WHERE code = '1111'")
-        conn.executemany(
-            "INSERT INTO stock_adjustment_bases VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-                (
-                    "1111",
-                    old_basis,
-                    first_date,
-                    split_date,
-                    first_date,
-                    "fixture-1111-old",
-                    split_date,
-                    "ready",
-                ),
-                (
-                    "1111",
-                    new_basis,
-                    split_date,
-                    None,
-                    split_date,
-                    "fixture-1111-new",
-                    last_date,
-                    "ready",
-                ),
-            ],
-        )
-        conn.executemany(
-            "INSERT INTO stock_adjustment_basis_segments VALUES (?, ?, ?, ?, ?)",
-            [
-                ("1111", old_basis, first_date, split_date, 1.0),
-                ("1111", new_basis, first_date, split_date, 0.5),
-                ("1111", new_basis, split_date, None, 1.0),
-            ],
-        )
         conn.execute(
-            "UPDATE daily_valuation SET basis_version = CASE "
-            "WHEN date < ? THEN ? ELSE ? END WHERE code = '1111'",
-            [split_date, old_basis, new_basis],
-        )
-        conn.execute(
-            "UPDATE stock_data_raw SET open = open / 2.0, high = high / 2.0, "
-            "low = low / 2.0, close = close / 2.0, volume = volume * 2 "
-            "WHERE code = '1111' AND date >= ?",
+            "UPDATE stock_data_raw SET adjusted_open = open * 0.5, "
+            "adjusted_high = high * 0.5, adjusted_low = low * 0.5, "
+            "adjusted_close = close * 0.5, adjusted_volume = volume * 2 "
+            "WHERE code = '1111' AND date < ?",
             [split_date],
         )
+        conn.execute(
+            "UPDATE stock_data SET open = open * 0.5, high = high * 0.5, "
+            "low = low * 0.5, close = close * 0.5, volume = volume * 2 "
+            "WHERE code = '1111' AND date < ?",
+            [split_date],
+        )
+        conn.execute(
+            "UPDATE stock_data_raw SET adjustment_factor = 0.5 "
+            "WHERE code = '1111' AND date = ?",
+            [split_date],
+        )
+        fingerprint = refresh_daily_ranking_provider_window(conn, code="1111")
+        conn.execute(
+            "INSERT INTO stock_adjustment_events VALUES ('1111', ?, 0.5, ?)",
+            [split_date, fingerprint],
+        )
+        provider_vintage_id = conn.execute(
+            "SELECT 'provider-v1:' || code || ':' || provider_as_of || ':' "
+            "|| source_fingerprint FROM stock_provider_windows WHERE code = '1111'"
+        ).fetchone()[0]
     finally:
         conn.close()
 
@@ -826,24 +799,24 @@ def test_completion_basis_outcome_applies_completion_basis_to_both_endpoints(
     )
 
     assert result.price_projection.completion_basis_policy == (
-        "exact_completion_date_basis_applied_to_signal_and_completion_endpoints"
+        "exact_provider_window_applied_to_signal_and_completion_endpoints"
     )
     completion_date, projected_return, completion_basis = captured["row"]
     assert str(completion_date) == "2024-03-08"
-    assert completion_basis == f"event-pit-v1:1111:{split_date}"
+    assert completion_basis == provider_vintage_id
     conn = duckdb.connect(str(db_path), read_only=True)
     try:
         signal_close = conn.execute(
-            "SELECT close FROM stock_data_raw "
+            "SELECT adjusted_close FROM stock_data_raw "
             "WHERE code = '1111' AND date = '2024-03-01'"
         ).fetchone()[0]
         completion_close = conn.execute(
-            "SELECT close FROM stock_data_raw "
+            "SELECT adjusted_close FROM stock_data_raw "
             "WHERE code = '1111' AND date = '2024-03-08'"
         ).fetchone()[0]
     finally:
         conn.close()
-    expected = (completion_close / (signal_close * 0.5) - 1.0) * 100.0
+    expected = (completion_close / signal_close - 1.0) * 100.0
     assert projected_return == pytest.approx(expected)
     assert projected_return > -10.0
 
@@ -851,9 +824,9 @@ def test_completion_basis_outcome_applies_completion_basis_to_both_endpoints(
 @pytest.mark.parametrize(
     ("failure", "message"),
     [
-        ("missing", "segment cardinality must be exactly one"),
-        ("overlap", "segment cardinality must be exactly one"),
-        ("invalid", "segment factor must be finite and positive"),
+        ("missing_window", "provider vintage lineage"),
+        ("overlapping_window", "provider vintage lineage"),
+        ("missing_event", "provider vintage lineage"),
     ],
 )
 def test_fixed_return_price_pit_study_fails_closed_on_invalid_lineage(
@@ -862,37 +835,30 @@ def test_fixed_return_price_pit_study_fails_closed_on_invalid_lineage(
     message: str,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
-    _mark_price_pit_fixture_market_v4(db_path)
+    _upgrade_fixture_market_v5(db_path)
     conn = duckdb.connect(str(db_path))
     try:
-        basis_id = conn.execute(
-            "SELECT basis_id FROM stock_adjustment_bases WHERE code = '1111'"
-        ).fetchone()[0]
-        if failure == "missing":
+        if failure == "missing_window":
+            conn.execute("DELETE FROM stock_provider_windows WHERE code = '1111'")
+        elif failure == "overlapping_window":
             conn.execute(
-                "DELETE FROM stock_adjustment_basis_segments "
-                "WHERE code = '1111' AND basis_id = ?",
-                [basis_id],
-            )
-        elif failure == "overlap":
-            conn.execute(
-                "INSERT INTO stock_adjustment_basis_segments VALUES (?, ?, ?, ?, ?)",
-                ["1111", basis_id, "2016-01-01", None, 1.0],
+                "INSERT INTO stock_provider_windows SELECT * "
+                "FROM stock_provider_windows WHERE code = '1111'"
             )
         else:
             conn.execute(
-                "UPDATE stock_adjustment_basis_segments SET cumulative_factor = 0.0 "
-                "WHERE code = '1111' AND basis_id = ?",
-                [basis_id],
+                "UPDATE stock_data_raw SET adjustment_factor = 0.5 "
+                "WHERE code = '1111' AND date = '2024-03-05'"
             )
+            refresh_daily_ranking_provider_window(conn, code="1111")
     finally:
         conn.close()
 
     with pytest.raises(RuntimeError, match=message):
-        _run_price_pit_fixture(db_path)
+        _execute_price_pit_fixture(db_path)
 
 
-def test_future_canonical_raw_append_does_not_change_earlier_fixed_return_inputs(
+def test_future_provider_append_preserves_earlier_fixed_return_observations(
     tmp_path: Path,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
@@ -908,8 +874,14 @@ def test_future_canonical_raw_append_does_not_change_earlier_fixed_return_inputs
         ).fetchone()[0]
         conn.execute(
             "INSERT INTO stock_data_raw VALUES "
-            "('1111', '2025-01-06', 999, 1000, 998, 999, 10000, 1.0)"
+            "('1111', '2025-01-06', 999, 1000, 998, 999, 10000, "
+            "9990000, 1.0, 999, 1000, 998, 999, 10000)"
         )
+        conn.execute(
+            "INSERT INTO stock_data VALUES "
+            "('1111', '2025-01-06', 999, 1000, 998, 999, 10000)"
+        )
+        refresh_daily_ranking_provider_window(conn, code="1111")
         raw_count_after = conn.execute(
             "SELECT count(*) FROM stock_data_raw"
         ).fetchone()[0]
@@ -917,12 +889,28 @@ def test_future_canonical_raw_append_does_not_change_earlier_fixed_return_inputs
         conn.close()
     assert raw_count_after == raw_count_before + 1
 
-    after = _run_price_pit_fixture(db_path)
+    after = _execute_price_pit_fixture(db_path)
 
-    assert before.price_projection == after.price_projection
+    assert (
+        before.price_projection.signal_basis_sha256
+        != after.price_projection.signal_basis_sha256
+    )
+    assert (
+        before.price_projection.signal_feature_row_count
+        == after.price_projection.signal_feature_row_count
+    )
+    assert (
+        before.price_projection.completed_outcome_row_count
+        == after.price_projection.completed_outcome_row_count
+    )
+    stable_columns = [
+        column
+        for column in before.observation_sample_df.columns
+        if "basis_id" not in column
+    ]
     pd.testing.assert_frame_equal(
-        before.observation_sample_df.reset_index(drop=True),
-        after.observation_sample_df.reset_index(drop=True),
+        before.observation_sample_df[stable_columns].reset_index(drop=True),
+        after.observation_sample_df[stable_columns].reset_index(drop=True),
     )
 
 
@@ -952,28 +940,12 @@ def test_runner_rejects_incompatible_market_metadata(tmp_path) -> None:
         )
 
 
-def _mark_fixture_market_v4(db_path: Path) -> None:
-    conn = duckdb.connect(str(db_path))
-    try:
-        conn.execute("CREATE OR REPLACE TABLE market_schema_version(version INTEGER)")
-        conn.execute("INSERT INTO market_schema_version VALUES (4)")
-        conn.execute(
-            "CREATE OR REPLACE TABLE sync_metadata(key VARCHAR, value VARCHAR)"
-        )
-        conn.execute(
-            "INSERT INTO sync_metadata VALUES "
-            "('stock_price_adjustment_mode', 'local_projection_v2_event_time')"
-        )
-    finally:
-        conn.close()
-
-
-def _mark_price_pit_fixture_market_v4(db_path: Path) -> None:
-    _mark_event_time_fixture_market_v4(db_path)
-
-
 def _run_price_pit_fixture(db_path: Path):
-    _mark_price_pit_fixture_market_v4(db_path)
+    _upgrade_fixture_market_v5(db_path)
+    return _execute_price_pit_fixture(db_path)
+
+
+def _execute_price_pit_fixture(db_path: Path):
     return run_ranking_fixed_return_priority_evidence_research(
         db_path,
         start_date="2024-03-01",
