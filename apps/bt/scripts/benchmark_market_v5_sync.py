@@ -319,9 +319,19 @@ class _ObservedFixtureClient:
         pages = max(1, math.ceil(len(rows) / _PAGE_SIZE))
         if pages > max_pages:
             raise AssertionError("fixture response exceeded coordinator max_pages")
+        returned_dates = [
+            str(row["Date"])
+            for row in rows
+            if isinstance(row.get("Date"), str)
+        ]
         for page in range(pages):
             self.calls.append(
-                {"path": path, "params": normalized_params, "page": page + 1}
+                {
+                    "path": path,
+                    "params": normalized_params,
+                    "page": page + 1,
+                    "maxReturnedDate": max(returned_dates) if returned_dates else None,
+                }
             )
         return [dict(row) for row in rows], pages
 
@@ -589,14 +599,18 @@ def _run_scenario_child(
         for code in universe
     }
     if name == "provider_split_drift" and incoming:
-        code = str(incoming[0]["Code"])
-        replacement = [
-            dict(row)
-            for row in provider_windows[code]
-            if str(row["Date"]) <= target_date
-        ]
-        replacement[0] = dict(incoming[0])
-        provider_windows[code] = replacement
+        for incoming_row in incoming:
+            code = str(incoming_row["Code"])
+            replacement_by_date = {
+                str(row["Date"]): dict(row)
+                for row in provider_windows[code]
+                if str(row["Date"]) <= target_date
+            }
+            replacement_by_date[str(incoming_row["Date"])] = dict(incoming_row)
+            provider_windows[code] = [
+                replacement_by_date[trading_date]
+                for trading_date in sorted(replacement_by_date)
+            ]
     client = _ObservedFixtureClient(incoming, provider_windows)
     spy = _MaterializerSpy(
         AdjustedMetricsMaterializer(market_db),

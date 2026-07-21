@@ -30,7 +30,7 @@
   "representativeComparison": {
     "v4": {
       "allCodeMaterializerInvocations": 1,
-      "cpuSeconds": 12.745055,
+      "cpuSeconds": 13.035067999999999,
       "implementationBlobHashes": {
         "apps/bt/src/application/services/adjusted_metrics_materialization_run.py": "a2daca9153624859c914113b4335f6cf26889d2b",
         "apps/bt/src/application/services/adjusted_metrics_materializer.py": "6f0c9730732725e7cbaa064916e4820cf19a3cb8",
@@ -46,31 +46,31 @@
       "materializedCodes": 400,
       "measurementPath": "isolated_merge_base_v4_production_adjusted_metrics_pit",
       "newRows": 390,
-      "peakRssBytes": 491716608,
-      "processId": 81777,
+      "peakRssBytes": 490651648,
+      "processId": 65068,
       "productionEntryReference": "apps/bt/src/application/services/sync_service.py:500-505;apps/bt/src/application/services/sync_strategies.py:1307-1314",
       "schemaVersion": 4,
       "stockPriceAdjustmentMode": "local_projection_v2_event_time",
-      "storageGrowthBytes": 22032876,
-      "wallSeconds": 9.01208358304575
+      "storageGrowthBytes": 22295020,
+      "wallSeconds": 9.273169625084847
     },
     "v5": {
-      "cpuSeconds": 1.805909,
+      "cpuSeconds": 1.86085,
       "implementationBlobHashes": {
-        "apps/bt/src/application/services/sync_stock_data_fetch.py": "b7eac4e2e890363564b183e2f59f6aa08b490b17"
+        "apps/bt/src/application/services/sync_stock_data_fetch.py": "2c2ed95403da5e4dd252d12df5d5bbb122c91421"
       },
-      "implementationCommit": "5c1231b320745ad188185d6aedf17ad332d8735a",
+      "implementationCommit": "f9517381869e1381d68c44fa95e7f62ae4a49857",
       "implementationPath": "apps/bt/src/application/services/sync_stock_data_fetch.py:execute_stock_data_rest_date+StockDataIngestionSession.commit",
       "inputFingerprint": "3da2e4d67a8d7aecb607b5ed4c431040ebe742910d742d3c7c4e4aa171cae12d",
       "measurementPath": "production_sync_coordinator_duckdb_parquet",
-      "peakRssBytes": 724336640,
+      "peakRssBytes": 720044032,
       "schemaVersion": 5,
       "stockPriceAdjustmentMode": "provider_adjusted_v1",
-      "wallSeconds": 0.992362583
+      "wallSeconds": 1.002434083
     },
-    "v5ToV4CpuRatio": 0.14169487695423832,
-    "v5ToV4PeakRssRatio": 1.4730774356923897,
-    "v5ToV4WallRatio": 0.11011466703070881
+    "v5ToV4CpuRatio": 0.14275721461522103,
+    "v5ToV4PeakRssRatio": 1.4675259625338097,
+    "v5ToV4WallRatio": 0.10810047950469018
   },
   "representativeEvidence": "measured",
   "representativeEvidenceReason": null,
@@ -79,9 +79,9 @@
     "legacy_all_code_local_projection": {
       "affectedCodes": 0,
       "allCodeMaterializerInvocations": 1,
-      "checksumSha256": "2e2477875b115b47e25f28c6c4ad9e8cc29cc31ff27a4bfc334785799d5bc249",
+      "checksumSha256": "7b65703355d5d49539d6d245de30aac9226973db7860dd55e7e2c5c8f04e1ede",
       "coordinator": "StockDataIngestionSession+LegacyAllCodeAdapter",
-      "cpuSeconds": 3.355657,
+      "cpuSeconds": 3.473619,
       "currentBasisCompletedCodes": 400,
       "currentBasisProcessedCodes": 400,
       "currentBasisRecomputedCodes": 400,
@@ -908,6 +908,7 @@
       "observations": {
         "clientCalls": [
           {
+            "maxReturnedDate": "2026-09-08",
             "page": 1,
             "params": {
               "date": "2026-09-08"
@@ -915,6 +916,7 @@
             "path": "/equities/bars/daily"
           },
           {
+            "maxReturnedDate": "2026-09-08",
             "page": 2,
             "params": {
               "date": "2026-09-08"
@@ -927,9 +929,9 @@
         "storeReplacedRows": 0
       },
       "pages": 2,
-      "peakRssBytes": 734281728,
+      "peakRssBytes": 726122496,
       "pendingCurrentBasisCodeCountAfterMeasurement": 0,
-      "processId": 81927,
+      "processId": 65218,
       "providerWindowRowsReplaced": 0,
       "publishedCodes": 390,
       "requests": 1,
@@ -940,17 +942,17 @@
         "pendingCurrentBasisCodeCount": 0,
         "readyProviderWindowCount": 400
       },
-      "seedProcessId": 81910,
-      "storageGrowthBytes": 14143506,
-      "wallSeconds": 1.941574833,
+      "seedProcessId": 65209,
+      "storageGrowthBytes": 13881439,
+      "wallSeconds": 2.010718666,
       "workUnits": 792
     },
     "provider_fundamentals_only": {
       "affectedCodes": 12,
       "allCodeMaterializerInvocations": 0,
-      "checksumSha256": "7a9bfb1cc49698574e060828c4b261865c18b4972e55035ea1785afd0d526640",
+      "checksumSha256": "ae7c05cf638c38a7558572c2e77b394523a84f04fd3c9123df912fc59f14d8bd",
       "coordinator": "FundamentalsPublish+AdjustedMetricsMaterializer",
-      "cpuSeconds": 0.768349,
+      "cpuSeconds": 0.786928,
       "currentBasisCompletedCodes": 12,
       "currentBasisProcessedCodes": 12,
       "currentBasisRecomputedCodes": 12,
@@ -1001,6 +1003,7 @@
       "observations": {
         "clientCalls": [
           {
+            "maxReturnedDate": null,
             "page": 1,
             "params": {
               "code": "10000"
@@ -1013,9 +1016,9 @@
         "storeReplacedRows": 0
       },
       "pages": 1,
-      "peakRssBytes": 857538560,
+      "peakRssBytes": 849608704,
       "pendingCurrentBasisCodeCountAfterMeasurement": 0,
-      "processId": 81875,
+      "processId": 65174,
       "providerWindowRowsReplaced": 0,
       "publishedCodes": 0,
       "requests": 1,
@@ -1026,17 +1029,17 @@
         "pendingCurrentBasisCodeCount": 0,
         "readyProviderWindowCount": 400
       },
-      "seedProcessId": 81866,
+      "seedProcessId": 65157,
       "storageGrowthBytes": 2871976,
-      "wallSeconds": 0.207054167,
+      "wallSeconds": 0.209635625,
       "workUnits": 25
     },
     "provider_noop": {
       "affectedCodes": 0,
       "allCodeMaterializerInvocations": 0,
-      "checksumSha256": "d04dd090cdf78c9fcbcbc937221130e9273779225747add0a9b988f1865117f8",
+      "checksumSha256": "1c8153bddb034be598b26f8c0f9996b5b326696e8fab9349b52c670463003341",
       "coordinator": "StockDataIngestionSession",
-      "cpuSeconds": 0.489545,
+      "cpuSeconds": 1.126196,
       "currentBasisCompletedCodes": 0,
       "currentBasisProcessedCodes": 0,
       "currentBasisRecomputedCodes": 0,
@@ -1051,9 +1054,10 @@
       "observations": {
         "clientCalls": [
           {
+            "maxReturnedDate": "2026-01-01",
             "page": 1,
             "params": {
-              "date": "2026-01-01"
+              "date": "2026-09-08"
             },
             "path": "/equities/bars/daily"
           }
@@ -1063,9 +1067,9 @@
         "storeReplacedRows": 0
       },
       "pages": 1,
-      "peakRssBytes": 696434688,
+      "peakRssBytes": 702889984,
       "pendingCurrentBasisCodeCountAfterMeasurement": 0,
-      "processId": 81826,
+      "processId": 65120,
       "providerWindowRowsReplaced": 0,
       "publishedCodes": 1,
       "requests": 1,
@@ -1076,17 +1080,17 @@
         "pendingCurrentBasisCodeCount": 0,
         "readyProviderWindowCount": 400
       },
-      "seedProcessId": 81807,
-      "storageGrowthBytes": 507653,
-      "wallSeconds": 0.093238417,
+      "seedProcessId": 65105,
+      "storageGrowthBytes": 1294085,
+      "wallSeconds": 0.383326375,
       "workUnits": 1
     },
     "provider_one_day": {
       "affectedCodes": 0,
       "allCodeMaterializerInvocations": 0,
-      "checksumSha256": "42cb47b53af4793beb7f98f62521fc0a79e358b2565d41bfdb278b27463f8dd9",
+      "checksumSha256": "db6115e71d7df310ce730860dfa65460d3afeb29c9e5274e2681dee8dff7f172",
       "coordinator": "StockDataIngestionSession",
-      "cpuSeconds": 1.805909,
+      "cpuSeconds": 1.86085,
       "currentBasisCompletedCodes": 0,
       "currentBasisProcessedCodes": 0,
       "currentBasisRecomputedCodes": 0,
@@ -1101,6 +1105,7 @@
       "observations": {
         "clientCalls": [
           {
+            "maxReturnedDate": "2026-09-08",
             "page": 1,
             "params": {
               "date": "2026-09-08"
@@ -1108,6 +1113,7 @@
             "path": "/equities/bars/daily"
           },
           {
+            "maxReturnedDate": "2026-09-08",
             "page": 2,
             "params": {
               "date": "2026-09-08"
@@ -1120,9 +1126,9 @@
         "storeReplacedRows": 0
       },
       "pages": 2,
-      "peakRssBytes": 724336640,
+      "peakRssBytes": 720044032,
       "pendingCurrentBasisCodeCountAfterMeasurement": 0,
-      "processId": 81844,
+      "processId": 65148,
       "providerWindowRowsReplaced": 0,
       "publishedCodes": 390,
       "requests": 1,
@@ -1133,17 +1139,17 @@
         "pendingCurrentBasisCodeCount": 0,
         "readyProviderWindowCount": 400
       },
-      "seedProcessId": 81835,
-      "storageGrowthBytes": 13094981,
-      "wallSeconds": 0.992362583,
+      "seedProcessId": 65129,
+      "storageGrowthBytes": 13619248,
+      "wallSeconds": 1.002434083,
       "workUnits": 392
     },
     "provider_split_drift": {
       "affectedCodes": 2,
       "allCodeMaterializerInvocations": 0,
-      "checksumSha256": "77103ffc8df86087d284f2b8db679b3d0ee8eac7a13d4d7a2e3a7c441be78759",
+      "checksumSha256": "db2da3a4780bb1e4b21509e03514330a0aca8a93ced0fa26d6baa5caf261cff1",
       "coordinator": "StockDataIngestionSession",
-      "cpuSeconds": 1.398793,
+      "cpuSeconds": 1.407458,
       "currentBasisCompletedCodes": 2,
       "currentBasisProcessedCodes": 2,
       "currentBasisRecomputedCodes": 2,
@@ -1174,6 +1180,7 @@
       "observations": {
         "clientCalls": [
           {
+            "maxReturnedDate": "2026-01-01",
             "page": 1,
             "params": {
               "date": "2026-01-01"
@@ -1181,42 +1188,46 @@
             "path": "/equities/bars/daily"
           },
           {
+            "maxReturnedDate": "2026-01-01",
             "page": 1,
             "params": {
-              "code": "10000"
+              "code": "10000",
+              "to": "2026-01-01"
             },
             "path": "/equities/bars/daily"
           },
           {
+            "maxReturnedDate": "2026-01-01",
             "page": 1,
             "params": {
-              "code": "10010"
+              "code": "10010",
+              "to": "2026-01-01"
             },
             "path": "/equities/bars/daily"
           }
         ],
         "fixtureDeclaredCounters": false,
         "storePublishedRows": 0,
-        "storeReplacedRows": 1
+        "storeReplacedRows": 500
       },
       "pages": 3,
-      "peakRssBytes": 719912960,
+      "peakRssBytes": 717176832,
       "pendingCurrentBasisCodeCountAfterMeasurement": 0,
-      "processId": 81901,
-      "providerWindowRowsReplaced": 1,
+      "processId": 65192,
+      "providerWindowRowsReplaced": 500,
       "publishedCodes": 2,
       "requests": 3,
-      "rowMutations": 1,
+      "rowMutations": 500,
       "seedBaseline": {
         "currentBasisStateCount": 400,
         "excludedFromMeasurements": true,
         "pendingCurrentBasisCodeCount": 0,
         "readyProviderWindowCount": 400
       },
-      "seedProcessId": 81884,
-      "storageGrowthBytes": 10479113,
-      "wallSeconds": 0.761445834,
-      "workUnits": 6
+      "seedProcessId": 65183,
+      "storageGrowthBytes": 10716456,
+      "wallSeconds": 0.81367575,
+      "workUnits": 505
     }
   },
   "schemaVersion": 2

@@ -132,13 +132,20 @@ def test_materializer_observations_reject_hidden_pending_union(tmp_path: Path) -
     )
 
 
-def test_split_drift_provider_frontier_matches_requested_stage_date(
+def test_full_split_drift_provider_windows_match_requested_stage_frontier(
     tmp_path: Path,
 ) -> None:
-    report = run_benchmark_fixture(_fixture(), workspace=tmp_path)
-    calls = report["scenarios"]["provider_split_drift"]["observations"][
-        "clientCalls"
-    ]
+    fixture_path = Path(__file__).parents[3] / "benchmarks/fixtures/market-v5-sync.json"
+    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+    child_fixture_path = tmp_path / "fixture.json"
+    child_fixture_path.write_text(json.dumps(fixture), encoding="utf-8")
+    benchmark_module._run_isolated_child(
+        "provider_split_drift", child_fixture_path, tmp_path, seed=True
+    )
+    metrics = benchmark_module._run_isolated_child(
+        "provider_split_drift", child_fixture_path, tmp_path, seed=False
+    )
+    calls = metrics["observations"]["clientCalls"]
     date_request = next(
         call
         for call in calls
@@ -151,7 +158,19 @@ def test_split_drift_provider_frontier_matches_requested_stage_date(
     )
 
     assert date_request["params"]["date"] == "2026-01-01"
-    assert refresh_request["params"]["to"] == date_request["params"]["date"]
+    refresh_requests = [
+        call
+        for call in calls
+        if call["path"] == "/equities/bars/daily" and "code" in call["params"]
+    ]
+    assert all(
+        call["params"]["to"]
+        == call["maxReturnedDate"]
+        == date_request["params"]["date"]
+        for call in refresh_requests
+    )
+    assert refresh_request["params"]["to"] == "2026-01-01"
+    assert metrics["providerWindowRowsReplaced"] == 500
 
 
 def test_provider_incremental_work_scales_with_delta_not_all_codes(
