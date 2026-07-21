@@ -102,27 +102,29 @@ def test_forward_psr_builder_fails_closed_on_valuation_key_drift(
 ) -> None:
     conn, source = _build_psr_source(tmp_path / "market.duckdb", namespace="psr_a")
     valuation_key = conn.execute(
-        f"SELECT code, date, valuation_basis_id FROM {source.name} LIMIT 1"
+        f"SELECT code, date FROM {source.name} LIMIT 1"
     ).fetchone()
     assert valuation_key is not None
-    code, valuation_date, basis_id = valuation_key
+    code, valuation_date = valuation_key
     if mutation == "duplicate":
         conn.execute(
             """
             INSERT INTO daily_valuation
             SELECT * FROM daily_valuation
-            WHERE code = ? AND CAST(date AS DATE) = ? AND basis_version = ?
+            WHERE code = ? AND CAST(date AS DATE) = ?
+              AND CAST(price_basis_date AS DATE) = ?
             LIMIT 1
             """,
-            [code, valuation_date, basis_id],
+            [code, valuation_date, valuation_date],
         )
     else:
         conn.execute(
             """
             DELETE FROM daily_valuation
-            WHERE code = ? AND CAST(date AS DATE) = ? AND basis_version = ?
+            WHERE code = ? AND CAST(date AS DATE) = ?
+              AND CAST(price_basis_date AS DATE) = ?
             """,
-            [code, valuation_date, basis_id],
+            [code, valuation_date, valuation_date],
         )
 
     with pytest.raises(RuntimeError, match="exact valuation key"):
