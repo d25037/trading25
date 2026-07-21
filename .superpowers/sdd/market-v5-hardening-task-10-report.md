@@ -86,3 +86,33 @@ finding was identified in this documentation scope. Deferred issues #494, #495,
 #496, and #497 were not implemented.
 
 Intended commit subject: `docs: align Market v5 safety and recovery guidance`.
+
+## P2 remediation: exact failure disposition boundary
+
+Review of the Phase A commit found that the runbook's blanket post-activation
+automatic-restore sentence and the SoT matrix's blanket `joined failure is exact
+rollback` sentence contradicted the durable activation boundary.
+
+Strict docs RED added one focused guard before changing either document. It failed on
+the missing rollback/preserve/fencing distinction:
+
+```text
+1 failed
+
+assert 'joined failure before durable `activated` restores the exact immutable backup'
+```
+
+The corrected guidance now states exactly:
+
+- rollback-allowed joined failure before durable `activated` restores the exact
+  immutable backup;
+- durable `activated` or preserve-for-recovery joined failure preserves active v5,
+  exact quarantine, immutable backup, and retained recovery evidence, and requires
+  the exact same-ID retry; and
+- an unjoined child keeps both active and staging leases fenced, defers recovery, and
+  does not authorize manual artifact edits.
+
+The focused guard passed after only the runbook and SoT matrix were corrected. The
+planned 184 documentation guards, research guardrails, skill reference drift check,
+strict skill audit, focused Ruff, and `git diff --check` were rerun before the fix-only
+commit. The two P3 findings remain tracked in #498 and were not changed.

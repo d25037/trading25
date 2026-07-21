@@ -68,6 +68,28 @@ def test_active_market_v5_guidance_requires_cutover_and_same_id_recovery() -> No
     ):
         assert protected_path in guidance
     normalized_runbook = " ".join(runbook.split())
+    normalized_matrix = " ".join(matrix.split())
+    assert (
+        "joined failure before durable `activated` restores the exact immutable "
+        "backup"
+        in normalized_runbook
+    )
+    assert (
+        "durable `activated` or preserve-for-recovery joined failure preserves "
+        "the active v5 tree, exact quarantine, immutable backup, and retained "
+        "recovery evidence; recovery requires the exact same-ID retry"
+        in normalized_runbook
+    )
+    assert (
+        "unjoined child keeps both active and staging leases fenced and defers "
+        "recovery"
+        in normalized_runbook
+    )
+    assert "durable `activated` 以前の joined failure だけ" in normalized_matrix
+    assert "active v5 / exact quarantine / backup / retained recovery evidence" in (
+        normalized_matrix
+    )
+    assert "active / staging の両 lease を fence" in normalized_matrix
     assert (
         "do not alter the journal, operation lock, report, staging, backup, "
         "active, retained-runtime, or quarantine paths manually"
