@@ -261,6 +261,65 @@ class CutoverReportRepository:
         except Exception:
             pass
 
+    @staticmethod
+    def _canonical_report(report: dict[str, object]) -> bytes:
+        try:
+            return json.dumps(
+                report,
+                allow_nan=False,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("ascii")
+        except (TypeError, ValueError) as exc:
+            raise _managed_root.CutoverSafetyError(
+                "Cutover report contains noncanonical evidence"
+            ) from exc
+
+    def _write_or_adopt_exact_report(
+        self,
+        report_id: str,
+        report: dict[str, object],
+        *,
+        expected_root_fingerprint: str | None = None,
+        final_validator: Callable[[], None] | None = None,
+    ) -> Path:
+        """Publish once, or adopt only a byte-semantically exact existing report."""
+
+        report_path = (
+            self._workspace.operations_root
+            / "reports"
+            / report_id
+            / "report.json"
+        )
+        try:
+            published_path = self._write_report(
+                report_id,
+                report,
+                expected_root_fingerprint=expected_root_fingerprint,
+                final_validator=final_validator,
+            )
+        except _managed_root.CutoverSafetyError as exc:
+            if str(exc) != "Managed operation destination already exists":
+                raise
+            try:
+                existing = self._read_report(report_id)
+            except _managed_root.CutoverSafetyError:
+                raise
+            if self._canonical_report(existing) != self._canonical_report(report):
+                raise _managed_root.CutoverSafetyError(
+                    "Existing cutover report does not exactly match the activation attempt"
+                )
+            published_path = report_path
+        read_back = self._read_report(report_id)
+        if self._canonical_report(read_back) != self._canonical_report(report):
+            raise _managed_root.CutoverSafetyError(
+                "Published cutover report does not exactly match the activation attempt"
+            )
+        if final_validator is not None:
+            final_validator()
+        return published_path
+
     def _read_report(self, report_id: str) -> dict[str, object]:
         path = self._workspace.operations_root / "reports" / report_id / "report.json"
         relative = self._workspace._managed_relative(path)

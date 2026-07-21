@@ -2,10 +2,63 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from urllib.parse import quote
 
-from .contracts import SmokeConfig
+from .contracts import ActivationAttempt, MarketTreeIdentity, SmokeConfig
 from .smoke import RuntimeSmokeService
+
+
+def _mutable_evidence(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {key: _mutable_evidence(child) for key, child in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_mutable_evidence(child) for child in value]
+    return value
+
+
+def market_tree_identity_evidence(identity: MarketTreeIdentity) -> dict[str, object]:
+    return {
+        "path": identity.path,
+        "directory": dict(identity.directory),
+        "payload": _mutable_evidence(identity.payload),
+    }
+
+
+def activation_report_contract_valid(
+    report: dict[str, object],
+    *,
+    attempt: ActivationAttempt,
+    quarantine: MarketTreeIdentity,
+    evidence: dict[str, object],
+) -> bool:
+    """Bind success publication to the immutable journal attempt."""
+
+    return (
+        report.get("reportId") == attempt.report_id
+        and report.get("rehearsalReportId") == attempt.rehearsal_report_id
+        and report.get("backupId") == attempt.backup_id
+        and report.get("codeVersion") == attempt.code_version
+        and report.get("smokeConfig")
+        == {
+            "symbol": attempt.config.symbol,
+            "strategy": attempt.config.strategy,
+            "datasetPreset": attempt.config.dataset_preset,
+        }
+        and report.get("schemaCoverage") == evidence
+        and report.get("sourceMarketIdentity")
+        == market_tree_identity_evidence(attempt.source)
+        and report.get("stagedMarketIdentity")
+        == market_tree_identity_evidence(attempt.staged)
+        and report.get("activeMarketIdentityBefore")
+        == market_tree_identity_evidence(attempt.active_before)
+        and report.get("backupMarketIdentity")
+        == market_tree_identity_evidence(attempt.backup)
+        and report.get("activatedMarketIdentity")
+        == market_tree_identity_evidence(attempt.expected_active)
+        and report.get("quarantineMarketIdentity")
+        == market_tree_identity_evidence(quarantine)
+    )
 
 
 def full_rebuild_report_contract_valid(

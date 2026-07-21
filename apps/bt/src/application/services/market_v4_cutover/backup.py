@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import secrets
 import stat
@@ -14,6 +15,8 @@ from src.infrastructure.db.market import managed_root as _managed_root
 
 from .contracts import (
     BackupResult,
+    ImmutableJsonValue,
+    MarketTreeIdentity,
     MarketSourceMetadata,
     RestoreResult,
 )
@@ -300,10 +303,10 @@ class MarketBackupService:
             ).encode()
         ).hexdigest()
 
-    def _active_market_tree_sha256(self) -> str:
+    def _market_tree_sha256(self, root: Path) -> str:
         entries = []
-        for source in self._workspace._source_files(self._workspace.market_root):
-            relative = source.relative_to(self._workspace.market_root)
+        for source in self._workspace._source_files(root):
+            relative = source.relative_to(root)
             managed_relative = self._workspace._managed_relative(source)
             source_stat = self._workspace.managed().stat(managed_relative)
             entries.append(
@@ -314,8 +317,66 @@ class MarketBackupService:
                 }
             )
         if not entries:
-            raise _managed_root.CutoverSafetyError("Active Market tree is empty")
+            raise _managed_root.CutoverSafetyError("Market tree is empty")
         return self._tree_entries_sha256(entries)
+
+    def _market_tree_identity(
+        self,
+        root: Path,
+        *,
+        identity_path: str | None = None,
+        payload: dict[str, ImmutableJsonValue] | None = None,
+    ) -> MarketTreeIdentity:
+        """Capture one exact descriptor and payload identity under the active lease."""
+
+        root = self._workspace._assert_managed_directory(root)
+        root_fd = self._workspace.managed().open_dir(
+            self._workspace._managed_relative(root)
+        )
+        try:
+            root_stat = os.fstat(root_fd)
+            identity_payload = dict(payload or {})
+            identity_payload["marketTreeSha256"] = self._market_tree_sha256(root)
+            current_fd = self._workspace.managed().open_dir(
+                self._workspace._managed_relative(root)
+            )
+            try:
+                current_stat = os.fstat(current_fd)
+            finally:
+                os.close(current_fd)
+            if (root_stat.st_dev, root_stat.st_ino) != (
+                current_stat.st_dev,
+                current_stat.st_ino,
+            ):
+                raise _managed_root.CutoverSafetyError(
+                    "Market tree identity changed during capture"
+                )
+        finally:
+            os.close(root_fd)
+        return MarketTreeIdentity(
+            path=(
+                identity_path
+                if identity_path is not None
+                else root.relative_to(self._workspace.data_root).as_posix()
+            ),
+            directory={"device": root_stat.st_dev, "inode": root_stat.st_ino},
+            payload=identity_payload,
+        )
+
+    def _assert_market_tree_identity(
+        self,
+        root: Path,
+        expected: MarketTreeIdentity,
+    ) -> None:
+        actual = self._market_tree_identity(
+            root,
+            identity_path=expected.path,
+            payload=dict(expected.payload),
+        )
+        if actual != expected:
+            raise _managed_root.CutoverSafetyError(
+                f"Market tree identity mismatch: {expected.path}"
+            )
 
     def _assert_active_matches_backup_under_lease(self, backup_id: str) -> str:
         """Bind activation to the exact active tree captured by its backup."""
@@ -328,7 +389,7 @@ class MarketBackupService:
             .decode("utf-8")
         )
         expected = manifest.get("activeMarketTreeSha256")
-        actual = self._active_market_tree_sha256()
+        actual = self._market_tree_sha256(self._workspace.market_root)
         if not isinstance(expected, str) or actual != expected:
             raise _managed_root.CutoverSafetyError(
                 "Active Market tree no longer exactly matches the selected backup"

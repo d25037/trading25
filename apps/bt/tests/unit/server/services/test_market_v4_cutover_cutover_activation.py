@@ -37,6 +37,23 @@ class _RecordingAtomicExchange(_TestAtomicExchange):
         super().exchange(managed_root, left, right)
 
 
+class _JournalRecordingAtomicExchange(_RecordingAtomicExchange):
+    def __init__(self, data_root: Path, report_id: str) -> None:
+        super().__init__()
+        self._journal_dir = (
+            data_root
+            / "operations/market-v5-cutover/activation-journals"
+            / report_id
+        )
+        self.journal_names_at_exchange: list[str] = []
+
+    def exchange(self, managed_root, left: Path, right: Path) -> None:
+        self.journal_names_at_exchange = [
+            path.name for path in sorted(self._journal_dir.iterdir())
+        ]
+        super().exchange(managed_root, left, right)
+
+
 def test_cutover_rejects_active_tree_drift_after_backup_before_exchange(
     tmp_path: Path,
 ) -> None:
@@ -144,11 +161,212 @@ def test_full_rebuild_activation_uses_atomic_exchange_before_quarantine(
             ),
         )
     ]
-    quarantined = list(
-        (data_root / "operations/market-v5-cutover/quarantine").iterdir()
+    quarantine = (
+        data_root
+        / "operations/market-v5-cutover/quarantine/pre-cutover-atomic-active"
     )
-    assert len(quarantined) == 1
-    assert (quarantined[0] / "market.duckdb").read_bytes() == b"duckdb-v3"
+    assert quarantine.is_dir()
+    assert (quarantine / "market.duckdb").read_bytes() == b"duckdb-v3"
+    assert [path.name for path in quarantine.parent.iterdir()] == [
+        "pre-cutover-atomic-active"
+    ]
+
+
+def test_cutover_journals_exchange_boundary_and_terminal_report_state(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    report_id = "journal-order-active"
+    atomic = _JournalRecordingAtomicExchange(data_root, report_id)
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()]),
+        atomic_exchange=atomic,
+    )
+    config = SmokeConfig("7203", "production/smoke", "primeMarket")
+    service.backup("journal-order-backup")
+    service.rehearse("journal-order-rehearsal", config, inherited_environment={})
+
+    service.cutover(
+        report_id,
+        rehearsal_report_id="journal-order-rehearsal",
+        backup_id="journal-order-backup",
+        config=config,
+        inherited_environment={},
+    )
+
+    assert atomic.journal_names_at_exchange == [
+        "00000001-prepared.json",
+        "00000002-exchange_started.json",
+    ]
+    journal_dir = (
+        data_root
+        / "operations/market-v5-cutover/activation-journals"
+        / report_id
+    )
+    assert [path.name for path in sorted(journal_dir.iterdir())] == [
+        "00000001-prepared.json",
+        "00000002-exchange_started.json",
+        "00000003-activated.json",
+        "00000004-reported.json",
+    ]
+
+
+def test_cutover_rejects_quarantine_identity_drift_before_activated_state(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()]),
+    )
+    config = SmokeConfig("7203", "production/smoke", "primeMarket")
+    service.backup("quarantine-drift-backup")
+    service.rehearse(
+        "quarantine-drift-rehearsal", config, inherited_environment={}
+    )
+    original = (data_root / "market-timeseries/market.duckdb").read_bytes()
+    drift_injected = False
+
+    def drift_displaced_tree(source: Path, target: Path) -> None:
+        nonlocal drift_injected
+        if (
+            not drift_injected
+            and target.parent.name == "quarantine"
+            and target.name.startswith("pre-cutover-")
+        ):
+            drift_injected = True
+            (source / "market.duckdb").write_bytes(b"drifted-displaced-tree")
+
+    service._workspace._rename_at_hook = drift_displaced_tree
+
+    with pytest.raises(CutoverSafetyError, match="restored backup"):
+        service.cutover(
+            "quarantine-drift-active",
+            rehearsal_report_id="quarantine-drift-rehearsal",
+            backup_id="quarantine-drift-backup",
+            config=config,
+            inherited_environment={},
+        )
+
+    assert drift_injected is True
+    assert (data_root / "market-timeseries/market.duckdb").read_bytes() == original
+    journal_dir = (
+        data_root
+        / "operations/market-v5-cutover/activation-journals/quarantine-drift-active"
+    )
+    assert [path.name for path in sorted(journal_dir.iterdir())] == [
+        "00000001-prepared.json",
+        "00000002-exchange_started.json",
+    ]
+
+
+def test_cutover_adopts_exact_preexisting_success_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()]),
+    )
+    config = SmokeConfig("7203", "production/smoke", "primeMarket")
+    service.backup("adopt-report-backup")
+    service.rehearse("adopt-report-rehearsal", config, inherited_environment={})
+    real_write_report = service._reports._write_report
+    injected: dict[str, object] = {}
+
+    def collide_with_exact_report(
+        report_id: str,
+        report: dict[str, object],
+        **kwargs: object,
+    ) -> Path:
+        report_path = (
+            data_root
+            / "operations/market-v5-cutover/reports/adopt-report-active/report.json"
+        )
+        if report_id == "adopt-report-active" and not report_path.exists():
+            injected.update(report)
+            report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        return real_write_report(report_id, report, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(service._reports, "_write_report", collide_with_exact_report)
+
+    result = service.cutover(
+        "adopt-report-active",
+        rehearsal_report_id="adopt-report-rehearsal",
+        backup_id="adopt-report-backup",
+        config=config,
+        inherited_environment={},
+    )
+
+    assert json.loads((data_root / result.report_path).read_text()) == injected
+    journal_dir = (
+        data_root
+        / "operations/market-v5-cutover/activation-journals/adopt-report-active"
+    )
+    assert (journal_dir / "00000004-reported.json").is_file()
+
+
+def test_cutover_never_overwrites_mismatched_preexisting_success_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()]),
+    )
+    config = SmokeConfig("7203", "production/smoke", "primeMarket")
+    service.backup("reject-report-backup")
+    service.rehearse("reject-report-rehearsal", config, inherited_environment={})
+    real_write_report = service._reports._write_report
+    mismatched: dict[str, object] = {}
+
+    def collide_with_mismatched_report(
+        report_id: str,
+        report: dict[str, object],
+        **kwargs: object,
+    ) -> Path:
+        report_path = (
+            data_root
+            / "operations/market-v5-cutover/reports/reject-report-active/report.json"
+        )
+        if report_id == "reject-report-active" and not report_path.exists():
+            mismatched.update(report)
+            mismatched["backupId"] = "different-backup"
+            report_path.write_text(
+                json.dumps(mismatched, indent=2, sort_keys=True) + "\n"
+            )
+        return real_write_report(report_id, report, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        service._reports, "_write_report", collide_with_mismatched_report
+    )
+
+    with pytest.raises(CutoverSafetyError, match="restored backup"):
+        service.cutover(
+            "reject-report-active",
+            rehearsal_report_id="reject-report-rehearsal",
+            backup_id="reject-report-backup",
+            config=config,
+            inherited_environment={},
+        )
+
+    report_path = (
+        data_root
+        / "operations/market-v5-cutover/reports/reject-report-active/report.json"
+    )
+    assert json.loads(report_path.read_text()) == mismatched
+    journal_dir = (
+        data_root
+        / "operations/market-v5-cutover/activation-journals/reject-report-active"
+    )
+    assert not (journal_dir / "00000004-reported.json").exists()
 
 
 def test_cutover_failure_stops_owned_server_and_restores_backup(tmp_path: Path) -> None:

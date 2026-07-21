@@ -7,9 +7,7 @@ import hashlib
 import os
 from pathlib import Path
 import re
-import secrets
 import stat
-import time
 from typing import Callable, Iterator
 
 from src.infrastructure.db.market import managed_root as _managed_root
@@ -311,15 +309,33 @@ class CutoverWorkspace:
         with _managed_root.ManagedRootFd(Path("."), os.dup(market_fd)) as market:
             market.remove_tree(Path(runtime_name))
 
-    def _activate_staged_market(self, staged_market: Path, operation_id: str) -> Path:
+    def _prepare_staged_activation(
+        self,
+        staged_market: Path,
+        *,
+        quarantine: Path,
+    ) -> None:
         self._assert_current_data_root_identity()
         self._validate_active_roots()
         self._assert_managed_directory(staged_market)
         quarantine_root = self.operations_root / "quarantine"
+        if quarantine.parent != quarantine_root:
+            raise _managed_root.CutoverSafetyError(
+                "Activation quarantine path is not deterministic"
+            )
         self._prepare_managed_directory(quarantine_root, exist_ok=True)
-        quarantine = quarantine_root / (
-            f"pre-cutover-{operation_id}-{time.time_ns()}-{secrets.token_hex(4)}"
-        )
+        self._assert_managed_target_absent(quarantine)
+
+    def _activate_staged_market(
+        self,
+        staged_market: Path,
+        *,
+        quarantine: Path,
+    ) -> None:
+        self._assert_current_data_root_identity()
+        self._validate_active_roots()
+        self._assert_managed_directory(staged_market)
+        self._assert_managed_directory(quarantine.parent)
         self._assert_managed_target_absent(quarantine)
         active_relative = self._managed_relative(self.market_root)
         staged_relative = self._managed_relative(staged_market)
@@ -344,7 +360,6 @@ class CutoverWorkspace:
             raise _managed_root.CutoverSafetyError(
                 "Activated Market quarantine failed; atomic exchange was rolled back"
             ) from exc
-        return quarantine
 
     @staticmethod
     def _validate_id(value: str | None, *, label: str) -> str:
