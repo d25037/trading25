@@ -195,7 +195,7 @@ class MarketActivationService:
                     os.O_CREAT | os.O_EXCL | os.O_RDWR,
                 )
                 try:
-                    api = self._workspace.runtime.start(
+                    api = self._workspace.start_runtime(
                         root_fd=staging_lease.root_fd,
                         market_fd=staged_market_fd,
                         lease_fd=staging_lease.fd,
@@ -269,7 +269,7 @@ class MarketActivationService:
                 active_log_path
             )
             try:
-                api = self._workspace.runtime.start(
+                api = self._workspace.start_runtime(
                     root_fd=self._workspace._active_lease.root_fd,
                     market_fd=active_market_fd, lease_fd=self._workspace._active_lease.fd,
                     environment=active_environment, log_path=active_log_path,

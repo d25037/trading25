@@ -135,7 +135,7 @@ class FullRebuildRehearsalService:
                 os.O_CREAT | os.O_EXCL | os.O_RDWR,
             )
             try:
-                api = workspace.runtime.start(
+                api = workspace.start_runtime(
                     root_fd=lease.root_fd,
                     market_fd=market_fd,
                     lease_fd=lease.fd,
@@ -167,15 +167,15 @@ class FullRebuildRehearsalService:
                     "Active configuration changed during isolated rehearsal"
                 )
             workspace._require_unchanged_code_identity(code_version)
-        except Exception as exc:
+        except BaseException as exc:
             if market_fd is not None:
                 os.close(market_fd)
-            cleanup_error: Exception | None = None
-            stop_error: Exception | None = (
-                exc if isinstance(exc, RuntimeStopError) else None
-            )
+            cleanup_error: BaseException | None = None
+            stop_error = exc if isinstance(exc, RuntimeStopError) else None
             server_process_joined = (
-                exc.process_joined if isinstance(exc, RuntimeStopError) else api is None
+                exc.process_joined
+                if isinstance(exc, RuntimeStopError)
+                else api is None
             )
             worker_process_joined = not (
                 isinstance(exc, WorkerShutdownError) and not exc.process_joined
@@ -183,14 +183,14 @@ class FullRebuildRehearsalService:
             if api is not None:
                 try:
                     workspace.runtime.cancel_owned_work(api)
-                except Exception as runtime_cleanup_error:
+                except BaseException as runtime_cleanup_error:
                     cleanup_error = runtime_cleanup_error
                 try:
                     workspace.runtime.stop(api)
                 except RuntimeStopError as runtime_stop_error:
                     stop_error = runtime_stop_error
                     server_process_joined = runtime_stop_error.process_joined
-                except Exception as runtime_stop_error:
+                except BaseException as runtime_stop_error:
                     stop_error = runtime_stop_error
                     server_process_joined = False
                 else:

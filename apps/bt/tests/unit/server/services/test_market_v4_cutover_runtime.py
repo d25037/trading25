@@ -114,6 +114,161 @@ def test_owned_server_passes_root_and_lease_fds_to_bootstrap(
     assert str(market_fd) in captured["argv"]
 
 
+def test_owned_server_startup_interrupt_joins_registered_process_with_verdict(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class RunningProcess:
+        terminated = False
+        waited = False
+
+        def poll(self) -> None:
+            return None
+
+        def terminate(self) -> None:
+            self.terminated = True
+
+        def wait(self, timeout: float) -> int:
+            del timeout
+            self.waited = True
+            return 0
+
+        def kill(self) -> None:
+            raise AssertionError("joined startup process must not be killed")
+
+    process = RunningProcess()
+    monkeypatch.setattr(
+        cutover_module.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: process,
+    )
+
+    def interrupt_health(
+        self: HttpApiAdapter,
+        method: str,
+        path: str,
+        payload: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        del self, method, path, payload
+        raise KeyboardInterrupt("operator interrupted startup")
+
+    monkeypatch.setattr(HttpApiAdapter, "request", interrupt_health)
+    root = tmp_path / "stage-root"
+    market = root / "market-timeseries"
+    market.mkdir(parents=True)
+    lock = root / ".market-timeseries.operation.lock"
+    root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    market_fd = os.open(market, os.O_RDONLY | os.O_DIRECTORY)
+    lease_fd = os.open(lock, os.O_CREAT | os.O_RDWR, 0o600)
+    log_path = tmp_path / "server.log"
+    log_fd = os.open(log_path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+    runtime = SubprocessRuntimeAdapter()
+    caught_error: BaseException | None = None
+    try:
+        try:
+            runtime.start(
+                root_fd=root_fd,
+                market_fd=market_fd,
+                lease_fd=lease_fd,
+                environment={},
+                log_path=log_path,
+                log_fd=log_fd,
+            )
+        except BaseException as exc:
+            caught_error = exc
+    finally:
+        os.close(log_fd)
+        os.close(lease_fd)
+        os.close(market_fd)
+        os.close(root_fd)
+
+    assert isinstance(caught_error, RuntimeStopError)
+    assert "startup interrupted" in str(caught_error)
+    assert caught_error.process_joined is True
+    assert isinstance(caught_error.__cause__, KeyboardInterrupt)
+    assert process.terminated is True
+    assert process.waited is True
+    assert runtime._owned == {}
+
+
+def test_cutover_fences_unknown_baseexception_during_active_startup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+
+    class InterruptingActiveStartRuntime(FakeRuntime):
+        starts = 0
+        retained_lease_fd = -1
+
+        def start(self, **kwargs: object) -> FakeApi:
+            self.starts += 1
+            if self.starts == 3:
+                self.retained_lease_fd = os.dup(int(kwargs["lease_fd"]))
+                raise KeyboardInterrupt("operator interrupted active startup")
+            return super().start(**kwargs)  # type: ignore[arg-type]
+
+    runtime = InterruptingActiveStartRuntime(apis=[FakeApi(), FakeApi()])
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=runtime,
+    )
+    config = SmokeConfig("7203", "production/smoke", "primeMarket")
+    service.backup("interrupt-start-backup")
+    service.rehearse(
+        "interrupt-start-rehearsal",
+        config,
+        inherited_environment={},
+    )
+    restore_called = False
+
+    def forbidden_restore(_backup_id: str) -> None:
+        nonlocal restore_called
+        restore_called = True
+        raise AssertionError("restore must not run without a startup join verdict")
+
+    monkeypatch.setattr(service._backups, "restore", forbidden_restore)
+    caught_error: BaseException | None = None
+    try:
+        service.cutover(
+            "interrupt-start-active",
+            rehearsal_report_id="interrupt-start-rehearsal",
+            backup_id="interrupt-start-backup",
+            config=config,
+            inherited_environment={},
+        )
+    except BaseException as exc:
+        caught_error = exc
+
+    assert isinstance(caught_error, CutoverSafetyError)
+    assert "restore is deferred" in str(caught_error)
+    assert restore_called is False
+    report = json.loads(
+        (
+            data_root
+            / "operations/market-v5-cutover/reports/interrupt-start-active/report.json"
+        ).read_text()
+    )
+    assert report["status"] == "stop_failed_restore_deferred"
+    assert report["errorType"] == "RuntimeStopError"
+    assert report["serverProcessJoined"] is False
+    try:
+        with pytest.raises(CutoverSafetyError, match="operation lease"):
+            market_operation_lease.MarketOperationLease.acquire(
+                data_root,
+                exclusive=False,
+            )
+    finally:
+        os.close(runtime.retained_lease_fd)
+
+    with market_operation_lease.MarketOperationLease.acquire(
+        data_root,
+        exclusive=True,
+    ):
+        pass
+
+
 @pytest.mark.darwin_capability
 @pytest.mark.skipif(
     sys.platform != "darwin",

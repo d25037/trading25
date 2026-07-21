@@ -218,16 +218,21 @@ class SubprocessRuntimeAdapter:
             )
         except RuntimeStopError:
             raise
-        except Exception as exc:
+        except BaseException as exc:
             try:
                 self.stop(api)
             except RuntimeStopError as stop_error:
                 raise stop_error from exc
-            except Exception as stop_error:
+            except BaseException as stop_error:
                 raise RuntimeStopError(
                     "Owned FastAPI startup cleanup has no join verdict",
                     process_joined=False,
                 ) from stop_error
+            if not isinstance(exc, Exception):
+                raise RuntimeStopError(
+                    "Owned FastAPI startup interrupted after child joined",
+                    process_joined=True,
+                ) from exc
             raise
 
     def cancel_owned_work(self, api: ApiAdapter) -> None:

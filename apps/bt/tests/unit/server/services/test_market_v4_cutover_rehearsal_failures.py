@@ -187,6 +187,81 @@ def test_rehearsal_cancel_failure_is_diagnostic_when_stop_proves_join(
     assert report["serverProcessJoined"] is True
 
 
+def test_rehearsal_interrupt_fences_unjoined_server_and_reports_deferred(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+
+    class LeaseHoldingUnjoinedRuntime(FakeRuntime):
+        retained_lease_fd = -1
+
+        def start(self, **kwargs: object) -> FakeApi:
+            api = super().start(**kwargs)  # type: ignore[arg-type]
+            self.retained_lease_fd = os.dup(int(kwargs["lease_fd"]))
+            return api
+
+        def stop(self, _api: FakeApi) -> None:
+            self.stop_calls += 1
+            raise RuntimeStopError(
+                "operator-interrupted rehearsal server remains alive",
+                process_joined=False,
+            )
+
+    runtime = LeaseHoldingUnjoinedRuntime(apis=[FakeApi()])
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=runtime,
+    )
+
+    def interrupt_rebuild(*_args: object, **_kwargs: object) -> object:
+        raise KeyboardInterrupt("operator interrupted rehearsal")
+
+    monkeypatch.setattr(service._runtime_smoke, "run_rebuild", interrupt_rebuild)
+    caught_error: BaseException | None = None
+    try:
+        service.rehearse(
+            "rehearsal-interrupt-unjoined",
+            SmokeConfig("7203", "production/smoke", "primeMarket"),
+            inherited_environment={},
+        )
+    except BaseException as exc:
+        caught_error = exc
+
+    assert isinstance(caught_error, CutoverSafetyError)
+    assert "rehearsal failed" in str(caught_error)
+    assert runtime.cancel_calls == 1
+    assert runtime.stop_calls == 1
+    report = json.loads(
+        (
+            data_root
+            / "operations/market-v5-cutover/reports/rehearsal-interrupt-unjoined/report.json"
+        ).read_text()
+    )
+    assert report["status"] == "stop_failed_cleanup_deferred"
+    assert report["errorType"] == "KeyboardInterrupt"
+    assert report["serverProcessJoined"] is False
+    rehearsal_root = (
+        data_root
+        / "operations/market-v5-cutover/rehearsals/rehearsal-interrupt-unjoined/root"
+    )
+    try:
+        with pytest.raises(CutoverSafetyError, match="operation lease"):
+            market_operation_lease.MarketOperationLease.acquire(
+                rehearsal_root,
+                exclusive=False,
+            )
+    finally:
+        os.close(runtime.retained_lease_fd)
+
+    with market_operation_lease.MarketOperationLease.acquire(
+        rehearsal_root,
+        exclusive=True,
+    ):
+        pass
+
+
 def test_rehearsal_report_preserves_bounded_redacted_terminal_job_diagnostic(
     tmp_path: Path,
 ) -> None:

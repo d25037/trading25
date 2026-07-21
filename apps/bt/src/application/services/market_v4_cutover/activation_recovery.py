@@ -474,7 +474,7 @@ class ActivationRecoveryService:
                 root_fd=self._workspace._active_lease.root_fd,
                 runtime_name=runtime_name,
             )
-            api = self._workspace.runtime.start(
+            api = self._workspace.start_runtime(
                 root_fd=self._workspace._active_lease.root_fd,
                 market_fd=market_fd,
                 lease_fd=self._workspace._active_lease.fd,

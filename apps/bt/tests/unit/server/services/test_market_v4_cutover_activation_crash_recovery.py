@@ -16,6 +16,7 @@ from src.application.services.market_v4_cutover.contracts import (
     SmokeConfig,
 )
 from src.infrastructure.db.market.managed_root import CutoverSafetyError
+from src.infrastructure.db.market import market_operation_lease
 from tests.unit.server.services.market_v4_cutover_test_support import (
     FakeApi,
     FakeDuckDb,
@@ -524,6 +525,75 @@ def test_joined_smoke_failure_never_uses_partial_recursive_runtime_cleanup(
     assert [path.name for path in sorted(journal_dir.iterdir())][-1] == (
         "00000004-reported.json"
     )
+
+
+def test_recovery_fences_unknown_baseexception_during_server_startup(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    setup = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi(), FakeApi()]),
+    )
+    setup.backup(_BACKUP_ID)
+    setup.rehearse(_REHEARSAL_ID, _CONFIG, inherited_environment={})
+    _run_crashing_cutover(data_root, "after_activated")
+
+    class InterruptingRecoveryStartRuntime(FakeRuntime):
+        retained_lease_fd = -1
+
+        def start(self, **kwargs: object) -> FakeApi:
+            self.retained_lease_fd = os.dup(int(kwargs["lease_fd"]))
+            raise KeyboardInterrupt("operator interrupted recovery startup")
+
+    runtime = InterruptingRecoveryStartRuntime()
+    failed = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=runtime,
+    )
+
+    caught_error: BaseException | None = None
+    try:
+        failed.cutover(
+            _REPORT_ID,
+            rehearsal_report_id=_REHEARSAL_ID,
+            backup_id=_BACKUP_ID,
+            config=_CONFIG,
+            inherited_environment={},
+        )
+    except BaseException as exc:
+        caught_error = exc
+
+    assert isinstance(caught_error, CutoverSafetyError)
+    assert "recovery is deferred" in str(caught_error)
+    active_runtime = (
+        data_root / f"market-timeseries/.cutover-runtime-{_REPORT_ID}"
+    )
+    assert (active_runtime / "config/default.yaml").is_file()
+    assert not _retained_runtime(data_root).exists()
+    try:
+        with pytest.raises(CutoverSafetyError, match="operation lease"):
+            market_operation_lease.MarketOperationLease.acquire(
+                data_root,
+                exclusive=False,
+            )
+    finally:
+        os.close(runtime.retained_lease_fd)
+
+    recovered = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi()]),
+    ).cutover(
+        _REPORT_ID,
+        rehearsal_report_id=_REHEARSAL_ID,
+        backup_id=_BACKUP_ID,
+        config=_CONFIG,
+        inherited_environment={},
+    )
+    assert recovered.report_id == _REPORT_ID
 
 
 def test_recovery_rejects_tampered_runtime_without_deleting_it(

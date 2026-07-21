@@ -16,6 +16,7 @@ from src.infrastructure.db.market import (
 )
 from . import filesystem
 from .contracts import (
+    ApiAdapter,
     AtomicExchange,
     DuckDbAdapter,
     MarketSourceMetadata,
@@ -82,6 +83,35 @@ class CutoverWorkspace:
                 "An active Market operation lease is required"
             )
         return self._active_lease.fd
+
+    def start_runtime(
+        self,
+        *,
+        root_fd: int,
+        market_fd: int,
+        lease_fd: int,
+        environment: dict[str, str],
+        log_path: Path,
+        log_fd: int,
+    ) -> ApiAdapter:
+        """Require an explicit join verdict if startup exits before returning."""
+
+        try:
+            return self.runtime.start(
+                root_fd=root_fd,
+                market_fd=market_fd,
+                lease_fd=lease_fd,
+                environment=environment,
+                log_path=log_path,
+                log_fd=log_fd,
+            )
+        except RuntimeStopError:
+            raise
+        except BaseException as exc:
+            raise RuntimeStopError(
+                "Owned FastAPI startup failed without a join verdict",
+                process_joined=False,
+            ) from exc
 
     @contextmanager
     def exclusive_operation(self) -> Iterator[str]:
