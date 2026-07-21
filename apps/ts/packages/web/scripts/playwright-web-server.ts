@@ -101,7 +101,18 @@ const pollIntervalMs = parsePositiveInteger(
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://${webHost}:${webPort}`;
 const readyUrl = new URL(baseURL);
 
-const viteCommand = ['bunx', '--bun', 'vite', '--configLoader', 'native', '--port', String(webPort), '--host', webHost];
+const viteCommand = [
+  'bun',
+  'run',
+  '--bun',
+  'vite',
+  '--configLoader',
+  'native',
+  '--port',
+  String(webPort),
+  '--host',
+  webHost,
+];
 
 console.log(`[playwright-web-server] starting ${viteCommand.join(' ')} in ${process.cwd()}`);
 
