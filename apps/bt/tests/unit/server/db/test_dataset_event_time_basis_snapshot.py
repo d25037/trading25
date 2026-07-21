@@ -478,6 +478,11 @@ def test_copy_provider_snapshot_preserves_fractional_adjusted_volume_in_duckdb_a
             "WHERE code = '7203' AND date = '2024-01-04'",
             (str(snapshot / "parquet" / "stock_data_raw.parquet"),),
         ).fetchone() == pytest.approx((87308.9,))
+        assert conn.execute(
+            "SELECT volume FROM read_parquet(?) "
+            "WHERE code = '7203' AND date = '2024-01-04'",
+            (str(snapshot / "parquet" / "stock_data.parquet"),),
+        ).fetchone() == pytest.approx((87308.9,))
     finally:
         conn.close()
 

@@ -430,6 +430,24 @@ def test_snapshot_rejects_arbitrary_extra_column(tmp_path: Path) -> None:
         validate_dataset_snapshot(snapshot_dir)
 
 
+def test_snapshot_rejects_pre_fractional_bigint_stock_volume_schema(tmp_path: Path) -> None:
+    snapshot_dir = _create_snapshot(tmp_path)
+    duckdb = importlib.import_module("duckdb")
+    conn = duckdb.connect(str(snapshot_dir / "dataset.duckdb"))
+    try:
+        conn.execute("ALTER TABLE stock_data ALTER volume SET DATA TYPE BIGINT")
+        conn.execute("ALTER TABLE stock_data_raw ALTER adjusted_volume SET DATA TYPE BIGINT")
+    finally:
+        conn.close()
+    _refresh_duckdb_checksum(snapshot_dir)
+
+    with pytest.raises(
+        DatasetManifestValidationError,
+        match="Dataset v4 physical schema mismatch for stock_data",
+    ):
+        validate_dataset_snapshot(snapshot_dir)
+
+
 def test_snapshot_rejects_unlisted_physical_parquet_file(tmp_path: Path) -> None:
     snapshot_dir = _create_snapshot(tmp_path)
     (snapshot_dir / "parquet" / "unexpected.parquet").write_bytes(b"tamper")
