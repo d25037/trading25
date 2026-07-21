@@ -1305,8 +1305,16 @@ class DuckDbParquetTimeSeriesStore:
     def _publish_stock_data_locked(
         self, rows: list[dict[str, Any]], *, stage: ProviderStockStage
     ) -> SemanticDeltaResult:
+        normalized_rows = [
+            {
+                **row,
+                "code": normalize_stock_code(str(row.get("code") or "")),
+            }
+            for row in rows
+        ]
         staged_rows = deterministic_last_wins(
-            rows, key_columns=self._STOCK_DATA_RAW_UPSERT_SPEC.conflict_columns
+            normalized_rows,
+            key_columns=self._STOCK_DATA_RAW_UPSERT_SPEC.conflict_columns,
         )
         staged_codes = {
             normalize_stock_code(str(row.get("code") or "")) for row in staged_rows
@@ -1441,11 +1449,21 @@ class DuckDbParquetTimeSeriesStore:
                 provider_stock_source_fingerprint(expired_rows),
                 provider_stock_source_fingerprint(code_rows),
             )
+            desired_provider_as_of = (
+                stage.provider_as_of
+                if existing_ledger is None
+                or existing_ledger[2] != stage.provider_plan
+                else max(existing_ledger[3], stage.provider_as_of)
+            )
+            if desired_provider_as_of < desired_end:
+                raise ValueError(
+                    "Provider stock stage provider as-of precedes resulting coverage"
+                )
             desired_ledgers[code] = (
                 desired_start,
                 desired_end,
                 stage.provider_plan,
-                stage.provider_as_of,
+                desired_provider_as_of,
                 desired_fingerprint,
             )
         for code in stage.provider_codes - staged_codes:
@@ -1512,7 +1530,7 @@ class DuckDbParquetTimeSeriesStore:
                 if deleted_events:
                     expired_event_codes.add(code)
             raw_result = self._apply_semantic_delta(
-                rows, spec=self._STOCK_DATA_RAW_UPSERT_SPEC
+                normalized_rows, spec=self._STOCK_DATA_RAW_UPSERT_SPEC
             )
             consumer_result = self._apply_semantic_delta(
                 projected_rows, spec=self._STOCK_DATA_UPSERT_SPEC

@@ -36,6 +36,13 @@ They only propagate authoritative sync/request plan and TOPIX/request frontier
 into the required interfaces. No Task 4+ corporate-action, projection, or journal
 work was absorbed.
 
+The plan also omitted one necessary per-window diagnostics implementation file:
+
+- `apps/bt/src/application/services/db_stats_service.py`
+
+It only exposes `providerPlan` from the exact DuckDB per-window inspection
+snapshot. It does not make global metadata authoritative.
+
 ## RED/GREEN evidence
 
 ### Stage and store contract
@@ -140,6 +147,37 @@ uv run --directory apps/bt pytest \
   the as-of date after the ledger tuple gained a plan field.
 - GREEN: 1 passed, 91 deselected; pending and window fingerprints are identical.
 
+### Independent review remediation
+
+Two Important findings were reproduced with direct-store regressions on Task 3
+head `58ed2487042a272a0c9492553ca6b61b6f5f3ac0` before production changes:
+
+```bash
+uv run --directory apps/bt pytest \
+  tests/unit/server/db/test_time_series_store.py::test_provider_stage_canonicalizes_alias_across_stock_publication \
+  tests/unit/server/db/test_time_series_store.py::test_same_plan_older_backfill_preserves_monotonic_provider_frontier -q
+```
+
+- RED: 2 collected, 2 failed. Provider-native alias `72030` remained as a
+  second raw key beside `7203`; same-plan missing-date backfill regressed
+  `provider_as_of` from `2026-02-06` to `2026-02-05` while coverage still ended
+  on `2026-02-06`.
+- GREEN: 2 passed. Publication canonicalizes row codes before deduplication and
+  semantic application, so only canonical keys reach raw, consumer, event, and
+  window writes. Same-plan windows retain `max(existing, stage)` as-of, and any
+  resulting frontier before coverage is rejected before transaction mutation.
+
+The first full focused run exposed an existing mutation-stat contract:
+`409 passed, 1 failed` because canonical deduplication reduced `stats.input`
+from two source rows to one. The assertion was not changed. Raw publication was
+adjusted to pass all canonical input rows into the existing last-wins semantic
+kernel, preserving input accounting while storing one canonical row. The two
+new regressions plus the existing last-wins regression then passed `3 passed`.
+
+The existing alias, suspended/no-row, plan-change, mixed-plan, and
+pending/fingerprint subset was then run across the store, Dataset, PIT, and
+ranking consumers: `19 passed, 268 deselected`.
+
 ## Final verification
 
 Exact required focused suite:
@@ -157,7 +195,8 @@ uv run --directory apps/bt pytest \
   tests/unit/server/db/test_market_adjusted_metrics.py -q
 ```
 
-Result: `408 passed`, one pre-existing warning.
+Result after independent-review remediation: `410 passed`, one pre-existing
+warning.
 
 Plan-listed PIT/ranking consumers were additionally run in full:
 

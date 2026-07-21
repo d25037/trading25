@@ -1902,6 +1902,99 @@ def test_provider_stage_plan_change_does_not_relabel_untouched_window(
     store.close()
 
 
+def test_provider_stage_canonicalizes_alias_across_stock_publication(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    canonical = _provider_stock_row("2026-02-10", code="7203")
+    provider_alias = _provider_stock_row(
+        "2026-02-10", code="72030", factor=0.5
+    )
+
+    store.publish_stock_data(
+        [canonical, provider_alias],
+        stage=provider_stock_window.ProviderStockStage(
+            provider_plan="premium",
+            provider_as_of="2026-02-10",
+            provider_codes=frozenset({"72030"}),
+        ),
+    )
+
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, date FROM stock_data_raw ORDER BY code, date"
+    ).fetchall() == [("7203", "2026-02-10")]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, date FROM stock_data ORDER BY code, date"
+    ).fetchall() == [("7203", "2026-02-10")]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, provider_plan FROM stock_provider_windows ORDER BY code"
+    ).fetchall() == [("7203", "premium")]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, date FROM stock_adjustment_events ORDER BY code, date"
+    ).fetchall() == [("7203", "2026-02-10")]
+    store.close()
+
+
+def test_same_plan_older_backfill_preserves_monotonic_provider_frontier(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    initial = [
+        _provider_stock_row("2026-02-04"),
+        _provider_stock_row("2026-02-06"),
+    ]
+    store.replace_stock_provider_window(
+        "7203",
+        initial,
+        {"start": "2026-02-04", "end": "2026-02-06"},
+        {
+            "provider_plan": "premium",
+            "provider_as_of": "2026-02-06",
+            "provider_source_fingerprint": provider_stock_source_fingerprint(
+                initial
+            ),
+        },
+    )
+    backfill = _provider_stock_row("2026-02-05")
+
+    store.publish_stock_data(
+        [backfill],
+        stage=provider_stock_window.ProviderStockStage(
+            provider_plan="premium",
+            provider_as_of="2026-02-05",
+            provider_codes=frozenset({"7203"}),
+        ),
+    )
+
+    expected_fingerprint = provider_stock_source_fingerprint(
+        [*initial, backfill]
+    )
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT coverage_start, coverage_end, provider_plan, provider_as_of, "
+        "source_fingerprint FROM stock_provider_windows WHERE code = '7203'"
+    ).fetchone() == (
+        "2026-02-04",
+        "2026-02-06",
+        "premium",
+        "2026-02-06",
+        expected_fingerprint,
+    )
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT date FROM stock_data_raw WHERE code = '7203' ORDER BY date"
+    ).fetchall() == [
+        ("2026-02-04",),
+        ("2026-02-05",),
+        ("2026-02-06",),
+    ]
+    store.close()
+
+
 def test_normal_unit_factor_append_does_not_mark_fundamentals_pending(
     tmp_path: Path,
 ) -> None:
