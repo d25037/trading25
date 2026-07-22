@@ -135,7 +135,9 @@ def build_stock_data_row(
     )
     if any(value is None for value in required_values):
         return None
-    if adjustment_factor is None or adjustment_factor <= 0 or adjusted_volume < 0:
+    if adjustment_factor is None or adjusted_volume is None:
+        return None
+    if adjustment_factor <= 0 or adjusted_volume < 0:
         return None
 
     return {
