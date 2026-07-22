@@ -236,6 +236,30 @@ def test_convert_stock_bulk_rows_preserves_provider_fields_after_alias_normaliza
     assert rows[0]["adjusted_volume"] == 2000
 
 
+def test_convert_stock_bulk_rows_accepts_v3_style_raw_rows_for_sql_projection() -> None:
+    rows = convert_stock_bulk_rows(
+        [
+            {
+                "Code": "72030",
+                "Date": "2021-09-28",
+                "O": 10420,
+                "H": 10460,
+                "L": 10250,
+                "C": 10385,
+                "Vo": 7_563_400,
+                "Va": 78_532_052_000,
+                "AdjFactor": 1.0,
+            }
+        ],
+        target_dates={"2021-09-28"},
+        allow_raw_only=True,
+    )
+
+    assert rows[0]["close"] == 10385.0
+    assert rows[0]["adjusted_close"] is None
+    assert rows[0]["adjusted_volume"] is None
+
+
 def test_convert_stock_bulk_rows_rejects_incomplete_adjusted_row_for_retry() -> None:
     with pytest.raises(ValueError, match="incomplete provider daily row.*7203.*2026-02-10"):
         convert_stock_bulk_rows(

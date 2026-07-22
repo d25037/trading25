@@ -1812,6 +1812,181 @@ def test_publish_margin_data_batch_uses_semantic_delta_kernel(tmp_path: Path) ->
     store.close()
 
 
+def test_initial_load_relation_upsert_preserves_rows_and_statement_merge(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "market-timeseries" / "market.duckdb"
+    store = create_time_series_store_for_test(
+        backend="duckdb-parquet",
+        duckdb_path=str(db_path),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    assert store is not None
+
+    margin = store.publish_margin_data(_margin_rows(), initial_load=True)
+    store.publish_statements(_statement_rows(), initial_load=True)
+    store.publish_statements(
+        [
+            _statement_row(
+                "2026-02-10",
+                earnings_per_share=None,
+                profit=1100.0,
+            )
+        ],
+        initial_load=True,
+    )
+
+    assert margin.stats.inserted == 2
+    assert store.inspect().margin_count == 2
+    assert _query_rows(
+        db_path,
+        """
+        SELECT disclosed_date, earnings_per_share, profit
+        FROM statements
+        ORDER BY disclosed_date
+        """,
+    ) == [
+        ("2026-02-10", 120.0, 1100.0),
+        ("2026-02-11", 122.0, None),
+    ]
+
+    store.close()
+
+
+def test_initial_stock_data_uses_direct_relation_upsert(tmp_path: Path) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    row = _stock_row()
+    stage = provider_stock_window.ProviderStockStage(
+        provider_plan="premium",
+        provider_as_of=str(row["date"]),
+        provider_codes=frozenset({"7203"}),
+    )
+
+    result = store.publish_stock_data([row], stage=stage, initial_load=True)
+
+    assert result.stats.inserted == 1
+    assert store._conn.execute("SELECT COUNT(*) FROM stock_data_raw").fetchone() == (1,)
+    assert store._conn.execute("SELECT COUNT(*) FROM stock_data").fetchone() == (1,)
+    store.close()
+
+
+def test_initial_staged_stock_data_uses_v3_sql_projection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    older = _stock_row()
+    older.update(
+        {
+            "date": "2021-09-28",
+            "open": 10420.0,
+            "high": 10460.0,
+            "low": 10250.0,
+            "close": 10385.0,
+            "volume": 7_563_400,
+            "turnover_value": 78_532_052_000.0,
+            "adjustment_factor": 1.0,
+            "adjusted_open": None,
+            "adjusted_high": None,
+            "adjusted_low": None,
+            "adjusted_close": None,
+            "adjusted_volume": None,
+        }
+    )
+    event = dict(older)
+    event.update(
+        {
+            "date": "2021-09-29",
+            "open": 2052.0,
+            "high": 2080.5,
+            "low": 2040.5,
+            "close": 2073.0,
+            "volume": 34_887_300,
+            "turnover_value": 72_006_162_000.0,
+            "adjustment_factor": 0.2,
+        }
+    )
+    stage = provider_stock_window.ProviderStockStage(
+        provider_plan="premium",
+        provider_as_of="2021-09-29",
+        provider_codes=frozenset({"7203"}),
+    )
+    outside_provider_scope = dict(older, code="6758")
+    store.stage_stock_data_rows([older, event, outside_provider_scope])
+
+    def fail_python_batch_publish(*_args: Any, **_kwargs: Any) -> None:
+        pytest.fail("initial stock publish must remain set-based inside DuckDB")
+
+    monkeypatch.setattr(store, "_publish_stock_data_locked", fail_python_batch_publish)
+
+    result = store.flush_staged_stock_data(stage=stage, initial_load=True)
+
+    assert result.stats.inserted == 2
+    assert store._conn.execute(
+        "SELECT COUNT(*) FROM stock_data_raw WHERE code = '6758'"
+    ).fetchone() == (0,)
+    assert store._conn.execute(
+        "SELECT date, adjusted_close, adjusted_volume FROM stock_data_raw ORDER BY date"
+    ).fetchall() == [
+        ("2021-09-28", 2077.0, 37_817_000.0),
+        ("2021-09-29", 2073.0, 34_887_300.0),
+    ]
+    assert store._conn.execute(
+        "SELECT date, close, volume FROM stock_data ORDER BY date"
+    ).fetchall() == [
+        ("2021-09-28", 2077.0, 37_817_000.0),
+        ("2021-09-29", 2073.0, 34_887_300.0),
+    ]
+    expected_rows = [
+        dict(older, adjusted_open=2084.0, adjusted_high=2092.0, adjusted_low=2050.0,
+             adjusted_close=2077.0, adjusted_volume=37_817_000.0),
+        dict(event, adjusted_open=2052.0, adjusted_high=2080.5, adjusted_low=2040.5,
+             adjusted_close=2073.0, adjusted_volume=34_887_300.0),
+    ]
+    assert store._conn.execute(
+        "SELECT source_fingerprint FROM stock_provider_windows WHERE code = '7203'"
+    ).fetchone() == (provider_stock_source_fingerprint(expected_rows),)
+    assert store._conn.execute(
+        "SELECT statement_count FROM current_basis_fundamentals_state "
+        "WHERE code = '7203'"
+    ).fetchone() == (0,)
+    assert store._conn.execute(
+        "SELECT COUNT(*) FROM current_basis_recompute_pending"
+    ).fetchone() == (0,)
+    store.close()
+
+
+def test_initial_statements_defer_source_fingerprints(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+
+    def fail_if_called(_code: str) -> str:
+        raise AssertionError("initial load must defer per-code statement fingerprints")
+
+    monkeypatch.setattr(
+        store,
+        "_current_statement_source_fingerprint_unlocked",
+        fail_if_called,
+    )
+
+    result = store.publish_statements(_statement_rows(), initial_load=True)
+
+    assert result.stats.inserted == 2
+    assert store._conn.execute(
+        "SELECT COUNT(*) FROM current_basis_recompute_pending"
+    ).fetchone() == (0,)
+    store.close()
+
+
 def test_publish_statements_batch_preserves_non_null_merge(tmp_path: Path) -> None:
     db_path = tmp_path / "market-timeseries" / "market.duckdb"
     store = create_time_series_store_for_test(
@@ -2504,6 +2679,39 @@ def test_provider_vintage_sql_fingerprint_matches_python_with_symbol_bounded_evi
     assert snapshot["invalidProviderWindowCount"] == 0
     assert len(materialized_rows) <= 3
     assert sum(materialized_rows) <= 4
+    store.close()
+
+
+def test_provider_vintage_accepts_disjoint_valid_per_code_windows(tmp_path: Path) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    _publish_stock_data(
+        store,
+        [_provider_stock_row("2020-01-06", code="7203")],
+        provider_as_of="2026-02-10",
+    )
+    _publish_stock_data(
+        store,
+        [_provider_stock_row("2026-02-10", code="6758")],
+        provider_as_of="2026-02-10",
+    )
+
+    def fetchall_dicts(
+        sql: str,
+        params: list[Any] | tuple[Any, ...] | None,
+    ) -> list[dict[str, Any]]:
+        result = store._conn.execute(sql) if params is None else store._conn.execute(sql, params)  # noqa: SLF001
+        columns = [str(desc[0]) for desc in result.description]
+        return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+
+    snapshot = get_provider_vintage_snapshot(lambda _table: True, fetchall_dicts)
+
+    assert snapshot["providerWindowCoherent"] is True
+    assert snapshot["invalidProviderWindowCount"] == 0
+    assert snapshot["effectiveCoverageStart"] == "2020-01-06"
+    assert snapshot["effectiveCoverageEnd"] == "2026-02-10"
     store.close()
 
 

@@ -146,7 +146,16 @@ class SyncMarketDbLike(Protocol):  # pragma: no cover
     def get_sync_metadata(self, key: str) -> str | None: ...
     def set_sync_metadata(self, key: str, value: str) -> None: ...
     def upsert_stocks(self, rows: list[dict[str, Any]]) -> Any: ...
-    def publish_stock_master_daily_rows(self, rows: list[dict[str, Any]], *, derive: bool = True) -> Any: ...
+    def publish_stock_master_daily_rows(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        derive: bool = True,
+        initial_load: bool = False,
+    ) -> Any: ...
+    def finalize_initial_stock_master(
+        self, *, dates: set[str], codes: set[str]
+    ) -> Any: ...
     def get_stock_master_pending_derivation_codes(self) -> set[str]: ...
     def reconcile_stock_master_derived_codes(self, codes: set[str]) -> Any: ...
     def get_stock_master_pending_frontier_dates(self) -> set[str]: ...
@@ -190,21 +199,34 @@ class SyncTimeSeriesStoreLike(Protocol):  # pragma: no cover
 
     def publish_topix_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
     def publish_stock_data(
-        self, rows: list[dict[str, Any]], *, stage: ProviderStockStage
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        stage: ProviderStockStage,
+        initial_load: bool = False,
     ) -> SemanticDeltaResult: ...
     def detect_stock_provider_drift(
         self, rows: list[dict[str, Any]]
     ) -> frozenset[str]: ...
-    def publish_indices_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
-    def publish_options_225_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
-    def publish_margin_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
-    def publish_statements(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
+    def publish_indices_data(
+        self, rows: list[dict[str, Any]], *, initial_load: bool = False
+    ) -> SemanticDeltaResult: ...
+    def publish_options_225_data(
+        self, rows: list[dict[str, Any]], *, initial_load: bool = False
+    ) -> SemanticDeltaResult: ...
+    def publish_margin_data(
+        self, rows: list[dict[str, Any]], *, initial_load: bool = False
+    ) -> SemanticDeltaResult: ...
+    def publish_statements(
+        self, rows: list[dict[str, Any]], *, initial_load: bool = False
+    ) -> SemanticDeltaResult: ...
     def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
     def flush_staged_stock_data(
         self,
         *,
         stage: ProviderStockStage,
         exclude_codes: frozenset[str] = frozenset(),
+        initial_load: bool = False,
     ) -> SemanticDeltaResult: ...
     def discard_staged_stock_data(self) -> None: ...
     def index_topix_data(self) -> None: ...
@@ -228,6 +250,7 @@ class SyncContext:
     bulk_probe_disabled_endpoints: set[str] = field(default_factory=set)
     bulk_probe_failure_reason: str | None = None
     enforce_bulk_for_stock_data: bool = False
+    initial_load: bool = False
     provider_plan: str | None = None
     recompute_affected_stock_codes: (
         Callable[[frozenset[str]], Awaitable[None]] | None
@@ -266,9 +289,13 @@ async def _resolve_provider_stock_stage(
     provider_as_of: str,
 ) -> ProviderStockStage:
     provider_codes = await asyncio.to_thread(
-        ctx.market_db.get_stock_master_codes_for_date,
-        provider_as_of,
+        ctx.market_db.get_fundamentals_target_codes
     )
+    if not provider_codes:
+        provider_codes = await asyncio.to_thread(
+            ctx.market_db.get_stock_master_codes_for_date,
+            provider_as_of,
+        )
     return ProviderStockStage(
         provider_plan=str(ctx.provider_plan or ""),
         provider_as_of=provider_as_of,
@@ -476,11 +503,12 @@ class IndicesOnlySyncStrategy:
                 )
 
             if not self._include_options:
-                await sync_publish_helpers._index_indices_rows(
-                    ctx,
-                    progress_current=2,
-                    progress_total=2,
-                )
+                if not ctx.initial_load:
+                    await sync_publish_helpers._index_indices_rows(
+                        ctx,
+                        progress_current=2,
+                        progress_total=2,
+                    )
                 return SyncResult(
                     success=len(errors) == 0,
                     totalApiCalls=total_calls,
@@ -675,13 +703,25 @@ async def _sync_initial_stock_data_stage(
     used_rest_fallback = bulk_outcome.used_rest_fallback
     stock_bulk_fallback_reason = bulk_outcome.fallback_reason
 
-    if decision.method == "rest" or used_rest_fallback:
+    rest_dates = (
+        trading_dates
+        if decision.method == "rest"
+        else (
+            list(bulk_outcome.residual_dates)
+            if bulk_outcome.residual_dates
+            else (trading_dates if used_rest_fallback else [])
+        )
+    )
+    if rest_dates:
         rest_result = await _sync_initial_stock_data_rest(
             ctx,
-            trading_dates=trading_dates,
+            trading_dates=rest_dates,
             decision=decision,
-            used_rest_fallback=used_rest_fallback,
-            fallback_reason=stock_bulk_fallback_reason,
+            used_rest_fallback=used_rest_fallback or bool(bulk_outcome.residual_dates),
+            fallback_reason=(
+                stock_bulk_fallback_reason
+                or f"bulk incomplete rows on {len(bulk_outcome.residual_dates)} dates"
+            ),
             bulk_result=bulk_result,
             session=session,
         )
@@ -1140,13 +1180,25 @@ async def _sync_incremental_stock_data_stage(
     used_rest_fallback = bulk_outcome.used_rest_fallback
     bulk_fallback_reason = bulk_outcome.fallback_reason
 
-    if decision.method == "rest" or used_rest_fallback:
+    rest_dates = (
+        stock_target_dates
+        if decision.method == "rest"
+        else (
+            list(bulk_outcome.residual_dates)
+            if bulk_outcome.residual_dates
+            else (stock_target_dates if used_rest_fallback else [])
+        )
+    )
+    if rest_dates:
         rest_result = await _sync_incremental_stock_data_rest(
             ctx,
-            stock_target_dates=stock_target_dates,
+            stock_target_dates=rest_dates,
             decision=decision,
-            used_rest_fallback=used_rest_fallback,
-            fallback_reason=bulk_fallback_reason,
+            used_rest_fallback=used_rest_fallback or bool(bulk_outcome.residual_dates),
+            fallback_reason=(
+                bulk_fallback_reason
+                or f"bulk incomplete rows on {len(bulk_outcome.residual_dates)} dates"
+            ),
             bulk_result=bulk_result,
             session=session,
         )

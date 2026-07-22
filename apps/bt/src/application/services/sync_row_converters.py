@@ -330,6 +330,8 @@ def convert_stock_bulk_rows(
     data: list[dict[str, Any]],
     *,
     target_dates: set[str] | None,
+    incomplete_dates: set[str] | None = None,
+    allow_raw_only: bool = False,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     skipped = 0
@@ -367,9 +369,15 @@ def convert_stock_bulk_rows(
             normalized_input,
             normalized_code=code,
             created_at=created_at,
+            require_adjusted=not allow_raw_only,
         )
         if converted is None:
             if not is_provider_no_trade_row(normalized_input):
+                if incomplete_dates is not None:
+                    incomplete_dates.add(date_text)
+                    skipped += 1
+                    _collect_sample_code(sample_codes, code)
+                    continue
                 raise ValueError(
                     "incomplete provider daily row requires retry or full refresh: "
                     f"{code} {date_text}"

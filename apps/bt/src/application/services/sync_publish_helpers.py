@@ -44,6 +44,10 @@ class StockDataStageResult:
     affected_codes: frozenset[str]
 
 
+def _initial_load_kwargs(ctx: Any) -> dict[str, bool]:
+    return {"initial_load": True} if getattr(ctx, "initial_load", False) else {}
+
+
 async def _publish_synthetic_nikkei_rows(
     ctx: Any,
     rows: list[dict[str, Any]],
@@ -83,16 +87,24 @@ async def _publish_stock_data_rows(
         store.publish_stock_data,
         rows,
         stage=stage,
+        **_initial_load_kwargs(ctx),
     )
 
 
 async def _stage_stock_data_rows(
-    ctx: Any, rows: list[dict[str, Any]]
+    ctx: Any,
+    rows: list[dict[str, Any]],
+    *,
+    detect_provider_drift: bool = True,
 ) -> StockDataStageResult:
     if not rows:
         return StockDataStageResult(staged_rows=0, affected_codes=frozenset())
     store = _require_time_series_store(ctx)
-    affected_codes = await asyncio.to_thread(store.detect_stock_provider_drift, rows)
+    affected_codes = (
+        await asyncio.to_thread(store.detect_stock_provider_drift, rows)
+        if detect_provider_drift
+        else frozenset()
+    )
     await _to_thread_joined(store.stage_stock_data_rows, rows)
     return StockDataStageResult(
         staged_rows=len(rows),
@@ -108,6 +120,7 @@ async def _flush_staged_stock_data_rows(
         store.flush_staged_stock_data,
         stage=stage,
         exclude_codes=exclude_codes,
+        **_initial_load_kwargs(ctx),
     )
 
 
@@ -120,28 +133,44 @@ async def _publish_indices_rows(ctx: Any, rows: list[dict[str, Any]]) -> Semanti
     if not rows:
         return SemanticDeltaResult.empty()
     store = _require_time_series_store(ctx)
-    return await asyncio.to_thread(store.publish_indices_data, rows)
+    return await asyncio.to_thread(
+        store.publish_indices_data,
+        rows,
+        **_initial_load_kwargs(ctx),
+    )
 
 
 async def _publish_options_225_rows(ctx: Any, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
     if not rows:
         return SemanticDeltaResult.empty()
     store = _require_time_series_store(ctx)
-    return await asyncio.to_thread(store.publish_options_225_data, rows)
+    return await asyncio.to_thread(
+        store.publish_options_225_data,
+        rows,
+        **_initial_load_kwargs(ctx),
+    )
 
 
 async def _publish_margin_rows(ctx: Any, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
     if not rows:
         return SemanticDeltaResult.empty()
     store = _require_time_series_store(ctx)
-    return await asyncio.to_thread(store.publish_margin_data, rows)
+    return await asyncio.to_thread(
+        store.publish_margin_data,
+        rows,
+        **_initial_load_kwargs(ctx),
+    )
 
 
 async def _publish_statement_rows(ctx: Any, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
     if not rows:
         return SemanticDeltaResult.empty()
     store = _require_time_series_store(ctx)
-    mutation = await asyncio.to_thread(store.publish_statements, rows)
+    mutation = await asyncio.to_thread(
+        store.publish_statements,
+        rows,
+        **_initial_load_kwargs(ctx),
+    )
     if mutation.affected_codes:
         ctx.changed_fundamentals_codes.update(mutation.affected_codes)
     return mutation

@@ -82,6 +82,36 @@ def test_stock_master_publication_is_last_wins_and_exact_noop(db: MarketDb) -> N
     )
 
 
+def test_initial_stock_master_defers_all_derived_work_to_one_finalize(
+    db: MarketDb,
+) -> None:
+    rows = [
+        _row("2026-02-09", "7203"),
+        _row("2026-02-10", "7203"),
+        _row("2026-02-09", "6758", name="Sony"),
+        _row("2026-02-10", "6758", name="Sony", scale="TOPIX Small 1"),
+    ]
+
+    loaded = db.publish_stock_master_daily_rows(rows, initial_load=True)
+
+    assert loaded.daily.stats.inserted == 4
+    assert db._fetchone("SELECT COUNT(*) FROM index_membership_daily") == (0,)
+    assert db._fetchone("SELECT COUNT(*) FROM stock_master_intervals") == (0,)
+
+    db.finalize_initial_stock_master(
+        dates={"2026-02-09", "2026-02-10"},
+        codes={"7203", "6758"},
+    )
+
+    assert db.get_index_membership_codes("2026-02-09", "TOPIX500") == {
+        "7203",
+        "6758",
+    }
+    assert db.get_index_membership_codes("2026-02-10", "TOPIX500") == {"7203"}
+    assert db._fetchone("SELECT COUNT(*) FROM stock_master_intervals")[0] > 0
+    assert db._fetchone("SELECT COUNT(*) FROM stocks_latest") == (2,)
+
+
 def test_stock_master_true_change_is_scoped_and_membership_exact_delta(
     db: MarketDb,
 ) -> None:

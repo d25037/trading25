@@ -46,6 +46,7 @@ class _StockMasterSyncState:
     latest_snapshot_date: str | None = None
     fetched_dates: set[str] | None = None
     complete_dates: set[str] | None = None
+    affected_codes: set[str] | None = None
 
     def __post_init__(self) -> None:
         if self.latest_rows is None:
@@ -54,11 +55,17 @@ class _StockMasterSyncState:
             self.fetched_dates = set()
         if self.complete_dates is None:
             self.complete_dates = set()
+        if self.affected_codes is None:
+            self.affected_codes = set()
 
     def record_rows(self, snapshot_date: str, rows: list[dict[str, Any]]) -> None:
         assert self.latest_rows is not None
         assert self.fetched_dates is not None
+        assert self.affected_codes is not None
         self.fetched_dates.add(snapshot_date)
+        self.affected_codes.update(
+            str(row["code"]) for row in rows if row.get("code")
+        )
         if self.latest_snapshot_date is None or _is_date_after(snapshot_date, self.latest_snapshot_date):
             self.latest_snapshot_date = snapshot_date
             self.latest_rows = list(rows)
@@ -161,10 +168,12 @@ async def _publish_stock_master_daily_rows(
         params.progress_total,
         message,
     )
+    initial_kwargs = {"initial_load": True} if getattr(ctx, "initial_load", False) else {}
     return await asyncio.to_thread(
         ctx.market_db.publish_stock_master_daily_rows,
         rows_to_upsert,
         derive=False,
+        **initial_kwargs,
     )
 
 
@@ -436,16 +445,24 @@ async def sync_daily_stock_master(
 
     fetched_dates = state.fetched_dates or set()
     complete = (state.complete_dates or set()) == set(normalized_dates)
-    pending_codes = await asyncio.to_thread(
-        ctx.market_db.get_stock_master_pending_derivation_codes
-    )
-    if pending_codes:
+    if bool(getattr(ctx, "initial_load", False)):
         derived = await asyncio.to_thread(
-            ctx.market_db.reconcile_stock_master_derived_codes,
-            pending_codes,
+            ctx.market_db.finalize_initial_stock_master,
+            dates=set(normalized_dates),
+            codes=set(state.affected_codes or ()),
         )
         state.family_mutated_rows += derived.mutated_rows
-    if complete:
+    else:
+        pending_codes = await asyncio.to_thread(
+            ctx.market_db.get_stock_master_pending_derivation_codes
+        )
+        if pending_codes:
+            derived = await asyncio.to_thread(
+                ctx.market_db.reconcile_stock_master_derived_codes,
+                pending_codes,
+            )
+            state.family_mutated_rows += derived.mutated_rows
+    if complete and not bool(getattr(ctx, "initial_load", False)):
         frontier_date = max(fetched_dates, key=_date_sort_key)
         pending_frontiers = await asyncio.to_thread(
             ctx.market_db.get_stock_master_pending_frontier_dates

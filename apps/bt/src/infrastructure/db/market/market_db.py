@@ -693,15 +693,36 @@ class MarketDb:
         return _stock_master_writers.upsert_stocks(self._conn, self._lock, rows)
 
     def publish_stock_master_daily_rows(
-        self, rows: list[dict[str, Any]], *, derive: bool = True
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        derive: bool = True,
+        initial_load: bool = False,
     ) -> StockMasterPublicationResult:
         """Publish canonical dated stock-master rows and exact derived deltas."""
         self._assert_writable()
+        if initial_load:
+            return _stock_master_writers.publish_stock_master_daily_rows_initial(
+                self._conn,
+                self._lock,
+                rows,
+            )
         return _stock_master_writers.publish_stock_master_daily_rows(
             self._conn,
             self._lock,
             rows,
             derive=derive,
+        )
+
+    def finalize_initial_stock_master(
+        self, *, dates: set[str], codes: set[str]
+    ) -> StockMasterPublicationResult:
+        self._assert_writable()
+        return _stock_master_writers.finalize_initial_stock_master(
+            self._conn,
+            self._lock,
+            dates=frozenset(dates),
+            codes=frozenset(codes),
         )
 
     def get_stock_master_pending_derivation_codes(self) -> set[str]:

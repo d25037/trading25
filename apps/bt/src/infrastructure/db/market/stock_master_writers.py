@@ -603,6 +603,94 @@ def publish_stock_master_daily_rows(
     )
 
 
+def publish_stock_master_daily_rows_initial(
+    conn: Any,
+    lock: Any,
+    rows: list[dict[str, Any]],
+) -> StockMasterPublicationResult:
+    """Directly load reset-time daily rows and defer every derived table."""
+    valid = [
+        dict(row, date=str(row.get("date") or ""), code=str(row.get("code") or ""))
+        for row in rows
+        if str(row.get("date") or "") and str(row.get("code") or "")
+    ]
+    if not valid:
+        return StockMasterPublicationResult.empty(input_count=len(rows))
+    deduped = deterministic_last_wins(valid, key_columns=("date", "code"))
+    with lock:
+        _apply_daily(conn, deduped)
+    keys = tuple((str(row["date"]), str(row["code"])) for row in deduped)
+    daily = SemanticDeltaResult(
+        stats=_stats(
+            input_count=len(rows),
+            inserted=len(deduped),
+            updated=0,
+            unchanged=len(rows) - len(deduped),
+        ),
+        inserted_keys=keys,
+        affected_dates=frozenset(key[0] for key in keys),
+        affected_codes=frozenset(key[1] for key in keys),
+    )
+    return StockMasterPublicationResult(
+        daily=daily,
+        membership=SemanticDeltaResult.empty(),
+        intervals=SemanticDeltaResult.empty(),
+        stocks_latest=SemanticDeltaResult.empty(),
+        stocks=SemanticDeltaResult.empty(),
+        derived_evaluated=False,
+    )
+
+
+def finalize_initial_stock_master(
+    conn: Any,
+    lock: Any,
+    *,
+    dates: frozenset[str],
+    codes: frozenset[str],
+) -> StockMasterPublicationResult:
+    """Build membership, intervals, and latest tables once after initial load."""
+    if not dates or not codes:
+        return StockMasterPublicationResult.empty()
+    date_relation = "__initial_stock_master_dates"
+    dataframe = pd.DataFrame.from_records(
+        ({"date": value} for value in sorted(dates)), columns=("date",)
+    )
+    now = datetime.now(UTC).isoformat()
+    with lock:
+        conn.register(date_relation, dataframe)
+        try:
+            conn.execute("BEGIN TRANSACTION")
+            conn.execute(
+                f"""
+                DELETE FROM index_membership_daily target
+                WHERE target.index_code = ?
+                  AND EXISTS (
+                    SELECT 1 FROM {date_relation} scope WHERE scope.date = target.date
+                  )
+                """,
+                [_TOPIX500_INDEX_CODE],
+            )
+            conn.execute(
+                f"""
+                INSERT INTO index_membership_daily (date, index_code, code, created_at)
+                SELECT daily.date, ?, daily.code, ?
+                FROM stock_master_daily daily
+                JOIN {date_relation} scope ON scope.date = daily.date
+                WHERE coalesce(daily.scale_category, '') IN (
+                    {", ".join("?" for _ in _TOPIX500_SCALE_CATEGORIES)}
+                )
+                """,
+                [_TOPIX500_INDEX_CODE, now, *_TOPIX500_SCALE_CATEGORIES],
+            )
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.unregister(date_relation)
+    return reconcile_stock_master_derived_codes(conn, lock, codes)
+
+
 def get_stock_master_pending_derivation_codes(conn: Any, lock: Any) -> set[str]:
     with lock:
         return {

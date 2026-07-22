@@ -57,7 +57,11 @@ class MarketTimeSeriesStore(Protocol):  # pragma: no cover
 
     def publish_topix_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
     def publish_stock_data(
-        self, rows: list[dict[str, Any]], *, stage: ProviderStockStage
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        stage: ProviderStockStage,
+        initial_load: bool = False,
     ) -> SemanticDeltaResult: ...
     def detect_stock_provider_drift(
         self, rows: list[dict[str, Any]]
@@ -73,15 +77,17 @@ class MarketTimeSeriesStore(Protocol):  # pragma: no cover
         self, rows: list[dict[str, Any]]
     ) -> SemanticDeltaResult: ...
     def publish_indices_data(
-        self, rows: list[dict[str, Any]]
+        self, rows: list[dict[str, Any]], *, initial_load: bool = False
     ) -> SemanticDeltaResult: ...
     def publish_options_225_data(
-        self, rows: list[dict[str, Any]]
+        self, rows: list[dict[str, Any]], *, initial_load: bool = False
     ) -> SemanticDeltaResult: ...
     def publish_margin_data(
-        self, rows: list[dict[str, Any]]
+        self, rows: list[dict[str, Any]], *, initial_load: bool = False
     ) -> SemanticDeltaResult: ...
-    def publish_statements(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
+    def publish_statements(
+        self, rows: list[dict[str, Any]], *, initial_load: bool = False
+    ) -> SemanticDeltaResult: ...
     def stage_stock_data_rows(
         self, rows: list[dict[str, Any]]
     ) -> SemanticDeltaResult: ...
@@ -90,6 +96,7 @@ class MarketTimeSeriesStore(Protocol):  # pragma: no cover
         *,
         stage: ProviderStockStage,
         exclude_codes: frozenset[str] = frozenset(),
+        initial_load: bool = False,
     ) -> SemanticDeltaResult: ...
     def discard_staged_stock_data(self) -> None: ...
 
@@ -885,11 +892,17 @@ class DuckDbParquetTimeSeriesStore:
         return invalid_count
 
     def publish_stock_data(
-        self, rows: list[dict[str, Any]], *, stage: ProviderStockStage
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        stage: ProviderStockStage,
+        initial_load: bool = False,
     ) -> SemanticDeltaResult:
         self._assert_writable()
         with self._lock:
-            return self._publish_stock_data_locked(rows, stage=stage)
+            return self._publish_stock_data_locked(
+                rows, stage=stage, initial_load=initial_load
+            )
 
     def detect_stock_provider_drift(self, rows: list[dict[str, Any]]) -> frozenset[str]:
         """Return codes requiring a full provider-window refresh before append."""
@@ -1349,7 +1362,11 @@ class DuckDbParquetTimeSeriesStore:
         )
 
     def _publish_stock_data_locked(
-        self, rows: list[dict[str, Any]], *, stage: ProviderStockStage
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        stage: ProviderStockStage,
+        initial_load: bool = False,
     ) -> SemanticDeltaResult:
         normalized_rows = [
             {
@@ -1576,13 +1593,18 @@ class DuckDbParquetTimeSeriesStore:
                 ).fetchall()
                 if deleted_events:
                     expired_event_codes.add(code)
-            raw_result = self._apply_semantic_delta(
+            apply_upsert = (
+                self._apply_initial_load_upsert
+                if initial_load
+                else self._apply_semantic_delta
+            )
+            raw_result = apply_upsert(
                 normalized_rows, spec=self._STOCK_DATA_RAW_UPSERT_SPEC
             )
-            consumer_result = self._apply_semantic_delta(
+            consumer_result = apply_upsert(
                 projected_rows, spec=self._STOCK_DATA_UPSERT_SPEC
             )
-            event_result = self._apply_semantic_delta(
+            event_result = apply_upsert(
                 event_rows, spec=self._STOCK_ADJUSTMENT_EVENTS_UPSERT_SPEC
             )
             pending_codes = event_result.affected_codes | frozenset(expired_event_codes)
@@ -1709,11 +1731,24 @@ class DuckDbParquetTimeSeriesStore:
         *,
         stage: ProviderStockStage,
         exclude_codes: frozenset[str] = frozenset(),
+        initial_load: bool = False,
     ) -> SemanticDeltaResult:
         """Append staged rows whose keys are new, excluding full-refresh codes."""
         self._assert_writable()
         with self._lock:
             self._ensure_stock_data_stage_table()
+            if initial_load:
+                allowed_codes = sorted(stage.provider_codes - exclude_codes)
+                self._conn.execute(
+                    f"DELETE FROM {self._STOCK_DATA_STAGE_TABLE} "
+                    "WHERE code NOT IN (SELECT unnest(?))",
+                    [allowed_codes],
+                )
+                self._project_initial_staged_stock_data_unlocked()
+                return self._flush_initial_staged_stock_data_unlocked(
+                    stage=stage,
+                    exclude_codes=exclude_codes,
+                )
             excluded = sorted(exclude_codes)
             exclusion_sql = ""
             if excluded:
@@ -1746,7 +1781,328 @@ class DuckDbParquetTimeSeriesStore:
             return self._publish_stock_data_locked(
                 staged_rows,
                 stage=stage,
+                initial_load=initial_load,
             )
+
+    def _flush_initial_staged_stock_data_unlocked(
+        self,
+        *,
+        stage: ProviderStockStage,
+        exclude_codes: frozenset[str],
+    ) -> SemanticDeltaResult:
+        excluded = sorted(exclude_codes)
+        if excluded:
+            placeholders = ", ".join("?" for _code in excluded)
+            self._conn.execute(
+                f"DELETE FROM {self._STOCK_DATA_STAGE_TABLE} "
+                f"WHERE code IN ({placeholders})",
+                excluded,
+            )
+
+        columns = self._STOCK_DATA_RAW_UPSERT_SPEC.columns
+        columns_sql = ", ".join(columns)
+        rows_relation = "__tmp_initial_stock_rows"
+        self._conn.execute(f"DROP TABLE IF EXISTS {rows_relation}")
+        self._conn.execute(
+            f"""
+            CREATE TEMP TABLE {rows_relation} AS
+            SELECT {columns_sql}
+            FROM {self._STOCK_DATA_STAGE_TABLE}
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY code, date ORDER BY rowid DESC
+            ) = 1
+            """
+        )
+        deduped_sql = f"SELECT {columns_sql} FROM {rows_relation}"
+        staged_summary = self._conn.execute(
+            f"""
+            SELECT COUNT(*), MIN(date), MAX(date)
+            FROM ({deduped_sql})
+            """
+        ).fetchone()
+        if staged_summary is None:
+            return SemanticDeltaResult.empty()
+        input_count = int(staged_summary[0])
+        if input_count == 0:
+            self._conn.execute(f"DELETE FROM {self._STOCK_DATA_STAGE_TABLE}")
+            self._conn.execute(f"DROP TABLE {rows_relation}")
+            return SemanticDeltaResult.empty()
+        if str(staged_summary[2]) > stage.provider_as_of:
+            self._conn.execute(f"DROP TABLE {rows_relation}")
+            raise ValueError("Provider stock row date must not exceed stage provider as-of")
+
+        updated_at = datetime.now(UTC).isoformat()
+        window_relation = "__tmp_initial_stock_provider_windows"
+        window_columns = (
+            "code",
+            "coverage_start",
+            "coverage_end",
+            "provider_plan",
+            "provider_as_of",
+            "source_fingerprint",
+            "updated_at",
+        )
+        self._conn.execute(f"DROP TABLE IF EXISTS {window_relation}")
+        self._conn.execute(
+            f"""
+            CREATE TEMP TABLE {window_relation} AS
+            WITH provider_rows AS MATERIALIZED ({deduped_sql}),
+            row_hashes AS (
+                SELECT
+                    code,
+                    date,
+                    from_hex(
+                        sha256(
+                            to_json(
+                                struct_pack(
+                                    adjusted_close := adjusted_close,
+                                    adjusted_high := adjusted_high,
+                                    adjusted_low := adjusted_low,
+                                    adjusted_open := adjusted_open,
+                                    adjusted_volume := adjusted_volume,
+                                    adjustment_factor := adjustment_factor,
+                                    close := close,
+                                    code := code,
+                                    date := date,
+                                    high := high,
+                                    low := low,
+                                    open := open,
+                                    turnover_value := turnover_value,
+                                    volume := volume
+                                )
+                            )
+                        )
+                    )::BIT AS row_hash
+                FROM provider_rows
+            )
+            SELECT
+                code,
+                MIN(date) AS coverage_start,
+                MAX(date) AS coverage_end,
+                ? AS provider_plan,
+                ? AS provider_as_of,
+                lower(hex(bit_xor(row_hash)::BLOB)) AS source_fingerprint,
+                ? AS updated_at
+            FROM row_hashes
+            GROUP BY code
+            """,
+            [stage.provider_plan, stage.provider_as_of, updated_at],
+        )
+        staged_codes = frozenset(
+            str(row[0])
+            for row in self._conn.execute(
+                f"SELECT code FROM {window_relation}"
+            ).fetchall()
+        )
+        affected_dates = frozenset(
+            str(row[0])
+            for row in self._conn.execute(
+                f"SELECT DISTINCT date FROM {rows_relation}"
+            ).fetchall()
+        )
+
+        transaction_started = False
+        try:
+            self._conn.execute("BEGIN TRANSACTION")
+            transaction_started = True
+            self._conn.execute(
+                f"INSERT INTO stock_data_raw ({columns_sql}) {deduped_sql}"
+            )
+            consumer_columns = self._STOCK_DATA_UPSERT_SPEC.columns
+            self._conn.execute(
+                f"""
+                INSERT INTO stock_data ({", ".join(consumer_columns)})
+                SELECT
+                    code, date, adjusted_open, adjusted_high, adjusted_low,
+                    adjusted_close, adjusted_volume, adjustment_factor, created_at
+                FROM ({deduped_sql})
+                """
+            )
+            self._conn.execute(
+                f"""
+                INSERT INTO stock_provider_windows ({", ".join(window_columns)})
+                SELECT {", ".join(window_columns)} FROM {window_relation}
+                """
+            )
+            self._conn.execute(
+                """
+                INSERT INTO current_basis_fundamentals_state (
+                    code,
+                    fundamentals_adjustment_basis_date,
+                    source_fingerprint,
+                    statement_count,
+                    materialized_at
+                )
+                SELECT
+                    windows.code,
+                    windows.coverage_end,
+                    windows.source_fingerprint,
+                    0,
+                    ?
+                FROM stock_provider_windows AS windows
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM statements
+                    WHERE CASE
+                              WHEN length(statements.code) = 5
+                               AND right(statements.code, 1) = '0'
+                              THEN left(statements.code, 4)
+                              ELSE statements.code
+                          END = windows.code
+                )
+                ON CONFLICT (code) DO UPDATE SET
+                    fundamentals_adjustment_basis_date =
+                        excluded.fundamentals_adjustment_basis_date,
+                    source_fingerprint = excluded.source_fingerprint,
+                    statement_count = excluded.statement_count,
+                    materialized_at = excluded.materialized_at
+                """,
+                [updated_at],
+            )
+            self._conn.execute(
+                f"""
+                INSERT INTO stock_adjustment_events (
+                    code, date, adjustment_factor, source_fingerprint, created_at
+                )
+                SELECT
+                    staged.code,
+                    staged.date,
+                    staged.adjustment_factor,
+                    windows.source_fingerprint,
+                    staged.created_at
+                FROM ({deduped_sql}) AS staged
+                JOIN stock_provider_windows AS windows USING (code)
+                WHERE staged.adjustment_factor IS NOT NULL
+                  AND staged.adjustment_factor != 1.0
+                """
+            )
+            self._conn.execute(
+                """
+                INSERT INTO current_basis_recompute_pending (
+                    code, reason, source_fingerprint, updated_at
+                )
+                SELECT DISTINCT
+                    events.code,
+                    'provider_basis_change',
+                    windows.source_fingerprint,
+                    ?
+                FROM stock_adjustment_events AS events
+                JOIN stock_provider_windows AS windows USING (code)
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM statements
+                    WHERE CASE
+                              WHEN length(statements.code) = 5
+                               AND right(statements.code, 1) = '0'
+                              THEN left(statements.code, 4)
+                              ELSE statements.code
+                          END = events.code
+                )
+                """,
+                [updated_at],
+            )
+            self._conn.execute(
+                """
+                INSERT INTO sync_metadata (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT (key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+                WHERE sync_metadata.value IS DISTINCT FROM excluded.value
+                """,
+                [METADATA_KEYS["PROVIDER_PLAN"], stage.provider_plan, updated_at],
+            )
+            self._conn.execute(f"DELETE FROM {self._STOCK_DATA_STAGE_TABLE}")
+            self._conn.execute("COMMIT")
+            transaction_started = False
+        except BaseException:
+            if transaction_started:
+                self._conn.execute("ROLLBACK")
+            raise
+        finally:
+            self._conn.execute(f"DROP TABLE IF EXISTS {window_relation}")
+            self._conn.execute(f"DROP TABLE IF EXISTS {rows_relation}")
+
+        self._dirty_tables.update(
+            {"stock_data_raw", "stock_data", "stock_adjustment_events"}
+        )
+        self._dirty_partition_dates.setdefault("stock_data_raw", set()).update(
+            affected_dates
+        )
+        self._dirty_partition_dates.setdefault("stock_data", set()).update(
+            affected_dates
+        )
+        return SemanticDeltaResult(
+            stats=MarketMutationStats(
+                input=input_count,
+                inserted=input_count,
+                updated=0,
+                unchanged=0,
+                deleted=0,
+            ),
+            affected_dates=affected_dates,
+            affected_codes=staged_codes,
+        )
+
+    def _project_initial_staged_stock_data_unlocked(self) -> None:
+        """Port the v3 set-based raw-to-adjusted projection for reset sync."""
+        self._conn.execute(
+            f"""
+            WITH projected AS (
+                SELECT
+                    code,
+                    date,
+                    open * future_factor AS adjusted_open,
+                    high * future_factor AS adjusted_high,
+                    low * future_factor AS adjusted_low,
+                    close * future_factor AS adjusted_close,
+                    ROUND(volume / future_factor, 1) AS adjusted_volume
+                FROM (
+                    SELECT
+                        code,
+                        date,
+                        open,
+                        high,
+                        low,
+                        close,
+                        volume,
+                        COALESCE(
+                            EXP(
+                                SUM(
+                                    LN(
+                                        CASE
+                                            WHEN adjustment_factor IS NULL
+                                              OR adjustment_factor <= 0
+                                            THEN 1.0
+                                            ELSE adjustment_factor
+                                        END
+                                    )
+                                ) OVER (
+                                    PARTITION BY code
+                                    ORDER BY date DESC
+                                    ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                                )
+                            ),
+                            1.0
+                        ) AS future_factor
+                    FROM {self._STOCK_DATA_STAGE_TABLE}
+                ) source
+            )
+            UPDATE {self._STOCK_DATA_STAGE_TABLE} AS target
+            SET
+                adjusted_open = COALESCE(target.adjusted_open, projected.adjusted_open),
+                adjusted_high = COALESCE(target.adjusted_high, projected.adjusted_high),
+                adjusted_low = COALESCE(target.adjusted_low, projected.adjusted_low),
+                adjusted_close = COALESCE(target.adjusted_close, projected.adjusted_close),
+                adjusted_volume = COALESCE(
+                    target.adjusted_volume,
+                    projected.adjusted_volume
+                )
+            FROM projected
+            WHERE target.code = projected.code
+              AND target.date = projected.date
+            """
+        )
 
     def discard_staged_stock_data(self) -> None:
         self._assert_writable()
@@ -1777,21 +2133,33 @@ class DuckDbParquetTimeSeriesStore:
                 self._dirty_stock_minute_dates.update(result.affected_dates)
             return result
 
-    def publish_indices_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
-        self._assert_writable()
-        return self._publish_and_mark_delta(rows, spec=self._INDICES_DATA_UPSERT_SPEC)
-
-    def publish_options_225_data(
-        self, rows: list[dict[str, Any]]
+    def publish_indices_data(
+        self, rows: list[dict[str, Any]], *, initial_load: bool = False
     ) -> SemanticDeltaResult:
         self._assert_writable()
-        return self._publish_and_mark_delta(rows, spec=self._OPTIONS_225_UPSERT_SPEC)
+        return self._publish_and_mark_delta(
+            rows, spec=self._INDICES_DATA_UPSERT_SPEC, initial_load=initial_load
+        )
 
-    def publish_margin_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+    def publish_options_225_data(
+        self, rows: list[dict[str, Any]], *, initial_load: bool = False
+    ) -> SemanticDeltaResult:
         self._assert_writable()
-        return self._publish_and_mark_delta(rows, spec=self._MARGIN_DATA_UPSERT_SPEC)
+        return self._publish_and_mark_delta(
+            rows, spec=self._OPTIONS_225_UPSERT_SPEC, initial_load=initial_load
+        )
 
-    def publish_statements(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+    def publish_margin_data(
+        self, rows: list[dict[str, Any]], *, initial_load: bool = False
+    ) -> SemanticDeltaResult:
+        self._assert_writable()
+        return self._publish_and_mark_delta(
+            rows, spec=self._MARGIN_DATA_UPSERT_SPEC, initial_load=initial_load
+        )
+
+    def publish_statements(
+        self, rows: list[dict[str, Any]], *, initial_load: bool = False
+    ) -> SemanticDeltaResult:
         self._assert_writable()
         with self._lock:
             self._validate_fallback_statement_identities_unlocked(rows)
@@ -1799,17 +2167,24 @@ class DuckDbParquetTimeSeriesStore:
             try:
                 self._conn.execute("BEGIN TRANSACTION")
                 transaction_started = True
-                result = self._apply_semantic_delta(
-                    rows, spec=self._STATEMENTS_UPSERT_SPEC
-                )
-                for code in result.affected_codes:
-                    self._mark_current_basis_recompute_pending_unlocked(
-                        code,
-                        reason="statement_change",
-                        source_fingerprint=(
-                            self._current_statement_source_fingerprint_unlocked(code)
-                        ),
+                result = (
+                    self._apply_initial_load_upsert(
+                        rows, spec=self._STATEMENTS_UPSERT_SPEC
                     )
+                    if initial_load
+                    else self._apply_semantic_delta(
+                        rows, spec=self._STATEMENTS_UPSERT_SPEC
+                    )
+                )
+                if not initial_load:
+                    for code in result.affected_codes:
+                        self._mark_current_basis_recompute_pending_unlocked(
+                            code,
+                            reason="statement_change",
+                            source_fingerprint=(
+                                self._current_statement_source_fingerprint_unlocked(code)
+                            ),
+                        )
                 self._conn.execute("COMMIT")
                 transaction_started = False
             except BaseException:
@@ -1860,9 +2235,14 @@ class DuckDbParquetTimeSeriesStore:
         rows: list[dict[str, Any]],
         *,
         spec: _RelationUpsertSpec,
+        initial_load: bool = False,
     ) -> SemanticDeltaResult:
         with self._lock:
-            result = self._apply_semantic_delta(rows, spec=spec)
+            result = (
+                self._apply_initial_load_upsert(rows, spec=spec)
+                if initial_load
+                else self._apply_semantic_delta(rows, spec=spec)
+            )
             if result.mutated_rows:
                 self._dirty_tables.add(spec.table_name)
                 self._dirty_partition_dates.setdefault(spec.table_name, set()).update(
@@ -2428,6 +2808,79 @@ class DuckDbParquetTimeSeriesStore:
             f"{cls._semantic_candidate_expression(spec, column, source_alias=source_alias, target_alias=target_alias)} "
             f"IS DISTINCT FROM {target_alias}.{column}"
             for column in semantic_columns
+        )
+
+    def _apply_initial_load_upsert(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        spec: _RelationUpsertSpec,
+    ) -> SemanticDeltaResult:
+        """Upsert a reset-time batch without reading its keys back from DuckDB."""
+        if not rows:
+            return SemanticDeltaResult.empty()
+        staged_rows = deterministic_last_wins(rows, key_columns=spec.conflict_columns)
+        dataframe = pd.DataFrame.from_records(
+            [
+                {column: row.get(column) for column in spec.columns}
+                for row in staged_rows
+            ],
+            columns=spec.columns,
+        )
+        columns_sql = ", ".join(spec.columns)
+        conflict_sql = ", ".join(spec.conflict_columns)
+        update_clause = self._build_upsert_update_clause(spec)
+        self._conn.register(spec.relation_name, dataframe)
+        try:
+            self._conn.execute(
+                f"""
+                INSERT INTO {spec.table_name} ({columns_sql})
+                SELECT {columns_sql} FROM {spec.relation_name}
+                ON CONFLICT ({conflict_sql}) DO UPDATE SET {update_clause}
+                """
+            )
+        finally:
+            self._conn.unregister(spec.relation_name)
+
+        keys = tuple(
+            tuple(row.get(column) for column in spec.conflict_columns)
+            for row in staged_rows
+        )
+        date_index = next(
+            (
+                index
+                for index, column in enumerate(spec.conflict_columns)
+                if column in {"date", "disclosed_date"}
+            ),
+            None,
+        )
+        code_index = next(
+            (
+                index
+                for index, column in enumerate(spec.conflict_columns)
+                if column == "code"
+            ),
+            None,
+        )
+        return SemanticDeltaResult(
+            stats=MarketMutationStats(
+                input=len(rows),
+                inserted=len(staged_rows),
+                updated=0,
+                unchanged=len(rows) - len(staged_rows),
+                deleted=0,
+            ),
+            inserted_keys=keys,
+            affected_dates=(
+                frozenset(str(key[date_index]) for key in keys)
+                if date_index is not None
+                else frozenset()
+            ),
+            affected_codes=(
+                frozenset(str(key[code_index]) for key in keys)
+                if code_index is not None
+                else frozenset()
+            ),
         )
 
     def _apply_semantic_delta(

@@ -108,6 +108,7 @@ class MarketMaintenanceFinalizer:
             write_market_maintenance_evidence
         ),
         now: Callable[[], str] = lambda: datetime.now(UTC).isoformat(),
+        run_maintenance: bool = True,
     ) -> None:
         self._session = session
         self._operation = operation
@@ -116,6 +117,7 @@ class MarketMaintenanceFinalizer:
         self._compactor = compactor or MarketCompactor()
         self._evidence_writer = evidence_writer
         self._now = now
+        self._run_maintenance = run_maintenance
 
     def finalize(
         self,
@@ -136,8 +138,9 @@ class MarketMaintenanceFinalizer:
 
         try:
             token = self._session.close_writable_handles()
-            authority = self._session.authorize_maintenance(token)
-            evidence = self._compactor.maintain(authority)
+            if self._run_maintenance:
+                authority = self._session.authorize_maintenance(token)
+                evidence = self._compactor.maintain(authority)
         except BaseException as exc:
             lifecycle_errors.append(exc)
 
@@ -147,21 +150,22 @@ class MarketMaintenanceFinalizer:
             except BaseException as exc:
                 lifecycle_errors.append(exc)
 
-        record = (
-            _passed_record(
+        if not self._run_maintenance and not lifecycle_errors:
+            record = maintenance_contracts.MarketMaintenanceRecord.never_run()
+        elif evidence is not None and not lifecycle_errors:
+            record = _passed_record(
                 operation=self._operation,
                 recorded_at=recorded_at,
                 evidence=evidence,
             )
-            if evidence is not None and not lifecycle_errors
-            else maintenance_contracts.MarketMaintenanceRecord.failed(
+        else:
+            record = maintenance_contracts.MarketMaintenanceRecord.failed(
                 operation=self._operation,
                 recorded_at=recorded_at,
                 error=str(lifecycle_errors[0])
                 if lifecycle_errors
                 else "Maintenance evidence was not produced",
             )
-        )
 
         if resources is not None:
             try:
@@ -208,36 +212,38 @@ class MarketMaintenanceFinalizer:
                         f"failed: {exc}. Retry with {release_record.recoveryCommand}."
                     ),
                 )
-                try:
-                    self._evidence_writer(
-                        self._session.factory.market_root,
-                        release_record,
-                    )
-                except BaseException as evidence_exc:
-                    exc.add_note(
-                        "Failed to persist writer-release failure evidence: "
-                        f"{evidence_exc}"
-                    )
+                if self._run_maintenance:
+                    try:
+                        self._evidence_writer(
+                            self._session.factory.market_root,
+                            release_record,
+                        )
+                    except BaseException as evidence_exc:
+                        exc.add_note(
+                            "Failed to persist writer-release failure evidence: "
+                            f"{evidence_exc}"
+                        )
                 publish_terminal(decision)
                 return decision
 
-        try:
-            self._evidence_writer(self._session.factory.market_root, record)
-        except BaseException as exc:
-            record = maintenance_contracts.MarketMaintenanceRecord.failed(
-                operation=self._operation,
-                recorded_at=recorded_at,
-                error=f"Maintenance evidence write failed: {exc}",
-            )
-            decision = MarketFinalizationDecision(
-                terminal_outcome=maintenance_contracts.MarketOperationOutcome.FAILED,
-                maintenance=record,
-                error=f"Market maintenance incomplete: {exc}",
-            )
+        if self._run_maintenance:
             try:
                 self._evidence_writer(self._session.factory.market_root, record)
-            except BaseException as evidence_exc:
-                exc.add_note(f"Failed to persist failed evidence: {evidence_exc}")
+            except BaseException as exc:
+                record = maintenance_contracts.MarketMaintenanceRecord.failed(
+                    operation=self._operation,
+                    recorded_at=recorded_at,
+                    error=f"Maintenance evidence write failed: {exc}",
+                )
+                decision = MarketFinalizationDecision(
+                    terminal_outcome=maintenance_contracts.MarketOperationOutcome.FAILED,
+                    maintenance=record,
+                    error=f"Market maintenance incomplete: {exc}",
+                )
+                try:
+                    self._evidence_writer(self._session.factory.market_root, record)
+                except BaseException as evidence_exc:
+                    exc.add_note(f"Failed to persist failed evidence: {evidence_exc}")
 
         try:
             publish_terminal(decision)
@@ -248,16 +254,17 @@ class MarketMaintenanceFinalizer:
                 recorded_at=recorded_at,
                 error=f"Terminal publication incomplete: {exc}",
             )
-            try:
-                self._evidence_writer(
-                    self._session.factory.market_root,
-                    publication_record,
-                )
-            except BaseException as evidence_exc:
-                exc.add_note(
-                    "Failed to persist terminal-publication failure evidence: "
-                    f"{evidence_exc}"
-                )
+            if self._run_maintenance:
+                try:
+                    self._evidence_writer(
+                        self._session.factory.market_root,
+                        publication_record,
+                    )
+                except BaseException as evidence_exc:
+                    exc.add_note(
+                        "Failed to persist terminal-publication failure evidence: "
+                        f"{evidence_exc}"
+                    )
             raise
         if ownership_released:
             self._release_complete()

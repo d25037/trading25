@@ -345,6 +345,7 @@ def _build_market_finalizer(
     return MarketMaintenanceFinalizer(
         session=session,
         operation=operation,
+        run_maintenance=operation != "initial_sync",
         attach=lambda resources, evidence: _attach_finalized_market_resources(
             app,
             owner,

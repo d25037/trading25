@@ -824,16 +824,28 @@ class DummyTimeSeriesStore:
         del table_name
         return True
 
-    def publish_indices_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+    def publish_indices_data(
+        self, rows: list[dict[str, Any]], *, initial_load: bool = False
+    ) -> SemanticDeltaResult:
+        del initial_load
         return self._mutation(self._market_db.upsert_indices_data(rows))
 
-    def publish_options_225_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+    def publish_options_225_data(
+        self, rows: list[dict[str, Any]], *, initial_load: bool = False
+    ) -> SemanticDeltaResult:
+        del initial_load
         return self._mutation(self._market_db.upsert_options_225_data(rows))
 
-    def publish_margin_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+    def publish_margin_data(
+        self, rows: list[dict[str, Any]], *, initial_load: bool = False
+    ) -> SemanticDeltaResult:
+        del initial_load
         return self._mutation(self._market_db.upsert_margin_data(rows))
 
-    def publish_statements(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+    def publish_statements(
+        self, rows: list[dict[str, Any]], *, initial_load: bool = False
+    ) -> SemanticDeltaResult:
+        del initial_load
         return self._mutation(self._market_db.upsert_statements(rows))
 
     def index_topix_data(self) -> None:
@@ -3440,6 +3452,70 @@ async def test_execute_stock_data_bulk_fetch_defers_append_until_all_files_are_s
 
 
 @pytest.mark.asyncio
+async def test_execute_initial_stock_data_bulk_fetch_flushes_each_file() -> None:
+    files = [
+        BulkFileInfo(
+            key=f"stock-{day}.csv.gz",
+            last_modified=f"2026-02-{day}T00:00:00Z",
+            size=123,
+            range_start=None,
+            range_end=None,
+        )
+        for day in ("10", "11")
+    ]
+    plan = BulkFetchPlan(
+        endpoint="/equities/bars/daily",
+        files=files,
+        estimated_api_calls=2,
+        list_api_calls=1,
+        estimated_cache_hits=0,
+        estimated_cache_misses=2,
+    )
+    market_db = DummyMarketDb()
+    store = _StagedStockDataStore(market_db)
+    ctx = _build_ctx(
+        client=_PlanOnlyClient("premium"),
+        market_db=market_db,
+        time_series_store=store,
+        bulk_service=_ChunkedPlanAndFetchBulkService(
+            plan=plan,
+            chunks=[
+                [_provider_daily_quote("7203", "2026-02-10")],
+                [_provider_daily_quote("7203", "2026-02-11")],
+            ],
+        ),
+    )
+    decision = _StageFetchDecision(
+        method="bulk",
+        planner_api_calls=1,
+        estimated_rest_calls=2,
+        estimated_bulk_calls=2,
+        plan=plan,
+        reason="bulk_estimate_lower",
+    )
+    session = sync_stock_data_fetch.StockDataIngestionSession()
+    stage = _provider_stage_for_test(ctx)
+
+    await execute_stock_data_bulk_fetch(
+        ctx,
+        session=session,
+        decision=decision,
+        target_dates=["2026-02-10", "2026-02-11"],
+        stage_name="stock_data_initial",
+        progress_stage="stock_data",
+        current=3,
+        total=8,
+        fallback_log_message="bulk failed: {}",
+        flush_stage=stage,
+    )
+
+    assert store.flush_calls == 2
+    assert store.max_pending_stage_batches == 1
+    committed = await session.commit(ctx, stage=stage)
+    assert committed.appended_rows == 2
+
+
+@pytest.mark.asyncio
 async def test_execute_stock_data_bulk_fetch_keeps_same_file_chunks_in_one_flush() -> None:
     file_info = BulkFileInfo(
         key="stock-20260210.csv.gz",
@@ -3500,6 +3576,159 @@ async def test_execute_stock_data_bulk_fetch_keeps_same_file_chunks_in_one_flush
     assert committed.appended_rows == 1
     assert store.flush_calls == 1
     assert market_db.stock_rows[0]["close"] == 21.0
+
+
+@pytest.mark.asyncio
+async def test_execute_stock_data_bulk_fetch_keeps_raw_rows_without_rest_fallback() -> None:
+    file_info = BulkFileInfo(
+        key="stock-202602.csv.gz",
+        last_modified="2026-02-28T00:00:00Z",
+        size=123,
+        range_start=None,
+        range_end=None,
+    )
+    plan = BulkFetchPlan(
+        endpoint="/equities/bars/daily",
+        files=[file_info],
+        estimated_api_calls=1,
+        list_api_calls=1,
+        estimated_cache_hits=0,
+        estimated_cache_misses=1,
+    )
+    incomplete = _provider_daily_quote("1301", "2026-02-10")
+    incomplete["AdjC"] = None
+    bulk_service = _ChunkedPlanAndFetchBulkService(
+        plan=plan,
+        chunks=[
+            [
+                incomplete,
+                _provider_daily_quote("7203", "2026-02-11"),
+            ]
+        ],
+    )
+    market_db = DummyMarketDb()
+    store = _StagedStockDataStore(market_db)
+    ctx = _build_ctx(
+        client=_PlanOnlyClient("premium"),
+        market_db=market_db,
+        time_series_store=store,
+        bulk_service=bulk_service,
+    )
+    decision = _StageFetchDecision(
+        method="bulk",
+        planner_api_calls=1,
+        estimated_rest_calls=2,
+        estimated_bulk_calls=1,
+        plan=plan,
+        reason="bulk_estimate_lower",
+    )
+    session = sync_stock_data_fetch.StockDataIngestionSession()
+
+    outcome = await execute_stock_data_bulk_fetch(
+        ctx,
+        session=session,
+        decision=decision,
+        target_dates=["2026-02-10", "2026-02-11"],
+        stage_name="stock_data_initial",
+        progress_stage="stock_data",
+        current=3,
+        total=8,
+        fallback_log_message="bulk failed: {}",
+    )
+
+    assert outcome.used_rest_fallback is False
+    assert outcome.residual_dates == ()
+    assert [row["date"] for batch in store.stage_batches for row in batch] == [
+        "2026-02-10",
+        "2026-02-11",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_execute_stock_data_bulk_fetch_stages_v3_style_raw_rows_in_one_pass() -> None:
+    file_info = BulkFileInfo(
+        key="stock-202109.csv.gz",
+        last_modified="2021-09-30T00:00:00Z",
+        size=123,
+        range_start=None,
+        range_end=None,
+    )
+    plan = BulkFetchPlan(
+        endpoint="/equities/bars/daily",
+        files=[file_info],
+        estimated_api_calls=1,
+        list_api_calls=1,
+        estimated_cache_hits=0,
+        estimated_cache_misses=1,
+    )
+    bulk_service = _ChunkedPlanAndFetchBulkService(
+        plan=plan,
+        chunks=[
+            [
+                {
+                    "Code": "72030",
+                    "Date": "2021-09-28",
+                    "O": 10420,
+                    "H": 10460,
+                    "L": 10250,
+                    "C": 10385,
+                    "Vo": 7_563_400,
+                    "Va": 78_532_052_000,
+                    "AdjFactor": 1.0,
+                }
+            ],
+            [
+                {
+                    "Code": "72030",
+                    "Date": "2021-09-29",
+                    "O": 2052,
+                    "H": 2080.5,
+                    "L": 2040.5,
+                    "C": 2073,
+                    "Vo": 34_887_300,
+                    "Va": 72_006_162_000,
+                    "AdjFactor": 0.2,
+                }
+            ],
+        ],
+    )
+    market_db = DummyMarketDb()
+    store = _StagedStockDataStore(market_db)
+    ctx = _build_ctx(
+        client=_PlanOnlyClient("premium"),
+        market_db=market_db,
+        time_series_store=store,
+        bulk_service=bulk_service,
+    )
+    ctx.initial_load = True
+    decision = _StageFetchDecision(
+        method="bulk",
+        planner_api_calls=1,
+        estimated_rest_calls=2,
+        estimated_bulk_calls=1,
+        plan=plan,
+        reason="bulk_estimate_lower",
+    )
+
+    session = sync_stock_data_fetch.StockDataIngestionSession()
+    outcome = await execute_stock_data_bulk_fetch(
+        ctx,
+        session=session,
+        decision=decision,
+        target_dates=["2021-09-28", "2021-09-29"],
+        stage_name="stock_data_initial",
+        progress_stage="stock_data",
+        current=3,
+        total=8,
+        fallback_log_message="bulk failed: {}",
+    )
+
+    staged_rows = [row for batch in store.stage_batches for row in batch]
+    assert outcome.used_rest_fallback is False
+    assert bulk_service.fetch_calls == [plan.endpoint]
+    assert [row["close"] for row in staged_rows] == [10385.0, 2073.0]
+    assert [row["adjusted_close"] for row in staged_rows] == [None, None]
+    assert session.affected_codes == set()
 
 
 @pytest.mark.asyncio
@@ -5850,6 +6079,34 @@ async def test_indices_only_sync_does_not_fetch_synthetic_underpx_as_jquants_ind
         )
         for path, params in client.calls
     )
+
+
+@pytest.mark.asyncio
+async def test_initial_indices_defers_parquet_export_until_options_stage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies.get_index_catalog_codes",
+        lambda: {"0000"},
+    )
+    exports: list[str] = []
+
+    async def _index(*_args: Any, **_kwargs: Any) -> None:
+        exports.append("indices")
+
+    monkeypatch.setattr(sync_strategies.sync_publish_helpers, "_index_indices_rows", _index)
+    ctx = _build_ctx(
+        client=IndicesOnlyClient(),
+        market_db=DummyMarketDb(),
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+    ctx.initial_load = True
+
+    result = await IndicesOnlySyncStrategy(include_options=False).execute(ctx)
+
+    assert result.success
+    assert exports == []
 
 
 @pytest.mark.asyncio

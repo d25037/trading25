@@ -323,7 +323,6 @@ def get_provider_vintage_snapshot(
     coherent = (
         valid_window_count == len(ownership_codes)
         and bool(starts)
-        and max(starts) <= min(ends)
         and len(set(plans)) == 1
         and len(set(as_ofs)) == 1
     )
@@ -333,8 +332,8 @@ def get_provider_vintage_snapshot(
         "providerAsOf": as_ofs[0] if coherent else None,
         "providerAsOfMin": min(as_ofs) if as_ofs else None,
         "providerAsOfMax": max(as_ofs) if as_ofs else None,
-        "effectiveCoverageStart": max(starts) if coherent else None,
-        "effectiveCoverageEnd": min(ends) if coherent else None,
+        "effectiveCoverageStart": min(starts) if coherent else None,
+        "effectiveCoverageEnd": max(ends) if coherent else None,
         "providerSourceFingerprint": (
             combine_provider_stock_source_fingerprints(*valid_fingerprints)
             if valid_fingerprints and valid_window_count == len(ownership_codes)

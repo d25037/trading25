@@ -94,6 +94,7 @@ def build_stock_data_row(
     *,
     normalized_code: str | None = None,
     created_at: str | None = None,
+    require_adjusted: bool = True,
 ) -> dict[str, Any] | None:
     """J-Quants 日足1件を stock_data_raw 行へ変換（欠損値がある場合は None）"""
     payload_code = normalize_stock_code(quote.get("Code", ""))
@@ -119,7 +120,7 @@ def build_stock_data_row(
     adjusted_close = _coerce_float(quote.get("AdjC"))
     adjusted_volume = _coerce_float(quote.get("AdjVo"))
 
-    required_values = (
+    required_values = [
         open_value,
         high_value,
         low_value,
@@ -127,17 +128,24 @@ def build_stock_data_row(
         volume_value,
         turnover_value,
         adjustment_factor,
-        adjusted_open,
-        adjusted_high,
-        adjusted_low,
-        adjusted_close,
-        adjusted_volume,
-    )
+    ]
+    if require_adjusted:
+        required_values.extend(
+            (
+                adjusted_open,
+                adjusted_high,
+                adjusted_low,
+                adjusted_close,
+                adjusted_volume,
+            )
+        )
     if any(value is None for value in required_values):
         return None
-    if adjustment_factor is None or adjusted_volume is None:
+    if adjustment_factor is None:
         return None
-    if adjustment_factor <= 0 or adjusted_volume < 0:
+    if adjustment_factor <= 0 or (
+        adjusted_volume is not None and adjusted_volume < 0
+    ):
         return None
 
     return {

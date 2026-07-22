@@ -286,6 +286,7 @@ async def start_sync(
                 on_progress=on_progress,
                 on_fetch_detail=on_fetch_detail,
                 enforce_bulk_for_stock_data=enforce_bulk_for_stock_data,
+                initial_load=reset_before_sync,
                 provider_plan=(
                     str(getattr(jquants_client, "plan", "")).strip().lower()
                     or get_settings().jquants_plan.strip().lower()

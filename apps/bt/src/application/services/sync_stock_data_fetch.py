@@ -30,6 +30,7 @@ class StockDataBulkFetchOutcome:
     bulk_result: BulkFetchResult | None = None
     used_rest_fallback: bool = False
     fallback_reason: str | None = None
+    residual_dates: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,7 @@ class StockDataIngestionSession:
 
     affected_codes: set[str] = field(default_factory=set)
     staged_rows: int = 0
+    _appended_rows: int = 0
     _committed: bool = False
     _finalized: bool = False
 
@@ -80,12 +82,36 @@ class StockDataIngestionSession:
     def finalized(self) -> bool:
         return self._finalized
 
-    async def stage(self, ctx: Any, rows: list[dict[str, Any]]) -> None:
+    async def stage(
+        self,
+        ctx: Any,
+        rows: list[dict[str, Any]],
+        *,
+        detect_provider_drift: bool = True,
+    ) -> None:
         if self._finalized:
             raise RuntimeError("Stock data ingestion session is already finalized")
-        result = await sync_publish_helpers._stage_stock_data_rows(ctx, rows)
+        result = await sync_publish_helpers._stage_stock_data_rows(
+            ctx,
+            rows,
+            detect_provider_drift=detect_provider_drift,
+        )
         self.affected_codes.update(result.affected_codes)
         self.staged_rows += result.staged_rows
+
+    async def flush(self, ctx: Any, *, stage: ProviderStockStage) -> None:
+        """Commit one initial-sync bulk file while keeping the session open."""
+        if self._finalized:
+            raise RuntimeError("Stock data ingestion session is already finalized")
+        if self.affected_codes:
+            raise RuntimeError("File flush is only supported for cold-start stock data")
+        append_result = await sync_publish_helpers._flush_staged_stock_data_rows(
+            ctx,
+            stage=stage,
+            exclude_codes=frozenset(),
+        )
+        self._appended_rows += append_result.stats.inserted
+        self.staged_rows = 0
 
     async def discard(self, ctx: Any) -> None:
         await sync_publish_helpers._discard_staged_stock_data_rows(ctx)
@@ -172,7 +198,7 @@ class StockDataIngestionSession:
         )
         outcome = StockDataCommitOutcome(
             api_calls=api_calls,
-            appended_rows=append_result.stats.inserted,
+            appended_rows=self._appended_rows + append_result.stats.inserted,
             affected_codes=affected_codes,
             replaced_codes=replaced_codes,
             replaced_rows=replaced_rows,
@@ -196,6 +222,7 @@ class StockDataIngestionSession:
                 )
         self.affected_codes.clear()
         self.staged_rows = 0
+        self._appended_rows = 0
         return outcome
 
     async def _finalize_cancelled_commit(
@@ -287,11 +314,16 @@ async def execute_stock_data_bulk_fetch(
     current: int,
     total: int,
     fallback_log_message: str,
+    flush_stage: ProviderStockStage | None = None,
 ) -> StockDataBulkFetchOutcome:
     if decision.method != "bulk" or decision.plan is None:
         return StockDataBulkFetchOutcome()
 
     stocks_updated = 0
+    residual_dates: set[str] = set()
+    completed_dates: set[str] = set()
+    active_file_key: str | None = None
+    active_file_dates: set[str] = set()
     try:
         sync_fetch_planner._emit_fetch_execution_progress(
             ctx,
@@ -303,23 +335,47 @@ async def execute_stock_data_bulk_fetch(
             target_label=f"{len(target_dates)} dates",
         )
         target_date_set = build_target_date_set(target_dates)
+        bulk_service = sync_fetch_planner._get_bulk_service(ctx)
 
         async def _consume_stock_bulk_rows(
             batch_rows: list[dict[str, Any]],
-            _file_info: BulkFileInfo,
+            file_info: BulkFileInfo | None,
         ) -> None:
-            del _file_info
+            nonlocal active_file_key, active_file_dates
+            file_key = file_info.key if file_info is not None else "__single_bulk_file__"
+            if (
+                flush_stage is not None
+                and active_file_key is not None
+                and file_key != active_file_key
+            ):
+                await session.flush(ctx, stage=flush_stage)
+                completed_dates.update(active_file_dates)
+                active_file_dates = set()
             rows = _convert_stock_bulk_rows(
                 batch_rows,
                 target_dates=target_date_set,
+                incomplete_dates=set(),
+                allow_raw_only=True,
             )
-            await session.stage(ctx, rows)
+            active_file_dates.update(str(row["date"]) for row in rows)
+            await session.stage(
+                ctx,
+                rows,
+                detect_provider_drift=(
+                    flush_stage is None
+                    and not bool(getattr(ctx, "initial_load", False))
+                ),
+            )
+            active_file_key = file_key
 
-        bulk_result = await sync_fetch_planner._get_bulk_service(ctx).fetch_with_plan(
+        bulk_result = await bulk_service.fetch_with_plan(
             decision.plan,
             on_rows_batch=_consume_stock_bulk_rows,
             accumulate_rows=False,
         )
+        if flush_stage is not None and active_file_key is not None:
+            await session.flush(ctx, stage=flush_stage)
+            completed_dates.update(active_file_dates)
         sync_fetch_planner._log_sync_fetch_execution(
             stage=stage_name,
             endpoint="/equities/bars/daily",
@@ -333,6 +389,7 @@ async def execute_stock_data_bulk_fetch(
             api_calls=bulk_result.api_calls,
             stocks_updated=stocks_updated,
             bulk_result=bulk_result,
+            residual_dates=tuple(sorted(residual_dates)),
         )
     except Exception as e:
         await session.discard(ctx)
@@ -352,6 +409,9 @@ async def execute_stock_data_bulk_fetch(
         return StockDataBulkFetchOutcome(
             used_rest_fallback=True,
             fallback_reason=fallback_reason,
+            residual_dates=tuple(
+                sorted((set(target_dates) - completed_dates) | residual_dates)
+            ),
         )
 
 

@@ -154,6 +154,34 @@ def test_finalizer_publishes_terminal_only_after_maintenance_evidence_and_reopen
     assert decision.maintenance.semanticDigests == {}
 
 
+def test_initial_finalizer_reopens_without_automatic_maintenance(
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+    session = _Session(tmp_path, events)
+    decisions: list[MarketFinalizationDecision] = []
+
+    finalizer = MarketMaintenanceFinalizer(
+        session=session,  # type: ignore[arg-type]
+        operation="initial_sync",
+        compactor=_Compactor(events),  # type: ignore[arg-type]
+        evidence_writer=lambda _root, _record: events.append("evidence"),
+        attach=lambda _resources, _record: events.append("attach"),  # type: ignore[arg-type]
+        run_maintenance=False,
+    )
+    finalizer.finalize(
+        operation_outcome=MarketOperationOutcome.SUCCEEDED,
+        publish_terminal=lambda decision: (
+            decisions.append(decision),
+            events.append("terminal"),
+        ),
+    )
+
+    assert events == ["close", "reopen", "attach", "release", "terminal"]
+    assert decisions[0].terminal_outcome is MarketOperationOutcome.SUCCEEDED
+    assert decisions[0].maintenance.outcome is MaintenanceOutcome.NEVER_RUN
+
+
 def test_maintenance_failure_overrides_success_but_reopens_and_releases(
     tmp_path: Path,
 ) -> None:
