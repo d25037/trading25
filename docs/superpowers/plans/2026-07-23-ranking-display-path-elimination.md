@@ -380,7 +380,7 @@ Expected: all commands pass.
 
 - [ ] **Step 3: Re-run the diagnosed local MarketDB benchmark**
 
-Measure `scope=tradingValue`, `scope=indexPerformance`, fundamental Ranking, and symbol snapshot against `/Users/mirage/.local/share/trading25/market-timeseries/market.duckdb`. Record elapsed time, SQL count, response size, and `/usr/bin/time -l` maximum resident set size. Confirm the exact-date valuation plan no longer windows 7.9 million `stock_data` rows.
+Measure `scope=tradingValue`, `scope=indexPerformance`, fundamental Ranking, and symbol snapshot against `~/.local/share/trading25/market-timeseries/market.duckdb`. Record elapsed time, SQL count, response size, and `/usr/bin/time -l` maximum resident set size. Confirm the exact-date valuation plan no longer windows 7.9 million `stock_data` rows.
 
 - [ ] **Step 4: Review generated and implementation diffs**
 

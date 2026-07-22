@@ -480,6 +480,8 @@ class TestRankingScopeRoute:
     def test_scope_is_forwarded_to_ranking_service(
         self, mock_get_rankings: MagicMock, client: TestClient
     ) -> None:
+        previous_reader = client.app.state.market_reader
+        client.app.state.market_reader = MagicMock()
         mock_get_rankings.return_value = MarketRankingResponse(
             date="2024-01-19",
             markets=["prime"],
@@ -490,7 +492,10 @@ class TestRankingScopeRoute:
             lastUpdated="2024-01-19T00:00:00Z",
         )
 
-        response = client.get("/api/analytics/ranking?scope=tradingValue")
+        try:
+            response = client.get("/api/analytics/ranking?scope=tradingValue")
+        finally:
+            client.app.state.market_reader = previous_reader
 
         assert response.status_code == 200
         assert mock_get_rankings.call_args.kwargs["scope"] == "tradingValue"

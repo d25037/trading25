@@ -284,6 +284,7 @@ class TestOpenAPISchema:
             "markets",
             "lookbackDays",
             "periodDays",
+            "scope",
             "sector33Name",
             "sector17Name",
             "includeValuation",
