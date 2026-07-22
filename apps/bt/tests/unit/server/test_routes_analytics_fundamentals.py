@@ -22,7 +22,13 @@ from src.application.contracts.margin_analytics import (
     MarginVolumeRatioResponse,
 )
 from src.application.contracts.analytics import DataProvenance, ResponseDiagnostics
-from src.application.contracts.roe import ROEMetadata, ROEResponse, ROEResultItem, ROESummary
+from src.application.contracts.ranking import MarketRankingResponse, Rankings
+from src.application.contracts.roe import (
+    ROEMetadata,
+    ROEResponse,
+    ROEResultItem,
+    ROESummary,
+)
 from src.application.contracts.fundamentals import (
     FundamentalDataPoint,
     FundamentalsComputeResponse,
@@ -38,7 +44,9 @@ def client() -> TestClient:
         yield test_client
 
 
-def _make_response(symbol: str = "7203", data_count: int = 1) -> FundamentalsComputeResponse:
+def _make_response(
+    symbol: str = "7203", data_count: int = 1
+) -> FundamentalsComputeResponse:
     """テスト用レスポンスを生成"""
     data = [
         FundamentalDataPoint(
@@ -62,7 +70,9 @@ def _make_response(symbol: str = "7203", data_count: int = 1) -> FundamentalsCom
         tradingValuePeriod=15,
         forecastEpsLookbackFyCount=3,
         lastUpdated="2024-06-01T00:00:00Z",
-        provenance=DataProvenance(source_kind="market", loaded_domains=["stock_data", "statements"]),
+        provenance=DataProvenance(
+            source_kind="market", loaded_domains=["stock_data", "statements"]
+        ),
         diagnostics=ResponseDiagnostics(),
     )
 
@@ -93,7 +103,9 @@ class TestGetFundamentals:
             tradingValuePeriod=15,
             forecastEpsLookbackFyCount=3,
             lastUpdated="2024-06-01T00:00:00Z",
-            provenance=DataProvenance(source_kind="market", loaded_domains=["stock_data", "statements"]),
+            provenance=DataProvenance(
+                source_kind="market", loaded_domains=["stock_data", "statements"]
+            ),
             diagnostics=ResponseDiagnostics(),
         )
         resp = client.get("/api/analytics/fundamentals/9999")
@@ -143,9 +155,7 @@ class TestGetFundamentals:
             assert {"field": "reason", "message": reason} in body["details"]
             recovery = [item for item in body["details"] if item["field"] == "recovery"]
             if status == 409:
-                assert recovery == [
-                    {"field": "recovery", "message": "market_db_sync"}
-                ]
+                assert recovery == [{"field": "recovery", "message": "market_db_sync"}]
             else:
                 assert recovery == []
 
@@ -174,12 +184,14 @@ class TestGetFundamentals:
             with patch(target, side_effect=error):
                 response = client.request(method, url, json=payload)
             assert response.status_code == 409
-            assert {"field": "reason", "message": "pit_snapshot_inconsistent"} in response.json()[
-                "details"
-            ]
-            assert {"field": "recovery", "message": "market_db_sync"} in response.json()[
-                "details"
-            ]
+            assert {
+                "field": "reason",
+                "message": "pit_snapshot_inconsistent",
+            } in response.json()["details"]
+            assert {
+                "field": "recovery",
+                "message": "market_db_sync",
+            } in response.json()["details"]
 
     @patch("src.entrypoints.http.routes.analytics_market.fundamentals_service")
     def test_query_params(self, mock_service: MagicMock, client: TestClient) -> None:
@@ -244,7 +256,9 @@ class TestGetFundamentals:
         assert call_args.forecast_eps_lookback_fy_count == 3
 
     @patch("src.entrypoints.http.routes.analytics_market.fundamentals_service")
-    def test_prefer_consolidated_false(self, mock_service: MagicMock, client: TestClient) -> None:
+    def test_prefer_consolidated_false(
+        self, mock_service: MagicMock, client: TestClient
+    ) -> None:
         mock_service.compute_fundamentals.return_value = _make_response()
         resp = client.get(
             "/api/analytics/fundamentals/7203",
@@ -279,13 +293,23 @@ def _make_roe_response() -> ROEResponse:
     )
 
 
-def _make_margin_pressure_response(empty: bool = False) -> MarginPressureIndicatorsResponse:
+def _make_margin_pressure_response(
+    empty: bool = False,
+) -> MarginPressureIndicatorsResponse:
     return MarginPressureIndicatorsResponse(
         symbol="7203",
         averagePeriod=15,
         longPressure=[]
         if empty
-        else [MarginLongPressureData(date="2024-06-01", pressure=1.2, longVol=1000, shortVol=500, avgVolume=2000)],
+        else [
+            MarginLongPressureData(
+                date="2024-06-01",
+                pressure=1.2,
+                longVol=1000,
+                shortVol=500,
+                avgVolume=2000,
+            )
+        ],
         flowPressure=[]
         if empty
         else [
@@ -299,9 +323,15 @@ def _make_margin_pressure_response(empty: bool = False) -> MarginPressureIndicat
         ],
         turnoverDays=[]
         if empty
-        else [MarginTurnoverDaysData(date="2024-06-01", turnoverDays=2.1, longVol=1000, avgVolume=2000)],
+        else [
+            MarginTurnoverDaysData(
+                date="2024-06-01", turnoverDays=2.1, longVol=1000, avgVolume=2000
+            )
+        ],
         lastUpdated="2024-06-01T00:00:00Z",
-        provenance=DataProvenance(source_kind="market", loaded_domains=["margin_data", "stock_data"]),
+        provenance=DataProvenance(
+            source_kind="market", loaded_domains=["margin_data", "stock_data"]
+        ),
         diagnostics=ResponseDiagnostics(),
     )
 
@@ -311,19 +341,31 @@ def _make_margin_ratio_response(empty: bool = False) -> MarginVolumeRatioRespons
         symbol="7203",
         longRatio=[]
         if empty
-        else [MarginVolumeRatioData(date="2024-06-01", ratio=0.8, weeklyAvgVolume=1000, marginVolume=800)],
+        else [
+            MarginVolumeRatioData(
+                date="2024-06-01", ratio=0.8, weeklyAvgVolume=1000, marginVolume=800
+            )
+        ],
         shortRatio=[]
         if empty
-        else [MarginVolumeRatioData(date="2024-06-01", ratio=0.3, weeklyAvgVolume=1000, marginVolume=300)],
+        else [
+            MarginVolumeRatioData(
+                date="2024-06-01", ratio=0.3, weeklyAvgVolume=1000, marginVolume=300
+            )
+        ],
         lastUpdated="2024-06-01T00:00:00Z",
-        provenance=DataProvenance(source_kind="market", loaded_domains=["margin_data", "stock_data"]),
+        provenance=DataProvenance(
+            source_kind="market", loaded_domains=["margin_data", "stock_data"]
+        ),
         diagnostics=ResponseDiagnostics(),
     )
 
 
 class TestAnalyticsRouteHelpers:
     def test_get_executor_recreates_when_shutdown(self) -> None:
-        with patch.object(analytics_market, "_executor", SimpleNamespace(_shutdown=True)):
+        with patch.object(
+            analytics_market, "_executor", SimpleNamespace(_shutdown=True)
+        ):
             executor = analytics_market._get_executor()
             assert isinstance(executor, ThreadPoolExecutor)
             executor.shutdown(wait=True)
@@ -339,6 +381,7 @@ class TestAnalyticsRouteHelpers:
         with pytest.raises(HTTPException) as exc:
             analytics_market._get_margin_service(cast(Any, request))
         assert exc.value.status_code == 422
+
 
 class TestGetRoe:
     @patch("src.entrypoints.http.routes.analytics_market._get_roe_service")
@@ -399,7 +442,9 @@ class TestMarginRoutes:
         self, mock_get_service: MagicMock, client: TestClient
     ) -> None:
         service = AsyncMock()
-        service.get_margin_pressure.return_value = _make_margin_pressure_response(empty=True)
+        service.get_margin_pressure.return_value = _make_margin_pressure_response(
+            empty=True
+        )
         mock_get_service.return_value = service
 
         resp = client.get("/api/analytics/stocks/7203/margin-pressure")
@@ -427,3 +472,29 @@ class TestMarginRoutes:
 
         resp = client.get("/api/analytics/stocks/7203/margin-ratio")
         assert resp.status_code == 404
+
+
+class TestRankingScopeRoute:
+    @patch("src.application.services.ranking_service.RankingService.get_rankings")
+    def test_scope_is_forwarded_to_ranking_service(
+        self, mock_get_rankings: MagicMock, client: TestClient
+    ) -> None:
+        mock_get_rankings.return_value = MarketRankingResponse(
+            date="2024-01-19",
+            markets=["prime"],
+            lookbackDays=1,
+            periodDays=250,
+            rankings=Rankings(),
+            indexPerformance=[],
+            lastUpdated="2024-01-19T00:00:00Z",
+        )
+
+        response = client.get("/api/analytics/ranking?scope=tradingValue")
+
+        assert response.status_code == 200
+        assert mock_get_rankings.call_args.kwargs["scope"] == "tradingValue"
+
+    def test_invalid_scope_returns_422(self, client: TestClient) -> None:
+        response = client.get("/api/analytics/ranking?scope=unknown")
+
+        assert response.status_code == 422

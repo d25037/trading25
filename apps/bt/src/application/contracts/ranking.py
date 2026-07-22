@@ -51,6 +51,13 @@ RankingFundamentalStateFilter = Literal[
 ]
 SectorStrengthBucket = Literal["sector_strong", "sector_neutral", "sector_weak"]
 SectorStrengthFamily = Literal["balanced_sector_strength", "long_hybrid_leadership"]
+RankingScope = Literal[
+    "all",
+    "tradingValue",
+    "periodHigh",
+    "periodLow",
+    "indexPerformance",
+]
 
 
 def normalize_sector_strength_family(value: str) -> SectorStrengthFamily:

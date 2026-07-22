@@ -93,6 +93,12 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _empty_ranking_collection(
+    *_args: object, **_kwargs: object
+) -> list[ranking_contracts.RankingItem]:
+    return []
+
+
 _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY = "eps_forecast_to_actual"
 
 
@@ -132,6 +138,7 @@ class RankingService:
         markets: str = "prime",
         lookback_days: int = 1,
         period_days: int = 250,
+        scope: ranking_contracts.RankingScope = "all",
         sector33_name: str | None = None,
         sector17_name: str | None = None,
         include_valuation: bool = False,
@@ -174,9 +181,40 @@ class RankingService:
             or apply_technical_state_filter
             else limit
         )
+        trading_value_query = (
+            _ranking_by_trading_value_average_query
+            if scope in {"all", "tradingValue"}
+            else _empty_ranking_collection
+        )
+        trading_value_daily_query = (
+            _ranking_by_trading_value_query
+            if scope in {"all", "tradingValue"}
+            else _empty_ranking_collection
+        )
+        price_change_query = (
+            _ranking_by_price_change_from_days_query
+            if scope == "all"
+            else _empty_ranking_collection
+        )
+        price_change_daily_query = (
+            _ranking_by_price_change_query
+            if scope == "all"
+            else _empty_ranking_collection
+        )
+        period_high_query = (
+            _ranking_by_period_high_query
+            if scope in {"all", "periodHigh"}
+            else _empty_ranking_collection
+        )
+        period_low_query = (
+            _ranking_by_period_low_query
+            if scope in {"all", "periodLow"}
+            else _empty_ranking_collection
+        )
+        includes_index_performance = scope in {"all", "indexPerformance"}
         # 5種類のランキングを取得
         if lookback_days > 1:
-            trading_value = _ranking_by_trading_value_average_query(
+            trading_value = trading_value_query(
                 self._reader,
                 target_date,
                 lookback_days,
@@ -186,7 +224,7 @@ class RankingService:
                 sector17_name=sector17_name,
             )
         else:
-            trading_value = _ranking_by_trading_value_query(
+            trading_value = trading_value_daily_query(
                 self._reader,
                 target_date,
                 query_limit,
@@ -196,7 +234,7 @@ class RankingService:
             )
 
         if lookback_days > 1:
-            gainers = _ranking_by_price_change_from_days_query(
+            gainers = price_change_query(
                 self._reader,
                 target_date,
                 lookback_days,
@@ -206,7 +244,7 @@ class RankingService:
                 sector33_name=sector33_name,
                 sector17_name=sector17_name,
             )
-            losers = _ranking_by_price_change_from_days_query(
+            losers = price_change_query(
                 self._reader,
                 target_date,
                 lookback_days,
@@ -217,7 +255,7 @@ class RankingService:
                 sector17_name=sector17_name,
             )
         else:
-            gainers = _ranking_by_price_change_query(
+            gainers = price_change_daily_query(
                 self._reader,
                 target_date,
                 query_limit,
@@ -226,7 +264,7 @@ class RankingService:
                 sector33_name=sector33_name,
                 sector17_name=sector17_name,
             )
-            losers = _ranking_by_price_change_query(
+            losers = price_change_daily_query(
                 self._reader,
                 target_date,
                 query_limit,
@@ -236,7 +274,7 @@ class RankingService:
                 sector17_name=sector17_name,
             )
 
-        period_high = _ranking_by_period_high_query(
+        period_high = period_high_query(
             self._reader,
             target_date,
             period_days,
@@ -245,7 +283,7 @@ class RankingService:
             sector33_name=sector33_name,
             sector17_name=sector17_name,
         )
-        period_low = _ranking_by_period_low_query(
+        period_low = period_low_query(
             self._reader,
             target_date,
             period_days,
@@ -255,12 +293,14 @@ class RankingService:
             sector17_name=sector17_name,
         )
         ranking_collections = (trading_value, gainers, losers, period_high, period_low)
-        _enrich_ranking_collections_with_daily_technical_metrics(
-            self._reader,
-            ranking_collections,
-            target_date=target_date,
-        )
-        if include_valuation:
+        has_equity_collections = any(ranking_collections)
+        if has_equity_collections:
+            _enrich_ranking_collections_with_daily_technical_metrics(
+                self._reader,
+                ranking_collections,
+                target_date=target_date,
+            )
+        if include_valuation and has_equity_collections:
             price_basis_date = _resolve_latest_stock_data_date_query(self._reader)
             _enrich_ranking_collections_with_valuation(
                 self._reader,
@@ -321,7 +361,7 @@ class RankingService:
                     target_date=target_date,
                     market_codes=query_market_codes,
                 )
-        elif apply_technical_state_filter:
+        elif apply_technical_state_filter and has_equity_collections:
             _enrich_ranking_collections_with_technical_flags(
                 self._reader,
                 ranking_collections,
@@ -333,7 +373,7 @@ class RankingService:
                 technical_state=technical_state,
             )
             _limit_and_rerank_ranking_collections(ranking_collections, limit)
-        else:
+        elif has_equity_collections:
             _enrich_ranking_collections_with_technical_flags(
                 self._reader,
                 ranking_collections,
@@ -351,24 +391,29 @@ class RankingService:
                 sector_strength_family=sector_strength_family,
             )
             if include_sector_strength
+            and (has_equity_collections or includes_index_performance)
             else {}
         )
-        if sector_strength_by_name:
+        if sector_strength_by_name and has_equity_collections:
             _enrich_ranking_collections_with_sector_strength(
                 ranking_collections,
                 sector_strength_by_name=sector_strength_by_name,
             )
-        index_performance = load_index_performance(
-            self._reader,
-            table_exists=lambda table_name: _table_exists_query(
-                self._reader, table_name
-            ),
-            date=target_date,
-            lookback_days=lookback_days,
-            market_codes=query_market_codes,
-            include_sector_strength=include_sector_strength,
-            sector_strength_by_name=sector_strength_by_name,
-            sector_strength_family=sector_strength_family,
+        index_performance = (
+            load_index_performance(
+                self._reader,
+                table_exists=lambda table_name: _table_exists_query(
+                    self._reader, table_name
+                ),
+                date=target_date,
+                lookback_days=lookback_days,
+                market_codes=query_market_codes,
+                include_sector_strength=include_sector_strength,
+                sector_strength_by_name=sector_strength_by_name,
+                sector_strength_family=sector_strength_family,
+            )
+            if includes_index_performance
+            else []
         )
 
         return ranking_contracts.MarketRankingResponse(
