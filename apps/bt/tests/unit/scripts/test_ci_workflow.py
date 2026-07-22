@@ -12,7 +12,7 @@ from ruamel.yaml import YAML
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
-RESEARCH_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "research-publication.yml"
+RESEARCH_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "research-promotion.yml"
 PREPUSH_CI = REPO_ROOT / "scripts" / "prepush-ci.sh"
 NAUTILUS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nautilus-smoke.yml"
 GITLEAKS_CONFIG = REPO_ROOT / ".gitleaks.toml"
@@ -100,27 +100,20 @@ def test_change_classification_pipeline_fails_closed() -> None:
     assert "set -o pipefail" in classify_step["run"]
 
 
-def test_research_is_excluded_from_product_ci_and_runs_only_for_publication() -> None:
+def test_research_is_excluded_from_product_ci_and_runs_only_for_promotion() -> None:
     assert "bt-research-tests" not in _jobs()
 
     workflow = _workflow(RESEARCH_WORKFLOW)
     triggers = workflow["on"]
+    assert "push" not in triggers
     assert "pull_request" not in triggers
     assert triggers["workflow_dispatch"] is None
-    assert triggers["push"] == {
-        "branches": ["main"],
-        "paths": [
-            "apps/bt/docs/experiments/**",
-            "apps/bt/tests/fixtures/research/**",
-            "docs/research-pit-invalidation-register.md",
-        ],
-    }
 
     research_job = workflow["jobs"]["research-tests"]
     run_research_tests = next(
         step
         for step in research_job["steps"]
-        if step.get("name") == "Run publication research tests"
+        if step.get("name") == "Run promotion research tests"
     )
     command = run_research_tests["run"]
 

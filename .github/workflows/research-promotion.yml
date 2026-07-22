@@ -1,12 +1,6 @@
-name: Research Publication CI
+name: Research Promotion CI
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "apps/bt/docs/experiments/**"
-      - "apps/bt/tests/fixtures/research/**"
-      - "docs/research-pit-invalidation-register.md"
   workflow_dispatch:
 
 permissions:
@@ -16,7 +10,7 @@ env:
   UV_VERSION: "0.11.29"
 
 concurrency:
-  group: research-publication-${{ github.ref }}
+  group: research-promotion-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -42,7 +36,7 @@ jobs:
         working-directory: apps/bt
       - name: Check research guardrails
         run: python scripts/check-research-guardrails.py
-      - name: Run publication research tests
+      - name: Run promotion research tests
         env:
           RESEARCH_SHARD_INDEX: ${{ matrix.shard }}
           RESEARCH_SHARD_COUNT: "6"
