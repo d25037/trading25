@@ -2,204 +2,184 @@
   "version": 1,
   "approvals": [
     {
-      "fingerprint": "sha256:97f256bc5e0c0fb829dca38305e8e35c3b55d239ed76b74e6b2438929f307486",
-      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:cd0f35480dede789ce4ccff14f806860c7862f94faa3403a00509d21495eaddb",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:3ff416e3d2a4a14164a60f6e3637d6dc18dc84eec9e8fc0a27067d85e89333e7",
-      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:e5b24bf3a75e445c278fc655b368fc9e8ce6060afde8f74ac50657da8420ecc5",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:00b3efab51064f400a0e1cf0288e3323d429f7e82f8f2f3482d18f001ecceef0",
-      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:ce6bd0a50a403c6ce7efc300a5eeba8a83af8c6d647172b463fe0e2cf61a4156",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:93ca8469c0c7777958654991b08bc22fcd9b4ba4f99eef4f6e4054582643df3d",
-      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:dd4a28e8d305352df8ff3af5fdd169dcae5986032389363be78b96ab3a4f34ee",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:651b559623ad7c21ad877238dc7b1bcacbbd12af49bd053661052e9c18c60367",
-      "reason": "Market v5 provider-adjusted/current-basis responses remove legacy price-basis and valuation-basis fields in favor of provider lineage.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:48ee74fb42b54690d037a0fb252c6e32e6ba063887309675c80635b4e764bb4e",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:6751d9b81f51e6e07c049b9452364cdccbd76cb235d2c5d34409835c208bf667",
-      "reason": "Market v5 provider-adjusted/current-basis responses remove legacy price-basis and valuation-basis fields in favor of provider lineage.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:b8237bd5b4c74d25632cfa8413ac72e54d58eef3d781274d9878ed9d2d7d7784",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:e04e18bf3eecc40ad865f740cf976fcce35d36d9936622cfbaf2dc3738326a68",
-      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:3b528b928b8af3abdfed93d3fc823f6191bbe049778d2ff6127cbb7a472489a8",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:fc6e99b6dfc564216376e99e8e7d7d03c1e512111e795ee5dc203d7ce2c27c8e",
-      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:04d802b5beccbd9094f5a69573910b7e76f517f6062e15b19eafacb9d762556f",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:a15d41df443d0c838e2df6f4fbc32db8c05127a3bfe71527a8547b676b876c27",
-      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:a454f5b7d7b4b085a8655ffaafbb6fd1d8b68d768f9e1e2d72ee907d3cffafbb",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:1aa5fc1fc3b39f6d1137a69bae0acf50aa034ec67ab77ce27f47d3f084420252",
-      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:714d78782f06dca42849cbed29d34c926e2dbe6b10a066bda2d149e419cf32e6",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:74f03d0d7d17f4e22d33ec1d16a51d532ce37fa0deda049c8b1c7284932cb511",
-      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:9d57c520bf114bb4639ff86cf02fb1890024c60de857bd729515ca71f5d9141d",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:e74bd85e821d19c6b03c613bd6ae4e4c19c925406fd89afaa860c254f038e9ed",
-      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:5a7b4fb2fffee0ae236fb8f45a9c107225f3fff1d6aa275a9a676c38e8c54ce4",
+      "reason": "VectorBT-only optimization responses always emit fast_candidates as a non-null ranked list.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:f09156f058d2e0771b77dd52c833c2adda43977d259914f5ae758dfd1243e940",
-      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:4e89575de6a56116f86f48a2ba649d4789f37225772f197d3789f054b7088e6c",
+      "reason": "VectorBT-only optimization responses always emit fast_candidates as a non-null ranked list.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:5c05102e034f2681a3ffc7015adb3e3b192ae59469e596b1d0f11412c35468c5",
-      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:f4567942c6eab96b0dca5397cda22e6d2ffd5aa584e0356f5ac325d6418c4dd8",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:d408410325ce4b075477b2798c94502a76c2635c7fefda690e3504189f40f2f0",
-      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:00417d2471982f871bff60f6cc9504fc3c3523ae1a42f82a8243f1bc01b8b484",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:4c1a4829ab2690e1ebbd8435ac184a5016341c60e8148ae4399d75caefc4dc8c",
-      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:02c8844304faeb99b6d6c74d9bfb339f09ff9c81bfcbd082eab1124877a901e2",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:02c69c23f00d38bfb8ab813577a36a66ac451445161535218748a54722c911ed",
-      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:c7779fd57e93444272e5ab111a0eb184b4ddda466d4c29469b163282c5b4a495",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:2d7879404cef89279b4db06400834aad8bc023d91b0b1824b4c1a190235aacc9",
-      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:b20e5583b485d133c6e0acc673ffd1a34ca9dee9cbe22d84cddbd70152d3c94d",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:f15d3e305e5df7368a1c04348cdadbf115cb478ca80b195748431200310b1632",
-      "reason": "Market v5 provider-adjusted/current-basis responses remove legacy price-basis and valuation-basis fields in favor of provider lineage.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:d36df10cee1723adeed2610965627f2c068faad054a784039f4da5e66b4afa91",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:a085eb7854ae07d760d31dc4c3c5dc79e8a32ed71bd137033e399569ddf1610d",
-      "reason": "Market v5 provider-adjusted/current-basis responses remove legacy price-basis and valuation-basis fields in favor of provider lineage.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:5fc148297606b79dcb9ea4979ee27f4e090b7a0a5772094cd827f48f514f04cb",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:ab0188c4395bd2ac6c79ff5f6892bf837b9c61d7361d0ec93b19a554f2ea2d32",
-      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:0a8cff0c29b4762bec4f9a89c112a839e92fddc307bcfbd5ccc8e15477e66e81",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:1ef2fc6113e6da9cd83a08f632ef8d8f2601276fe7cb8d4a0c518fa88e50b08c",
-      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:c85e53e762acf3082dae522f4236c0964710e83bf97d72af0eedb703f8c99ffc",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:c33c0ec06f1f8f815bbc842a6170cd0513bae8aae0efacdfcddd87b907ab1cec",
-      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:fffc1d539fa5e30bbfb37de49a072ddc9b7c7e1ee5544f1cb5742405cc81f07e",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:3239174ed6403c3a19acf91d1c300d191e9f73f6db9ad88bf62d09ac67352d2d",
-      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:3b50a726d30caff2a05c95bae0e63261e2da311e2a1fafdc8f647590cc8404d1",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:cc840fdcaf094f6ef83f3d1d76ee419f9437a444ebfd2898bd00268d1e778071",
-      "reason": "Market v5 provider-adjusted/current-basis responses remove legacy price-basis and valuation-basis fields in favor of provider lineage.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:252fb6c8ea2df44d41001f6531413f4a5d5d3d7c864b9c7222bd2e18d537102e",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:5b3e370e66d6d4ff7e6b7fa6832a5d21c60c3679819f21027fb46d3e0fc052d7",
-      "reason": "Market v5 provider-adjusted/current-basis responses remove legacy price-basis and valuation-basis fields in favor of provider lineage.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:8f0a44c5bf81941b1a1f6dd82c12a314d0cebbe3c9afcca68bcdb324cf4011e3",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:62f4ece1afc90c5813390fe9eef92577296244b943e310c1e75fe82e0e5ffced",
-      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:ce0d17d352efcfa734cec7d5e24696d3b3411513832d2a4b37633617c4822516",
+      "reason": "VectorBT-only optimization responses always emit fast_candidates as a non-null ranked list.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:b34456129ffafd310fe3a241e7c2d49c104f56539516a1098c60c0f318c43624",
-      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:2da28cbd906b8575b3083c53d17e1374ecaa6bc97c53bf5213be3ec272e4a034",
+      "reason": "VectorBT-only optimization responses always emit fast_candidates as a non-null ranked list.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:d5d59eb44ea3d382855a1215d5d4dd636958b94db1fc0f969de07bad02466b36",
-      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:60e269e92865a07f244ef6b1e38968f6800b3fe83f2403b836066d2f9554d659",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:2f508eccb70351ec3a5c7af952169487a6b908c48664b15680d56dec51b2dce2",
-      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:4a4c2217c9ed422aca063c77ca595ed7f65cd0763f5a287d7777941e32fb110a",
+      "reason": "VectorBT-only optimization responses always emit fast_candidates as a non-null ranked list.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:c5abda3212b5ef375f1295cb6646fd7ea3b562de25a9b3f6bb50640289945e38",
-      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:4220900768a4d19b2b8fad58cc6afa037321f29896e6ab9b816cc8cbd2567947",
+      "reason": "VectorBT-only optimization responses always emit fast_candidates as a non-null ranked list.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:be15221f51b52cc945d61e2c8b5ce4b6c8e401326e5be28961c695f1ac26a631",
-      "reason": "Market v5 dataset snapshots require complete provider and fundamentals-adjustment provenance for every supported bundle.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:e80121b8c7919b6bb7ebaf219c5a461d0552bebf7c314b9bebdc3a7863f424d8",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:2e3b5507c44d714e45e84e77ed0a3e45c42eaf7c7b9071514493fce25c23061d",
-      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:0f38cf05a38dea9a8f9f3b3685f6d8729aaa2f5c0f4d81cb6f0781e70e57cf85",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:ea4cde745fb069a3fca2a2bbc4fce5c0863eedb1074b932ebddc1ec1d75f0fb0",
-      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:ad7da61ad4995d1e6f5c938d84c726d074f72c71fd0b40211ee7d4b8720e51bf",
+      "reason": "VectorBT-only optimization responses always emit fast_candidates as a non-null ranked list.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:77bc0cede38e3d55e27e59114f72fba059896cc63017543821ab7535d0215348",
-      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:8aa799d822ba0378b709932530852db0d5092de852c1f091645e2fdf85c635a4",
+      "reason": "VectorBT-only optimization responses always emit fast_candidates as a non-null ranked list.",
+      "expiresOn": "2026-08-23"
     },
     {
-      "fingerprint": "sha256:ee24b17e23df7bdbeafd2c45eb16e892ba921ce0b38f54616a1cfddcaeb4c71b",
-      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
-      "expiresOn": "2026-08-21"
-    },
-    {
-      "fingerprint": "sha256:dc5732508aaa59dd21a6ec623433df9f19eafc28537d371d9346a81e8674a7a8",
-      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
-      "expiresOn": "2026-08-21"
-    },
-    {
-      "fingerprint": "sha256:dc7f3057bc36d15b8504cd9292c0429f59ee11d3b50906f6a9e12524c5f0c490",
-      "reason": "Market v5 clean-cut retires standalone adjusted-metrics materialization and its legacy status/progress contracts; sync owns current-basis publication.",
-      "expiresOn": "2026-08-21"
-    },
-    {
-      "fingerprint": "sha256:da013172e584357dbe0466b4e6500b5b3258f75ca24cb4587660518663e068b8",
-      "reason": "Market v5 provider-adjusted/current-basis responses remove legacy price-basis and valuation-basis fields in favor of provider lineage.",
-      "expiresOn": "2026-08-21"
-    },
-    {
-      "fingerprint": "sha256:135fdcb735292b56bb69ca6843a473fb9e2f2fd09f9426d007f4a736210d85f0",
-      "reason": "Market v5 provider-adjusted/current-basis responses remove legacy price-basis and valuation-basis fields in favor of provider lineage.",
-      "expiresOn": "2026-08-21"
+      "fingerprint": "sha256:e67fa8d055ed5f44d1cd7ad2381e1ea6259ed6a92598afc5a621bdc14d00d403",
+      "reason": "Nautilus execution and verification contracts are intentionally removed in favor of the single-stage VectorBT path.",
+      "expiresOn": "2026-08-23"
     }
   ]
 }
