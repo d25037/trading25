@@ -13,13 +13,15 @@ from src.application.contracts.fundamentals_pit import (
     FundamentalsPitSnapshotError,
 )
 from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.infrastructure.data_access.current_basis_fundamentals import (
+    resolve_current_basis_provider_windows,
+)
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
 from src.infrastructure.external_api.dataset.helpers import (
     convert_dated_response,
     convert_ohlcv_response,
 )
 from src.infrastructure.external_api.jquants_client import StockInfo
-from src.shared.provider_stock_window import validate_provider_plan
 from src.shared.utils.market_code_alias import expand_market_codes
 
 
@@ -84,90 +86,69 @@ def _cutoff_timestamp(cutoff: date) -> str:
     return f"{cutoff.isoformat()}T23:59:59.999999+09:00"
 
 
-def _resolve_provider_windows(
+def resolve_market_session_date(
+    reader: MarketDbReader,
+    cutoff_date: date | None = None,
+) -> tuple[date, date]:
+    """Resolve the shared knowledge cutoff and effective TOPIX market session."""
+    relation = reader.query_one(
+        """
+        SELECT 1 AS exists
+        FROM information_schema.tables
+        WHERE lower(table_name) = 'topix_data'
+        LIMIT 1
+        """
+    )
+    if relation is None:
+        raise FundamentalsPitSnapshotError(
+            "pit_snapshot_inconsistent", "local market frontier is unavailable"
+        )
+    if cutoff_date is None:
+        frontier = reader.query_one("SELECT MAX(date) AS date FROM topix_data")
+        if frontier is None or frontier["date"] is None:
+            raise FundamentalsPitSnapshotError(
+                "pit_snapshot_inconsistent", "local market frontier is unavailable"
+            )
+        knowledge_cutoff_date = _as_date(frontier["date"], field="market frontier")
+    else:
+        knowledge_cutoff_date = cutoff_date
+
+    session = reader.query_one(
+        "SELECT MAX(date) AS date FROM topix_data WHERE date <= ?",
+        (knowledge_cutoff_date.isoformat(),),
+    )
+    if session is None or session["date"] is None:
+        raise FundamentalsPitSnapshotError(
+            "pit_snapshot_inconsistent",
+            f"no local market session exists on or before {knowledge_cutoff_date}",
+        )
+    return (
+        knowledge_cutoff_date,
+        _as_date(session["date"], field="effective market date"),
+    )
+
+
+def _resolve_shared_provider_windows(
     reader: MarketDbReader,
     codes: Sequence[str],
     effective_market_date: date,
 ) -> dict[str, dict[str, Any]]:
-    normalized_codes = sorted({normalize_stock_code(code) for code in codes if code})
-    if not normalized_codes:
-        return {}
-    placeholders = ",".join("?" for _ in normalized_codes)
-    rows = _records(
-        reader.query(
-            f"""
-            SELECT code, coverage_start, coverage_end, provider_plan, provider_as_of,
-                   source_fingerprint, updated_at
-            FROM stock_provider_windows
-            WHERE code IN ({placeholders})
-            ORDER BY code
-            """,
-            tuple(normalized_codes),
-        )
+    windows = resolve_current_basis_provider_windows(
+        reader,
+        codes,
+        effective_market_date,
     )
-    by_code = {normalize_stock_code(str(row["code"])): row for row in rows}
-    missing = [code for code in normalized_codes if code not in by_code]
-    if missing:
-        raise FundamentalsPitSnapshotError(
-            "provider_window_required",
-            "market_db_sync recovery required: provider window is unavailable for "
-            + ", ".join(missing),
-        )
-
-    pending = _records(
-        reader.query(
-            f"""
-            SELECT DISTINCT {_NORMALIZED_CODE_SQL} AS code
-            FROM current_basis_recompute_pending
-            WHERE {_NORMALIZED_CODE_SQL} IN ({placeholders})
-            ORDER BY code
-            """,
-            tuple(normalized_codes),
-        )
-    )
-    if pending:
-        pending_codes = ", ".join(str(row["code"]) for row in pending)
-        raise FundamentalsPitSnapshotError(
-            "current_adjusted_metrics_required",
-            "market_db_sync recovery required: current-basis recompute is pending for "
-            + pending_codes,
-        )
-
-    provider_plans: set[str] = set()
-    provider_as_of_dates: set[date] = set()
-    for code, window in by_code.items():
-        coverage_start = _as_date(window["coverage_start"], field="provider coverage_start")
-        coverage_end = _as_date(window["coverage_end"], field="provider coverage_end")
-        provider_as_of = _as_date(window["provider_as_of"], field="provider as-of")
-        try:
-            provider_plan = validate_provider_plan(window["provider_plan"])
-        except ValueError as exc:
-            raise FundamentalsPitSnapshotError(
-                "provider_window_required",
-                f"market_db_sync recovery required: provider window for {code} "
-                "has invalid provider plan lineage",
-            ) from exc
-        if (
-            coverage_start > effective_market_date
-            or coverage_end < effective_market_date
-            or coverage_start > coverage_end
-            or provider_as_of < coverage_end
-            or not str(window["source_fingerprint"] or "").strip()
-        ):
-            raise FundamentalsPitSnapshotError(
-                "provider_window_required",
-                f"market_db_sync recovery required: provider window for {code} "
-                f"does not cover {effective_market_date}",
-            )
-        provider_plans.add(provider_plan)
-        provider_as_of_dates.add(provider_as_of)
-    if len(provider_plans) != 1 or len(provider_as_of_dates) != 1:
-        raise FundamentalsPitSnapshotError(
-            "provider_window_required",
-            "market_db_sync recovery required: provider windows do not share one "
-            "provider plan and as-of frontier",
-        )
-    return by_code
+    return {
+        code: {
+            "code": window.code,
+            "coverage_start": window.coverage_start,
+            "coverage_end": window.coverage_end,
+            "provider_plan": window.provider_plan,
+            "provider_as_of": window.provider_as_of,
+            "source_fingerprint": window.source_fingerprint,
+        }
+        for code, window in windows.items()
+    }
 
 
 def _resolve_master(
@@ -288,79 +269,6 @@ def _load_metric_rows(
             params,
         )
     )
-
-
-def _validate_current_fundamentals_state(
-    reader: MarketDbReader,
-    codes: Sequence[str],
-    windows: dict[str, dict[str, Any]],
-) -> None:
-    normalized_codes = sorted({normalize_stock_code(code) for code in codes if code})
-    if not normalized_codes:
-        return
-    placeholders = ",".join("?" for _ in normalized_codes)
-    state_rows = _records(
-        reader.query(
-            f"""
-            SELECT code, fundamentals_adjustment_basis_date, source_fingerprint,
-                   statement_count, materialized_at
-            FROM current_basis_fundamentals_state
-            WHERE code IN ({placeholders})
-            ORDER BY code
-            """,
-            tuple(normalized_codes),
-        )
-    )
-    state_by_code = {
-        normalize_stock_code(str(row["code"])): row for row in state_rows
-    }
-    raw_rows = _load_statement_rows(reader, normalized_codes, None)
-    metric_rows = _load_metric_rows(reader, normalized_codes, None)
-    raw_by_key = {
-        (normalize_stock_code(str(row["code"])), str(row["statement_id"])): row
-        for row in raw_rows
-    }
-    metric_by_key = {
-        (normalize_stock_code(str(row["code"])), str(row["statement_id"])): row
-        for row in metric_rows
-    }
-
-    inconsistent = False
-    for code in normalized_codes:
-        state = state_by_code.get(code)
-        raw_keys = {key for key in raw_by_key if key[0] == code}
-        metric_keys = {key for key in metric_by_key if key[0] == code}
-        if state is None:
-            inconsistent = True
-            continue
-        basis_date = str(windows[code]["coverage_end"])
-        state_fingerprint = str(state["source_fingerprint"] or "")
-        inconsistent = inconsistent or (
-            str(state["fundamentals_adjustment_basis_date"]) != basis_date
-            or not state_fingerprint.strip()
-            or not str(state["materialized_at"] or "").strip()
-            or int(state["statement_count"]) != len(raw_keys)
-            or int(state["statement_count"]) != len(metric_keys)
-            or raw_keys != metric_keys
-        )
-        for key in raw_keys & metric_keys:
-            source = raw_by_key[key]
-            metric = metric_by_key[key]
-            inconsistent = inconsistent or (
-                str(metric["fundamentals_adjustment_basis_date"]) != basis_date
-                or str(metric["source_fingerprint"] or "") != state_fingerprint
-                or str(metric["disclosed_date"]) != str(source["disclosed_date"])
-                or str(metric["disclosed_at"]) != str(source["disclosed_at"])
-                or str(metric["period_end"]) != str(source["period_end"])
-                or str(metric["period_type"] or "").upper()
-                != str(source["type_of_current_period"] or "").upper()
-            )
-    if inconsistent:
-        raise FundamentalsPitSnapshotError(
-            "current_adjusted_metrics_required",
-            "market_db_sync recovery required: current-basis fundamentals "
-            "state does not match provider coverage and full statement identities",
-        )
 
 
 def _validate_current_metrics(
@@ -524,8 +432,7 @@ def _load_prime_panel(reader: MarketDbReader, effective_market_date: date) -> pd
     codes = [str(row["code"]) for row in master_rows]
     if not codes:
         return pd.DataFrame()
-    windows = _resolve_provider_windows(reader, codes, effective_market_date)
-    _validate_current_fundamentals_state(reader, codes, windows)
+    windows = _resolve_shared_provider_windows(reader, codes, effective_market_date)
     statements = _load_statement_rows(reader, codes, effective_market_date)
     metrics = _load_metric_rows(reader, codes, effective_market_date)
     _validate_current_metrics(codes, statements, metrics, windows)
@@ -611,30 +518,13 @@ def _load_prime_panel(reader: MarketDbReader, effective_market_date: date) -> pd
 def _resolve_inside_snapshot(
     reader: MarketDbReader, symbol: str, cutoff_date: date | None
 ) -> FundamentalsPitSnapshot:
-    if cutoff_date is None:
-        frontier = reader.query_one("SELECT MAX(date) AS date FROM topix_data")
-        if frontier is None or frontier["date"] is None:
-            raise FundamentalsPitSnapshotError(
-                "pit_snapshot_inconsistent", "local market frontier is unavailable"
-            )
-        knowledge_cutoff_date = _as_date(frontier["date"], field="market frontier")
-    else:
-        knowledge_cutoff_date = cutoff_date
-
-    session = reader.query_one(
-        "SELECT MAX(date) AS date FROM topix_data WHERE date <= ?",
-        (knowledge_cutoff_date.isoformat(),),
+    knowledge_cutoff_date, effective_market_date = resolve_market_session_date(
+        reader,
+        cutoff_date,
     )
-    if session is None or session["date"] is None:
-        raise FundamentalsPitSnapshotError(
-            "pit_snapshot_inconsistent",
-            f"no local market session exists on or before {knowledge_cutoff_date}",
-        )
-    effective_market_date = _as_date(session["date"], field="effective market date")
     code = normalize_stock_code(symbol)
     stock_info, _master = _resolve_master(reader, code, effective_market_date)
-    window = _resolve_provider_windows(reader, [code], effective_market_date)[code]
-    _validate_current_fundamentals_state(reader, [code], {code: window})
+    window = _resolve_shared_provider_windows(reader, [code], effective_market_date)[code]
     statements, statement_rows = _load_statements(reader, code, knowledge_cutoff_date)
     metrics = _load_metric_rows(reader, [code], knowledge_cutoff_date)
     _validate_current_metrics([code], statement_rows, metrics, {code: window})

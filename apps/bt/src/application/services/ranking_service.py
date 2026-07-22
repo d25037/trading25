@@ -38,6 +38,7 @@ from src.application.services.ranking_fundamental_queries import (
     build_adjusted_fundamental_ratio_candidates as _build_adjusted_fundamental_ratio_candidates,
     load_adjusted_daily_valuation_frame as _load_adjusted_daily_valuation_frame_query,
     load_fundamental_stock_rows as _load_fundamental_stock_rows_query,
+    resolve_latest_fundamental_date as _resolve_latest_fundamental_date_query,
     resolve_latest_stock_data_date as _resolve_latest_stock_data_date_query,
     table_exists as _table_exists_query,
 )
@@ -459,7 +460,7 @@ class RankingService:
             raise ValueError("forecast_lookback_fy_count must be >= 1")
 
         requested_market_codes, query_market_codes = resolve_market_codes(markets)
-        target_date = _resolve_latest_stock_data_date_query(self._reader)
+        target_date = _resolve_latest_fundamental_date_query(self._reader)
 
         adjusted_valuation = _load_adjusted_daily_valuation_frame_query(
             self._reader,
@@ -487,6 +488,34 @@ class RankingService:
             limit,
             descending=False,
         )
+        forecast_high = _build_ranked_fundamental_items(
+            self._fundamental_calculator,
+            ratio_candidates,
+            limit,
+            descending=True,
+            sort_field="forecast_eps",
+        )
+        forecast_low = _build_ranked_fundamental_items(
+            self._fundamental_calculator,
+            ratio_candidates,
+            limit,
+            descending=False,
+            sort_field="forecast_eps",
+        )
+        actual_high = _build_ranked_fundamental_items(
+            self._fundamental_calculator,
+            ratio_candidates,
+            limit,
+            descending=True,
+            sort_field="actual_eps",
+        )
+        actual_low = _build_ranked_fundamental_items(
+            self._fundamental_calculator,
+            ratio_candidates,
+            limit,
+            descending=False,
+            sort_field="actual_eps",
+        )
 
         return ranking_contracts.MarketFundamentalRankingResponse(
             date=target_date,
@@ -495,6 +524,10 @@ class RankingService:
             rankings=ranking_contracts.FundamentalRankings(
                 ratioHigh=ratio_high,
                 ratioLow=ratio_low,
+                forecastHigh=forecast_high,
+                forecastLow=forecast_low,
+                actualHigh=actual_high,
+                actualLow=actual_low,
             ),
             lastUpdated=_now_iso(),
         )

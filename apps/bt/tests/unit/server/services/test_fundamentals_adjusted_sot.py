@@ -13,6 +13,10 @@ from src.application.services.fundamentals_service import (
 )
 from src.application.contracts.fundamentals_pit import FundamentalsPitSnapshot
 from src.application.contracts.fundamentals import FundamentalsComputeQuery
+from src.domains.fundamentals.models import (
+    DailyValuationDataPoint as DomainDailyValuationDataPoint,
+    FundamentalDataPoint as DomainFundamentalDataPoint,
+)
 from src.infrastructure.external_api.jquants_client import StockInfo
 
 
@@ -145,6 +149,37 @@ class FakeAdjustedMarketClient:
                 "provider_as_of": "2024-12-30T16:30:00+09:00",
             }
         ]
+
+
+def test_latest_daily_valuation_recomputes_forecast_eps_change_rate() -> None:
+    latest = DomainFundamentalDataPoint(
+        date="2024-03-31",
+        disclosedDate="2024-05-10",
+        periodType="FY",
+        isConsolidated=True,
+        eps=100.0,
+        forecastEps=85.61,
+        forecastEpsChangeRate=-14.39,
+    )
+    valuation = [
+        DomainDailyValuationDataPoint(
+            date="2024-12-30",
+            close=500.0,
+            eps=0.77,
+            forwardEps=80.78,
+            forwardEpsSource="revised",
+        )
+    ]
+
+    result = FundamentalsService._apply_latest_daily_valuation_fields(
+        latest,
+        valuation,
+    )
+
+    assert result is not None
+    assert result.adjustedEps == pytest.approx(0.77)
+    assert result.revisedForecastEps == pytest.approx(80.78)
+    assert result.forecastEpsChangeRate == pytest.approx(10390.9091)
 
 
 class FakeAdjustedMarketClientWithLatestQuarter(FakeAdjustedMarketClient):

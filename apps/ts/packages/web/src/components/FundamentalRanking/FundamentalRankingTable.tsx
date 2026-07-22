@@ -7,12 +7,22 @@ import { useVirtualizedRows } from '@/hooks/useVirtualizedRows';
 import type { FundamentalRankingItem, FundamentalRankings } from '@/types/fundamentalRanking';
 import { formatPriceJPY } from '@/utils/formatters';
 
-type FundamentalRankingType = 'ratioHigh' | 'ratioLow';
+type FundamentalRankingType = 'forecastHigh' | 'forecastLow' | 'actualHigh' | 'actualLow';
 const VIRTUALIZATION_THRESHOLD = 120;
 
 function formatRatio(value: number): string {
   if (!Number.isFinite(value)) return '-';
   return `${value.toLocaleString('ja-JP', { maximumFractionDigits: 4 })}x`;
+}
+
+function formatEps(value: number): string {
+  if (!Number.isFinite(value)) return '-';
+  return value.toLocaleString('ja-JP', { maximumFractionDigits: 2 });
+}
+
+function formatChangeRate(value: number): string {
+  if (!Number.isFinite(value)) return '-';
+  return `${value.toLocaleString('ja-JP', { maximumFractionDigits: 2 })}%`;
 }
 
 function FundamentalRankingRow({
@@ -32,9 +42,12 @@ function FundamentalRankingRow({
       <td className="max-w-[180px] truncate px-2 py-1.5">{item.companyName}</td>
       <td className="max-w-[100px] truncate px-2 py-1.5 text-muted-foreground">{item.sector33Name}</td>
       <td className="px-2 py-1.5 text-right tabular-nums">{formatPriceJPY(item.currentPrice)}</td>
-      <td className="px-2 py-1.5 text-right tabular-nums">{formatRatio(item.epsValue)}</td>
+      <td className="px-2 py-1.5 text-right tabular-nums">{formatEps(item.forecastEps)}</td>
+      <td className="px-2 py-1.5 text-right tabular-nums">{formatEps(item.actualEps)}</td>
+      <td className="px-2 py-1.5 text-right tabular-nums">{formatRatio(item.forecastToActualRatio)}</td>
+      <td className="px-2 py-1.5 text-right tabular-nums">{formatChangeRate(item.forecastEpsChangeRate)}</td>
       <td className="px-2 py-1.5 text-muted-foreground tabular-nums">
-        {item.disclosedDate}
+        {item.forecastDisclosedDate}
         <span className="ml-1 text-[10px] uppercase">{item.source}</span>
       </td>
     </tr>
@@ -52,7 +65,7 @@ export function FundamentalRankingTable({
   error: Error | null;
   onStockClick: (code: string) => void;
 }) {
-  const [activeRankingType, setActiveRankingType] = useState<FundamentalRankingType>('ratioHigh');
+  const [activeRankingType, setActiveRankingType] = useState<FundamentalRankingType>('forecastHigh');
   const currentItems = rankings?.[activeRankingType] ?? [];
   const shouldVirtualize = currentItems.length >= VIRTUALIZATION_THRESHOLD;
   const virtual = useVirtualizedRows(currentItems, {
@@ -72,12 +85,14 @@ export function FundamentalRankingTable({
           value={activeRankingType}
           onValueChange={(value) => setActiveRankingType(value as FundamentalRankingType)}
         >
-          <SelectTrigger className="h-8 w-40 text-xs">
+          <SelectTrigger aria-label="Fundamental ranking type" className="h-8 w-40 text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="ratioHigh">Ratio High</SelectItem>
-            <SelectItem value="ratioLow">Ratio Low</SelectItem>
+            <SelectItem value="forecastHigh">Forecast High</SelectItem>
+            <SelectItem value="forecastLow">Forecast Low</SelectItem>
+            <SelectItem value="actualHigh">Actual High</SelectItem>
+            <SelectItem value="actualLow">Actual Low</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -99,14 +114,17 @@ export function FundamentalRankingTable({
                 <th className="px-2 py-1.5 text-left">Company</th>
                 <th className="w-24 px-2 py-1.5 text-left">Sector</th>
                 <th className="w-24 px-2 py-1.5 text-right">Price</th>
-                <th className="w-36 px-2 py-1.5 text-right">Forecast/Actual EPS</th>
+                <th className="w-24 px-2 py-1.5 text-right">Forecast EPS</th>
+                <th className="w-24 px-2 py-1.5 text-right">Actual EPS</th>
+                <th className="w-24 px-2 py-1.5 text-right">F/A Ratio</th>
+                <th className="w-24 px-2 py-1.5 text-right">Change</th>
                 <th className="w-36 px-2 py-1.5 text-left">Disclosed</th>
               </tr>
             </thead>
             <tbody>
               {shouldVirtualize && virtual.paddingTop > 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-0" style={{ height: virtual.paddingTop }} />
+                  <td colSpan={10} className="p-0" style={{ height: virtual.paddingTop }} />
                 </tr>
               ) : null}
               {virtual.visibleItems.map((item) => (
@@ -118,7 +136,7 @@ export function FundamentalRankingTable({
               ))}
               {shouldVirtualize && virtual.paddingBottom > 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-0" style={{ height: virtual.paddingBottom }} />
+                  <td colSpan={10} className="p-0" style={{ height: virtual.paddingBottom }} />
                 </tr>
               ) : null}
             </tbody>

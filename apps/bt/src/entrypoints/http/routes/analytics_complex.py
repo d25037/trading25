@@ -18,6 +18,7 @@ from src.application.contracts import (
     portfolio_factor_regression as portfolio_factor_contracts,
 )
 from src.application.contracts import ranking as ranking_contracts
+from src.application.contracts.fundamentals_pit import FundamentalsPitSnapshotError
 from src.application.contracts import screening as screening_contracts
 from src.application.contracts.jobs import JobStatus
 from src.infrastructure.db.market.query_helpers import is_valid_stock_code
@@ -33,6 +34,9 @@ from src.application.services.screening_job_service import (
     screening_job_service,
 )
 from src.application.services.strategy_dataset_metadata import format_market_scope_label
+from src.entrypoints.http.routes.fundamentals_error_mapping import (
+    raise_fundamentals_http_error,
+)
 from src.entrypoints.http.error_utils import market_data_http_exception
 
 router = APIRouter(tags=["Analytics"])
@@ -237,6 +241,8 @@ async def get_fundamental_ranking(
             forecast_above_recent_fy_actuals=bool(forecastAboveRecentFyActuals),
             forecast_lookback_fy_count=forecastLookbackFyCount,
         )
+    except FundamentalsPitSnapshotError as exc:
+        raise_fundamentals_http_error(exc)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:

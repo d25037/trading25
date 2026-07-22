@@ -142,9 +142,17 @@ EXPECTED_SCHEMA_ORDERS = {
             "currentPrice",
             "volume",
             "epsValue",
+            "actualEps",
+            "forecastEps",
+            "forecastToActualRatio",
+            "forecastEpsChangeRate",
             "disclosedDate",
+            "actualDisclosedDate",
+            "forecastDisclosedDate",
             "periodType",
             "source",
+            "fundamentalsAdjustmentBasisDate",
+            "providerAsOf",
         ),
         (
             "rank",
@@ -155,12 +163,21 @@ EXPECTED_SCHEMA_ORDERS = {
             "currentPrice",
             "volume",
             "epsValue",
+            "actualEps",
+            "forecastEps",
+            "forecastToActualRatio",
+            "forecastEpsChangeRate",
             "disclosedDate",
+            "actualDisclosedDate",
+            "forecastDisclosedDate",
             "periodType",
             "source",
         ),
     ),
-    "FundamentalRankings": (("ratioHigh", "ratioLow"), ()),
+    "FundamentalRankings": (
+        ("ratioHigh", "ratioLow", "forecastHigh", "forecastLow", "actualHigh", "actualLow"),
+        (),
+    ),
     "MarketFundamentalRankingResponse": (
         ("date", "markets", "metricKey", "rankings", "lastUpdated"),
         ("date", "markets", "metricKey", "rankings", "lastUpdated"),
@@ -283,7 +300,7 @@ EXPECTED_SCHEMA_ORDERS = {
 }
 
 EXPECTED_RAW_ANNOTATIONS_SHA256 = (
-    "cd44ceb23eb014509292caa6a46356a382fd8045acd4baac453315b9529df14d"
+    "be914039d896c1b609b9a3a49d3df8e2f45d0e6cdf6d1f01cce196eac5f54823"
 )
 
 EXPECTED_SCHEMA_DOC_SHA256 = {
@@ -292,9 +309,9 @@ EXPECTED_SCHEMA_DOC_SHA256 = {
     "IndexPerformanceItem": "f12f5bec10af52e872f95ba51e56b8f9461cb39b7086d8eae226397f02a12f2e",
     "MarketRankingResponse": "6176aa7854f70cedfd16a6e12d31c9ae95b35e52e210dce6a58992e13ceefeaf",
     "MarketRankingSymbolResponse": "afef60b257b4ad45a2e4ad894da412734c089fadb040e272d98f3791e9cba01e",
-    "FundamentalRankingItem": "41e5c8e5c347947e2d52379dc21b4ef7ce0cd0c76708cb1b1dd9e802f77921d3",
-    "FundamentalRankings": "97475995fc9671bfa9dd2a6d9395a656d424c156fc0e7de215c6922180636789",
-    "MarketFundamentalRankingResponse": "cfe881f9a31fc4039dafd773a777e3f22cc4a023554cef79244b1ff40c9a56e4",
+    "FundamentalRankingItem": "a7ecdc3d69ee85b7f1e552bc62159ea775b082fe4a66faad415ab8c30d80fe06",
+    "FundamentalRankings": "ac0395ccaf14dfbcda5da4ce97b5c1449d7f7974e976772727cc46911440f474",
+    "MarketFundamentalRankingResponse": "7ec5d6ec76a9594ed62dcc82246cc9d84f3b3fe2eee6999e753edf6407c25f17",
     "ValueCompositeTechnicalMetrics": "f3edda92490bafe41fd059a0415103265c92b406cf94732b38877d2da18ae735",
     "ValueCompositeRankingItem": "a8e8df99fe9ab1073930ba6de086ee0e759fc83802f9cc0ba172132e205586cd",
     "ValueCompositeRankingResponse": "231dddc76bee7ae689e65b22e26c60a903b308330b53ceb5e3e91b02cd5920a8",
@@ -431,9 +448,17 @@ EXPECTED_FUNDAMENTAL_ITEM_DUMP = {
     "currentPrice": 3000.0,
     "volume": 1_000_000.0,
     "epsValue": 1.25,
+    "actualEps": 100.0,
+    "forecastEps": 125.0,
+    "forecastToActualRatio": 1.25,
+    "forecastEpsChangeRate": 25.0,
     "disclosedDate": "2026-07-10",
+    "actualDisclosedDate": "2026-05-10",
+    "forecastDisclosedDate": "2026-07-10",
     "periodType": "FY",
     "source": "revised",
+    "fundamentalsAdjustmentBasisDate": None,
+    "providerAsOf": None,
 }
 
 EXPECTED_TECHNICAL_METRICS_DUMP = {
@@ -633,7 +658,13 @@ def test_fundamental_ranking_response_graph_serialization_is_stable() -> None:
         currentPrice=3000.0,
         volume=1_000_000.0,
         epsValue=1.25,
+        actualEps=100.0,
+        forecastEps=125.0,
+        forecastToActualRatio=1.25,
+        forecastEpsChangeRate=25.0,
         disclosedDate="2026-07-10",
+        actualDisclosedDate="2026-05-10",
+        forecastDisclosedDate="2026-07-10",
         periodType="FY",
         source="revised",
     )
@@ -652,6 +683,10 @@ def test_fundamental_ranking_response_graph_serialization_is_stable() -> None:
         "rankings": {
             "ratioHigh": [EXPECTED_FUNDAMENTAL_ITEM_DUMP],
             "ratioLow": [],
+            "forecastHigh": [],
+            "forecastLow": [],
+            "actualHigh": [],
+            "actualLow": [],
         },
         "lastUpdated": "2026-07-14T15:00:00+09:00",
     }
@@ -761,7 +796,14 @@ def test_ranking_mutable_defaults_are_optional_and_independent() -> None:
         "RankingItem": {"riskFlags", "technicalFlags"},
         "Rankings": {"tradingValue", "gainers", "losers", "periodHigh", "periodLow"},
         "MarketRankingResponse": {"indexPerformance"},
-        "FundamentalRankings": {"ratioHigh", "ratioLow"},
+        "FundamentalRankings": {
+            "ratioHigh",
+            "ratioLow",
+            "forecastHigh",
+            "forecastLow",
+            "actualHigh",
+            "actualLow",
+        },
         "ValueCompositeRankingResponse": {"items"},
         "ValueCompositeScoreResponse": {"weights"},
     }

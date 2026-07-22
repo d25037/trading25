@@ -60,9 +60,17 @@ class FundamentalItem:
     current_price: float
     volume: float
     eps_value: float
+    actual_eps: float
+    forecast_eps: float
+    forecast_to_actual_ratio: float
+    forecast_eps_change_rate: float
     disclosed_date: str
+    actual_disclosed_date: str
+    forecast_disclosed_date: str
     period_type: str
     source: Literal["revised", "fy"]
+    fundamentals_adjustment_basis_date: str | None = None
+    provider_as_of: str | None = None
 
 
 def normalize_period_label(period_type: str | None) -> str:

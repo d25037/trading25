@@ -190,9 +190,17 @@ class FundamentalRankingItem(BaseModel):
     currentPrice: float
     volume: float
     epsValue: float  # latest forecast EPS / latest actual EPS
+    actualEps: float
+    forecastEps: float
+    forecastToActualRatio: float
+    forecastEpsChangeRate: float
     disclosedDate: str
+    actualDisclosedDate: str
+    forecastDisclosedDate: str
     periodType: str
     source: Literal["revised", "fy"]
+    fundamentalsAdjustmentBasisDate: str | None = None
+    providerAsOf: str | None = None
 
 
 class FundamentalRankings(BaseModel):
@@ -200,6 +208,10 @@ class FundamentalRankings(BaseModel):
 
     ratioHigh: list[FundamentalRankingItem] = Field(default_factory=list)
     ratioLow: list[FundamentalRankingItem] = Field(default_factory=list)
+    forecastHigh: list[FundamentalRankingItem] = Field(default_factory=list)
+    forecastLow: list[FundamentalRankingItem] = Field(default_factory=list)
+    actualHigh: list[FundamentalRankingItem] = Field(default_factory=list)
+    actualLow: list[FundamentalRankingItem] = Field(default_factory=list)
 
 
 class MarketFundamentalRankingResponse(BaseModel):

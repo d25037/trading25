@@ -15,6 +15,7 @@ from src.domains.fundamentals import (
     DailyValuationDataPoint as DomainDailyValuationDataPoint,
     FundamentalDataPoint as DomainFundamentalDataPoint,
     FundamentalsCalculator,
+    build_eps_metric_snapshot,
 )
 from src.application.contracts.analytics import ResponseDiagnostics
 from src.application.contracts.fundamentals import (
@@ -453,6 +454,10 @@ class FundamentalsService:
         if latest_metrics is None or not daily_valuation:
             return latest_metrics
         latest_daily = daily_valuation[-1]
+        eps_snapshot = build_eps_metric_snapshot(
+            actual_eps=latest_daily.eps,
+            forecast_eps=latest_daily.forwardEps,
+        )
         return DomainFundamentalDataPoint(
             **{
                 **latest_metrics.model_dump(),
@@ -474,6 +479,8 @@ class FundamentalsService:
                 "revisedForecastEps": latest_daily.forwardEps
                 if latest_daily.forwardEpsSource == "revised"
                 else None,
+                "forecastToActualRatio": eps_snapshot.forecast_to_actual_ratio,
+                "forecastEpsChangeRate": eps_snapshot.forecast_eps_change_rate,
             }
         )
 

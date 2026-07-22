@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 import src.application.services.ranking_service as ranking_service_module
+from src.application.contracts.fundamentals_pit import FundamentalsPitSnapshotError
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.domains.analytics.fundamental_ranking import (
     FundamentalItem,
@@ -430,6 +431,13 @@ def ranking_db(tmp_path):
                 "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
                 (code, d, price, price + 20, price - 10, price, vol, 1.0, None),
             )
+
+    for i, d in enumerate(dates):
+        close = 1000.0 + i * 10
+        conn.execute(
+            "INSERT INTO topix_data VALUES (?,?,?,?,?,?)",
+            (d, close, close, close, close, None),
+        )
 
     conn.execute(
         "INSERT INTO index_master VALUES (?,?,?,?,?)",
@@ -2949,6 +2957,10 @@ class TestGetFundamentalRankings:
         assert result.metricKey == "eps_forecast_to_actual"
         assert "ratioHigh" in result.rankings.model_dump()
         assert "ratioLow" in result.rankings.model_dump()
+        assert "forecastHigh" in result.rankings.model_dump()
+        assert "forecastLow" in result.rankings.model_dump()
+        assert "actualHigh" in result.rankings.model_dump()
+        assert "actualLow" in result.rankings.model_dump()
 
     def test_revised_forecast_is_prioritized(self, service):
         result = service.get_fundamental_rankings(markets="prime", limit=20)
@@ -2959,8 +2971,22 @@ class TestGetFundamentalRankings:
         assert toyota.source == "revised"
         # forecast 140.0 / actual 100.0 = 1.4
         assert toyota.epsValue == 1.4
+        assert toyota.actualEps == pytest.approx(100.0)
+        assert toyota.forecastEps == pytest.approx(140.0)
+        assert toyota.forecastToActualRatio == pytest.approx(1.4)
+        assert toyota.forecastEpsChangeRate == pytest.approx(40.0)
         assert toyota.periodType == "FY"
         assert toyota.disclosedDate == "2024-01-18"
+
+    def test_forecast_and_actual_rankings_use_common_eps_snapshot(self, service):
+        result = service.get_fundamental_rankings(markets="prime", limit=20)
+
+        assert result.rankings.forecastHigh[0].forecastEps >= result.rankings.forecastHigh[1].forecastEps
+        assert result.rankings.forecastLow[0].forecastEps <= result.rankings.forecastLow[1].forecastEps
+        assert result.rankings.actualHigh[0].actualEps >= result.rankings.actualHigh[1].actualEps
+        assert result.rankings.actualLow[0].actualEps <= result.rankings.actualLow[1].actualEps
+        for item in result.rankings.forecastHigh:
+            assert item.forecastToActualRatio == pytest.approx(item.forecastEps / item.actualEps)
 
     def test_fundamental_rankings_prefer_adjusted_daily_valuation_sot(
         self, ranking_db
@@ -3146,6 +3172,27 @@ class TestGetFundamentalRankings:
         assert toyota.disclosedDate == "2024-01-18"
         assert toyota.epsValue == pytest.approx(1.4)
 
+    def test_fundamental_rankings_share_workbench_topix_frontier(self, ranking_db):
+        conn = duckdb.connect(ranking_db)
+        try:
+            conn.execute(
+                "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                ("72030", "2024-01-22", 2600.0, 2620.0, 2580.0, 2610.0, 1_000_000, 1.0, None),
+            )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        try:
+            result = RankingService(reader).get_fundamental_rankings(
+                markets="prime",
+                limit=20,
+            )
+        finally:
+            reader.close()
+
+        assert result.date == "2024-01-19"
+
     def test_filter_handles_stock_without_forecast_snapshot(self, service):
         filtered = service.get_fundamental_rankings(
             markets="prime",
@@ -3178,7 +3225,7 @@ class TestGetFundamentalRankings:
 
         reader = MarketDbReader(db_path)
         svc = RankingService(reader)
-        with pytest.raises(ValueError, match="No trading data"):
+        with pytest.raises(FundamentalsPitSnapshotError, match="market frontier"):
             svc.get_fundamental_rankings()
         reader.close()
 
@@ -4626,7 +4673,13 @@ class TestRankingHelperBranches:
                 current_price=1000.0,
                 volume=12345.0,
                 eps_value=1.25,
+                actual_eps=100.0,
+                forecast_eps=125.0,
+                forecast_to_actual_ratio=1.25,
+                forecast_eps_change_rate=25.0,
                 disclosed_date="2024-01-18",
+                actual_disclosed_date="2024-01-10",
+                forecast_disclosed_date="2024-01-18",
                 period_type="1Q",
                 source="revised",
             ),

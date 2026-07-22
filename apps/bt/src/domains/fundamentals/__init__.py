@@ -1,6 +1,10 @@
 """Fundamentals domain package."""
 
 from src.domains.fundamentals.calculator import FundamentalsCalculator
+from src.domains.fundamentals.eps_metric_snapshot import (
+    EpsMetricSnapshot,
+    build_eps_metric_snapshot,
+)
 from src.domains.fundamentals.models import (
     DailyValuationDataPoint,
     EMPTY_PREV_CASH_FLOW,
@@ -19,6 +23,8 @@ from src.domains.fundamentals.statement_adapter import (
 
 __all__ = [
     "FundamentalsCalculator",
+    "EpsMetricSnapshot",
+    "build_eps_metric_snapshot",
     "FundamentalDataPoint",
     "DailyValuationDataPoint",
     "FYDataPoint",

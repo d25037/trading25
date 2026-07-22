@@ -4872,6 +4872,11 @@ export interface components {
              */
             forecastSalesChangeRate?: number | null;
             /**
+             * Forecasttoactualratio
+             * @description Latest forecast EPS / latest actual EPS
+             */
+            forecastToActualRatio?: number | null;
+            /**
              * Forwardper
              * @description Forward price to earnings ratio
              */
@@ -5027,6 +5032,10 @@ export interface components {
          * @description ファンダメンタルランキング項目
          */
         FundamentalRankingItem: {
+            /** Actualdiscloseddate */
+            actualDisclosedDate: string;
+            /** Actualeps */
+            actualEps: number;
             /** Code */
             code: string;
             /** Companyname */
@@ -5037,10 +5046,22 @@ export interface components {
             disclosedDate: string;
             /** Epsvalue */
             epsValue: number;
+            /** Forecastdiscloseddate */
+            forecastDisclosedDate: string;
+            /** Forecasteps */
+            forecastEps: number;
+            /** Forecastepschangerate */
+            forecastEpsChangeRate: number;
+            /** Forecasttoactualratio */
+            forecastToActualRatio: number;
+            /** Fundamentalsadjustmentbasisdate */
+            fundamentalsAdjustmentBasisDate?: string | null;
             /** Marketcode */
             marketCode: string;
             /** Periodtype */
             periodType: string;
+            /** Providerasof */
+            providerAsOf?: string | null;
             /** Rank */
             rank: number;
             /** Sector33Name */
@@ -5058,6 +5079,14 @@ export interface components {
          * @description 比率ベースのファンダメンタルランキング
          */
         FundamentalRankings: {
+            /** Actualhigh */
+            actualHigh?: components["schemas"]["FundamentalRankingItem"][];
+            /** Actuallow */
+            actualLow?: components["schemas"]["FundamentalRankingItem"][];
+            /** Forecasthigh */
+            forecastHigh?: components["schemas"]["FundamentalRankingItem"][];
+            /** Forecastlow */
+            forecastLow?: components["schemas"]["FundamentalRankingItem"][];
             /** Ratiohigh */
             ratioHigh?: components["schemas"]["FundamentalRankingItem"][];
             /** Ratiolow */

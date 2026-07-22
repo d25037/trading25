@@ -188,6 +188,9 @@ class FundamentalDataPoint(BaseModel):
 
     # Forecast EPS
     forecastEps: float | None = Field(None, description="Forecast EPS (JPY)")
+    forecastToActualRatio: float | None = Field(
+        None, description="Latest forecast EPS / latest actual EPS"
+    )
     forecastEpsChangeRate: float | None = Field(
         None, description="Forecast EPS change rate (%)"
     )

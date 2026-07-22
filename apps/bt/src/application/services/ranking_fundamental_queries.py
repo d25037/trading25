@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from datetime import date
 from typing import Any, Literal
 
@@ -11,10 +10,8 @@ import pandas as pd
 
 from src.application.services.ranking_query_helpers import (
     build_market_filter,
-    normalize_equity_code,
     normalized_code_sql,
     prefer_4digit_order_sql,
-    positive_ratio,
     stocks_canonical_cte,
 )
 from src.application.services.ranking_response_items import finite_or_none, str_or_none
@@ -23,8 +20,16 @@ from src.domains.analytics.fundamental_ranking import (
     StatementRow,
     normalize_period_label,
 )
+from src.domains.fundamentals import build_eps_metric_snapshot
 from src.infrastructure.db.market.market_reader import MarketDbQueryable, MarketDbReader
-from src.shared.provider_stock_window import validate_provider_plan
+from src.infrastructure.data_access.fundamentals_pit_reader import (
+    resolve_market_session_date,
+)
+from src.application.contracts.fundamentals_pit import FundamentalsPitSnapshotError
+from src.infrastructure.data_access.current_basis_fundamentals import (
+    CurrentBasisProviderWindow,
+    resolve_current_basis_provider_windows,
+)
 from src.shared.utils.pit_guard import filter_records_as_of
 from src.shared.utils.share_adjustment import (
     ShareCountSnapshot,
@@ -37,196 +42,17 @@ FUNDAMENTAL_BASE_COLUMNS = (
 )
 
 
-@dataclass(frozen=True)
-class ProviderWindow:
-    code: str
-    coverage_start: str
-    coverage_end: str
-    provider_plan: str
-    provider_as_of: str
-    source_fingerprint: str
-    fundamentals_adjustment_basis_date: str
-    fundamentals_source_fingerprint: str
-    statement_count: int
-    materialized_at: str
-
-
 def resolve_provider_windows(
     reader: MarketDbQueryable,
     codes: Sequence[str],
     effective_market_date: str,
-) -> dict[str, ProviderWindow]:
-    """Resolve complete provider windows and fail closed on pending current metrics."""
-    normalized_codes = sorted({normalize_equity_code(code) for code in codes if code})
-    if not normalized_codes:
-        return {}
-    placeholders = ", ".join("?" for _ in normalized_codes)
-    provider_code = normalized_code_sql("provider.code")
-    rows = reader.query(
-        f"""
-        SELECT {provider_code} AS code,
-               provider.coverage_start, provider.coverage_end,
-               provider.provider_plan,
-               provider.provider_as_of,
-               provider.source_fingerprint AS provider_source_fingerprint,
-               state.fundamentals_adjustment_basis_date,
-               state.source_fingerprint AS fundamentals_source_fingerprint,
-               state.statement_count, state.materialized_at
-        FROM stock_provider_windows AS provider
-        LEFT JOIN current_basis_fundamentals_state AS state
-          ON state.code = {provider_code}
-        WHERE {provider_code} IN ({placeholders})
-        ORDER BY code
-        """,
-        tuple(normalized_codes),
-    )
-    by_code: dict[str, Any] = {}
-    for row in rows:
-        by_code[normalize_equity_code(row["code"])] = row
-
-    pending_code = normalized_code_sql("code")
-    pending_rows = reader.query(
-        f"""
-        SELECT DISTINCT {pending_code} AS code
-        FROM current_basis_recompute_pending
-        WHERE {pending_code} IN ({placeholders})
-        ORDER BY code
-        """,
-        tuple(normalized_codes),
-    )
-    if pending_rows:
-        raise ValueError(
-            "market_db_sync current-basis recompute is pending for "
-            + ", ".join(str(row["code"]) for row in pending_rows)
-        )
-
-    metric_code = normalized_code_sql("metric.code")
-    source_code = normalized_code_sql("source.code")
-    metric_integrity_rows = reader.query(
-        f"""
-        SELECT {metric_code} AS code,
-               COUNT(DISTINCT metric.statement_id) AS metric_count,
-               COUNT(*) FILTER (
-                   WHERE state.code IS NULL
-                      OR metric.fundamentals_adjustment_basis_date
-                         IS DISTINCT FROM state.fundamentals_adjustment_basis_date
-                      OR metric.source_fingerprint
-                         IS DISTINCT FROM state.source_fingerprint
-                      OR source.statement_id IS NULL
-                      OR metric.disclosed_date IS DISTINCT FROM source.disclosed_date
-                      OR metric.disclosed_at IS DISTINCT FROM source.disclosed_at
-                      OR metric.period_end IS DISTINCT FROM source.period_end
-                      OR upper(COALESCE(metric.period_type, ''))
-                         IS DISTINCT FROM upper(
-                             COALESCE(source.type_of_current_period, '')
-                         )
-               ) AS invalid_count
-        FROM statement_metrics_adjusted AS metric
-        LEFT JOIN current_basis_fundamentals_state AS state
-          ON state.code = {metric_code}
-        LEFT JOIN statements AS source
-          ON {source_code} = {metric_code}
-         AND source.statement_id = metric.statement_id
-        WHERE {metric_code} IN ({placeholders})
-        GROUP BY 1
-        """,
-        tuple(normalized_codes),
-    )
-    metric_integrity = {
-        normalize_equity_code(row["code"]): (
-            int(row["metric_count"] or 0),
-            int(row["invalid_count"] or 0),
-        )
-        for row in metric_integrity_rows
-    }
-    raw_count_rows = reader.query(
-        f"""
-        SELECT {source_code} AS code,
-               COUNT(DISTINCT source.statement_id) AS statement_count
-        FROM statements AS source
-        WHERE {source_code} IN ({placeholders})
-        GROUP BY 1
-        """,
-        tuple(normalized_codes),
-    )
-    raw_counts = {
-        normalize_equity_code(row["code"]): int(row["statement_count"] or 0)
-        for row in raw_count_rows
-    }
-
-    resolved: dict[str, ProviderWindow] = {}
-    provider_plans: set[str] = set()
-    provider_as_of_dates: set[date] = set()
-    for code in normalized_codes:
-        row = by_code.get(code)
-        if row is None:
-            raise ValueError(
-                f"market_db_sync unavailable for {code} on {effective_market_date}: "
-                "provider window is missing"
-            )
-        coverage_start = str(row["coverage_start"])
-        coverage_end = str(row["coverage_end"])
-        try:
-            coverage_start_date = date.fromisoformat(coverage_start)
-            coverage_end_date = date.fromisoformat(coverage_end)
-            provider_as_of_date = date.fromisoformat(str(row["provider_as_of"]))
-            provider_plan = validate_provider_plan(row["provider_plan"])
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                f"market_db_sync unavailable for {code} on {effective_market_date}: "
-                "provider window lineage is invalid"
-            ) from exc
-        state_basis_date = row["fundamentals_adjustment_basis_date"]
-        state_fingerprint = row["fundamentals_source_fingerprint"]
-        state_count = row["statement_count"]
-        materialized_at = row["materialized_at"]
-        if (
-            coverage_start > effective_market_date
-            or coverage_end < effective_market_date
-            or coverage_start_date > coverage_end_date
-            or provider_as_of_date < coverage_end_date
-            or not str(row["provider_source_fingerprint"] or "").strip()
-        ):
-            raise ValueError(
-                f"market_db_sync unavailable for {code} on {effective_market_date}: "
-                "provider window does not fully cover the target date"
-            )
-        metric_count, invalid_count = metric_integrity.get(code, (0, 0))
-        raw_count = raw_counts.get(code, 0)
-        if (
-            state_basis_date is None
-            or str(state_basis_date) != coverage_end
-            or not str(state_fingerprint or "").strip()
-            or state_count is None
-            or int(state_count) != metric_count
-            or int(state_count) != raw_count
-            or invalid_count != 0
-            or not str(materialized_at or "").strip()
-        ):
-            raise ValueError(
-                f"market_db_sync unavailable for {code} on "
-                f"{effective_market_date}: current-basis provenance is stale or incomplete"
-            )
-        resolved[code] = ProviderWindow(
-            code=code,
-            coverage_start=coverage_start,
-            coverage_end=coverage_end,
-            provider_plan=provider_plan,
-            provider_as_of=str(row["provider_as_of"]),
-            source_fingerprint=str(row["provider_source_fingerprint"]),
-            fundamentals_adjustment_basis_date=str(state_basis_date),
-            fundamentals_source_fingerprint=str(state_fingerprint),
-            statement_count=int(state_count),
-            materialized_at=str(materialized_at),
-        )
-        provider_plans.add(provider_plan)
-        provider_as_of_dates.add(provider_as_of_date)
-    if len(provider_plans) != 1 or len(provider_as_of_dates) != 1:
-        raise ValueError(
-            "market_db_sync unavailable: provider windows do not share one provider "
-            "plan and as-of frontier"
-        )
-    return resolved
+) -> dict[str, CurrentBasisProviderWindow]:
+    """Compatibility wrapper around the shared batch current-basis validator."""
+    try:
+        target = date.fromisoformat(effective_market_date)
+        return resolve_current_basis_provider_windows(reader, codes, target)
+    except (FundamentalsPitSnapshotError, ValueError) as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def _target_stock_codes(
@@ -306,6 +132,11 @@ def resolve_latest_stock_data_date(reader: MarketDbReader) -> str:
     if row is None or row["max_date"] is None:
         raise ValueError("No trading data available in database")
     return str(row["max_date"])
+
+
+def resolve_latest_fundamental_date(reader: MarketDbReader) -> str:
+    _knowledge_cutoff, effective_market_date = resolve_market_session_date(reader)
+    return effective_market_date.isoformat()
 
 
 def load_fundamental_stock_rows(
@@ -628,8 +459,18 @@ def build_adjusted_fundamental_ratio_candidates(
     for row in adjusted_valuation.to_dict(orient="records"):
         eps = finite_or_none(row.get("eps"))
         forward_eps = finite_or_none(row.get("forward_eps"))
-        ratio = positive_ratio(forward_eps, eps)
-        if ratio is None:
+        eps_snapshot = build_eps_metric_snapshot(
+            actual_eps=eps,
+            forecast_eps=forward_eps,
+        )
+        ratio = eps_snapshot.forecast_to_actual_ratio
+        change_rate = eps_snapshot.forecast_eps_change_rate
+        if (
+            ratio is None
+            or change_rate is None
+            or eps_snapshot.actual_eps is None
+            or eps_snapshot.forecast_eps is None
+        ):
             continue
         code = str(row["code"])
         if forecast_above_recent_fy_actuals:
@@ -647,13 +488,27 @@ def build_adjusted_fundamental_ratio_candidates(
                 current_price=float(row["current_price"]),
                 volume=float(row["volume"]),
                 eps_value=round(ratio, 4),
+                actual_eps=eps_snapshot.actual_eps,
+                forecast_eps=eps_snapshot.forecast_eps,
+                forecast_to_actual_ratio=ratio,
+                forecast_eps_change_rate=change_rate,
                 disclosed_date=(
                     str_or_none(row.get("forward_eps_disclosed_date"))
                     or str_or_none(row.get("statement_disclosed_date"))
                     or target_date
                 ),
+                actual_disclosed_date=(
+                    str_or_none(row.get("statement_disclosed_date")) or target_date
+                ),
+                forecast_disclosed_date=(
+                    str_or_none(row.get("forward_eps_disclosed_date")) or target_date
+                ),
                 period_type="FY",
                 source=source,
+                fundamentals_adjustment_basis_date=str_or_none(
+                    row.get("fundamentals_adjustment_basis_date")
+                ),
+                provider_as_of=str_or_none(row.get("provider_as_of")),
             )
         )
     return candidates

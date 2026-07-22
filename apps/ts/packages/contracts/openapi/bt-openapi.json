@@ -4069,6 +4069,18 @@
             "description": "Forecast sales change rate (%)",
             "title": "Forecastsaleschangerate"
           },
+          "forecastToActualRatio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latest forecast EPS / latest actual EPS",
+            "title": "Forecasttoactualratio"
+          },
           "forwardPer": {
             "anyOf": [
               {
@@ -4428,6 +4440,14 @@
       "FundamentalRankingItem": {
         "description": "ファンダメンタルランキング項目",
         "properties": {
+          "actualDisclosedDate": {
+            "title": "Actualdiscloseddate",
+            "type": "string"
+          },
+          "actualEps": {
+            "title": "Actualeps",
+            "type": "number"
+          },
           "code": {
             "title": "Code",
             "type": "string"
@@ -4448,6 +4468,33 @@
             "title": "Epsvalue",
             "type": "number"
           },
+          "forecastDisclosedDate": {
+            "title": "Forecastdiscloseddate",
+            "type": "string"
+          },
+          "forecastEps": {
+            "title": "Forecasteps",
+            "type": "number"
+          },
+          "forecastEpsChangeRate": {
+            "title": "Forecastepschangerate",
+            "type": "number"
+          },
+          "forecastToActualRatio": {
+            "title": "Forecasttoactualratio",
+            "type": "number"
+          },
+          "fundamentalsAdjustmentBasisDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fundamentalsadjustmentbasisdate"
+          },
           "marketCode": {
             "title": "Marketcode",
             "type": "string"
@@ -4455,6 +4502,17 @@
           "periodType": {
             "title": "Periodtype",
             "type": "string"
+          },
+          "providerAsOf": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Providerasof"
           },
           "rank": {
             "title": "Rank",
@@ -4486,7 +4544,13 @@
           "currentPrice",
           "volume",
           "epsValue",
+          "actualEps",
+          "forecastEps",
+          "forecastToActualRatio",
+          "forecastEpsChangeRate",
           "disclosedDate",
+          "actualDisclosedDate",
+          "forecastDisclosedDate",
           "periodType",
           "source"
         ],
@@ -4496,6 +4560,34 @@
       "FundamentalRankings": {
         "description": "比率ベースのファンダメンタルランキング",
         "properties": {
+          "actualHigh": {
+            "items": {
+              "$ref": "#/components/schemas/FundamentalRankingItem"
+            },
+            "title": "Actualhigh",
+            "type": "array"
+          },
+          "actualLow": {
+            "items": {
+              "$ref": "#/components/schemas/FundamentalRankingItem"
+            },
+            "title": "Actuallow",
+            "type": "array"
+          },
+          "forecastHigh": {
+            "items": {
+              "$ref": "#/components/schemas/FundamentalRankingItem"
+            },
+            "title": "Forecasthigh",
+            "type": "array"
+          },
+          "forecastLow": {
+            "items": {
+              "$ref": "#/components/schemas/FundamentalRankingItem"
+            },
+            "title": "Forecastlow",
+            "type": "array"
+          },
           "ratioHigh": {
             "items": {
               "$ref": "#/components/schemas/FundamentalRankingItem"

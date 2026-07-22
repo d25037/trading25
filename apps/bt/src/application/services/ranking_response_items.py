@@ -74,9 +74,17 @@ def build_fundamental_ranking_item(
         currentPrice=item.current_price,
         volume=item.volume,
         epsValue=item.eps_value,
+        actualEps=item.actual_eps,
+        forecastEps=item.forecast_eps,
+        forecastToActualRatio=item.forecast_to_actual_ratio,
+        forecastEpsChangeRate=item.forecast_eps_change_rate,
         disclosedDate=item.disclosed_date,
+        actualDisclosedDate=item.actual_disclosed_date,
+        forecastDisclosedDate=item.forecast_disclosed_date,
         periodType=item.period_type,
         source=item.source,
+        fundamentalsAdjustmentBasisDate=item.fundamentals_adjustment_basis_date,
+        providerAsOf=item.provider_as_of,
     )
 
 
@@ -86,12 +94,20 @@ def build_ranked_fundamental_items(
     limit: int,
     *,
     descending: bool,
+    sort_field: str = "eps_value",
 ) -> list[ranking_contracts.FundamentalRankingItem]:
-    sorted_items = calculator.rank_fundamental_items(
-        items,
-        limit,
-        descending=descending,
-    )
+    if sort_field == "eps_value":
+        sorted_items = calculator.rank_fundamental_items(
+            items,
+            limit,
+            descending=descending,
+        )
+    else:
+        sorted_items = sorted(
+            items,
+            key=lambda item: (float(getattr(item, sort_field)), item.code),
+            reverse=descending,
+        )[:limit]
     return [
         build_fundamental_ranking_item(item, index)
         for index, item in enumerate(sorted_items, start=1)

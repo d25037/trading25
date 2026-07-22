@@ -72,6 +72,7 @@ class FundamentalDataPoint(BaseModel):
 
     # Forecast EPS
     forecastEps: float | None = None
+    forecastToActualRatio: float | None = None
     forecastEpsChangeRate: float | None = None
     forecastSales: float | None = None
     forecastSalesChangeRate: float | None = None
