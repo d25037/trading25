@@ -92,6 +92,25 @@ def infer_run_type(job_type: str) -> RunType:
     return _JOB_TYPE_TO_RUN_TYPE.get(job_type, RunType.UNKNOWN)
 
 
+def build_canonical_metrics_from_payload(
+    payload: dict[str, Any] | None,
+) -> CanonicalExecutionMetrics | None:
+    if not isinstance(payload, dict):
+        return None
+    values = {
+        "total_return": payload.get("total_return"),
+        "sharpe_ratio": payload.get("sharpe_ratio"),
+        "sortino_ratio": payload.get("sortino_ratio"),
+        "calmar_ratio": payload.get("calmar_ratio"),
+        "max_drawdown": payload.get("max_drawdown"),
+        "win_rate": payload.get("win_rate"),
+        "trade_count": payload.get("trade_count"),
+    }
+    if not any(value is not None for value in values.values()):
+        return None
+    return CanonicalExecutionMetrics.model_validate(values)
+
+
 def infer_engine_family(job_type: str) -> EngineFamily:
     if job_type in _VECTORBT_JOB_TYPES:
         return EngineFamily.VECTORBT

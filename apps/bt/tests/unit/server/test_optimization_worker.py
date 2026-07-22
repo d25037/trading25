@@ -2,26 +2,12 @@
 
 from datetime import datetime, timedelta
 from threading import Event
-from types import SimpleNamespace
 
 import pytest
 
-from src.application.services.verification_orchestrator import (
-    INTERNAL_VERIFICATION_CANDIDATES_KEY,
-    INTERNAL_VERIFICATION_SCORING_WEIGHTS_KEY,
-    build_verification_seed,
-    serialize_candidate_seeds,
-)
 from src.application.services.job_manager import JobManager
 from src.application.workers import optimization_worker as worker_mod
 from src.application.workers.optimization_worker import run_optimization_worker
-from src.domains.backtest.contracts import (
-    CanonicalExecutionMetrics,
-    EnginePolicy,
-    EnginePolicyMode,
-    VerificationOverallStatus,
-    VerificationSummary,
-)
 from src.application.contracts.jobs import JobStatus
 
 
@@ -140,7 +126,6 @@ async def test_run_optimization_worker_marks_job_failed_on_timeout(
 async def test_optimization_heartbeat_loop_handles_timeout_and_cancel() -> None:
     manager = JobManager()
     timeout_job_id = manager.create_job("worker-strategy", job_type="optimization")
-    timeout_child_id = manager.create_job("worker-strategy", job_type="backtest")
     await manager.claim_job_execution(
         timeout_job_id,
         lease_owner="worker",
@@ -149,20 +134,6 @@ async def test_optimization_heartbeat_loop_handles_timeout_and_cancel() -> None:
     timeout_job = manager.get_job(timeout_job_id)
     assert timeout_job is not None
     timeout_job.timeout_at = datetime.now() - timedelta(seconds=1)
-    timeout_job.raw_result = serialize_candidate_seeds(
-        {},
-        [
-            build_verification_seed(
-                candidate_id="grid_0001",
-                fast_rank=1,
-                fast_score=1.2,
-                fast_metrics=None,
-                strategy_name="worker-strategy",
-                config_override={"shared_config": {"dataset": "demo"}},
-            ).model_copy(update={"verification_run_id": timeout_child_id})
-        ],
-        requested_top_k=1,
-    )
 
     exit_codes: list[int] = []
     await worker_mod._heartbeat_loop(  # noqa: SLF001
@@ -176,30 +147,10 @@ async def test_optimization_heartbeat_loop_handles_timeout_and_cancel() -> None:
     assert timeout_job is not None
     assert timeout_job.status == JobStatus.FAILED
     assert timeout_job.error == "worker_timed_out"
-    timeout_child = manager.get_job(timeout_child_id)
-    assert timeout_child is not None
-    assert timeout_child.status == JobStatus.CANCELLED
     assert exit_codes == [124]
 
     cancel_job_id = manager.create_job("worker-strategy", job_type="optimization")
-    cancel_child_id = manager.create_job("worker-strategy", job_type="backtest")
     await manager.claim_job_execution(cancel_job_id, lease_owner="worker")
-    cancel_job = manager.get_job(cancel_job_id)
-    assert cancel_job is not None
-    cancel_job.raw_result = serialize_candidate_seeds(
-        {},
-        [
-            build_verification_seed(
-                candidate_id="grid_0002",
-                fast_rank=1,
-                fast_score=1.1,
-                fast_metrics=None,
-                strategy_name="worker-strategy",
-                config_override={"shared_config": {"dataset": "demo"}},
-            ).model_copy(update={"verification_run_id": cancel_child_id})
-        ],
-        requested_top_k=1,
-    )
     await manager.request_job_cancel(cancel_job_id, reason="user_requested")
     exit_codes.clear()
     await worker_mod._heartbeat_loop(  # noqa: SLF001
@@ -212,9 +163,6 @@ async def test_optimization_heartbeat_loop_handles_timeout_and_cancel() -> None:
     cancelled_job = manager.get_job(cancel_job_id)
     assert cancelled_job is not None
     assert cancelled_job.status == JobStatus.CANCELLED
-    cancelled_child = manager.get_job(cancel_child_id)
-    assert cancelled_child is not None
-    assert cancelled_child.status == JobStatus.CANCELLED
     assert exit_codes == [0]
 
 
@@ -245,9 +193,6 @@ def test_execute_optimization_sync_extracts_payload(monkeypatch: pytest.MonkeyPa
     class _FakeEngine:
         def __init__(self, strategy_name: str) -> None:
             assert strategy_name == "demo"
-
-        def build_config_override(self, params):  # noqa: ANN001
-            return {"shared_config": {"dataset": "demo"}, "entry_filter_params": params, "exit_trigger_params": {}}
 
         def optimize(self):
             return type(
@@ -283,6 +228,10 @@ def test_execute_optimization_sync_extracts_payload(monkeypatch: pytest.MonkeyPa
                 },
             )()
 
+    def _fail_build_config_override(_params: dict[str, object]) -> dict[str, object]:
+        raise AssertionError("must not rebuild candidate configs")
+
+    _FakeEngine.build_config_override = staticmethod(_fail_build_config_override)
     monkeypatch.setattr(worker_mod, "ParameterOptimizationEngine", _FakeEngine)
 
     payload = worker_mod._execute_optimization_sync("demo")  # noqa: SLF001
@@ -293,76 +242,8 @@ def test_execute_optimization_sync_extracts_payload(monkeypatch: pytest.MonkeyPa
     assert payload["total_combinations"] == 2
     assert payload["html_path"] == "/tmp/result.html"
     assert payload["fast_candidates"][0]["candidate_id"] == "grid_0001"
-    assert payload[INTERNAL_VERIFICATION_CANDIDATES_KEY][0]["candidate_id"] == "grid_0001"
-
-
-@pytest.mark.asyncio
-async def test_run_optimization_worker_runs_verification_when_requested(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    manager = JobManager()
-    job_id = manager.create_job("worker-strategy", job_type="optimization")
-
-    def _execute_sync(strategy_name: str) -> dict[str, object]:
-        assert strategy_name == "worker-strategy"
-        return {
-            "best_score": 1.2,
-            "best_params": {"period": 20},
-            "worst_score": 0.1,
-            "worst_params": {"period": 5},
-            "total_combinations": 12,
-            "html_path": "/tmp/optimization-result.html",
-            INTERNAL_VERIFICATION_CANDIDATES_KEY: [
-                build_verification_seed(
-                    candidate_id="grid_0001",
-                    fast_rank=1,
-                    fast_score=1.2,
-                    fast_metrics=CanonicalExecutionMetrics(
-                        total_return=10.0,
-                        sharpe_ratio=1.1,
-                        max_drawdown=-4.0,
-                        trade_count=5,
-                    ),
-                    strategy_name="worker-strategy",
-                    config_override={"shared_config": {"dataset": "demo"}},
-                ).model_dump(mode="json"),
-            ],
-            INTERNAL_VERIFICATION_SCORING_WEIGHTS_KEY: {"sharpe_ratio": 0.5, "total_return": 0.5},
-        }
-
-    async def _run_verification_orchestrator(manager, **kwargs):  # noqa: ANN001
-        _ = manager
-        updated = dict(kwargs["raw_result"])
-        updated["verification"] = VerificationSummary(
-            overall_status=VerificationOverallStatus.COMPLETED,
-            requested_top_k=1,
-            completed_count=1,
-            mismatch_count=0,
-            authoritative_candidate_id="grid_0001",
-            candidates=[],
-        ).model_dump(mode="json")
-        return updated, VerificationSummary.model_validate(updated["verification"])
-
-    monkeypatch.setattr(worker_mod, "run_verification_orchestrator", _run_verification_orchestrator)
-
-    exit_code = await run_optimization_worker(
-        job_id,
-        "worker-strategy",
-        manager=manager,
-        execute_sync=_execute_sync,
-        engine_policy=EnginePolicy(
-            mode=EnginePolicyMode.FAST_THEN_VERIFY,
-            verification_top_k=1,
-        ),
-        heartbeat_seconds=60.0,
-    )
-
-    job = manager.get_job(job_id)
-    assert exit_code == 0
-    assert job is not None
-    assert job.status == JobStatus.COMPLETED
-    assert job.raw_result is not None
-    assert job.raw_result["verification"]["authoritative_candidate_id"] == "grid_0001"
+    assert len(payload["fast_candidates"]) <= 10
+    assert not any(key.startswith("_verification") for key in payload)
 
 
 def test_optimization_worker_main_uses_cli_args(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -383,7 +264,6 @@ def test_optimization_worker_main_uses_cli_args(monkeypatch: pytest.MonkeyPatch)
             {
                 "job_id": "job-1",
                 "strategy_name": "strategy-1",
-                "engine_policy_json": '{"mode":"fast_then_verify","verification_top_k":3}',
                 "timeout_seconds": 99,
             },
         )(),
@@ -394,28 +274,8 @@ def test_optimization_worker_main_uses_cli_args(monkeypatch: pytest.MonkeyPatch)
     assert captured["job_id"] == "job-1"
     assert captured["strategy_name"] == "strategy-1"
     assert captured["kwargs"] == {
-        "engine_policy": EnginePolicy(
-            mode=EnginePolicyMode.FAST_THEN_VERIFY,
-            verification_top_k=3,
-        ),
         "timeout_seconds": 99,
     }
-
-
-def test_optimization_worker_main_rejects_non_object_engine_policy(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        worker_mod,
-        "_parse_args",
-        lambda: SimpleNamespace(
-            job_id="job-1",
-            strategy_name="strategy-1",
-            engine_policy_json='["bad"]',
-            timeout_seconds=None,
-        ),
-    )
-
-    with pytest.raises(ValueError, match="engine policy payload must be a JSON object"):
-        worker_mod.main()
 
 
 @pytest.mark.asyncio
