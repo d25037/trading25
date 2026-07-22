@@ -503,6 +503,27 @@ class TestRankingScopeRoute:
 
 class TestRankingThreadpoolBoundaries:
     @pytest.mark.asyncio
+    async def test_symbol_snapshot_maps_constructor_error_to_route_500(self) -> None:
+        request = SimpleNamespace(
+            app=SimpleNamespace(state=SimpleNamespace(market_reader=MagicMock()))
+        )
+
+        with patch(
+            "src.application.services.ranking_service.RankingService",
+            side_effect=RuntimeError("reader setup failed"),
+        ):
+            with pytest.raises(HTTPException) as exc:
+                await analytics_complex.get_ranking_symbol_snapshot(
+                    request=request,
+                    code="7203",
+                )
+
+        assert exc.value.status_code == 500
+        assert exc.value.detail == (
+            "Failed to get ranking symbol snapshot: reader setup failed"
+        )
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("route", "service_method", "route_kwargs"),
         [

@@ -84,8 +84,8 @@ async def get_ranking_symbol_snapshot(
     reader = getattr(request.app.state, "market_reader", None)
     if reader is None:
         raise HTTPException(status_code=422, detail="Database not initialized")
-    service = RankingService(reader)
     try:
+        service = RankingService(reader)
         return await run_in_threadpool(
             service.get_symbol_ranking_snapshot,
             code=code,
