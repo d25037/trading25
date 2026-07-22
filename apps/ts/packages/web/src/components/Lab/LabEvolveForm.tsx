@@ -1,6 +1,5 @@
-import type { EnginePolicyMode, LabEvolveRequest } from '@trading25/api-clients/backtest';
+import type { LabEvolveRequest } from '@trading25/api-clients/backtest';
 import { useState } from 'react';
-import { buildEnginePolicy, EnginePolicySelector } from '@/components/EnginePolicySelector';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -33,8 +32,6 @@ export function LabEvolveForm({ strategyName, onSubmit, disabled }: LabEvolveFor
   const [randomAddEntrySignals, setRandomAddEntrySignals] = useState('1');
   const [randomAddExitSignals, setRandomAddExitSignals] = useState('1');
   const [seed, setSeed] = useState('');
-  const [enginePolicyMode, setEnginePolicyMode] = useState<EnginePolicyMode>('fast_only');
-  const [verificationTopK, setVerificationTopK] = useState('5');
   const isEntryTargeted = targetScope !== 'exit_trigger_only';
   const isExitTargeted = targetScope !== 'entry_filter_only';
 
@@ -77,7 +74,6 @@ export function LabEvolveForm({ strategyName, onSubmit, disabled }: LabEvolveFor
     };
     applyRandomAddOptions(request);
     applyOptionalFilters(request);
-    request.engine_policy = buildEnginePolicy(enginePolicyMode, verificationTopK);
     return request;
   };
 
@@ -219,14 +215,6 @@ export function LabEvolveForm({ strategyName, onSubmit, disabled }: LabEvolveFor
           </div>
         </div>
       )}
-
-      <EnginePolicySelector
-        mode={enginePolicyMode}
-        onModeChange={setEnginePolicyMode}
-        verificationTopK={verificationTopK}
-        onVerificationTopKChange={setVerificationTopK}
-        disabled={disabled}
-      />
 
       <Button className="w-full" onClick={handleSubmit} disabled={disabled || !strategyName}>
         Start Evolution

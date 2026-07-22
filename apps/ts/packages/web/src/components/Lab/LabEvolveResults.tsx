@@ -1,6 +1,6 @@
 import type { LabEvolveResult } from '@trading25/api-clients/backtest';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { VerificationSummarySection } from '@/components/VerificationSummarySection';
+import { FastCandidatesSection } from '@/components/FastCandidatesSection';
 
 interface LabEvolveResultsProps {
   result: LabEvolveResult;
@@ -46,7 +46,7 @@ export function LabEvolveResults({ result }: LabEvolveResultsProps) {
         </Table>
       </div>
 
-      <VerificationSummarySection fastCandidates={result.fast_candidates} verification={result.verification} />
+      <FastCandidatesSection fastCandidates={result.fast_candidates} />
     </div>
   );
 }

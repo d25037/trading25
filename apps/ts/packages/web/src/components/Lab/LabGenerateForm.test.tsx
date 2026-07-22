@@ -19,10 +19,9 @@ describe('LabGenerateForm', () => {
       timeframe: 'daily',
       entry_filter_only: false,
       save: true,
-      engine_policy: {
-        mode: 'fast_only',
-      },
     });
+    expect(screen.queryByText('Engine Policy')).not.toBeInTheDocument();
+    expect(screen.queryByText('Top K')).not.toBeInTheDocument();
   });
 
   it('falls back to defaults when count/top are invalid', async () => {
@@ -43,9 +42,6 @@ describe('LabGenerateForm', () => {
       timeframe: 'daily',
       entry_filter_only: false,
       save: true,
-      engine_policy: {
-        mode: 'fast_only',
-      },
     });
   });
 
@@ -82,9 +78,6 @@ describe('LabGenerateForm', () => {
       entry_filter_only: true,
       save: true,
       allowed_categories: ['fundamental'],
-      engine_policy: {
-        mode: 'fast_only',
-      },
     });
   });
 

@@ -244,6 +244,8 @@ describe('BacktestRunner', () => {
       screen.getAllByText('No optimization spec found. Configure it in Strategies > Optimize.').length
     ).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Run Optimization' })).toBeDisabled();
+    expect(screen.queryByText('Engine Policy')).not.toBeInTheDocument();
+    expect(screen.queryByText('Top K')).not.toBeInTheDocument();
   });
 
   it('pins workspace panels to the left grid columns so the control rail does not overlap them', () => {
@@ -274,7 +276,6 @@ describe('BacktestRunner', () => {
 
     expect(mockRunBacktestMutateAsync).toHaveBeenCalledWith({
       strategy_name: 'production/alpha',
-      engine_family: 'vectorbt',
     });
     await waitFor(() => {
       expect(mockSetActiveJobId).toHaveBeenCalledWith('job-1');
@@ -348,9 +349,6 @@ describe('BacktestRunner', () => {
     await user.click(screen.getByRole('button', { name: 'Run Optimization' }));
     expect(mockRunOptimizationMutateAsync).toHaveBeenCalledWith({
       strategy_name: 'production/alpha',
-      engine_policy: {
-        mode: 'fast_only',
-      },
     });
     await waitFor(() => {
       expect(mockSetActiveOptimizationJobId).toHaveBeenCalledWith('opt-1');

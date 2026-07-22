@@ -1,7 +1,7 @@
 # Trading Backtesting
 
 ## プロジェクト概要
-**runner-first research bundle** と高速バックテストを中心とした戦略ツール。研究定義は domain / runner に実装し、VectorBT基盤の高速ベクトル化バックテスト、必要時のみ Nautilus verification、結果確認は runner bundle / canonical docs / static HTML report に寄せる。**FastAPI サーバー (:3002) が唯一の API バックエンド**。フロントエンドは `apps/ts/packages/web/` に集約済み。
+**runner-first research bundle** と高速バックテストを中心とした戦略ツール。研究定義は domain / runner に実装し、VectorBT基盤の高速ベクトル化バックテスト、結果確認は runner bundle / canonical docs / static HTML report に寄せる。**FastAPI サーバー (:3002) が唯一の API バックエンド**。フロントエンドは `apps/ts/packages/web/` に集約済み。
 
 ## 重要原則
 - **表面的なごまかしを絶対に行わない。根本的な解決ができないときは、「今は○○の理由で解決できなかった」と素直に言う**
@@ -234,7 +234,7 @@ Repository-local process/domain skill は現在の Codex skill catalog に公開
 ### Runner-first 研究実行
 - reproducible bundle を runner script から保存する
 - notebook は latest bundle を読む viewer-only surface として扱う
-- 研究内の高速会計は `vectorbt`、上位候補の verification は `Nautilus` に寄せる
+- 研究内の会計は `vectorbt` に寄せる
 
 ### 統一システム設計
 - **Runner First**: domain -> runner -> bundle -> optional notebook viewer を既定にする
@@ -247,4 +247,4 @@ Repository-local process/domain skill は現在の Codex skill catalog に公開
 - ベクトル化処理による大幅な性能向上
 - 大規模データセット対応
 
-この設計により、**runner-first research**・**VectorBT高速化**・**Nautilus verification**・**統一モデル管理**・**統一シグナルシステム**を組み合わせた、スケーラブルで型安全な戦略分析プラットフォームを構築しています。
+この設計により、**runner-first research**・**VectorBT高速化**・**統一モデル管理**・**統一シグナルシステム**を組み合わせた、スケーラブルで型安全な戦略分析プラットフォームを構築しています。

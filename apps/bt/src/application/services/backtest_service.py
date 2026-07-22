@@ -19,7 +19,6 @@ from src.application.services.backtest_result_summary import resolve_backtest_re
 from src.application.services.job_manager import JobManager, job_manager
 from src.application.services.run_contracts import build_strategy_run_spec, normalize_config_override
 from src.domains.backtest.core.runner import BacktestResult, BacktestRunner
-from src.domains.backtest.contracts import EngineFamily
 from src.shared.config.settings import get_settings
 
 _WORKER_MODULE = "src.application.workers.backtest_worker"
@@ -57,7 +56,6 @@ class BacktestService:
         self,
         strategy_name: str,
         config_override: dict[str, Any] | None = None,
-        engine_family: EngineFamily = EngineFamily.VECTORBT,
     ) -> str:
         """
         バックテストをサブミット
@@ -75,7 +73,6 @@ class BacktestService:
             strategy_name,
             config_override=normalized_config_override,
             config_loader=self._runner.config_loader,
-            engine_family=engine_family,
         )
         job_id = self._manager.create_job(strategy_name, run_spec=run_spec)
 

@@ -53,8 +53,6 @@ export type {
   DefaultConfigUpdateRequest,
   DefaultConfigUpdateResponse,
   EngineFamily,
-  EnginePolicy,
-  EnginePolicyMode,
   EvolutionHistoryItem,
   FastCandidateSummary,
   FundamentalDataPoint,
@@ -191,9 +189,4 @@ export type {
   StrategyValidationPathParams,
   StrategyValidationResponse,
   Timeframe as BtTimeframe,
-  VerificationCandidate,
-  VerificationDelta,
-  VerificationOverallStatus,
-  VerificationStatus,
-  VerificationSummary,
 } from './types.js';

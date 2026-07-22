@@ -67,8 +67,10 @@ describe('LabJobHistoryTable', () => {
 
     expect(screen.getByText('Job History')).toBeInTheDocument();
     expect(screen.getByText('experimental/demo')).toBeInTheDocument();
-    expect(screen.getByText('Verification')).toBeInTheDocument();
-    expect(screen.getByText('-')).toBeInTheDocument();
+    expect(screen.getByText('Type')).toBeInTheDocument();
+    expect(screen.getByText('Strategy')).toBeInTheDocument();
+    expect(screen.getByText('Created')).toBeInTheDocument();
+    expect(screen.queryByText('Verification')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'View' }));
     expect(onSelectJob).toHaveBeenCalledWith(job);
@@ -113,21 +115,12 @@ describe('LabJobHistoryTable', () => {
     expect(onSelectJob).toHaveBeenCalledWith(jobs[0]);
   });
 
-  it('shows verification status from completed result payload', () => {
+  it('does not add a verification column for completed results', () => {
     const job = createJob({
       result_data: {
         lab_type: 'generate',
         results: [],
         total_generated: 0,
-        verification: {
-          overall_status: 'completed_with_mismatch',
-          requested_top_k: 2,
-          completed_count: 2,
-          mismatch_count: 1,
-          winner_changed: true,
-          authoritative_candidate_id: null,
-          candidates: [],
-        },
       },
     });
 
@@ -142,6 +135,9 @@ describe('LabJobHistoryTable', () => {
       />
     );
 
-    expect(screen.getByText('completed_with_mismatch')).toBeInTheDocument();
+    expect(screen.getByText('Type')).toBeInTheDocument();
+    expect(screen.getByText('Strategy')).toBeInTheDocument();
+    expect(screen.getByText('Created')).toBeInTheDocument();
+    expect(screen.queryByText('Verification')).not.toBeInTheDocument();
   });
 });

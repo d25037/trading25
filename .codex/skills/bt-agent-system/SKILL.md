@@ -8,7 +8,7 @@ description: Use when bt の戦略自動生成・進化最適化、lab domain、
 ## When to use
 
 - Lab generate/evolve/optimize/improve の実装を変更するとき。
-- `target_scope`、async job、verification stage、worker orchestration を見直すとき。
+- `target_scope`、async job、worker orchestration を見直すとき。
 
 ## Source of Truth
 
@@ -21,7 +21,7 @@ description: Use when bt の戦略自動生成・進化最適化、lab domain、
 ## Workflow
 
 1. route -> service -> worker -> domain の順で責務境界を確認する。
-2. `target_scope`、`entry_filter_only`、`engine_policy` の整合を崩さない。
+2. `target_scope`、`entry_filter_only` の整合を崩さない。
 3. 候補生成ロジックは `domains/lab_agent` に寄せ、route に計算を載せない。
 4. 長時間ジョブの progress、cancel、terminal state を worker 経由で確認する。
 

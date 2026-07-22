@@ -132,42 +132,6 @@ async def test_submit_backtest_creates_task_and_returns_job_id(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_submit_backtest_keeps_explicit_nautilus_engine(monkeypatch):
-    service = BacktestService()
-    captured: dict[str, object] = {}
-
-    async def _dummy_run_backtest(*args, **kwargs):  # noqa: ANN002
-        _ = (args, kwargs)
-        return None
-
-    monkeypatch.setattr(service, "_run_backtest", _dummy_run_backtest)
-    monkeypatch.setattr(
-        service._manager,
-        "create_job",
-        lambda _strategy_name, job_type="backtest", run_spec=None: (
-            captured.update({"job_type": job_type, "run_spec": run_spec}) or "job-nautilus"
-        ),
-    )
-
-    async def _set_job_task(job_id: str, task):
-        captured["job_id"] = job_id
-        await task
-
-    monkeypatch.setattr(service._manager, "set_job_task", _set_job_task)
-
-    job_id = await service.submit_backtest(
-        "strategy",
-        engine_family=EngineFamily.NAUTILUS,
-    )
-
-    assert job_id == "job-nautilus"
-    run_spec = captured["run_spec"]
-    assert run_spec is not None
-    assert run_spec.engine_family == EngineFamily.NAUTILUS
-    assert run_spec.execution_policy_version == "nautilus-daily-verification-v1"
-
-
-@pytest.mark.asyncio
 async def test_submit_backtest_resolves_dataset_from_base_strategy_when_override_missing(monkeypatch):
     service = BacktestService()
     captured: dict[str, object] = {}

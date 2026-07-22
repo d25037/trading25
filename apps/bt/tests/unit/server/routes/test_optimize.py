@@ -337,6 +337,20 @@ class TestOptimizationRouteAdditionalCoverage:
         data = resp.json()
         assert data["job_id"] == "opt-run-1"
         assert data["status"] == "running"
+        mock_service.submit_optimization.assert_awaited_once_with(
+            strategy_name="production/range_break_v5"
+        )
+
+    def test_run_optimization_rejects_removed_engine_policy(self, client):
+        resp = client.post(
+            "/api/optimize/run",
+            json={
+                "strategy_name": "production/range_break_v5",
+                "engine_" + "policy": {"mode": "fast_only"},
+            },
+        )
+
+        assert resp.status_code == 422
 
     def test_run_optimization_failure_returns_500(self, client):
         with patch("src.entrypoints.http.routes.optimize.optimization_service") as mock_service:

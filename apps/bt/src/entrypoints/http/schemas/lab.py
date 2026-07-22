@@ -9,7 +9,6 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.application.contracts import lab as lab_contracts
-from src.domains.backtest.contracts import EnginePolicy
 from src.entrypoints.http.schemas.common import BaseJobResponse
 
 LabSignalCategory = Literal[
@@ -58,14 +57,10 @@ class LabGenerateRequest(BaseModel):
         default=None,
         description="許可するシグナルカテゴリ（未指定時は全カテゴリ）",
     )
-    engine_policy: EnginePolicy = Field(
-        default_factory=EnginePolicy,
-        description="Fast path / verification execution policy",
-    )
-
-
 class LabEvolveRequest(BaseModel):
     """GA進化リクエスト"""
+
+    model_config = ConfigDict(extra="forbid")
 
     strategy_name: str = Field(..., min_length=1, description="ベース戦略名")
     generations: int = Field(default=20, ge=1, le=100, description="世代数")
@@ -100,11 +95,6 @@ class LabEvolveRequest(BaseModel):
         default=None,
         description="最適化対象として許可するカテゴリ（未指定時は全カテゴリ）",
     )
-    engine_policy: EnginePolicy = Field(
-        default_factory=EnginePolicy,
-        description="Fast path / verification execution policy",
-    )
-
     @model_validator(mode="after")
     def _normalize_target_scope(self) -> "LabEvolveRequest":
         if self.target_scope == "exit_trigger_only" and self.entry_filter_only:
@@ -119,6 +109,8 @@ class LabEvolveRequest(BaseModel):
 
 class LabOptimizeRequest(BaseModel):
     """Optuna最適化リクエスト"""
+
+    model_config = ConfigDict(extra="forbid")
 
     strategy_name: str = Field(..., min_length=1, description="ベース戦略名")
     trials: int = Field(default=100, ge=10, le=1000, description="試行回数")
@@ -156,11 +148,6 @@ class LabOptimizeRequest(BaseModel):
     scoring_weights: dict[str, float] | None = Field(
         default=None, description="スコアリング重み"
     )
-    engine_policy: EnginePolicy = Field(
-        default_factory=EnginePolicy,
-        description="Fast path / verification execution policy",
-    )
-
     @model_validator(mode="after")
     def _normalize_target_scope(self) -> "LabOptimizeRequest":
         if self.target_scope == "exit_trigger_only" and self.entry_filter_only:

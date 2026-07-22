@@ -16,21 +16,9 @@ from src.application.services.job_status import TERMINAL_JOB_STATUSES
 from src.application.services.job_manager import JobManager
 from src.application.services.lab_service import (
     _INTERNAL_JOB_MESSAGE_KEY,
-    _EVOLVE_BASE_BEST_MESSAGE,
-    _EVOLVE_COMPLETE_MESSAGE,
     _LAB_JOB_MESSAGES,
     LabService,
 )
-from src.application.services.verification_orchestrator import (
-    INTERNAL_VERIFICATION_SCORING_WEIGHTS_KEY,
-    cancel_verification_children,
-    find_candidate_seed,
-    extract_candidate_seeds,
-    run_verification_orchestrator,
-    serialize_candidate_seeds,
-    strip_verification_metadata,
-)
-from src.domains.backtest.contracts import EnginePolicy, EnginePolicyMode
 from src.application.contracts.jobs import JobStatus
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.shared.config.settings import get_settings
@@ -48,15 +36,6 @@ from src.application.workers.job_runtime import (
     worker_cancel_reason,
     worker_lease_owner,
 )
-
-_VERIFICATION_ENABLED_LAB_TYPES = {"generate", "evolve", "optimize"}
-
-
-def _resolve_engine_policy(payload: dict[str, Any]) -> EnginePolicy:
-    raw_policy = payload.get("engine_policy")
-    if isinstance(raw_policy, dict):
-        return EnginePolicy.model_validate(raw_policy)
-    return EnginePolicy()
 
 
 async def _heartbeat_loop(
@@ -87,11 +66,6 @@ async def _heartbeat_loop(
                 message=timeout_message,
                 error=WORKER_TIMED_OUT_ERROR,
             )
-            await cancel_verification_children(
-                manager,
-                job_id,
-                reason="parent_job_timed_out",
-            )
             record_job_duration(job.job_type, JobStatus.FAILED.value, duration_ms)
             logger.warning(
                 f"lab worker timed out: {job_id} ({lab_type})",
@@ -110,11 +84,6 @@ async def _heartbeat_loop(
             duration_ms = duration_ms_for_loaded_job(job)
             cancel_reason = worker_cancel_reason(job.cancel_reason)
             await manager.cancel_job(
-                job_id,
-                reason=cancel_reason,
-            )
-            await cancel_verification_children(
-                manager,
                 job_id,
                 reason=cancel_reason,
             )
@@ -145,15 +114,14 @@ async def _execute_lab_payload(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
     lab_type = str(payload["lab_type"])
-    engine_policy = _resolve_engine_policy(payload)
-    fast_save = bool(payload.get("save", False)) and engine_policy.mode == EnginePolicyMode.FAST_ONLY
+    save = bool(payload.get("save", False))
     if lab_type == "generate":
         return await asyncio.to_thread(
             service._execute_generate_sync,
             int(payload["count"]),
             int(payload["top"]),
             payload.get("seed"),
-            fast_save,
+            save,
             str(payload["direction"]),
             str(payload["timeframe"]),
             payload.get("universe_preset"),
@@ -172,7 +140,7 @@ async def _execute_lab_payload(
             int(payload["random_add_entry_signals"]),
             int(payload["random_add_exit_signals"]),
             payload.get("seed"),
-            fast_save,
+            save,
             bool(payload.get("entry_filter_only", False)),
             list(payload.get("allowed_categories") or []),
             target_scope,
@@ -184,8 +152,6 @@ async def _execute_lab_payload(
 
         def progress_callback(completed: int, total: int, best_score: float) -> None:
             progress = completed / total if total > 0 else 0.0
-            if engine_policy.mode == EnginePolicyMode.FAST_THEN_VERIFY:
-                progress *= 0.5
             message = f"Trial {completed}/{total} 完了 (best: {best_score:.4f})"
             asyncio.run_coroutine_threadsafe(
                 manager.update_job_status(
@@ -206,7 +172,7 @@ async def _execute_lab_payload(
             int(payload["random_add_entry_signals"]),
             int(payload["random_add_exit_signals"]),
             payload.get("seed"),
-            fast_save,
+            save,
             bool(payload.get("entry_filter_only", False)),
             list(payload.get("allowed_categories") or []),
             payload.get("scoring_weights"),
@@ -224,83 +190,6 @@ async def _execute_lab_payload(
     raise ValueError(f"unsupported lab_type: {lab_type}")
 
 
-def _resolve_verified_complete_message(
-    lab_type: str,
-    payload: dict[str, Any],
-    verification_candidate_id: str | None,
-) -> str:
-    if lab_type == "evolve":
-        strategy_name = str(payload.get("strategy_name", ""))
-        if verification_candidate_id == f"base_{strategy_name}":
-            return _EVOLVE_BASE_BEST_MESSAGE
-        return _EVOLVE_COMPLETE_MESSAGE
-    return _LAB_JOB_MESSAGES[lab_type]["complete"]
-
-
-def _should_run_verification(lab_type: str, engine_policy: EnginePolicy) -> bool:
-    return (
-        engine_policy.mode == EnginePolicyMode.FAST_THEN_VERIFY
-        and lab_type in _VERIFICATION_ENABLED_LAB_TYPES
-    )
-
-
-def _save_verified_result(
-    lab_type: str,
-    payload: dict[str, Any],
-    persisted_result: dict[str, Any],
-    *,
-    authoritative_candidate_id: str | None,
-) -> tuple[dict[str, Any], str]:
-    updated = dict(persisted_result)
-    complete_message = _resolve_verified_complete_message(
-        lab_type,
-        payload,
-        authoritative_candidate_id,
-    )
-    if not bool(payload.get("save")):
-        return updated, complete_message
-
-    if authoritative_candidate_id is None:
-        if lab_type in {"generate", "evolve", "optimize"}:
-            complete_message = f"{complete_message}（verification mismatch により保存スキップ）"
-        return updated, complete_message
-
-    seed = find_candidate_seed(updated, authoritative_candidate_id)
-    if seed is None or seed.strategy_candidate is None:
-        return updated, complete_message
-
-    if (
-        lab_type == "evolve"
-        and seed.strategy_candidate.strategy_id == f"base_{payload['strategy_name']}"
-    ):
-        complete_message = _EVOLVE_BASE_BEST_MESSAGE
-    elif lab_type == "evolve":
-        complete_message = _EVOLVE_COMPLETE_MESSAGE
-
-    from src.domains.lab_agent.yaml_updater import YamlUpdater
-
-    yaml_updater = YamlUpdater()
-    if lab_type == "generate":
-        updated["saved_strategy_path"] = yaml_updater.save_candidate(seed.strategy_candidate)
-    elif lab_type == "evolve":
-        saved_strategy_path, saved_history_path = yaml_updater.save_evolution_result(
-            seed.strategy_candidate,
-            updated.get("history") or [],
-            base_strategy_name=str(payload["strategy_name"]),
-        )
-        updated["saved_strategy_path"] = saved_strategy_path
-        updated["saved_history_path"] = saved_history_path
-    elif lab_type == "optimize":
-        saved_strategy_path, saved_history_path = yaml_updater.save_optuna_result(
-            seed.strategy_candidate,
-            updated.get("history") or [],
-            base_strategy_name=str(payload["strategy_name"]),
-        )
-        updated["saved_strategy_path"] = saved_strategy_path
-        updated["saved_history_path"] = saved_history_path
-    return updated, complete_message
-
-
 async def run_lab_worker(
     job_id: str,
     payload: dict[str, Any],
@@ -312,7 +201,6 @@ async def run_lab_worker(
     exit_on_cancel: Callable[[int], None] = os._exit,
 ) -> int:
     lab_type = str(payload["lab_type"])
-    engine_policy = _resolve_engine_policy(payload)
     messages = _LAB_JOB_MESSAGES[lab_type]
     owns_portfolio_db = False
     portfolio_db: PortfolioDb | None = None
@@ -370,7 +258,6 @@ async def run_lab_worker(
             exit_code = terminal_worker_exit_code(current_job.status, current_job.error)
             if exit_code is not None:
                 return exit_code
-        should_run_verification = _should_run_verification(lab_type, engine_policy)
         complete_message = messages["complete"]
         persisted_result = result
         if isinstance(result, dict):
@@ -378,44 +265,7 @@ async def run_lab_worker(
             raw_message = persisted_result.pop(_INTERNAL_JOB_MESSAGE_KEY, None)
             if isinstance(raw_message, str) and raw_message.strip():
                 complete_message = raw_message
-            if not should_run_verification:
-                persisted_result = strip_verification_metadata(persisted_result)
         await resolved_manager.set_job_raw_result(job_id, persisted_result)
-        if should_run_verification:
-            candidate_seeds = extract_candidate_seeds(persisted_result)
-            requested_top_k = engine_policy.verification_top_k or 0
-            verification_seeds = candidate_seeds[:requested_top_k]
-            persisted_result = serialize_candidate_seeds(
-                persisted_result,
-                verification_seeds,
-                requested_top_k=requested_top_k,
-                scoring_weights=persisted_result.get(INTERNAL_VERIFICATION_SCORING_WEIGHTS_KEY),
-            )
-            await resolved_manager.set_job_raw_result(job_id, persisted_result)
-            await resolved_manager.update_job_status(
-                job_id,
-                JobStatus.RUNNING,
-                message="Fast path complete, starting Nautilus verification...",
-                progress=0.5,
-            )
-            persisted_result, verification = await run_verification_orchestrator(
-                resolved_manager,
-                parent_job_id=job_id,
-                raw_result=persisted_result,
-                candidate_seeds=verification_seeds,
-                requested_top_k=requested_top_k,
-                status_message_prefix="Nautilus verification",
-                strategy_label=str(payload.get("strategy_name") or payload.get("lab_type")),
-                scoring_weights=persisted_result.get(INTERNAL_VERIFICATION_SCORING_WEIGHTS_KEY),
-            )
-            persisted_result["verification"] = verification.model_dump(mode="json")
-            persisted_result, complete_message = _save_verified_result(
-                lab_type,
-                payload,
-                persisted_result,
-                authoritative_candidate_id=verification.authoritative_candidate_id,
-            )
-            await resolved_manager.set_job_raw_result(job_id, persisted_result)
         await resolved_manager.update_job_status(
             job_id,
             JobStatus.COMPLETED,
@@ -435,11 +285,6 @@ async def run_lab_worker(
         )
         return 0
     except Exception as exc:
-        await cancel_verification_children(
-            resolved_manager,
-            job_id,
-            reason="parent_job_failed",
-        )
         duration_ms = record_elapsed_job_duration(f"lab_{lab_type}", JobStatus.FAILED.value, started_at=started_at)
         logger.exception(
             f"lab worker failed: {job_id} ({lab_type})",

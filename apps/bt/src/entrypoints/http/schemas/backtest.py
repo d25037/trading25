@@ -5,20 +5,17 @@ Backtest API Schemas
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.application.contracts import backtest as backtest_contracts
-from src.domains.backtest.contracts import (
-    ArtifactIndex,
-    CanonicalExecutionResult,
-    EngineFamily,
-    RunSpec,
-)
+from src.domains.backtest.contracts import ArtifactIndex, CanonicalExecutionResult, RunSpec
 from src.entrypoints.http.schemas.common import BaseJobResponse
 
 
 class BacktestRequest(BaseModel):
     """バックテスト実行リクエスト"""
+
+    model_config = ConfigDict(extra="forbid")
 
     strategy_name: str = Field(
         ...,
@@ -29,12 +26,6 @@ class BacktestRequest(BaseModel):
         default=None,
         description="戦略設定のオーバーライド（オプション）",
     )
-    engine_family: EngineFamily = Field(
-        ...,
-        description="実行エンジン。verification run では nautilus を明示指定する。",
-    )
-
-
 class SignalAttributionRequest(BaseModel):
     """シグナル寄与分析リクエスト"""
 

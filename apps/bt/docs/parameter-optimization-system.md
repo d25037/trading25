@@ -26,8 +26,7 @@ strategy YAMLを一度読み、`analyze_saved_strategy_optimization()`と
 3. parameter combinationsを生成する
 4. OHLCVとbenchmarkを一度prefetchしてworker間で再利用する
 5. vectorbt fast pathで候補をscoreする
-6. `fast_then_verify`の場合は上位候補をNautilusで直列検証する
-7. metrics JSONとHTML reportを成果物として保存する
+6. ranked `fast_candidates`、metrics JSON、HTML reportを成果物として保存する
 
 routeとCLIはparameter rangeやscore計算を再実装しません。
 

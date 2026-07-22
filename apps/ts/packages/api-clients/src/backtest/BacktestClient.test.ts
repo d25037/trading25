@@ -2,7 +2,7 @@ import type { Mock } from 'bun:test';
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { createMockResponse } from '../test-utils/fetch-mock.js';
 import { BacktestApiError, BacktestClient } from './BacktestClient.js';
-import type { BacktestJobResponse } from './types.js';
+import type { BacktestJobResponse, BacktestRequest } from './types.js';
 
 describe('BacktestClient', () => {
   let client: BacktestClient;
@@ -168,8 +168,8 @@ describe('BacktestClient', () => {
     } satisfies BacktestJobResponse;
     fetchSpy.mockResolvedValueOnce(createMockResponse(job));
 
-    const request = { strategy_name: 'sma_cross', engine_family: 'vectorbt' };
-    const result = await client.runBacktest(request as never);
+    const request: BacktestRequest = { strategy_name: 'sma_cross' };
+    const result = await client.runBacktest(request);
     expect(result).toEqual(job);
 
     const lastCall = fetchSpy.mock.calls.at(-1);

@@ -1,6 +1,5 @@
-import type { EnginePolicyMode, LabGenerateRequest } from '@trading25/api-clients/backtest';
+import type { LabGenerateRequest } from '@trading25/api-clients/backtest';
 import { useState } from 'react';
-import { buildEnginePolicy, EnginePolicySelector } from '@/components/EnginePolicySelector';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,8 +21,6 @@ export function LabGenerateForm({ onSubmit, disabled }: LabGenerateFormProps) {
   const [universePreset, setUniversePreset] = useState<UniversePresetSelection>('default');
   const [entryFilterOnly, setEntryFilterOnly] = useState(false);
   const [categoryScope, setCategoryScope] = useState<'all' | 'fundamental'>('all');
-  const [enginePolicyMode, setEnginePolicyMode] = useState<EnginePolicyMode>('fast_only');
-  const [verificationTopK, setVerificationTopK] = useState('5');
 
   const handleSubmit = () => {
     const request: LabGenerateRequest = {
@@ -34,7 +31,6 @@ export function LabGenerateForm({ onSubmit, disabled }: LabGenerateFormProps) {
       entry_filter_only: entryFilterOnly,
       save: true,
     };
-    request.engine_policy = buildEnginePolicy(enginePolicyMode, verificationTopK);
     if (universePreset !== 'default') {
       request.universe_preset = universePreset;
     }
@@ -158,14 +154,6 @@ export function LabGenerateForm({ onSubmit, disabled }: LabGenerateFormProps) {
           </SelectContent>
         </Select>
       </div>
-
-      <EnginePolicySelector
-        mode={enginePolicyMode}
-        onModeChange={setEnginePolicyMode}
-        verificationTopK={verificationTopK}
-        onVerificationTopKChange={setVerificationTopK}
-        disabled={disabled}
-      />
 
       <Button className="w-full" onClick={handleSubmit} disabled={disabled}>
         Generate Strategies

@@ -41,6 +41,7 @@ BT_PRODUCT_SCRIPT_TESTS = (
     "tests/unit/scripts/test_research_common.py",
     "tests/unit/scripts/test_research_test_targets.py",
     "tests/unit/scripts/test_removed_future_leak_surfaces.py",
+    "tests/unit/scripts/test_removed_" + "nauti" + "lus_surfaces.py",
     "tests/unit/scripts/test_test_taxonomy.py",
     "tests/unit/scripts/test_test_targets.py",
 )

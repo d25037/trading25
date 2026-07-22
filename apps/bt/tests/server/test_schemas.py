@@ -1,10 +1,11 @@
 """server/schemas/ のテスト"""
 
 import pytest
+from pydantic import ValidationError
 
 from src.application.contracts.backtest import BacktestResultSummary
 from src.application.contracts.jobs import JobEvent, JobStatus
-from src.domains.backtest.contracts import EngineFamily, EnginePolicyMode
+from src.domains.backtest.contracts import EngineFamily
 from src.entrypoints.http.schemas.backtest import (
     BacktestRequest,
     HtmlFileInfo,
@@ -24,27 +25,23 @@ class TestJobStatus:
 
 
 class TestBacktestRequest:
-    def test_basic(self):
-        req = BacktestRequest(
-            strategy_name="test",
-            engine_family=EngineFamily.VECTORBT,
-        )
+    def test_basic(self) -> None:
+        req = BacktestRequest(strategy_name="test")
         assert req.strategy_name == "test"
         assert req.strategy_config_override is None
-        assert req.engine_family == EngineFamily.VECTORBT
 
-    def test_requires_engine_family(self):
-        with pytest.raises(Exception):
-            BacktestRequest(strategy_name="test")
+    def test_rejects_removed_engine_family(self) -> None:
+        with pytest.raises(ValidationError):
+            BacktestRequest.model_validate(
+                {"strategy_name": "test", "engine_family": "vectorbt"}
+            )
 
-    def test_with_override(self):
+    def test_with_override(self) -> None:
         req = BacktestRequest(
             strategy_name="test",
             strategy_config_override={"initial_cash": 5000000},
-            engine_family=EngineFamily.NAUTILUS,
         )
         assert req.strategy_config_override["initial_cash"] == 5000000
-        assert req.engine_family == EngineFamily.NAUTILUS
 
 
 class TestBacktestResultSummary:
@@ -85,10 +82,21 @@ class TestJobEvent:
 
 
 class TestOptimizationRequest:
-    def test_basic(self):
-        req = OptimizationRequest(strategy_name="test")
-        assert req.strategy_name == "test"
-        assert req.engine_policy.mode == EnginePolicyMode.FAST_ONLY
+    def test_basic(self) -> None:
+        assert OptimizationRequest(strategy_name="test").strategy_name == "test"
+
+    def test_rejects_removed_execution_options(self) -> None:
+        with pytest.raises(ValidationError):
+            OptimizationRequest.model_validate(
+                {
+                    "strategy_name": "test",
+                    "engine_" + "policy": {"mode": "fast_only"},
+                }
+            )
+
+
+def test_engine_family_contains_only_provenance_values() -> None:
+    assert {item.value for item in EngineFamily} >= {"vectorbt", "unknown"}
 
 
 

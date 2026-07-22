@@ -1,10 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query';
-import type { EnginePolicyMode } from '@trading25/api-clients/backtest';
 import { HttpRequestError } from '@trading25/api-clients/base/http-client';
 import { isActiveJobStatus, isTerminalJobStatus } from '@trading25/api-clients/base/job-status';
 import { Play, Settings, Settings2 } from 'lucide-react';
 import { type ComponentProps, useEffect, useMemo, useState } from 'react';
-import { buildEnginePolicy, EnginePolicySelector } from '@/components/EnginePolicySelector';
 import { SectionEyebrow, SectionHeading, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
 import {
@@ -151,7 +149,6 @@ async function runBacktestForSelectedStrategy({
   if (!selectedStrategy) return;
   const result = await runBacktest.mutateAsync({
     strategy_name: selectedStrategy,
-    engine_family: 'vectorbt',
   });
   setActiveJobId(result.job_id);
 }
@@ -160,19 +157,14 @@ async function runOptimizationForSelectedStrategy({
   selectedStrategy,
   runOptimization,
   setActiveOptimizationJobId,
-  enginePolicyMode,
-  verificationTopK,
 }: {
   selectedStrategy: string | null;
   runOptimization: RunOptimizationMutation;
   setActiveOptimizationJobId: (jobId: string | null) => void;
-  enginePolicyMode: EnginePolicyMode;
-  verificationTopK: string;
 }): Promise<void> {
   if (!selectedStrategy) return;
   const result = await runOptimization.mutateAsync({
     strategy_name: selectedStrategy,
-    engine_policy: buildEnginePolicy(enginePolicyMode, verificationTopK),
   });
   setActiveOptimizationJobId(result.job_id);
 }
@@ -289,7 +281,7 @@ function OptimizationWorkspacePanel({
       <SectionHeading
         eyebrow="Workspace"
         title="Optimization Status"
-        description="Grid search details, verification stage, and terminal summaries stay in view here."
+        description="Grid search details and terminal summaries stay in view here."
       />
       <div className="mt-4 space-y-4">
         {hasPersistedOptimization && gridConfig ? (
@@ -338,10 +330,6 @@ function RunnerControlPanel({
   onRunBacktest,
   runBacktestErrorMessage,
   gridConfig,
-  enginePolicyMode,
-  onEnginePolicyModeChange,
-  optimizationVerificationTopK,
-  onOptimizationVerificationTopKChange,
   onRunOptimization,
   runOptimizationErrorMessage,
 }: {
@@ -355,10 +343,6 @@ function RunnerControlPanel({
   onRunBacktest: () => Promise<void>;
   runBacktestErrorMessage: string | null;
   gridConfig: ReturnType<typeof useStrategyOptimization>['data'];
-  enginePolicyMode: EnginePolicyMode;
-  onEnginePolicyModeChange: (value: EnginePolicyMode) => void;
-  optimizationVerificationTopK: string;
-  onOptimizationVerificationTopKChange: (value: string) => void;
   onRunOptimization: () => Promise<void>;
   runOptimizationErrorMessage: string | null;
 }) {
@@ -425,14 +409,6 @@ function RunnerControlPanel({
             </p>
           )}
 
-          <EnginePolicySelector
-            mode={enginePolicyMode}
-            onModeChange={onEnginePolicyModeChange}
-            verificationTopK={optimizationVerificationTopK}
-            onVerificationTopKChange={onOptimizationVerificationTopKChange}
-            disabled={isOptRunning}
-          />
-
           <Button
             onClick={onRunOptimization}
             disabled={!selectedStrategy || !gridConfig?.ready_to_run || isOptRunning}
@@ -451,8 +427,6 @@ function RunnerControlPanel({
 
 export function BacktestRunner({ selectedStrategy, onSelectedStrategyChange }: BacktestRunnerProps) {
   const [defaultConfigOpen, setDefaultConfigOpen] = useState(false);
-  const [enginePolicyMode, setEnginePolicyMode] = useState<EnginePolicyMode>('fast_only');
-  const [optimizationVerificationTopK, setOptimizationVerificationTopK] = useState('5');
   const { activeJobId, setActiveJobId, activeOptimizationJobId, setActiveOptimizationJobId } = useBacktestStore();
   const { data: strategiesData, isLoading: isLoadingStrategies } = useStrategies();
   const { data: strategyDetail } = useStrategy(selectedStrategy);
@@ -488,8 +462,6 @@ export function BacktestRunner({ selectedStrategy, onSelectedStrategyChange }: B
       selectedStrategy,
       runOptimization,
       setActiveOptimizationJobId,
-      enginePolicyMode,
-      verificationTopK: optimizationVerificationTopK,
     });
 
   const isRunning = runBacktest.isPending || isActiveJobStatus(jobStatus?.status);
@@ -532,10 +504,6 @@ export function BacktestRunner({ selectedStrategy, onSelectedStrategyChange }: B
           onRunBacktest={handleRunBacktest}
           runBacktestErrorMessage={runBacktest.isError ? runBacktest.error.message : null}
           gridConfig={gridConfig}
-          enginePolicyMode={enginePolicyMode}
-          onEnginePolicyModeChange={setEnginePolicyMode}
-          optimizationVerificationTopK={optimizationVerificationTopK}
-          onOptimizationVerificationTopKChange={setOptimizationVerificationTopK}
           onRunOptimization={handleRunOptimization}
           runOptimizationErrorMessage={runOptimization.isError ? runOptimization.error.message : null}
         />

@@ -78,7 +78,7 @@ before moving them into the core.
 ## Guardrails
 
 - Do not move one-off strategy logic into the core.
-- Do not make the core a new execution engine or replace vectorbt/Nautilus roles.
+- Do not make the core a new execution engine or replace vectorbt accounting.
 - Do not change runner-first, bundle-first, or Published Readout SoT behavior.
 - Preserve PIT filtering order: as-of filtering must happen before latest-row
   selection.

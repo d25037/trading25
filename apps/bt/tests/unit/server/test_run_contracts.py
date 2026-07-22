@@ -11,6 +11,7 @@ from src.application.contracts.backtest import BacktestResultSummary
 from src.application.contracts.jobs import JobStatus
 from src.application.services.job_manager import JobInfo
 from src.application.services.run_contracts import (
+    build_canonical_metrics_from_payload,
     build_config_override_run_spec,
     build_default_run_spec,
     build_parameterized_run_spec,
@@ -22,6 +23,28 @@ from src.application.services.run_contracts import (
     refresh_job_execution_contracts,
 )
 from src.domains.backtest.contracts import ArtifactKind, EngineFamily, RunType
+
+
+class TestBuildCanonicalMetricsFromPayload:
+    def test_returns_none_for_missing_or_empty_payload(self) -> None:
+        assert build_canonical_metrics_from_payload(None) is None
+        assert build_canonical_metrics_from_payload({}) is None
+
+    def test_builds_metrics_for_populated_payload(self) -> None:
+        metrics = build_canonical_metrics_from_payload(
+            {
+                "total_return": 12.5,
+                "sharpe_ratio": 1.4,
+                "max_drawdown": -4.2,
+                "trade_count": 8,
+            }
+        )
+
+        assert metrics is not None
+        assert metrics.total_return == 12.5
+        assert metrics.sharpe_ratio == 1.4
+        assert metrics.max_drawdown == -4.2
+        assert metrics.trade_count == 8
 
 
 class TestBuildDefaultRunSpec:
@@ -41,16 +64,8 @@ class TestBuildDefaultRunSpec:
         assert run_spec.engine_family == EngineFamily.UNKNOWN
         assert run_spec.execution_policy_version is None
 
-    def test_backtest_allows_explicit_nautilus_engine(self) -> None:
-        run_spec = build_default_run_spec(
-            "backtest",
-            "demo-strategy",
-            engine_family=EngineFamily.NAUTILUS,
-        )
-
-        assert run_spec.run_type == RunType.BACKTEST
-        assert run_spec.engine_family == EngineFamily.NAUTILUS
-        assert run_spec.execution_policy_version == "nautilus-daily-verification-v1"
+    def test_engine_family_has_no_execution_alternative(self) -> None:
+        assert {item.value for item in EngineFamily} == {"vectorbt", "unknown"}
 
 
 class TestBuildRunMetadata:

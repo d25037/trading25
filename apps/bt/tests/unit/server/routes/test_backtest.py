@@ -2,7 +2,6 @@
 
 import base64
 from datetime import datetime
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -10,13 +9,7 @@ from fastapi.testclient import TestClient
 
 from src.application.contracts.backtest import BacktestResultSummary
 from src.application.contracts.jobs import JobStatus
-from src.domains.backtest.contracts import (
-    ArtifactIndex,
-    ArtifactKind,
-    ArtifactRecord,
-    ArtifactStorage,
-    EngineFamily,
-)
+from src.domains.backtest.contracts import ArtifactIndex, ArtifactKind, ArtifactRecord, ArtifactStorage
 
 
 @pytest.fixture
@@ -76,14 +69,15 @@ class TestRunBacktest:
         mock_jm.get_job.return_value = _make_job("job-1", JobStatus.PENDING)
         resp = client.post(
             "/api/backtest/run",
-            json={
-                "strategy_name": "test",
-                "engine_family": EngineFamily.VECTORBT.value,
-            },
+            json={"strategy_name": "test"},
         )
         assert resp.status_code == 200
         assert resp.json()["job_id"] == "job-1"
         assert resp.json()["execution_control"]["cancel_requested"] is False
+        mock_bt_svc.submit_backtest.assert_awaited_once_with(
+            strategy_name="test",
+            config_override=None,
+        )
 
     def test_not_found_job(self, client, mock_services):
         mock_bt_svc, mock_jm = mock_services
@@ -91,15 +85,15 @@ class TestRunBacktest:
         mock_jm.get_job.return_value = None
         resp = client.post(
             "/api/backtest/run",
-            json={
-                "strategy_name": "test",
-                "engine_family": EngineFamily.VECTORBT.value,
-            },
+            json={"strategy_name": "test"},
         )
         assert resp.status_code == 404
 
-    def test_missing_engine_family_returns_422(self, client, mock_services):
-        resp = client.post("/api/backtest/run", json={"strategy_name": "test"})
+    def test_removed_engine_family_returns_422(self, client, mock_services):
+        resp = client.post(
+            "/api/backtest/run",
+            json={"strategy_name": "test", "engine_family": "vectorbt"},
+        )
         assert resp.status_code == 422
 
     def test_submit_error_returns_500(self, client, mock_services):
@@ -108,10 +102,7 @@ class TestRunBacktest:
 
         resp = client.post(
             "/api/backtest/run",
-            json={
-                "strategy_name": "test",
-                "engine_family": EngineFamily.VECTORBT.value,
-            },
+            json={"strategy_name": "test"},
         )
         assert resp.status_code == 500
         assert "submit failed" in str(resp.json())
@@ -305,41 +296,6 @@ class TestBacktestJobEndpoints:
         data = resp.json()
         assert len(data) == 2
         assert data[0]["job_id"] == "job-1"
-
-    def test_get_job_status_hides_internal_verification_job(self, client, mock_services):
-        _, mock_jm = mock_services
-        mock_jm.get_job.return_value = _make_job(
-            "job-1",
-            JobStatus.RUNNING,
-            run_spec=SimpleNamespace(
-                parent_run_id="parent-1",
-                engine_family=EngineFamily.NAUTILUS,
-                parameters={"verification_candidate_id": "grid_0001"},
-            ),
-        )
-
-        resp = client.get("/api/backtest/jobs/job-1")
-        assert resp.status_code == 404
-
-    def test_list_jobs_excludes_internal_verification_jobs(self, client, mock_services):
-        _, mock_jm = mock_services
-        mock_jm.list_jobs.return_value = [
-            _make_job("job-1", JobStatus.RUNNING),
-            _make_job(
-                "job-2",
-                JobStatus.RUNNING,
-                run_spec=SimpleNamespace(
-                    parent_run_id="parent-1",
-                    engine_family=EngineFamily.NAUTILUS,
-                    parameters={"verification_candidate_id": "grid_0002"},
-                ),
-            ),
-        ]
-
-        resp = client.get("/api/backtest/jobs?limit=2")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert [item["job_id"] for item in data] == ["job-1"]
 
 
 class TestSignalAttributionEndpoints:

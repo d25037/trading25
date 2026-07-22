@@ -1,7 +1,7 @@
 import type { LabOptimizeResult } from '@trading25/api-clients/backtest';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { VerificationSummarySection } from '@/components/VerificationSummarySection';
+import { FastCandidatesSection } from '@/components/FastCandidatesSection';
 
 interface LabOptimizeResultsProps {
   result: LabOptimizeResult;
@@ -62,7 +62,7 @@ export function LabOptimizeResults({ result }: LabOptimizeResultsProps) {
         </Table>
       </div>
 
-      <VerificationSummarySection fastCandidates={result.fast_candidates} verification={result.verification} />
+      <FastCandidatesSection fastCandidates={result.fast_candidates} />
     </div>
   );
 }

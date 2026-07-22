@@ -12,9 +12,6 @@ import type {
   LabOptimizeResult,
   LabResultData,
   OptimizeTrialItem,
-  VerificationCandidate,
-  VerificationDelta,
-  VerificationSummary,
 } from './types.js';
 
 // Sub-item schemas
@@ -49,35 +46,6 @@ const FastCandidateSummarySchema = z.object({
   metrics: CanonicalExecutionMetricsSchema.optional().nullable(),
 });
 
-const VerificationDeltaSchema = z.object({
-  total_return_delta: z.number().nullable().optional(),
-  sharpe_ratio_delta: z.number().nullable().optional(),
-  max_drawdown_delta: z.number().nullable().optional(),
-  trade_count_delta: z.number().nullable().optional(),
-});
-
-const VerificationCandidateSchema = z.object({
-  candidate_id: z.string(),
-  fast_rank: z.number(),
-  fast_score: z.number(),
-  fast_metrics: CanonicalExecutionMetricsSchema.optional().nullable(),
-  verification_run_id: z.string().nullable().optional(),
-  verification_status: z.enum(['queued', 'running', 'verified', 'failed']),
-  verified_metrics: CanonicalExecutionMetricsSchema.optional().nullable(),
-  delta: VerificationDeltaSchema.nullable().optional(),
-  mismatch_reasons: z.array(z.string()).optional(),
-});
-
-const VerificationSummarySchema = z.object({
-  overall_status: z.enum(['queued', 'running', 'completed', 'completed_with_mismatch', 'failed']),
-  requested_top_k: z.number(),
-  completed_count: z.number(),
-  mismatch_count: z.number(),
-  winner_changed: z.boolean(),
-  authoritative_candidate_id: z.string().nullable().optional(),
-  candidates: z.array(VerificationCandidateSchema).optional(),
-});
-
 const EvolutionHistoryItemSchema = z.object({
   generation: z.number(),
   best_score: z.number(),
@@ -107,10 +75,9 @@ const LabGenerateResultSchema = z.object({
   results: z.array(GenerateResultItemSchema),
   total_generated: z.number(),
   saved_strategy_path: z.string().nullable().optional(),
-  verification: VerificationSummarySchema.nullable().optional(),
 });
 
-const LabEvolveResultSchema = z.object({
+export const LabEvolveResultSchema = z.object({
   lab_type: z.literal('evolve'),
   best_strategy_id: z.string(),
   best_score: z.number(),
@@ -118,10 +85,9 @@ const LabEvolveResultSchema = z.object({
   saved_strategy_path: z.string().nullable().optional(),
   saved_history_path: z.string().nullable().optional(),
   fast_candidates: z.array(FastCandidateSummarySchema).optional(),
-  verification: VerificationSummarySchema.nullable().optional(),
 });
 
-const LabOptimizeResultSchema = z.object({
+export const LabOptimizeResultSchema = z.object({
   lab_type: z.literal('optimize'),
   best_score: z.number(),
   best_params: z.record(z.string(), z.unknown()),
@@ -130,7 +96,6 @@ const LabOptimizeResultSchema = z.object({
   saved_strategy_path: z.string().nullable().optional(),
   saved_history_path: z.string().nullable().optional(),
   fast_candidates: z.array(FastCandidateSummarySchema).optional(),
-  verification: VerificationSummarySchema.nullable().optional(),
 });
 
 const LabImproveResultSchema = z.object({
@@ -156,9 +121,6 @@ type Exact<Left, Right> = [Left] extends [Right] ? ([Right] extends [Left] ? tru
 const _typeCheck: [
   Exact<z.infer<typeof GenerateResultItemSchema>, GenerateResultItem>,
   Exact<z.infer<typeof FastCandidateSummarySchema>, FastCandidateSummary>,
-  Exact<z.infer<typeof VerificationDeltaSchema>, VerificationDelta>,
-  Exact<z.infer<typeof VerificationCandidateSchema>, VerificationCandidate>,
-  Exact<z.infer<typeof VerificationSummarySchema>, VerificationSummary>,
   Exact<z.infer<typeof EvolutionHistoryItemSchema>, EvolutionHistoryItem>,
   Exact<z.infer<typeof OptimizeTrialItemSchema>, OptimizeTrialItem>,
   Exact<z.infer<typeof ImprovementItemSchema>, ImprovementItem>,
@@ -166,7 +128,7 @@ const _typeCheck: [
   Exact<z.infer<typeof LabEvolveResultSchema>, LabEvolveResult>,
   Exact<z.infer<typeof LabOptimizeResultSchema>, LabOptimizeResult>,
   Exact<z.infer<typeof LabImproveResultSchema>, LabImproveResult>,
-] = [true, true, true, true, true, true, true, true, true, true, true, true];
+] = [true, true, true, true, true, true, true, true, true];
 void _typeCheck;
 
 /** Validate unknown data against the LabResultData discriminated union schema. */

@@ -49,9 +49,6 @@ _INTERNAL_RAW_RESULT_KEYS = {
     "_simulation_payload_path",
     "_report_payload_path",
     "_render_error",
-    "_verification_candidates",
-    "_verification_requested_top_k",
-    "_verification_scoring_weights",
 }
 _RAW_RESULT_ARTIFACT_PATHS: tuple[tuple[str, ArtifactKind], ...] = (
     ("_artifact_path", ArtifactKind.ATTRIBUTION_JSON),
@@ -66,7 +63,6 @@ _RAW_RESULT_ARTIFACT_PATHS: tuple[tuple[str, ArtifactKind], ...] = (
 )
 
 _LEGACY_VECTORBT_POLICY_VERSION = "vectorbt-legacy-v1"
-_NAUTILUS_VERIFICATION_POLICY_VERSION = "nautilus-daily-verification-v1"
 _JOB_TYPE_TO_RUN_TYPE: dict[str, RunType] = {
     "backtest": RunType.BACKTEST,
     "optimization": RunType.OPTIMIZATION,
@@ -92,6 +88,25 @@ def infer_run_type(job_type: str) -> RunType:
     return _JOB_TYPE_TO_RUN_TYPE.get(job_type, RunType.UNKNOWN)
 
 
+def build_canonical_metrics_from_payload(
+    payload: dict[str, Any] | None,
+) -> CanonicalExecutionMetrics | None:
+    if not isinstance(payload, dict):
+        return None
+    values = {
+        "total_return": payload.get("total_return"),
+        "sharpe_ratio": payload.get("sharpe_ratio"),
+        "sortino_ratio": payload.get("sortino_ratio"),
+        "calmar_ratio": payload.get("calmar_ratio"),
+        "max_drawdown": payload.get("max_drawdown"),
+        "win_rate": payload.get("win_rate"),
+        "trade_count": payload.get("trade_count"),
+    }
+    if not any(value is not None for value in values.values()):
+        return None
+    return CanonicalExecutionMetrics.model_validate(values)
+
+
 def infer_engine_family(job_type: str) -> EngineFamily:
     if job_type in _VECTORBT_JOB_TYPES:
         return EngineFamily.VECTORBT
@@ -101,8 +116,6 @@ def infer_engine_family(job_type: str) -> EngineFamily:
 def resolve_execution_policy_version(engine_family: EngineFamily) -> str | None:
     if engine_family == EngineFamily.VECTORBT:
         return _LEGACY_VECTORBT_POLICY_VERSION
-    if engine_family == EngineFamily.NAUTILUS:
-        return _NAUTILUS_VERIFICATION_POLICY_VERSION
     return None
 
 

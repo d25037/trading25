@@ -23,6 +23,8 @@ apps/ts/packages/contracts/src/types/api-response-types.test.ts
 apps/ts/packages/contracts/src/types/api-types.ts
 apps/ts/packages/contracts/src/types/endpoint-types.ts
 apps/ts/packages/contracts/src/types/api-response-types.test-d.ts
+# Task 5: VectorBT-only compile-time assertions intentionally inspect generated bt OpenAPI schemas
+apps/ts/packages/contracts/src/types/vectorbt-only-contract.test-d.ts
 
 # ─────────────────────────────────────────────────────────
 # [runtime] apps that intentionally call FastAPI (:3002)
@@ -31,7 +33,6 @@ apps/ts/packages/contracts/src/types/api-response-types.test-d.ts
 
 # Web components/hooks (still import from @trading25/api-clients/backtest)
 # local main integration: backtest/lab UI still consumes typed API-client contracts
-apps/ts/packages/web/src/components/EnginePolicySelector.tsx
 apps/ts/packages/web/src/components/Chart/signalPanelLinks.test.ts
 apps/ts/packages/web/src/components/Chart/SignalMarkers.tsx
 apps/ts/packages/web/src/components/Chart/signalPanelLinks.ts
@@ -86,11 +87,11 @@ apps/ts/packages/web/src/components/Backtest/StrategyEditorSignals.tsx
 apps/ts/packages/web/src/components/Backtest/useStrategyEditorDraft.ts
 apps/ts/packages/web/src/components/Backtest/MetadataFieldControl.test.tsx
 apps/ts/packages/web/src/components/Backtest/SignalReferencePanel.tsx
-apps/ts/packages/web/src/components/Backtest/BacktestRunner.tsx
 apps/ts/packages/web/src/components/Backtest/ResultMetricsCard.test.tsx
 apps/ts/packages/web/src/components/Backtest/OptimizationHtmlFileBrowser.test.tsx
 apps/ts/packages/web/src/components/Backtest/MetadataFieldControl.tsx
-apps/ts/packages/web/src/components/VerificationSummarySection.tsx
+# Task 7: fast-ranking card consumes canonical backtest candidate types
+apps/ts/packages/web/src/components/FastCandidatesSection.tsx
 apps/ts/packages/web/src/hooks/useOptimization.ts
 apps/ts/packages/web/src/hooks/useLabSSE.ts
 apps/ts/packages/web/src/hooks/useBtSignals.ts

@@ -7,23 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.application.services.verification_orchestrator import (
-    INTERNAL_VERIFICATION_CANDIDATES_KEY,
-    INTERNAL_VERIFICATION_SCORING_WEIGHTS_KEY,
-    build_verification_seed,
-    serialize_candidate_seeds,
-)
 from src.application.services.job_manager import JobManager
 from src.application.services.lab_service import LabService
 from src.application.workers import lab_worker as worker_mod
 from src.application.workers.lab_worker import run_lab_worker
-from src.domains.backtest.contracts import (
-    CanonicalExecutionMetrics,
-    EnginePolicyMode,
-    VerificationOverallStatus,
-    VerificationSummary,
-)
-from src.domains.lab_agent.models import StrategyCandidate
 from src.application.contracts.jobs import JobStatus
 
 
@@ -117,67 +104,6 @@ async def test_run_lab_worker_generate_allows_missing_dataset() -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_lab_worker_fast_only_strips_internal_verification_metadata() -> None:
-    manager = JobManager()
-    job_id = manager.create_job("generate(n=3,top=1)", job_type="lab_generate")
-    service = LabService(manager=manager, max_workers=1)
-
-    def _execute_generate_sync(*args):  # noqa: ANN002
-        _ = args
-        return {
-            "lab_type": "generate",
-            "results": [],
-            "total_generated": 3,
-            "saved_strategy_path": None,
-            INTERNAL_VERIFICATION_CANDIDATES_KEY: [
-                build_verification_seed(
-                    candidate_id="gen-001",
-                    fast_rank=1,
-                    fast_score=0.8,
-                    fast_metrics=CanonicalExecutionMetrics(
-                        total_return=10.0,
-                        sharpe_ratio=1.0,
-                        max_drawdown=-4.0,
-                        trade_count=5,
-                    ),
-                    strategy_name="reference/strategy_template",
-                    config_override={"shared_config": {"dataset": "demo"}},
-                ).model_dump(mode="json")
-            ],
-            INTERNAL_VERIFICATION_SCORING_WEIGHTS_KEY: {"sharpe_ratio": 0.5, "total_return": 0.5},
-        }
-
-    service._execute_generate_sync = _execute_generate_sync  # type: ignore[method-assign]
-
-    exit_code = await run_lab_worker(
-        job_id,
-        {
-            "lab_type": "generate",
-            "count": 3,
-            "top": 1,
-            "seed": None,
-            "save": False,
-            "direction": "longonly",
-            "timeframe": "daily",
-            "dataset": "primeExTopix500",
-            "entry_filter_only": False,
-            "allowed_categories": [],
-        },
-        manager=manager,
-        service=service,
-        heartbeat_seconds=60.0,
-    )
-
-    job = manager.get_job(job_id)
-    assert exit_code == 0
-    assert job is not None
-    assert job.raw_result is not None
-    assert INTERNAL_VERIFICATION_CANDIDATES_KEY not in job.raw_result
-    assert INTERNAL_VERIFICATION_SCORING_WEIGHTS_KEY not in job.raw_result
-    assert "verification" not in job.raw_result
-
-
-@pytest.mark.asyncio
 async def test_run_lab_worker_evolve_uses_internal_message_override() -> None:
     manager = JobManager()
     job_id = manager.create_job("demo-strategy", job_type="lab_evolve")
@@ -225,83 +151,6 @@ async def test_run_lab_worker_evolve_uses_internal_message_override() -> None:
     assert job.message == "GA進化完了（ベース戦略が最良のためパラメータ変更なし）"
     assert job.raw_result is not None
     assert "_job_message" not in job.raw_result
-
-
-@pytest.mark.asyncio
-async def test_run_lab_worker_generate_runs_verification_when_requested(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    manager = JobManager()
-    job_id = manager.create_job("generate(n=3,top=1)", job_type="lab_generate")
-    service = LabService(manager=manager, max_workers=1)
-
-    def _execute_generate_sync(*args):  # noqa: ANN002
-        _ = args
-        return {
-            "lab_type": "generate",
-            "results": [],
-            "total_generated": 3,
-            "saved_strategy_path": None,
-            INTERNAL_VERIFICATION_CANDIDATES_KEY: [
-                build_verification_seed(
-                    candidate_id="gen-001",
-                    fast_rank=1,
-                    fast_score=0.8,
-                    fast_metrics=CanonicalExecutionMetrics(
-                        total_return=10.0,
-                        sharpe_ratio=1.0,
-                        max_drawdown=-4.0,
-                        trade_count=5,
-                    ),
-                    strategy_name="reference/strategy_template",
-                    config_override={"shared_config": {"dataset": "demo"}},
-                ).model_dump(mode="json")
-            ],
-            INTERNAL_VERIFICATION_SCORING_WEIGHTS_KEY: {"sharpe_ratio": 0.5, "total_return": 0.5},
-        }
-
-    async def _run_verification_orchestrator(manager, **kwargs):  # noqa: ANN001
-        _ = manager
-        updated = dict(kwargs["raw_result"])
-        updated["verification"] = VerificationSummary(
-            overall_status=VerificationOverallStatus.COMPLETED,
-            requested_top_k=1,
-            completed_count=1,
-            mismatch_count=0,
-            authoritative_candidate_id="gen-001",
-            candidates=[],
-        ).model_dump(mode="json")
-        return updated, VerificationSummary.model_validate(updated["verification"])
-
-    service._execute_generate_sync = _execute_generate_sync  # type: ignore[method-assign]
-    monkeypatch.setattr(worker_mod, "run_verification_orchestrator", _run_verification_orchestrator)
-
-    exit_code = await run_lab_worker(
-        job_id,
-        {
-            "lab_type": "generate",
-            "count": 3,
-            "top": 1,
-            "seed": None,
-            "save": False,
-            "direction": "longonly",
-            "timeframe": "daily",
-            "dataset": "primeExTopix500",
-            "entry_filter_only": False,
-            "allowed_categories": [],
-            "engine_policy": {"mode": "fast_then_verify", "verification_top_k": 1},
-        },
-        manager=manager,
-        service=service,
-        heartbeat_seconds=60.0,
-    )
-
-    job = manager.get_job(job_id)
-    assert exit_code == 0
-    assert job is not None
-    assert job.status == JobStatus.COMPLETED
-    assert job.raw_result is not None
-    assert job.raw_result["verification"]["authoritative_candidate_id"] == "gen-001"
 
 
 @pytest.mark.asyncio
@@ -456,7 +305,6 @@ async def test_run_lab_worker_marks_job_failed_on_timeout(
 async def test_lab_heartbeat_loop_handles_timeout_and_cancel() -> None:
     manager = JobManager()
     timeout_job_id = manager.create_job("generate(n=1,top=1)", job_type="lab_generate")
-    timeout_child_id = manager.create_job("demo-strategy", job_type="backtest")
     await manager.claim_job_execution(
         timeout_job_id,
         lease_owner="worker",
@@ -465,20 +313,6 @@ async def test_lab_heartbeat_loop_handles_timeout_and_cancel() -> None:
     timeout_job = manager.get_job(timeout_job_id)
     assert timeout_job is not None
     timeout_job.timeout_at = datetime.now() - timedelta(seconds=1)
-    timeout_job.raw_result = serialize_candidate_seeds(
-        {"lab_type": "generate"},
-        [
-            build_verification_seed(
-                candidate_id="gen-001",
-                fast_rank=1,
-                fast_score=0.8,
-                fast_metrics=None,
-                strategy_name="reference/strategy_template",
-                config_override={"shared_config": {"dataset": "demo"}},
-            ).model_copy(update={"verification_run_id": timeout_child_id})
-        ],
-        requested_top_k=1,
-    )
 
     exit_codes: list[int] = []
     await worker_mod._heartbeat_loop(  # noqa: SLF001
@@ -492,30 +326,12 @@ async def test_lab_heartbeat_loop_handles_timeout_and_cancel() -> None:
     assert timeout_job is not None
     assert timeout_job.status == JobStatus.FAILED
     assert timeout_job.error == "worker_timed_out"
-    timeout_child = manager.get_job(timeout_child_id)
-    assert timeout_child is not None
-    assert timeout_child.status == JobStatus.CANCELLED
     assert exit_codes == [124]
 
     cancel_job_id = manager.create_job("generate(n=1,top=1)", job_type="lab_generate")
-    cancel_child_id = manager.create_job("demo-strategy", job_type="backtest")
     await manager.claim_job_execution(cancel_job_id, lease_owner="worker")
     cancel_job = manager.get_job(cancel_job_id)
     assert cancel_job is not None
-    cancel_job.raw_result = serialize_candidate_seeds(
-        {"lab_type": "generate"},
-        [
-            build_verification_seed(
-                candidate_id="gen-002",
-                fast_rank=1,
-                fast_score=0.7,
-                fast_metrics=None,
-                strategy_name="reference/strategy_template",
-                config_override={"shared_config": {"dataset": "demo"}},
-            ).model_copy(update={"verification_run_id": cancel_child_id})
-        ],
-        requested_top_k=1,
-    )
     await manager.request_job_cancel(cancel_job_id, reason="user_requested")
     exit_codes.clear()
     await worker_mod._heartbeat_loop(  # noqa: SLF001
@@ -528,9 +344,6 @@ async def test_lab_heartbeat_loop_handles_timeout_and_cancel() -> None:
     cancelled_job = manager.get_job(cancel_job_id)
     assert cancelled_job is not None
     assert cancelled_job.status == JobStatus.CANCELLED
-    cancelled_child = manager.get_job(cancel_child_id)
-    assert cancelled_child is not None
-    assert cancelled_child.status == JobStatus.CANCELLED
     assert exit_codes == [0]
 
 
@@ -616,18 +429,8 @@ def test_lab_worker_main_rejects_non_object_payload(monkeypatch: pytest.MonkeyPa
         worker_mod.main()
 
 
-def test_resolve_engine_policy_defaults_and_override() -> None:
-    assert worker_mod._resolve_engine_policy({}).mode == EnginePolicyMode.FAST_ONLY  # noqa: SLF001
-
-    policy = worker_mod._resolve_engine_policy(  # noqa: SLF001
-        {"engine_policy": {"mode": "fast_then_verify", "verification_top_k": 3}}
-    )
-    assert policy.mode == EnginePolicyMode.FAST_THEN_VERIFY
-    assert policy.verification_top_k == 3
-
-
 @pytest.mark.asyncio
-async def test_execute_lab_payload_optimize_scales_progress_when_verifying(
+async def test_execute_lab_payload_optimize_reports_full_progress(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     scheduled: list[asyncio.Task[None]] = []
@@ -677,7 +480,6 @@ async def test_execute_lab_payload_optimize_scales_progress_when_verifying(
             "allowed_categories": [],
             "scoring_weights": None,
             "target_scope": "both",
-            "engine_policy": {"mode": "fast_then_verify", "verification_top_k": 1},
         },
     )
     await asyncio.gather(*scheduled)
@@ -687,127 +489,10 @@ async def test_execute_lab_payload_optimize_scales_progress_when_verifying(
         (
             "job-1",
             JobStatus.RUNNING,
-            pytest.approx(0.125),
+            pytest.approx(0.25),
             "Trial 1/4 完了 (best: 0.7500)",
         )
     ]
-
-
-def test_save_verified_result_branches(monkeypatch: pytest.MonkeyPatch) -> None:
-    generate_candidate = StrategyCandidate(
-        strategy_id="generate-best",
-        entry_filter_params={"signal_a": {"period": 20}},
-        exit_trigger_params={},
-    )
-    evolve_candidate = StrategyCandidate(
-        strategy_id="base_demo-strategy",
-        entry_filter_params={"signal_a": {"period": 20}},
-        exit_trigger_params={},
-    )
-    optimize_candidate = StrategyCandidate(
-        strategy_id="optimize-best",
-        entry_filter_params={"signal_a": {"period": 20}},
-        exit_trigger_params={},
-    )
-
-    class _FakeYamlUpdater:
-        def save_candidate(self, candidate: StrategyCandidate) -> str:
-            return f"/tmp/{candidate.strategy_id}.yml"
-
-        def save_evolution_result(self, candidate, history, *, base_strategy_name):  # noqa: ANN001
-            assert history == [{"generation": 1}]
-            assert base_strategy_name == "demo-strategy"
-            return (f"/tmp/{candidate.strategy_id}.yml", "/tmp/evolve-history.json")
-
-        def save_optuna_result(self, candidate, history, *, base_strategy_name):  # noqa: ANN001
-            assert history == [{"trial": 1}]
-            assert base_strategy_name == "demo-strategy"
-            return (f"/tmp/{candidate.strategy_id}.yml", "/tmp/optuna-history.json")
-
-    import src.domains.lab_agent.yaml_updater as yaml_updater_mod
-
-    monkeypatch.setattr(yaml_updater_mod, "YamlUpdater", _FakeYamlUpdater)
-
-    fast_only_result, fast_only_message = worker_mod._save_verified_result(  # noqa: SLF001
-        "generate",
-        {"save": False},
-        {},
-        authoritative_candidate_id="generate-best",
-    )
-    assert fast_only_result == {}
-    assert fast_only_message == worker_mod._LAB_JOB_MESSAGES["generate"]["complete"]  # noqa: SLF001
-
-    mismatch_result, mismatch_message = worker_mod._save_verified_result(  # noqa: SLF001
-        "generate",
-        {"save": True},
-        {},
-        authoritative_candidate_id=None,
-    )
-    assert mismatch_result == {}
-    assert "verification mismatch により保存スキップ" in mismatch_message
-
-    generate_seed = build_verification_seed(
-        candidate_id="generate-best",
-        fast_rank=1,
-        fast_score=1.0,
-        fast_metrics=CanonicalExecutionMetrics(total_return=10.0),
-        strategy_name="demo-strategy",
-        config_override={"shared_config": {"dataset": "demo"}},
-        strategy_candidate=generate_candidate,
-    )
-    updated_generate, _ = worker_mod._save_verified_result(  # noqa: SLF001
-        "generate",
-        {"save": True},
-        {
-            INTERNAL_VERIFICATION_CANDIDATES_KEY: [generate_seed.model_dump(mode="json")],
-        },
-        authoritative_candidate_id="generate-best",
-    )
-    assert updated_generate["saved_strategy_path"] == "/tmp/generate-best.yml"
-
-    evolve_seed = build_verification_seed(
-        candidate_id="evolve-best",
-        fast_rank=1,
-        fast_score=1.0,
-        fast_metrics=CanonicalExecutionMetrics(total_return=10.0),
-        strategy_name="demo-strategy",
-        config_override={"shared_config": {"dataset": "demo"}},
-        strategy_candidate=evolve_candidate,
-    )
-    updated_evolve, evolve_message = worker_mod._save_verified_result(  # noqa: SLF001
-        "evolve",
-        {"save": True, "strategy_name": "demo-strategy"},
-        {
-            "history": [{"generation": 1}],
-            INTERNAL_VERIFICATION_CANDIDATES_KEY: [evolve_seed.model_dump(mode="json")],
-        },
-        authoritative_candidate_id="evolve-best",
-    )
-    assert updated_evolve["saved_strategy_path"] == "/tmp/base_demo-strategy.yml"
-    assert updated_evolve["saved_history_path"] == "/tmp/evolve-history.json"
-    assert evolve_message == worker_mod._EVOLVE_BASE_BEST_MESSAGE  # noqa: SLF001
-
-    optimize_seed = build_verification_seed(
-        candidate_id="optimize-best",
-        fast_rank=1,
-        fast_score=1.0,
-        fast_metrics=CanonicalExecutionMetrics(total_return=10.0),
-        strategy_name="demo-strategy",
-        config_override={"shared_config": {"dataset": "demo"}},
-        strategy_candidate=optimize_candidate,
-    )
-    updated_optimize, optimize_message = worker_mod._save_verified_result(  # noqa: SLF001
-        "optimize",
-        {"save": True, "strategy_name": "demo-strategy"},
-        {
-            "history": [{"trial": 1}],
-            INTERNAL_VERIFICATION_CANDIDATES_KEY: [optimize_seed.model_dump(mode="json")],
-        },
-        authoritative_candidate_id="optimize-best",
-    )
-    assert updated_optimize["saved_strategy_path"] == "/tmp/optimize-best.yml"
-    assert updated_optimize["saved_history_path"] == "/tmp/optuna-history.json"
-    assert optimize_message == worker_mod._LAB_JOB_MESSAGES["optimize"]["complete"]  # noqa: SLF001
 
 
 @pytest.mark.asyncio

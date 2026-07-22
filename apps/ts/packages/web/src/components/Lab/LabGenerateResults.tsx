@@ -1,6 +1,5 @@
 import type { LabGenerateResult } from '@trading25/api-clients/backtest';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { VerificationSummarySection } from '@/components/VerificationSummarySection';
 import { formatPercentage } from '@/utils/formatters';
 
 interface LabGenerateResultsProps {
@@ -57,8 +56,6 @@ export function LabGenerateResults({ result }: LabGenerateResultsProps) {
           </TableBody>
         </Table>
       </div>
-
-      <VerificationSummarySection verification={result.verification} />
     </div>
   );
 }

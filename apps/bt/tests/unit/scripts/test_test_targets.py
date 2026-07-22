@@ -87,6 +87,10 @@ def test_product_script_targets_cover_all_ci_self_tests() -> None:
     assert "tests/unit/scripts/test_maintainability_snapshot.py" in targets
     assert "tests/unit/scripts/test_openapi_compat.py" in targets
     assert "tests/unit/scripts/test_removed_future_leak_surfaces.py" in targets
+    removed_runtime_guard = (
+        "tests/unit/scripts/test_removed_" + "nauti" + "lus_surfaces.py"
+    )
+    assert removed_runtime_guard in targets
 
 
 def test_core_unit_targets_cover_all_production_domain_directories() -> None:

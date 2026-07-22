@@ -9,9 +9,7 @@ import pytest
 from src.application.services.job_manager import JobManager
 from src.application.workers import backtest_worker as worker_mod
 from src.application.workers.backtest_worker import run_backtest_worker
-from src.domains.backtest.contracts import EngineFamily
 from src.domains.backtest.core.runner import BacktestResult, BacktestRunner
-from src.domains.backtest.nautilus_adapter import MissingNautilusDependencyError
 from src.application.contracts.jobs import JobStatus
 
 
@@ -90,114 +88,6 @@ async def test_run_backtest_worker_marks_job_failed_on_error() -> None:
     assert job is not None
     assert job.status == JobStatus.FAILED
     assert job.error == "boom"
-
-
-@pytest.mark.asyncio
-async def test_run_backtest_worker_dispatches_to_nautilus_runner_and_uses_persisted_config() -> None:
-    manager = JobManager()
-    job_id = manager.create_job("worker-strategy")
-    job = manager.get_job(job_id)
-    assert job is not None
-    assert job.run_spec is not None
-    job.run_spec.engine_family = EngineFamily.NAUTILUS
-    job.run_spec.execution_policy_version = "nautilus-daily-verification-v1"
-    job.run_spec.parameters = {
-        "config_override": {"shared_config": {"dataset": "persisted-dataset"}}
-    }
-
-    class _UnusedVectorbtRunner(BacktestRunner):
-        def execute(self, *args, **kwargs):  # noqa: ANN002, ANN003
-            raise AssertionError("vectorbt runner should not be used")
-
-    class _FakeNautilusRunner:
-        def __init__(self) -> None:
-            self.calls: list[dict[str, object]] = []
-
-        def execute(
-            self,
-            strategy: str,
-            *,
-            run_spec,
-            run_id: str,
-            progress_callback=None,
-            config_override=None,
-        ) -> BacktestResult:
-            self.calls.append(
-                {
-                    "strategy": strategy,
-                    "run_spec": run_spec,
-                    "run_id": run_id,
-                    "config_override": config_override,
-                }
-            )
-            if progress_callback is not None:
-                progress_callback("nautilus", 0.1)
-            return BacktestResult(
-                html_path=None,
-                elapsed_time=0.8,
-                summary={
-                    "engine_summary": {"engine": "nautilus"},
-                    "_metrics_path": str(Path("/tmp/nautilus.metrics.json")),
-                    "_manifest_path": str(Path("/tmp/nautilus.manifest.json")),
-                    "_engine_path": str(Path("/tmp/nautilus.engine.json")),
-                    "_diagnostics_path": str(Path("/tmp/nautilus.diagnostics.json")),
-                },
-                strategy_name=strategy,
-                dataset_name="persisted-dataset",
-            )
-
-    fake_nautilus_runner = _FakeNautilusRunner()
-
-    exit_code = await run_backtest_worker(
-        job_id,
-        "cli-strategy",
-        manager=manager,
-        runner=_UnusedVectorbtRunner(),
-        nautilus_runner=fake_nautilus_runner,  # type: ignore[arg-type]
-        heartbeat_seconds=60.0,
-        config_override={"shared_config": {"dataset": "cli-dataset"}},
-    )
-
-    persisted_job = manager.get_job(job_id)
-    assert exit_code == 0
-    assert len(fake_nautilus_runner.calls) == 1
-    assert fake_nautilus_runner.calls[0]["strategy"] == "worker-strategy"
-    assert fake_nautilus_runner.calls[0]["config_override"] == {
-        "shared_config": {"dataset": "persisted-dataset"}
-    }
-    assert persisted_job is not None
-    assert persisted_job.status == JobStatus.COMPLETED
-    assert persisted_job.run_metadata is not None
-    assert persisted_job.run_metadata.engine_family == EngineFamily.NAUTILUS
-
-
-@pytest.mark.asyncio
-async def test_run_backtest_worker_fails_fast_when_nautilus_dependency_is_missing() -> None:
-    manager = JobManager()
-    job_id = manager.create_job("worker-strategy")
-    job = manager.get_job(job_id)
-    assert job is not None
-    assert job.run_spec is not None
-    job.run_spec.engine_family = EngineFamily.NAUTILUS
-    job.run_spec.execution_policy_version = "nautilus-daily-verification-v1"
-
-    class _MissingNautilusRunner:
-        def execute(self, *args, **kwargs):  # noqa: ANN002, ANN003
-            raise MissingNautilusDependencyError("nautilus missing")
-
-    exit_code = await run_backtest_worker(
-        job_id,
-        "worker-strategy",
-        manager=manager,
-        nautilus_runner=_MissingNautilusRunner(),  # type: ignore[arg-type]
-        heartbeat_seconds=60.0,
-    )
-
-    failed_job = manager.get_job(job_id)
-    assert exit_code == 1
-    assert failed_job is not None
-    assert failed_job.status == JobStatus.FAILED
-    assert failed_job.error == "nautilus missing"
 
 
 @pytest.mark.asyncio
