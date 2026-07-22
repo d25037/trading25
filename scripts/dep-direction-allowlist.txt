@@ -31,7 +31,6 @@ apps/ts/packages/contracts/src/types/api-response-types.test-d.ts
 
 # Web components/hooks (still import from @trading25/api-clients/backtest)
 # local main integration: backtest/lab UI still consumes typed API-client contracts
-apps/ts/packages/web/src/components/EnginePolicySelector.tsx
 apps/ts/packages/web/src/components/Chart/signalPanelLinks.test.ts
 apps/ts/packages/web/src/components/Chart/SignalMarkers.tsx
 apps/ts/packages/web/src/components/Chart/signalPanelLinks.ts
