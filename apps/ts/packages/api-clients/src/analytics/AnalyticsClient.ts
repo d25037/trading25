@@ -101,6 +101,7 @@ export class AnalyticsClient {
     return this.request<MarketFundamentalRankingResponse>('/api/analytics/fundamental-ranking', undefined, {
       limit: params.limit,
       markets: params.markets,
+      metricKey: params.metricKey,
       forecastAboveRecentFyActuals: params.forecastAboveRecentFyActuals,
       forecastLookbackFyCount: params.forecastLookbackFyCount,
     });

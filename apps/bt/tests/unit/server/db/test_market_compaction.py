@@ -293,6 +293,7 @@ def test_verified_compaction_exchanges_candidate_and_returns_structured_evidence
     assert evidence.table_counts
     assert evidence.schema_fingerprint
     assert evidence.semantic_digests
+    assert '["main","daily_technical_metrics"]' in evidence.semantic_digests
     assert source.stat().st_ino != original_inode
     assert not list(source.parent.glob(".market-maintenance-*"))
     assert not (source.parent / ".market-maintenance.v1.jsonl").exists()

@@ -58,6 +58,7 @@ class SyncServiceMarketDbLike(SyncMarketDbLike, Protocol):
     def is_legacy_stock_price_snapshot(self) -> bool: ...
     def get_market_schema_version(self) -> int | None: ...
     def is_market_schema_current(self) -> bool: ...
+    def rebuild_daily_technical_metrics_from_stock_data(self) -> Any: ...
 
 
 class SyncServiceTimeSeriesStoreLike(SyncTimeSeriesStoreLike, Protocol):
@@ -97,6 +98,23 @@ sync_job_manager: GenericJobManager[SyncJobData, SyncProgress, SyncResult] = (
     GenericJobManager()
 )
 _MAX_FETCH_DETAILS = 200
+
+
+def _requires_daily_technical_metrics_rebuild(
+    mode: SyncMode,
+    result: SyncResult,
+) -> bool:
+    if mode is SyncMode.INITIAL:
+        return True
+    return any(
+        value > 0
+        for value in (
+            result.stockRowsAppended,
+            result.affectedStockCodes,
+            result.stockCodesReplaced,
+            result.stockRowsReplaced,
+        )
+    )
 
 
 def _publish_sync_job_event(job_id: str, *, close_stream: bool = False) -> None:
@@ -308,6 +326,25 @@ async def start_sync(
                 )
             elif sync_job_manager.is_cancelled(job.job_id):
                 operation_outcome = maintenance_contracts.MarketOperationOutcome.CANCELLED
+            elif _requires_daily_technical_metrics_rebuild(mode, operation_result):
+                on_progress(
+                    "daily_technical_metrics",
+                    0,
+                    1,
+                    "Materializing daily technical metrics from stock_data...",
+                )
+                technical_result = await asyncio.to_thread(
+                    current_market_db.rebuild_daily_technical_metrics_from_stock_data
+                )
+                on_progress(
+                    "daily_technical_metrics",
+                    1,
+                    1,
+                    (
+                        "Daily technical metrics materialization complete "
+                        f"({technical_result.final_count} rows)."
+                    ),
+                )
         except asyncio.TimeoutError:
             operation_outcome = maintenance_contracts.MarketOperationOutcome.TIMED_OUT
             operation_error = f"Sync timed out after {sync_timeout_minutes} minutes"

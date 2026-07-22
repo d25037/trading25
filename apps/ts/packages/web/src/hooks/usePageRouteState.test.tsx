@@ -189,11 +189,20 @@ describe('usePageRouteState', () => {
     const { result } = renderHook(() => useRankingRouteState());
 
     expect(result.current.activeDailyView).toBe('stocks');
+    expect(result.current.activeSubTab).toBe('ranking');
+    expect(result.current.fundamentalRankingParams).toEqual({
+      limit: 20,
+      markets: 'prime',
+      metricKey: 'eps_forecast_to_actual',
+      forecastAboveRecentFyActuals: false,
+      forecastLookbackFyCount: 3,
+    });
     expect(result.current.rankingParams).toEqual(DEFAULT_RANKING_PARAMS);
     expect(result.current.rankingTableFilters).toEqual({});
 
     act(() => {
       result.current.setActiveDailyView('indices');
+      result.current.setActiveSubTab('fundamentalRanking');
       result.current.setRankingParams({
         ...DEFAULT_RANKING_PARAMS,
         limit: 25,
@@ -205,16 +214,26 @@ describe('usePageRouteState', () => {
         maxForwardPer: 15,
         valuationSignal: 'undervalued',
       });
+      result.current.setFundamentalRankingParams({
+        ...result.current.fundamentalRankingParams,
+        markets: 'standard',
+        forecastAboveRecentFyActuals: true,
+        forecastLookbackFyCount: 5,
+      });
     });
 
     expect(routeSearchState.ranking).toEqual({
       dailyView: 'indices',
+      tab: 'fundamentalRanking',
       rankingLimit: 25,
       rankingMarkets: 'growth',
       rankingFilterText: 'sony',
       rankingFilterMinForwardPer: 0,
       rankingFilterMaxForwardPer: 15,
       rankingFilterSignal: 'undervalued',
+      fundamentalMarkets: 'standard',
+      forecastAboveRecentFyActuals: true,
+      forecastLookbackFyCount: 5,
     });
   });
 

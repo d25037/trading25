@@ -49,7 +49,6 @@ from src.application.services.ranking_daily_queries import (
 from src.application.services.ranking_daily_technical_metrics import (
     enrich_ranking_collections_with_daily_technical_metrics,
 )
-from src.application.services.market_data_errors import MarketDataError
 from src.application.services.ranking_value_composite_config import (
     VALUE_COMPOSITE_PROFILE_BY_ID,
     ensure_supported_value_composite_forward_eps_mode,
@@ -1483,6 +1482,28 @@ class TestGetRankings:
         result = service.get_rankings(date="2024-01-17")
         assert result.date == "2024-01-17"
 
+    def test_production_ranking_does_not_materialize_event_time_dataframe(
+        self, ranking_db, monkeypatch
+    ):
+        reader = MarketDbReader(ranking_db)
+
+        def fail_query_dataframe(*args, **kwargs):  # noqa: ANN002, ANN003
+            del args, kwargs
+            raise AssertionError("production ranking must not build an event-time frame")
+
+        monkeypatch.setattr(reader, "query_dataframe", fail_query_dataframe)
+        try:
+            result = RankingService(reader).get_rankings(
+                date="2024-01-19",
+                markets="prime",
+                limit=10,
+            )
+        finally:
+            reader.close()
+
+        assert result.date == "2024-01-19"
+        assert result.rankings.tradingValue
+
     def test_enriches_sma5_above_count_from_materialized_metrics(self, ranking_db):
         conn = duckdb.connect(ranking_db)
         try:
@@ -1511,7 +1532,7 @@ class TestGetRankings:
         assert item.sma5AboveCount5d == 4
         assert item.sma5BelowStreak == 3
 
-    def test_materialized_technical_metrics_do_not_bypass_price_lineage_validation(
+    def test_materialized_technical_metrics_do_not_trigger_request_time_lineage_audit(
         self, ranking_db
     ):
         conn = duckdb.connect(ranking_db)
@@ -1549,17 +1570,16 @@ class TestGetRankings:
         )
         reader = MarketDbReader(ranking_db)
         try:
-            with pytest.raises(
-                MarketDataError,
-                match="provider_window_invalid",
-            ):
-                enrich_ranking_collections_with_daily_technical_metrics(
-                    reader,
-                    ([item],),
-                    target_date="2024-01-19",
-                )
+            enrich_ranking_collections_with_daily_technical_metrics(
+                reader,
+                ([item],),
+                target_date="2024-01-19",
+            )
         finally:
             reader.close()
+
+        assert item.sma5AboveCount5d == 4
+        assert item.sma5BelowStreak == 3
 
     def test_include_valuation_does_not_recalculate_missing_canonical_rows(
         self, ranking_db

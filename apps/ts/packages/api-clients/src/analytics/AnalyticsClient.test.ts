@@ -98,12 +98,13 @@ describe('AnalyticsClient', () => {
     await client.getFundamentalRanking({
       markets: 'prime',
       limit: 20,
+      metricKey: 'eps_forecast_to_actual',
       forecastAboveRecentFyActuals: true,
       forecastLookbackFyCount: 3,
     });
 
     expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe(
-      'http://localhost:3002/api/analytics/fundamental-ranking?limit=20&markets=prime&forecastAboveRecentFyActuals=true&forecastLookbackFyCount=3'
+      'http://localhost:3002/api/analytics/fundamental-ranking?limit=20&markets=prime&metricKey=eps_forecast_to_actual&forecastAboveRecentFyActuals=true&forecastLookbackFyCount=3'
     );
   });
 

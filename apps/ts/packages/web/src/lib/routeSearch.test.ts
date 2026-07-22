@@ -179,6 +179,36 @@ describe('routeSearch', () => {
     });
   });
 
+  it('roundtrips fundamental ranking page mode and filters', () => {
+    const rankingSearch = validateRankingSearch({
+      tab: 'fundamentalRanking',
+      fundamentalLimit: '50',
+      fundamentalMarkets: 'prime,standard',
+      forecastAboveRecentFyActuals: 'true',
+      forecastLookbackFyCount: '5',
+    });
+
+    expect(getRankingStateFromSearch(rankingSearch)).toEqual(
+      expect.objectContaining({
+        activeSubTab: 'fundamentalRanking',
+        fundamentalRankingParams: {
+          limit: 50,
+          markets: 'prime,standard',
+          metricKey: 'eps_forecast_to_actual',
+          forecastAboveRecentFyActuals: true,
+          forecastLookbackFyCount: 5,
+        },
+      })
+    );
+    expect(serializeRankingSearch(getRankingStateFromSearch(rankingSearch))).toEqual({
+      tab: 'fundamentalRanking',
+      fundamentalLimit: 50,
+      fundamentalMarkets: 'prime,standard',
+      forecastAboveRecentFyActuals: true,
+      forecastLookbackFyCount: 5,
+    });
+  });
+
   it('roundtrips ranking table filter search params', () => {
     const rankingSearch = validateRankingSearch({
       rankingFilterText: ' sony ',
@@ -350,7 +380,7 @@ describe('routeSearch', () => {
 
     expect(
       validateRankingSearch({
-        tab: 'ranking',
+        tab: 'unknown',
         dailyView: 'invalid',
         rankingSortBy: 'invalid',
         rankingOrder: 'sideways',

@@ -130,6 +130,42 @@ def stocks_canonical_cte() -> str:
     """
 
 
+def stock_data_dedup_cte(
+    cte_name: str,
+    *,
+    where_clause: str,
+    code_ref: str = "code",
+    include_ohlc: bool = True,
+) -> str:
+    """Build a date-bounded canonical consumer-price relation."""
+    normalized = normalized_code_sql(code_ref)
+    order = prefer_4digit_order_sql(code_ref)
+    select_ohlc = (
+        ", open, high, low, close, volume" if include_ohlc else ", close, volume"
+    )
+    return f"""
+        {cte_name} AS (
+            SELECT
+                normalized_code,
+                date
+                {select_ohlc}
+            FROM (
+                SELECT
+                    {normalized} AS normalized_code,
+                    date
+                    {select_ohlc},
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {normalized}, date
+                        ORDER BY {order}
+                    ) AS rn
+                FROM stock_data
+                WHERE {where_clause}
+            )
+            WHERE rn = 1
+        )
+    """
+
+
 @contextmanager
 def event_time_signal_sql(
     reader: MarketDbReader,

@@ -349,6 +349,10 @@ def _run_cycle(
         store.index_statements()
         master = market_db.publish_stock_master_daily_rows(_stock_master_rows())
         adjusted = AdjustedMetricsMaterializer(market_db).rebuild_current_basis([])
+        technical_mutations = 0
+        if stocks.mutated_rows > 0:
+            technical = market_db.rebuild_daily_technical_metrics_from_stock_data()
+            technical_mutations = technical.stats.mutated_rows
         after_counts = _table_counts(market_db)
 
         attached: list[ReadOnlyMarketResources] = []
@@ -412,10 +416,7 @@ def _run_cycle(
                     after_counts["daily_valuation"]
                     - before_counts["daily_valuation"]
                 ),
-                "daily_technical_metrics": (
-                    after_counts["daily_technical_metrics"]
-                    - before_counts["daily_technical_metrics"]
-                ),
+                "daily_technical_metrics": technical_mutations,
             },
             row_counts=after_counts,
             statements=tuple(db_recorder.statements + store_recorder.statements),
@@ -453,7 +454,7 @@ def test_identical_incremental_cycle_reaches_zero_mutation_steady_state(
     assert first.mutations["current_basis_recompute_pending"] == 0
     assert first.mutations["statement_metrics_adjusted"] == 1
     assert first.mutations["daily_valuation"] == 10
-    assert first.mutations["daily_technical_metrics"] == 0
+    assert first.mutations["daily_technical_metrics"] == 2
     assert first.row_counts["topix_data"] == 10
     assert first.row_counts["stock_data_raw"] == 10
     assert first.row_counts["stock_data"] == 10
@@ -469,7 +470,7 @@ def test_identical_incremental_cycle_reaches_zero_mutation_steady_state(
     assert first.row_counts["current_basis_recompute_pending"] == 0
     assert first.row_counts["statement_metrics_adjusted"] == 1
     assert first.row_counts["daily_valuation"] == 10
-    assert first.row_counts["daily_technical_metrics"] == 0
+    assert first.row_counts["daily_technical_metrics"] == 2
     assert second.mutations == {name: 0 for name in second.mutations}
     assert third.mutations == {name: 0 for name in third.mutations}
     assert second.row_counts == first.row_counts
@@ -498,18 +499,21 @@ def test_identical_incremental_cycle_reaches_zero_mutation_steady_state(
         observation.size.block_size + observation.size.free_bytes
         for observation in (first, second, third)
     )
-    _assert_steady_state_growth(
-        (first.db_bytes, second.db_bytes, third.db_bytes),
-        tolerance=tolerance,
-    )
-    _assert_steady_state_growth(
-        (
-            first.size.free_bytes,
-            second.size.free_bytes,
-            third.size.free_bytes,
-        ),
-        tolerance=tolerance,
-    )
+    # A populated DuckDB table can rotate one catalog/checkpoint block when a
+    # writer session closes. Production finalization bounds that free space via
+    # the soft/hard compaction policy; unchanged syncs must not add table DML.
+    assert max(first.db_bytes, second.db_bytes, third.db_bytes) - min(
+        first.db_bytes, second.db_bytes, third.db_bytes
+    ) <= tolerance
+    assert max(
+        first.size.free_bytes,
+        second.size.free_bytes,
+        third.size.free_bytes,
+    ) - min(
+        first.size.free_bytes,
+        second.size.free_bytes,
+        third.size.free_bytes,
+    ) <= tolerance
 
 
 def test_test_equivalent_hard_cap_compacts_and_persists_verified_evidence(

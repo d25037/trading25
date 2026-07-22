@@ -41,6 +41,8 @@ class DummyMarketDb:
         self._legacy_stock_snapshot = legacy_stock_snapshot
         self._schema_version = schema_version
         self.ensure_schema_calls = 0
+        self.technical_rebuild_calls = 0
+        self.technical_rebuild_error: Exception | None = None
         self.metadata: dict[str, str] = {}
 
     def get_sync_metadata(self, key: str) -> str | None:
@@ -64,6 +66,14 @@ class DummyMarketDb:
 
     def is_market_schema_current(self) -> bool:
         return self._schema_version == MARKET_SCHEMA_VERSION
+
+    def rebuild_daily_technical_metrics_from_stock_data(self) -> MagicMock:
+        self.technical_rebuild_calls += 1
+        if self.technical_rebuild_error is not None:
+            raise self.technical_rebuild_error
+        result = MagicMock()
+        result.final_count = 42
+        return result
 
 class DummyTimeSeriesStore:
     def __init__(
@@ -450,6 +460,95 @@ async def test_start_sync_completes_job_and_passes_bulk_enforcement(
 
 
 @pytest.mark.asyncio
+async def test_successful_sync_materializes_daily_technical_metrics_before_completion(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    monkeypatch.setattr(
+        sync_service,
+        "get_strategy",
+        lambda _mode: StrategyProbe(
+            result=SyncResult(success=True, totalApiCalls=1, stockRowsAppended=1),
+            emit_progress=False,
+        ),
+    )
+    market_db = DummyMarketDb(last_sync_date="2026-03-01T00:00:00+00:00")
+
+    job = await sync_service.start_sync(
+        SyncMode.INCREMENTAL,
+        cast(sync_service.SyncServiceMarketDbLike, market_db),
+        DummyJQuantsClient(),
+        time_series_store=_time_series_store(),
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    stored = isolated_manager.get_job(job.job_id)
+    assert stored is not None
+    assert stored.status is JobStatus.COMPLETED
+    assert market_db.technical_rebuild_calls == 1
+    assert stored.progress is not None
+    assert stored.progress.stage == "daily_technical_metrics"
+    assert stored.progress.percentage == 100.0
+
+
+@pytest.mark.asyncio
+async def test_successful_sync_skips_technical_materialization_without_price_mutations(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    monkeypatch.setattr(
+        sync_service, "get_strategy", lambda _mode: StrategyProbe(emit_progress=False)
+    )
+    market_db = DummyMarketDb(last_sync_date="2026-03-01T00:00:00+00:00")
+
+    job = await sync_service.start_sync(
+        SyncMode.INCREMENTAL,
+        cast(sync_service.SyncServiceMarketDbLike, market_db),
+        DummyJQuantsClient(),
+        time_series_store=_time_series_store(),
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    stored = isolated_manager.get_job(job.job_id)
+    assert stored is not None and stored.status is JobStatus.COMPLETED
+    assert market_db.technical_rebuild_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_technical_materialization_failure_fails_sync(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    monkeypatch.setattr(
+        sync_service,
+        "get_strategy",
+        lambda _mode: StrategyProbe(
+            result=SyncResult(success=True, totalApiCalls=1, stockRowsAppended=1),
+            emit_progress=False,
+        ),
+    )
+    market_db = DummyMarketDb(last_sync_date="2026-03-01T00:00:00+00:00")
+    market_db.technical_rebuild_error = RuntimeError("technical rebuild failed")
+
+    job = await sync_service.start_sync(
+        SyncMode.INCREMENTAL,
+        cast(sync_service.SyncServiceMarketDbLike, market_db),
+        DummyJQuantsClient(),
+        time_series_store=_time_series_store(),
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    stored = isolated_manager.get_job(job.job_id)
+    assert stored is not None
+    assert stored.status is JobStatus.FAILED
+    assert stored.error == "technical rebuild failed"
+    assert market_db.technical_rebuild_calls == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("mode", "last_sync_date"),
     [
@@ -798,11 +897,12 @@ async def test_start_sync_resets_market_snapshot_before_initial_sync(
     assert reset_market_db.metadata[METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"]] == (
         PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
     )
+    assert reset_market_db.technical_rebuild_calls == 1
     assert strategy.captured_ctx is not None
     assert strategy.captured_ctx.market_db is reset_market_db
     assert strategy.captured_ctx.time_series_store is reset_store
     assert stored.progress is not None
-    assert stored.progress.stage == "reset"
+    assert stored.progress.stage == "daily_technical_metrics"
     assert stored.progress.percentage == 100.0
 
 

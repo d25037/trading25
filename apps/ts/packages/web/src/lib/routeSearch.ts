@@ -11,11 +11,13 @@ import {
   DEFAULT_RANKING_PARAMS,
   type ScreeningSubTab,
 } from '@/stores/screeningStore';
+import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
 import type {
   DailyRankingTableFilters,
   DailyRankingValuationSignalFilter,
   DailyRankingWarningFilter,
   RankingDailyView,
+  RankingPageTab,
   RankingParams,
   RankingRegimeState,
   RankingSortField,
@@ -79,7 +81,12 @@ export interface ScreeningRouteSearch {
 }
 
 export interface RankingRouteSearch {
+  tab?: RankingPageTab;
   dailyView?: RankingDailyView;
+  fundamentalLimit?: number;
+  fundamentalMarkets?: string;
+  forecastAboveRecentFyActuals?: boolean;
+  forecastLookbackFyCount?: number;
   rankingDate?: string;
   rankingLimit?: number;
   rankingMarkets?: string;
@@ -161,7 +168,12 @@ const DAILY_RANKING_WARNING_FILTER_VALUES: DailyRankingWarningFilter[] = [
   'sma5_below_streak_3',
 ];
 const RANKING_ROUTE_SEARCH_KEYS: (keyof RankingRouteSearch)[] = [
+  'tab',
   'dailyView',
+  'fundamentalLimit',
+  'fundamentalMarkets',
+  'forecastAboveRecentFyActuals',
+  'forecastLookbackFyCount',
   'rankingDate',
   'rankingLimit',
   'rankingMarkets',
@@ -207,6 +219,7 @@ const RANKING_ROUTE_SEARCH_KEYS: (keyof RankingRouteSearch)[] = [
   'rankingFilterMinSectorScore',
   'rankingFilterMaxSectorScore',
 ];
+const RANKING_PAGE_TABS: RankingPageTab[] = ['ranking', 'fundamentalRanking'];
 const INDICES_ROUTE_SEARCH_KEYS: (keyof IndicesRouteSearch)[] = [
   'code',
   'sectorMarkets',
@@ -303,6 +316,13 @@ function normalizeFiniteNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+function normalizeBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return undefined;
+}
+
 function normalizeEnum<T extends string>(value: unknown, values: readonly T[]): T | undefined {
   return typeof value === 'string' && values.includes(value as T) ? (value as T) : undefined;
 }
@@ -313,6 +333,10 @@ function normalizeScreeningSubTab(value: unknown): ScreeningSubTab | undefined {
 
 function normalizeRankingDailyView(value: unknown): RankingDailyView | undefined {
   return normalizeEnum(normalizeString(value), RANKING_DAILY_VIEWS);
+}
+
+function normalizeRankingPageTab(value: unknown): RankingPageTab | undefined {
+  return normalizeEnum(normalizeString(value), RANKING_PAGE_TABS);
 }
 
 function normalizeRankingTechnicalEventType(value: unknown): RankingTechnicalEventType | undefined {
@@ -611,9 +635,11 @@ export function getScreeningStateFromSearch(search: ScreeningRouteSearch): {
 }
 
 export function getRankingStateFromSearch(search: RankingRouteSearch): {
+  activeSubTab: RankingPageTab;
   activeDailyView: RankingDailyView;
   rankingParams: RankingParams;
   rankingTableFilters: DailyRankingTableFilters;
+  fundamentalRankingParams: FundamentalRankingParams;
 } {
   const rankingParams = assignSearchParams({ ...DEFAULT_RANKING_PARAMS }, [
     ['date', search.rankingDate],
@@ -663,11 +689,28 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
     ['minSectorScore', search.rankingFilterMinSectorScore],
     ['maxSectorScore', search.rankingFilterMaxSectorScore],
   ]);
+  const fundamentalRankingParams = assignSearchParams<FundamentalRankingParams>(
+    {
+      limit: 20,
+      markets: 'prime',
+      metricKey: 'eps_forecast_to_actual',
+      forecastAboveRecentFyActuals: false,
+      forecastLookbackFyCount: 3,
+    },
+    [
+      ['limit', search.fundamentalLimit],
+      ['markets', search.fundamentalMarkets],
+      ['forecastAboveRecentFyActuals', search.forecastAboveRecentFyActuals],
+      ['forecastLookbackFyCount', search.forecastLookbackFyCount],
+    ]
+  );
 
   return {
+    activeSubTab: search.tab ?? 'ranking',
     activeDailyView: search.dailyView ?? 'stocks',
     rankingParams,
     rankingTableFilters,
+    fundamentalRankingParams,
   };
 }
 
@@ -753,7 +796,12 @@ export function serializeScreeningSearch(state: {
 export function validateRankingSearch(search: Record<string, unknown>): RankingRouteSearch {
   const next: RankingRouteSearch = {};
 
+  assignIfDefined(next, 'tab', normalizeRankingPageTab(search.tab));
   assignIfDefined(next, 'dailyView', normalizeRankingDailyView(search.dailyView));
+  assignIfDefined(next, 'fundamentalLimit', normalizePositiveInt(search.fundamentalLimit));
+  assignIfDefined(next, 'fundamentalMarkets', normalizeString(search.fundamentalMarkets));
+  assignIfDefined(next, 'forecastAboveRecentFyActuals', normalizeBoolean(search.forecastAboveRecentFyActuals));
+  assignIfDefined(next, 'forecastLookbackFyCount', normalizePositiveInt(search.forecastLookbackFyCount));
   assignIfDefined(next, 'rankingDate', normalizeString(search.rankingDate));
   assignIfDefined(next, 'rankingLimit', normalizePositiveInt(search.rankingLimit));
   assignIfDefined(next, 'rankingMarkets', normalizeString(search.rankingMarkets));
@@ -838,13 +886,30 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
 }
 
 export function serializeRankingSearch(state: {
+  activeSubTab: RankingPageTab;
   activeDailyView: RankingDailyView;
   rankingParams: RankingParams;
   rankingTableFilters?: DailyRankingTableFilters;
+  fundamentalRankingParams: FundamentalRankingParams;
 }): RankingRouteSearch {
   const next: RankingRouteSearch = {};
 
+  assignIfDefinedAndNotDefault(next, 'tab', state.activeSubTab, 'ranking');
   assignIfDefinedAndNotDefault(next, 'dailyView', state.activeDailyView, 'stocks');
+  assignIfDefinedAndNotDefault(next, 'fundamentalLimit', state.fundamentalRankingParams.limit, 20);
+  assignIfDefinedAndNotDefault(next, 'fundamentalMarkets', state.fundamentalRankingParams.markets, 'prime');
+  assignIfDefinedAndNotDefault(
+    next,
+    'forecastAboveRecentFyActuals',
+    state.fundamentalRankingParams.forecastAboveRecentFyActuals,
+    false
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'forecastLookbackFyCount',
+    state.fundamentalRankingParams.forecastLookbackFyCount,
+    3
+  );
   assignIfDefined(next, 'rankingDate', normalizeString(state.rankingParams.date));
   assignIfDefinedAndNotDefault(
     next,
@@ -942,9 +1007,11 @@ export function serializeRankingSearch(state: {
 export function serializeRankingSearchForNavigation(
   currentSearch: Record<string, unknown>,
   state: {
+    activeSubTab: RankingPageTab;
     activeDailyView: RankingDailyView;
     rankingParams: RankingParams;
     rankingTableFilters?: DailyRankingTableFilters;
+    fundamentalRankingParams: FundamentalRankingParams;
   }
 ): RankingRouteSearch {
   const current = validateRankingSearch(currentSearch);

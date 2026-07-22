@@ -152,6 +152,7 @@ _CRITICAL_TABLES = (
     "statements",
     "statement_metrics_adjusted",
     "daily_valuation",
+    "daily_technical_metrics",
     "margin_data",
     "topix_data",
     "indices_data",

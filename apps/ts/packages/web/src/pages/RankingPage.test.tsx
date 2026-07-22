@@ -3,12 +3,15 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_RANKING_PARAMS } from '@/stores/screeningStore';
-import type { RankingDailyView } from '@/types/ranking';
+import type { RankingDailyView, RankingPageTab } from '@/types/ranking';
 import { RankingPage } from './RankingPage';
 
 const mockNavigate = vi.fn();
 const mockSetActiveDailyView = vi.fn((view: RankingDailyView) => {
   mockRouteState.activeDailyView = view;
+});
+const mockSetActiveSubTab = vi.fn((tab: RankingPageTab) => {
+  mockRouteState.activeSubTab = tab;
 });
 const mockSetRankingParams = vi.fn((params: typeof DEFAULT_RANKING_PARAMS) => {
   mockRouteState.rankingParams = params;
@@ -17,16 +20,27 @@ const mockSetRankingTableFilters = vi.fn((filters: Record<string, unknown>) => {
   mockRouteState.rankingTableFilters = filters;
 });
 const mockUseRanking = vi.fn();
+const mockUseFundamentalRanking = vi.fn();
 const mockUseMarketBubbleFootprint = vi.fn();
 const mockUseWatchlists = vi.fn();
 const mockUseWatchlistWithItems = vi.fn();
 const mockRouteState = {
+  activeSubTab: 'ranking' as RankingPageTab,
+  setActiveSubTab: mockSetActiveSubTab,
   activeDailyView: 'stocks' as RankingDailyView,
   setActiveDailyView: mockSetActiveDailyView,
   rankingParams: { ...DEFAULT_RANKING_PARAMS },
   setRankingParams: mockSetRankingParams,
   rankingTableFilters: {},
   setRankingTableFilters: mockSetRankingTableFilters,
+  fundamentalRankingParams: {
+    markets: 'prime',
+    limit: 20,
+    metricKey: 'eps_forecast_to_actual',
+    forecastAboveRecentFyActuals: false,
+    forecastLookbackFyCount: 3,
+  },
+  setFundamentalRankingParams: vi.fn(),
 };
 
 vi.mock('@tanstack/react-router', () => ({
@@ -53,6 +67,10 @@ vi.mock('@/hooks/usePageRouteState', () => ({
 
 vi.mock('@/hooks/useRanking', () => ({
   useRanking: (...args: unknown[]) => mockUseRanking(...args),
+}));
+
+vi.mock('@/hooks/useFundamentalRanking', () => ({
+  useFundamentalRanking: (...args: unknown[]) => mockUseFundamentalRanking(...args),
 }));
 
 vi.mock('@/hooks/useMarketBubbleFootprint', () => ({
@@ -164,8 +182,17 @@ vi.mock('@/components/Ranking', () => ({
   ),
 }));
 
+vi.mock('@/components/FundamentalRanking', () => ({
+  FundamentalRankingFilters: () => <div>Fundamental Ranking Filters</div>,
+  FundamentalRankingSummary: () => <div>Fundamental Ranking Summary</div>,
+  FundamentalRankingTable: ({ rankings }: { rankings?: { ratioHigh?: { code: string }[] } }) => (
+    <div>fundamental-item:{rankings?.ratioHigh?.[0]?.code ?? 'none'}</div>
+  ),
+}));
+
 describe('RankingPage', () => {
   beforeEach(() => {
+    mockRouteState.activeSubTab = 'ranking';
     mockRouteState.activeDailyView = 'stocks';
     mockRouteState.rankingParams = { ...DEFAULT_RANKING_PARAMS };
     mockRouteState.rankingTableFilters = {};
@@ -174,6 +201,7 @@ describe('RankingPage', () => {
     mockSetRankingParams.mockClear();
     mockSetRankingTableFilters.mockClear();
     mockUseRanking.mockReset();
+    mockUseFundamentalRanking.mockReset();
     mockUseMarketBubbleFootprint.mockReset();
     mockUseWatchlists.mockReset();
     mockUseWatchlistWithItems.mockReset();
@@ -190,6 +218,17 @@ describe('RankingPage', () => {
           { code: 'TOPIX', category: 'topix' },
           { code: '004F', category: 'sector33' },
         ],
+      },
+      isLoading: false,
+      error: null,
+    });
+    mockUseFundamentalRanking.mockReturnValue({
+      data: {
+        date: '2026-07-21',
+        markets: ['prime'],
+        metricKey: 'eps_forecast_to_actual',
+        rankings: { ratioHigh: [{ code: '9432' }], ratioLow: [] },
+        lastUpdated: '2026-07-22T00:00:00Z',
       },
       isLoading: false,
       error: null,
@@ -235,14 +274,13 @@ describe('RankingPage', () => {
     expect(screen.getByRole('heading', { name: 'Ranking' })).toBeInTheDocument();
     expect(screen.getByText('Daily market ranking')).toBeInTheDocument();
     expect(screen.queryByText('Ranking Filters')).not.toBeInTheDocument();
-    expect(screen.getByText('Market Regime')).toBeInTheDocument();
-    expect(screen.getByText(/score 3/)).toBeInTheDocument();
+    expect(screen.queryByText('Market Regime')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Individual Stocks' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Technical Events' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Indices' })).toBeInTheDocument();
     expect(screen.getByLabelText('Preset')).toBeInTheDocument();
     expect(screen.getByText('More')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Fundamental Ranking' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fundamental Ranking' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Value Scores' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'TOPIX100 Study' })).not.toBeInTheDocument();
     expect(screen.queryByText('Ranking Summary')).not.toBeInTheDocument();
@@ -269,9 +307,18 @@ describe('RankingPage', () => {
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ riskState: undefined }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ technicalState: undefined }), true);
     expect(mockUseRanking).not.toHaveBeenCalledWith(expect.objectContaining({ sortBy: 'tradingValue' }), true);
-    expect(mockUseMarketBubbleFootprint).toHaveBeenCalledWith(
-      expect.objectContaining({ markets: DEFAULT_RANKING_PARAMS.markets, date: DEFAULT_RANKING_PARAMS.date })
-    );
+    expect(mockUseMarketBubbleFootprint).not.toHaveBeenCalled();
+  });
+
+  it('enables only fundamental ranking and renders its API item in fundamental mode', () => {
+    mockRouteState.activeSubTab = 'fundamentalRanking';
+
+    render(<RankingPage />);
+
+    expect(mockUseRanking).toHaveBeenLastCalledWith(expect.anything(), false);
+    expect(mockUseFundamentalRanking).toHaveBeenLastCalledWith(mockRouteState.fundamentalRankingParams, true);
+    expect(mockUseMarketBubbleFootprint).not.toHaveBeenCalled();
+    expect(screen.getByText('fundamental-item:9432')).toBeInTheDocument();
   });
 
   it('opens More controls and closes them with outside click or Escape', async () => {

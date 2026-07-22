@@ -28,9 +28,11 @@ import {
   watchlistRoute,
 } from '@/router';
 import type { ScreeningSubTab } from '@/stores/screeningStore';
+import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
 import type {
   DailyRankingTableFilters,
   RankingDailyView,
+  RankingPageTab,
   RankingParams,
   RankingSortField,
   RankingSortOrder,
@@ -215,12 +217,16 @@ export function useScreeningRouteState(): {
 }
 
 export function useRankingRouteState(): {
+  activeSubTab: RankingPageTab;
+  setActiveSubTab: (tab: RankingPageTab) => void;
   activeDailyView: RankingDailyView;
   setActiveDailyView: (view: RankingDailyView) => void;
   rankingParams: RankingParams;
   setRankingParams: (params: RankingParams) => void;
   rankingTableFilters: DailyRankingTableFilters;
   setRankingTableFilters: (filters: DailyRankingTableFilters) => void;
+  fundamentalRankingParams: FundamentalRankingParams;
+  setFundamentalRankingParams: (params: FundamentalRankingParams) => void;
 } {
   const navigate = useNavigate();
   const search = rankingRoute.useSearch();
@@ -229,13 +235,17 @@ export function useRankingRouteState(): {
   const updateSearch = useCallback(
     (
       updater: (currentState: {
+        activeSubTab: RankingPageTab;
         activeDailyView: RankingDailyView;
         rankingParams: RankingParams;
         rankingTableFilters: DailyRankingTableFilters;
+        fundamentalRankingParams: FundamentalRankingParams;
       }) => {
+        activeSubTab: RankingPageTab;
         activeDailyView: RankingDailyView;
         rankingParams: RankingParams;
         rankingTableFilters: DailyRankingTableFilters;
+        fundamentalRankingParams: FundamentalRankingParams;
       }
     ) => {
       void navigate({
@@ -251,10 +261,13 @@ export function useRankingRouteState(): {
 
   return {
     ...state,
+    setActiveSubTab: (tab) => updateSearch((currentState) => ({ ...currentState, activeSubTab: tab })),
     setActiveDailyView: (view) => updateSearch((currentState) => ({ ...currentState, activeDailyView: view })),
     setRankingParams: (params) => updateSearch((currentState) => ({ ...currentState, rankingParams: params })),
     setRankingTableFilters: (filters) =>
       updateSearch((currentState) => ({ ...currentState, rankingTableFilters: filters })),
+    setFundamentalRankingParams: (params) =>
+      updateSearch((currentState) => ({ ...currentState, fundamentalRankingParams: params })),
   };
 }
 

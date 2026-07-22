@@ -3,6 +3,7 @@
  */
 
 export type RankingDailyView = 'stocks' | 'technicalEvents' | 'indices';
+export type RankingPageTab = 'ranking' | 'fundamentalRanking';
 export type RankingTechnicalEventType = 'periodHigh' | 'periodLow';
 export type RankingTechnicalState = 'atr20_acceleration' | 'momentum_20_60_top20';
 export type RankingRiskState = 'overheat' | 'stale_rally_fade';
