@@ -67,7 +67,7 @@ def upgrade_daily_ranking_fixture_to_market_v5(conn: Any) -> None:
             adjusted_high DOUBLE,
             adjusted_low DOUBLE,
             adjusted_close DOUBLE,
-            adjusted_volume BIGINT
+            adjusted_volume DOUBLE
         )
         """
     )
@@ -79,7 +79,7 @@ def upgrade_daily_ranking_fixture_to_market_v5(conn: Any) -> None:
                CAST(close AS DOUBLE), CAST(volume AS BIGINT),
                CAST(close AS DOUBLE) * CAST(volume AS BIGINT), 1.0,
                CAST(open AS DOUBLE), CAST(high AS DOUBLE), CAST(low AS DOUBLE),
-               CAST(close AS DOUBLE), CAST(volume AS BIGINT)
+               CAST(close AS DOUBLE), CAST(volume AS DOUBLE)
         FROM stock_data
         """
     )

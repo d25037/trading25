@@ -109,7 +109,7 @@ _MARKET_SCOPES: frozenset[str] = frozenset(
 RelationSchema = tuple[tuple[str, str], ...]
 
 _BIGINT_SIGNAL_PRICE_COLUMNS = frozenset(
-    {"volume", "med_adv60_sessions", "atr20_sessions", "atr60_sessions"}
+    {"med_adv60_sessions", "atr20_sessions", "atr60_sessions"}
 )
 _VARCHAR_SIGNAL_PRICE_COLUMNS = frozenset({"code", "price_basis_id"})
 DAILY_RANKING_SIGNAL_PRICE_SCHEMA: RelationSchema = tuple(
@@ -132,8 +132,6 @@ DAILY_RANKING_PRICE_HISTORY_SCHEMA: RelationSchema = tuple(
         if column == "date"
         else "VARCHAR"
         if column in {"code", "price_basis_id"}
-        else "BIGINT"
-        if column == "volume"
         else "DOUBLE",
     )
     for column in DAILY_RANKING_PRICE_HISTORY_COLUMNS

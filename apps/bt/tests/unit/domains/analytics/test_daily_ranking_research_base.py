@@ -59,7 +59,7 @@ def _build_market_v5_research_fixture(
             close DOUBLE, volume BIGINT, turnover_value DOUBLE,
             adjustment_factor DOUBLE, adjusted_open DOUBLE,
             adjusted_high DOUBLE, adjusted_low DOUBLE, adjusted_close DOUBLE,
-            adjusted_volume BIGINT
+            adjusted_volume DOUBLE
         );
         CREATE TABLE stock_data (
             code TEXT, date DATE, open DOUBLE, high DOUBLE, low DOUBLE,

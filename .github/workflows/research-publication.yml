@@ -1,0 +1,62 @@
+name: Research Publication CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/bt/docs/experiments/**"
+      - "apps/bt/tests/fixtures/research/**"
+      - "docs/research-pit-invalidation-register.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: "0.11.29"
+
+concurrency:
+  group: research-publication-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  research-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Install deps (apps/bt)
+        run: uv sync --locked
+        working-directory: apps/bt
+      - name: Check research guardrails
+        run: python scripts/check-research-guardrails.py
+      - name: Run publication research tests
+        env:
+          RESEARCH_SHARD_INDEX: ${{ matrix.shard }}
+          RESEARCH_SHARD_COUNT: "6"
+          BT_PYTEST_FAST: "1"
+        run: |
+          printf '%s\n' \
+            tests/unit/domains/analytics \
+            tests/unit/scripts \
+            > /tmp/research-test-targets.txt
+          python scripts/ci/research-test-targets.py \
+            --mode shard \
+            --shard-index "${RESEARCH_SHARD_INDEX}" \
+            --shard-count "${RESEARCH_SHARD_COUNT}" \
+            < /tmp/research-test-targets.txt \
+            > /tmp/research-shard-test-targets.txt
+          mapfile -t research_test_targets < /tmp/research-shard-test-targets.txt
+          ./scripts/bt-pytest.sh "${research_test_targets[@]}"

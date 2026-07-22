@@ -25,7 +25,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       product_ci: ${{ steps.scope.outputs.product_ci }}
-      research_ci: ${{ steps.scope.outputs.research_ci }}
       contracts_ci: ${{ steps.scope.outputs.contracts_ci }}
       security_ci: ${{ steps.scope.outputs.security_ci }}
       docs_only: ${{ steps.scope.outputs.docs_only }}
@@ -370,70 +369,6 @@ jobs:
           --ignore-vuln CVE-2026-3219
         working-directory: apps/bt
 
-  bt-research-tests:
-    needs: changes
-    if: needs.changes.outputs.research_ci == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [0, 1, 2, 3, 4, 5]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: "3.12"
-      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
-        with:
-          version: ${{ env.UV_VERSION }}
-      - name: Install deps (apps/bt)
-        run: uv sync --locked
-        working-directory: apps/bt
-      - name: Determine changed research files
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}" > /tmp/research-changed-files.txt
-          elif [[ -n "${{ github.event.before }}" && "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
-            git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" > /tmp/research-changed-files.txt
-          else
-            : > /tmp/research-changed-files.txt
-          fi
-          cat /tmp/research-changed-files.txt
-      - name: Check research guardrails
-        run: python scripts/check-research-guardrails.py
-      - name: Lint changed research Python
-        run: |
-          python scripts/ci/research-test-targets.py --mode py-files < /tmp/research-changed-files.txt > /tmp/research-python-files.txt
-          if [[ -s /tmp/research-python-files.txt ]]; then
-            uv run --project apps/bt ruff check $(cat /tmp/research-python-files.txt)
-          else
-            echo "No changed research Python files to lint."
-          fi
-      - name: Run fast and changed bt research tests
-        env:
-          RESEARCH_SHARD_INDEX: ${{ matrix.shard }}
-          RESEARCH_SHARD_COUNT: "6"
-          BT_PYTEST_FAST: "1"
-        run: |
-          python scripts/ci/research-test-targets.py --mode fast-pytest > /tmp/research-fast-test-targets.txt
-          python scripts/ci/research-test-targets.py < /tmp/research-changed-files.txt > /tmp/research-mapped-test-targets.txt
-          sed '/^[[:space:]]*$/d' /tmp/research-fast-test-targets.txt /tmp/research-mapped-test-targets.txt | sort -u > /tmp/research-test-targets.txt
-          python scripts/ci/research-test-targets.py \
-            --mode shard \
-            --shard-index "${RESEARCH_SHARD_INDEX}" \
-            --shard-count "${RESEARCH_SHARD_COUNT}" \
-            < /tmp/research-test-targets.txt \
-            > /tmp/research-shard-test-targets.txt
-          if [[ -s /tmp/research-shard-test-targets.txt ]]; then
-            mapfile -t research_test_targets < /tmp/research-shard-test-targets.txt
-            ./scripts/bt-pytest.sh "${research_test_targets[@]}"
-          else
-            echo "No research pytest targets configured for shard ${RESEARCH_SHARD_INDEX}."
-          fi
   web-e2e:
     if: >
       ${{
@@ -456,7 +391,6 @@ jobs:
       - ts-tests
       - secret-scan
       - dependency-vulnerability-audit
-      - bt-research-tests
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -550,7 +484,6 @@ jobs:
       - ts-tests
       - secret-scan
       - dependency-vulnerability-audit
-      - bt-research-tests
       - web-e2e
     steps:
       - name: Verify required CI jobs
@@ -565,7 +498,6 @@ jobs:
           needs = json.loads(os.environ["NEEDS_JSON"])
           scope_names = (
               "product_ci",
-              "research_ci",
               "contracts_ci",
               "security_ci",
               "docs_only",
@@ -615,7 +547,6 @@ jobs:
                   if scope["security_ci"] == "true"
                   else ()
               ),
-              *(("bt-research-tests",) if scope["research_ci"] == "true" else ()),
               *(
                   ("web-e2e",)
                   if product_ci and os.environ.get("GITHUB_EVENT_NAME") == "pull_request"

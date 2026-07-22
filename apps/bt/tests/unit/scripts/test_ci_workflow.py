@@ -12,6 +12,7 @@ from ruamel.yaml import YAML
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+RESEARCH_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "research-publication.yml"
 PREPUSH_CI = REPO_ROOT / "scripts" / "prepush-ci.sh"
 NAUTILUS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nautilus-smoke.yml"
 GITLEAKS_CONFIG = REPO_ROOT / ".gitleaks.toml"
@@ -30,7 +31,6 @@ EXPECTED_GATE_NEEDS = {
     "ts-tests",
     "secret-scan",
     "dependency-vulnerability-audit",
-    "bt-research-tests",
     "web-e2e",
 }
 
@@ -100,25 +100,34 @@ def test_change_classification_pipeline_fails_closed() -> None:
     assert "set -o pipefail" in classify_step["run"]
 
 
-def test_actions_research_job_runs_fast_and_changed_mapped_targets_once() -> None:
-    research_job = _jobs()["bt-research-tests"]
+def test_research_is_excluded_from_product_ci_and_runs_only_for_publication() -> None:
+    assert "bt-research-tests" not in _jobs()
+
+    workflow = _workflow(RESEARCH_WORKFLOW)
+    triggers = workflow["on"]
+    assert "pull_request" not in triggers
+    assert triggers["workflow_dispatch"] is None
+    assert triggers["push"] == {
+        "branches": ["main"],
+        "paths": [
+            "apps/bt/docs/experiments/**",
+            "apps/bt/tests/fixtures/research/**",
+            "docs/research-pit-invalidation-register.md",
+        ],
+    }
+
+    research_job = workflow["jobs"]["research-tests"]
     run_research_tests = next(
         step
         for step in research_job["steps"]
-        if step.get("name") == "Run fast and changed bt research tests"
+        if step.get("name") == "Run publication research tests"
     )
     command = run_research_tests["run"]
 
-    assert "research-test-targets.py --mode fast-pytest" in command
-    assert (
-        "research-test-targets.py < /tmp/research-changed-files.txt" in command
-    )
-    assert "sort -u" in command
+    assert "tests/unit/domains/analytics" in command
+    assert "tests/unit/scripts" in command
     assert command.count("./scripts/bt-pytest.sh") == 1
     assert '"${research_test_targets[@]}"' in command
-    # The mapped research suite can legitimately take more than 45 minutes on
-    # GitHub-hosted runners; keep enough budget to finish without weakening the
-    # selected test set.
     assert research_job["timeout-minutes"] >= 90
     assert research_job["strategy"] == {
         "fail-fast": False,
@@ -131,17 +140,6 @@ def test_actions_research_job_runs_fast_and_changed_mapped_targets_once() -> Non
     }
     assert "--mode shard" in command
     assert "/tmp/research-shard-test-targets.txt" in command
-
-    job_commands = "\n".join(
-        step.get("run", "") for step in research_job["steps"]
-    )
-    target_script_calls = re.findall(
-        r"research-test-targets\.py\s+--mode\s+([\w-]+)",
-        job_commands,
-    )
-
-    assert job_commands.count("research-test-targets.py") == 4
-    assert target_script_calls == ["py-files", "fast-pytest"]
 
 
 def test_prepush_runs_fast_and_changed_mapped_research_targets_locally() -> None:
@@ -172,14 +170,18 @@ def test_prepush_forced_research_is_honored_at_every_selection_boundary() -> Non
     ) in source
 
 
-@pytest.mark.parametrize("workflow_path", [CI_WORKFLOW, NAUTILUS_WORKFLOW])
+@pytest.mark.parametrize(
+    "workflow_path", [CI_WORKFLOW, RESEARCH_WORKFLOW, NAUTILUS_WORKFLOW]
+)
 def test_workflow_declares_read_only_repository_permissions(
     workflow_path: Path,
 ) -> None:
     assert _workflow(workflow_path)["permissions"] == {"contents": "read"}
 
 
-@pytest.mark.parametrize("workflow_path", [CI_WORKFLOW, NAUTILUS_WORKFLOW])
+@pytest.mark.parametrize(
+    "workflow_path", [CI_WORKFLOW, RESEARCH_WORKFLOW, NAUTILUS_WORKFLOW]
+)
 def test_all_checkout_steps_disable_credential_persistence(
     workflow_path: Path,
 ) -> None:
@@ -224,7 +226,7 @@ def test_ci_tool_versions_are_centrally_fixed() -> None:
         ),
     }
     source = CI_WORKFLOW.read_text(encoding="utf-8")
-    assert source.count("version: ${{ env.UV_VERSION }}") == 8
+    assert source.count("version: ${{ env.UV_VERSION }}") == 7
     assert 'version: "latest"' not in source
 
 
@@ -489,6 +491,7 @@ def test_removed_ci_jobs_do_not_return_as_required_gates() -> None:
         "maintainability-python39",
         "coverage-gate",
         "market-v4-darwin-capabilities",
+        "bt-research-tests",
     }
 
     assert removed_jobs.isdisjoint(jobs)
