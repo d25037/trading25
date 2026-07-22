@@ -14,7 +14,6 @@ REPO_ROOT = Path(__file__).resolve().parents[5]
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 RESEARCH_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "research-promotion.yml"
 PREPUSH_CI = REPO_ROOT / "scripts" / "prepush-ci.sh"
-NAUTILUS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nautilus-smoke.yml"
 GITLEAKS_CONFIG = REPO_ROOT / ".gitleaks.toml"
 ACTION_PIN_PATTERN = re.compile(
     r"^\s*- uses: [\w.-]+/[\w.-]+@[0-9a-f]{40}\s+# v\S+\s*$",
@@ -164,7 +163,7 @@ def test_prepush_forced_research_is_honored_at_every_selection_boundary() -> Non
 
 
 @pytest.mark.parametrize(
-    "workflow_path", [CI_WORKFLOW, RESEARCH_WORKFLOW, NAUTILUS_WORKFLOW]
+    "workflow_path", [CI_WORKFLOW, RESEARCH_WORKFLOW]
 )
 def test_workflow_declares_read_only_repository_permissions(
     workflow_path: Path,
@@ -173,7 +172,7 @@ def test_workflow_declares_read_only_repository_permissions(
 
 
 @pytest.mark.parametrize(
-    "workflow_path", [CI_WORKFLOW, RESEARCH_WORKFLOW, NAUTILUS_WORKFLOW]
+    "workflow_path", [CI_WORKFLOW, RESEARCH_WORKFLOW]
 )
 def test_all_checkout_steps_disable_credential_persistence(
     workflow_path: Path,
@@ -193,7 +192,7 @@ def test_all_checkout_steps_disable_credential_persistence(
     )
 
 
-@pytest.mark.parametrize("workflow_path", [CI_WORKFLOW, NAUTILUS_WORKFLOW])
+@pytest.mark.parametrize("workflow_path", [CI_WORKFLOW])
 def test_all_actions_use_immutable_shas_with_version_comments(
     workflow_path: Path,
 ) -> None:
@@ -299,15 +298,6 @@ def test_gitleaks_container_is_pinned_to_the_verified_oci_digest() -> None:
     assert 'gitleaks/gitleaks:${GITLEAKS_VERSION}"' not in secret_command
 
 
-def test_nautilus_tool_version_is_fixed() -> None:
-    workflow = _workflow(NAUTILUS_WORKFLOW)
-
-    assert workflow["env"] == {"UV_VERSION": "0.11.29"}
-    assert "version: ${{ env.UV_VERSION }}" in NAUTILUS_WORKFLOW.read_text(
-        encoding="utf-8"
-    )
-
-
 def test_security_jobs_always_run_and_secret_scan_is_git_aware() -> None:
     jobs = _jobs()
     privacy_job = jobs["repo-guardrails"]
@@ -333,25 +323,6 @@ def test_security_jobs_always_run_and_secret_scan_is_git_aware() -> None:
     assert 'git "/repo"' in secret_command
     assert "--source" not in secret_command
     assert "--no-git" not in secret_command
-
-
-def test_nautilus_pushes_and_pull_requests_share_product_paths() -> None:
-    workflow = _workflow(NAUTILUS_WORKFLOW)
-    triggers = workflow["on"]
-
-    product_paths = [
-        ".github/workflows/nautilus-smoke.yml",
-        "apps/bt/pyproject.toml",
-        "apps/bt/uv.lock",
-        "apps/bt/src/**",
-        "apps/bt/tests/conftest.py",
-        "apps/bt/tests/smoke/test_nautilus_runtime_smoke.py",
-        "scripts/bt-run.sh",
-        "scripts/test-nautilus-smoke.sh",
-    ]
-    assert triggers["push"] == {"branches": ["main"], "paths": product_paths}
-    assert triggers["pull_request"] == {"paths": product_paths}
-    assert triggers["workflow_dispatch"] is None
 
 
 def test_synthetic_indicator_allowlist_is_rule_path_and_line_scoped() -> None:

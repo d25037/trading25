@@ -136,7 +136,6 @@ uv run bt lab optimize <strategy> --entry-filter-only --allowed-category fundame
 uv run bt lab improve <strategy> --entry-filter-only --allowed-category fundamental
 uv run bt migrate-optimization-specs  # legacy `*_grid.yaml` を strategy YAML に移行
 uv run bt intraday-sync               # latest-ready JST date の minute bars を local DuckDB へ ingest
-uv sync --group nautilus         # optional: real Nautilus runtime smoke 用依存を追加
 uv run pytest tests/             # テスト
 uv run ruff check src/           # リント
 uv run pyright src/              # 型チェック
@@ -145,7 +144,7 @@ uv run pyright src/              # 型チェック
 - Lab `evolve/optimize` の API/Web は `target_scope`（`entry_filter_only` / `exit_trigger_only` / `both`）を受け付ける（`entry_filter_only` は互換フラグとして維持）
 - Lab `evolve/optimize` の frontend `allowed categories` は `all` / `fundamental only` を提供
 - Lab frontend は `Run` / `History` タブを持ち、`/api/lab/jobs` で実行履歴を一覧し、選択したジョブの進捗・結果を再表示できる
-- `Optimization` と candidate-producing な `Lab generate/evolve/optimize` は `engine_policy`（`fast_only` / `fast_then_verify`）と `verification_top_k`（`1..10`, default `5`）を受け付ける。`fast_then_verify` では `vectorbt` fast path 後に上位候補を `Nautilus` child backtest で直列 verification し、親 job は verification 完了まで `running` を維持し、API payload は `fast_candidates` / `verification` を返す
+- `Optimization` と candidate-producing な `Lab generate/evolve/optimize` は VectorBT の単一 stage で実行し、ranked `fast_candidates` を返す。通常の timeout・cancel・terminal state の扱いは維持する
 - research / analytics / ranking の snapshot は point-in-time stable を必須とし、future leak を避けるため `apps/bt/src/shared/utils/pit_guard.py` の helper を優先利用する。`latest per code/group` は as-of filtering の後にだけ取る
 - research の通常検証は local `scripts/prepush-ci.sh --research` を SoT とする。GitHub Actions の重い research suite は通常の product `CI` / `ci-gate` や研究成果物の追加時には起動せず、research で実装・検証した機能を research 外の本番運用へ昇格するときだけ `Research Promotion CI` を手動実行する
 - Lab `evolve` は依存パラメータ制約付き mutation（`long>short` / `slow>fast` / `max>min`）を適用し、baseline（ベース戦略）より悪化した候補は guardrail で棄却して base 採用へフォールバックする
@@ -198,7 +197,7 @@ bun run --filter @trading25/web e2e:smoke  # web E2E smoke（Playwright）
 - Strategy optimization の SoT は strategy YAML トップレベル `optimization` block とし、旧 `*_grid.yaml` sidecar / `/api/optimize/grid-configs*` は廃止する。`GET/POST draft/PUT/DELETE /api/strategies/{strategy}/optimization` を strategy-scoped API とし、CLI では `bt migrate-optimization-specs` で legacy sidecar を one-shot 移行する
 - Backtest `Strategies > Optimize` は `Open Editor` ポップアップで Monaco + Signal Reference を表示し、saved spec が無ければ `Generate Draft from Strategy` を主導線にする。`Saved` / `Generated Draft` / `Drift` / `Ready to Run` を表示し、保存ブロックは YAML 構文エラーと構造エラー時のみ、warning は保存可能とする
 - Backtest Runner の `Optimization` セクションは Grid 概要（params/combinations）に加えて `parameter_ranges` の具体値一覧を表示し、Optimization 完了カードでは Best/Worst Params と各 score を表示する
-- Backtest `Optimization` / `Lab` form は `Fast only` / `Fast + Nautilus verify` と `Top K` を提供し、progress/history/result で fast stage と verification stage を分離表示する
+- Backtest `Optimization` / `Lab` form は VectorBT の単一 stage と ranked `fast_candidates` を表示する
 - `screening`（web）は production 戦略を動的選択し、非同期ジョブ（2秒ポーリング）で実行する。`sortBy` 既定は `matchedDate`、`order` 既定は `desc`。`backtestMetric` は廃止。`markets` 未指定時は selected strategies（未選択なら eligible production strategies 全体）の `universe_preset` を `stock_master_daily` で PIT 解決した universe を Auto SoT とし、UI/API の scope label は universe preset label を返す。explicit な request/URL/UI 指定が常に優先する
 - `Screening / Ranking` の結果テーブルは大量件数時に virtualization を適用する
 - frontend の desktop 作業幅はユーザーの常用レイアウト（おおむね 1180px 前後のコンテンツ幅）を優先し、hero/header/meta の縦占有を抑えて主テーブル・主チャートの可視領域を確保する
@@ -248,7 +247,6 @@ OpenClaw 固有の詳細運用メモは repo 外（例: `/home/open_shiro/.openc
 - **ts**: lint → 型生成 → build → typecheck → test + coverage
 - **web e2e**: Playwright Chromium smoke（bt server :3002 を起動して実行）
 - **bt**: lint → typecheck → test + coverage（ゲート70%）
-- `.github/workflows/nautilus-smoke.yml` は `uv sync --locked --group nautilus` + `scripts/test-nautilus-smoke.sh` を使う separate CI で、default CI には混ぜない
 
 ## ロードマップ
 

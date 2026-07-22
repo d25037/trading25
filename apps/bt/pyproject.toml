@@ -50,9 +50,6 @@ dev = [
 research = [
     "lightgbm>=4.7.0",
 ]
-nautilus = [
-    "nautilus-trader>=1.230.0",
-]
 rust = [
     "vectorbt-rust>=1.1.0",
 ]
@@ -82,7 +79,6 @@ markers = [
     "unit: Unit tests",
     "integration: Integration tests",
     "slow: Runtime-heavy tests excluded by local fast mode",
-    "nautilus_smoke: Real Nautilus runtime smoke tests",
     "darwin_capability: Darwin kernel capability tests run on macOS CI",
 ]
 
