@@ -8,7 +8,7 @@
 - [strategies.md](./strategies.md): 戦略YAML・CLI・signal metadata・optimizationの現行ガイド
 - [experiments/](./experiments/README.md): runner / bundle / notebook / baseline 実験の索引
 - [vectorbt/](./vectorbt/README.md): VectorBT 関連リファレンス
-- [Market v5 cutover runbook](../../../docs/runbooks/market-v5-cutover.md): pre-v5 Market から Market v5 へ移行する唯一の operator path
+- Market DB sync は既定の `incremental` と破壊的な `initial` の2モードのみを使います。`initial` は `resetBeforeSync=true` を必須とし、既存 `market.duckdb` / `parquet/` を削除して再構築します。
 
 ## Notes
 
