@@ -22,10 +22,12 @@ describe('useRanking', () => {
   it('fetches ranking data when enabled', async () => {
     vi.mocked(analyticsClient.getMarketRanking).mockResolvedValueOnce({ items: [] } as never);
     const { wrapper } = createTestWrapper();
-    const params = { limit: 20 };
+    const params = { limit: 20, scope: 'tradingValue' as const };
     const { result } = renderHook(() => useRanking(params, true), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(analyticsClient.getMarketRanking).toHaveBeenCalledWith(expect.objectContaining({ limit: 20 }));
+    expect(analyticsClient.getMarketRanking).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 20, scope: 'tradingValue' })
+    );
   });
 
   it('is disabled when enabled is false', () => {

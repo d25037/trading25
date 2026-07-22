@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { HttpRequestError } from '@trading25/api-clients/base/http-client';
 import type { ReactNode } from 'react';
 import { ApiError } from '@/lib/api-client';
 
@@ -7,17 +8,27 @@ import { ApiError } from '@/lib/api-client';
  * - Don't retry client errors (4xx) except for 408 (Timeout) and 429 (Too Many Requests)
  * - Retry server errors (5xx) and network errors
  */
-function shouldRetry(failureCount: number, error: Error): boolean {
-  // Use ApiError's methods for type-safe status checking
-  if (error instanceof ApiError) {
-    // Don't retry most client errors
-    if (error.isClientError() && error.status !== 408 && error.status !== 429) {
-      return false;
-    }
+function isRetryableHttpStatus(status: number): boolean {
+  return status === 408 || status === 429 || (status >= 500 && status < 600);
+}
+
+export function shouldRetry(failureCount: number, error: unknown): boolean {
+  if (failureCount >= 3) {
+    return false;
   }
 
-  // Retry up to 3 times for server errors and network failures
-  return failureCount < 3;
+  if (error instanceof ApiError) {
+    return isRetryableHttpStatus(error.status);
+  }
+
+  if (error instanceof HttpRequestError) {
+    if (error.kind === 'network' || error.kind === 'timeout') {
+      return true;
+    }
+    return error.kind === 'http' && error.status !== undefined && isRetryableHttpStatus(error.status);
+  }
+
+  return true;
 }
 
 const queryClient = new QueryClient({

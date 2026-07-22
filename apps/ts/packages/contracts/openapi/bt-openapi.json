@@ -20790,6 +20790,23 @@
             }
           },
           {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "tradingValue",
+                "periodHigh",
+                "periodLow",
+                "indexPerformance"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
             "description": "Optional TOPIX-33/industry sector name filter",
             "in": "query",
             "name": "sector33Name",

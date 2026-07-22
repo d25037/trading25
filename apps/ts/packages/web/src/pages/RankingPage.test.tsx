@@ -296,6 +296,7 @@ describe('RankingPage', () => {
     expect(screen.getByText(/scroll-key:ranking:daily-table-scroll:stocks:/)).toBeInTheDocument();
     expect(screen.getByText('sort:tradingValue:desc')).toBeInTheDocument();
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ includeValuation: true }), true);
+    expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ scope: 'tradingValue' }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ includeSectorStrength: true }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(
       expect.objectContaining({ sectorStrengthFamily: 'balanced_sector_strength' }),
@@ -507,7 +508,12 @@ describe('RankingPage', () => {
     expect(screen.queryByText('Ranking Filters')).not.toBeInTheDocument();
     expect(screen.queryByText('Ranking Summary')).not.toBeInTheDocument();
     expect(mockUseRanking).toHaveBeenLastCalledWith(
-      expect.objectContaining({ includeValuation: false, limit: 20, forwardEpsDisclosedWithinDays: 0 }),
+      expect.objectContaining({
+        scope: 'indexPerformance',
+        includeValuation: false,
+        limit: 20,
+        forwardEpsDisclosedWithinDays: 0,
+      }),
       true
     );
     expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ includeSectorStrength: true }), true);
@@ -531,6 +537,7 @@ describe('RankingPage', () => {
     expect(screen.queryByText('Ranking Filters')).not.toBeInTheDocument();
     expect(mockUseRanking).toHaveBeenLastCalledWith(
       expect.objectContaining({
+        scope: 'periodHigh',
         includeValuation: true,
         includeSectorStrength: false,
         sectorStrengthFamily: undefined,
@@ -539,6 +546,18 @@ describe('RankingPage', () => {
       }),
       true
     );
+  });
+
+  it('requests period low ranking data when New Low is selected', () => {
+    mockRouteState.activeDailyView = 'technicalEvents';
+    mockRouteState.rankingParams = {
+      ...DEFAULT_RANKING_PARAMS,
+      technicalEventType: 'periodLow',
+    };
+
+    render(<RankingPage />);
+
+    expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ scope: 'periodLow' }), true);
   });
 
   it('navigates to indices when an index row is selected', async () => {

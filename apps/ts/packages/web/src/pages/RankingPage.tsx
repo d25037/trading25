@@ -1,4 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
+import type { MarketRankingParams } from '@trading25/api-clients/analytics';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FundamentalRankingFilters,
@@ -94,15 +95,21 @@ function buildRankingQueryParams(
   activeDailyView: RankingDailyView,
   rankingParams: RankingParams,
   rankingTableFilters: DailyRankingTableFilters
-): RankingParams {
+): MarketRankingParams {
   const isStocksView = activeDailyView === 'stocks';
   const warningSignal = rankingTableFilters.warningSignal;
+  const scope: NonNullable<MarketRankingParams['scope']> =
+    activeDailyView === 'stocks'
+      ? 'tradingValue'
+      : activeDailyView === 'indices'
+        ? 'indexPerformance'
+        : (rankingParams.technicalEventType ?? 'periodHigh');
   return {
     date: rankingParams.date,
     markets: rankingParams.markets,
     lookbackDays: rankingParams.lookbackDays,
     periodDays: rankingParams.periodDays,
-    technicalEventType: rankingParams.technicalEventType,
+    scope,
     sector33Name: rankingParams.sector33Name,
     sector17Name: rankingParams.sector17Name,
     limit: resolveRankingLimit(activeDailyView, rankingParams),

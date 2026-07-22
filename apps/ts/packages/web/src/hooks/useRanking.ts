@@ -1,30 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
+import type { MarketRankingParams } from '@trading25/api-clients/analytics';
 import type { MarketRankingResponse } from '@trading25/contracts/types/api-response-types';
 import { analyticsClient } from '@/lib/analytics-client';
-import type { RankingParams } from '@/types/ranking';
 import { logger } from '@/utils/logger';
 
-function fetchRanking(params: RankingParams): Promise<MarketRankingResponse> {
-  return analyticsClient.getMarketRanking({
-    date: params.date,
-    limit: params.limit,
-    markets: params.markets,
-    lookbackDays: params.lookbackDays,
-    periodDays: params.periodDays,
-    sector33Name: params.sector33Name,
-    sector17Name: params.sector17Name,
-    includeValuation: params.includeValuation,
-    includeSectorStrength: params.includeSectorStrength,
-    sectorStrengthFamily: params.sectorStrengthFamily,
-    forwardEpsDisclosedWithinDays: params.forwardEpsDisclosedWithinDays,
-    regimeState: params.regimeState,
-    fundamentalState: params.fundamentalState,
-    riskState: params.riskState,
-    technicalState: params.technicalState,
-  });
+function fetchRanking(params: MarketRankingParams): Promise<MarketRankingResponse> {
+  return analyticsClient.getMarketRanking(params);
 }
 
-export function useRanking(params: RankingParams, enabled = true) {
+export function useRanking(params: MarketRankingParams, enabled = true) {
   return useQuery({
     queryKey: ['ranking', params],
     queryFn: () => {
