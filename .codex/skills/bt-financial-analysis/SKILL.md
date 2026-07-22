@@ -35,8 +35,8 @@ description: Use when bt FastAPI の ROE、ranking、screening、factor regressi
 - future leak / point-in-time contamination を最優先で疑う。開示行や snapshot row は `apps/bt/src/shared/utils/pit_guard.py` の helper を優先して切る。
 - `latest per code` や `latest per issuer` を取る前に、必ず as-of filtering を済ませる。
 - cutoff-aware Fundamentals / Prime liquidityは`stock_data`、`stocks_latest`、current/latest basis fallback、service-local adjustmentを使わない。exact `stock_provider_windows` と current-basis state に一致する`statement_metrics_adjusted` / `daily_valuation`だけを使う。
-- schema v4以前や adjustment mode 不一致を analytics-local fallback で隠さない。Market v5/provider-adjusted incompatibilityまたは current-basis materialization欠損は typed recovery error として返す。pre-v5 root の recovery は `bt market-cutover cutover` だけを案内する。
-- missing/inconsistent provider window/current-basis stateまたはexact `stock_master_daily` snapshotの欠損をunsupported/emptyへdowngradeしない。409 recoveryは normal Market v5 sync を案内し、service-local materializationやpre-v5 rootへの`repair`を案内しない。
+- schema v4以前や adjustment mode 不一致を analytics-local fallback で隠さない。Market v5/provider-adjusted incompatibilityまたは current-basis materialization欠損は typed recovery error として返す。
+- missing/inconsistent provider window/current-basis stateまたはexact `stock_master_daily` snapshotの欠損をunsupported/emptyへdowngradeしない。409 recoveryは normal Market v5 sync を案内し、service-local materializationを行わない。
 - ranking や fundamentals の仕様変更では、PIT stability test または future-row exclusion test を追加する。
 - 既存の統一エラーレスポンス形式を崩さない。
 - market filter は legacy (`prime/standard/growth`) と current (`0111/0112/0113`) を同義として扱う。

@@ -80,7 +80,7 @@ def test_require_market_v5_compatibility_rejects_incompatible_metadata(
         adjustment_mode=adjustment_mode,
     )
     try:
-        with pytest.raises(RuntimeError, match="market-cutover cutover"):
+        with pytest.raises(RuntimeError, match="RESET initial sync"):
             require_market_v5_compatibility(conn, required_tables=("stock_data",))
     finally:
         conn.close()
@@ -93,7 +93,7 @@ def test_require_market_v5_compatibility_rejects_missing_consumer_table() -> Non
         include_stock_data=False,
     )
     try:
-        with pytest.raises(RuntimeError, match="stock_data.*market-cutover cutover"):
+        with pytest.raises(RuntimeError, match="stock_data.*RESET initial sync"):
             require_market_v5_compatibility(conn, required_tables=("stock_data",))
     finally:
         conn.close()

@@ -131,7 +131,7 @@ def test_financial_analysis_skills_use_current_market_v5_contract() -> None:
 
         assert "Market v5" in content
         assert "provider_adjusted_v1" in content
-        assert "bt market-cutover cutover" in content
+        assert "market-cutover" not in content
         assert "Market v4" not in content
         assert "local_projection_v2_event_time" not in content
 
@@ -669,54 +669,34 @@ def test_web_design_guideline_source_is_commit_pinned() -> None:
     assert "/web-interface-guidelines/main/" not in content
 
 
-@pytest.mark.parametrize(
-    "skill_name",
-    ("bt-database-management", "bt-market-sync-strategies"),
-)
-def test_market_cutover_skills_require_v5_full_rebuild_contract(
-    skill_name: str,
-) -> None:
+def test_active_skill_governance_has_no_market_cutover_contract() -> None:
     module = _load_audit_module()
-    skill_file = _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
-    content = skill_file.read_text()
+    repo_root = _repo_root()
 
-    assert module.validate_market_cutover_guidance(content, skill_file) == []
-    for fragment in (
-        "schema v5",
-        "provider_adjusted_v1",
-        "bt market-cutover cutover",
-        "full rebuild only",
-        "retained Market v4",
-        "ineligible",
-        "immutable backup",
-        "atomic activation",
-        "exact rollback",
-        "providerVintage",
-        "schemaVersion: 4",
-        "operations/market-v5-cutover",
+    assert not hasattr(module, "MARKET_CUTOVER_SKILLS")
+    assert not hasattr(module, "validate_market_cutover_guidance")
+    for relative_path in (
+        "AGENTS.md",
+        ".codex/skills/bt-database-management/SKILL.md",
+        ".codex/skills/bt-market-sync-strategies/SKILL.md",
+        ".codex/skills/bt-financial-analysis/SKILL.md",
+        ".codex/skills/ts-financial-analysis/SKILL.md",
     ):
-        assert fragment in content
-    assert "promote-retained" not in content
-    assert "rehearse-retained" not in content
+        content = (repo_root / relative_path).read_text(encoding="utf-8")
+        assert "market-cutover" not in content
+        assert "market_v4_cutover" not in content
+        assert "operations/market-v5-cutover" not in content
 
 
-def test_market_cutover_guidance_rejects_obsolete_retained_cli() -> None:
-    module = _load_audit_module()
-    skill_file = _repo_root() / ".codex/skills/bt-database-management/SKILL.md"
-    content = skill_file.read_text() + "\nRun `bt market-cutover promote-retained`.\n"
+def test_market_cutover_runtime_artifacts_are_absent() -> None:
+    repo_root = _repo_root()
 
-    errors = module.validate_market_cutover_guidance(content, skill_file)
-
-    assert any("obsolete retained-v4 CLI guidance" in error for error in errors)
-
-
-def test_market_cutover_cli_source_has_no_retained_commands() -> None:
-    source = (
-        _repo_root() / "apps/bt/src/entrypoints/cli/market_cutover.py"
-    ).read_text()
-
-    assert 'command("promote-retained")' not in source
-    assert 'command("rehearse-retained")' not in source
+    for relative_path in (
+        "apps/bt/src/application/services/market_v4_cutover",
+        "apps/bt/src/entrypoints/cli/market_cutover.py",
+        "apps/bt/config/strategies/production/cutover_smoke.yaml",
+    ):
+        assert not (repo_root / relative_path).exists()
 
 
 def test_active_agent_dependency_versions_follow_manifests_and_locks() -> None:

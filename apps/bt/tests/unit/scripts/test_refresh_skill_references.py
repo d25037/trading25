@@ -119,8 +119,8 @@ def test_render_cli_reference_excludes_portfolio_commands() -> None:
     assert f"Total commands: **{len(command_rows)}**" in rendered
     assert "| `bt lab optimize` |" in rendered
     assert "| `bt migrate-optimization-specs` |" in rendered
-    assert "| `bt market-cutover preflight` |" in rendered
-    assert "| `bt market-cutover cutover` |" in rendered
+    assert "market-cutover" not in rendered
+    assert "market_cutover.py" not in rendered
     assert "| `bt server` |" in rendered
 
 

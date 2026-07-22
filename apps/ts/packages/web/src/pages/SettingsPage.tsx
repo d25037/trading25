@@ -319,8 +319,8 @@ function DatabaseSyncSection({
             </div>
             {!resetBeforeSyncEligible ? (
               <p className="text-xs text-amber-700 dark:text-amber-300">
-                This Market root is not eligible for a live reset. Rebuild and activate Market v5 with{' '}
-                <code>bt market-cutover cutover</code>.
+                This Market root is not eligible for a live reset. Follow the schema validation recommendation before
+                retrying Database Sync.
               </p>
             ) : null}
             <p className="text-xs text-muted-foreground">
@@ -383,8 +383,8 @@ function WarningRecoverySection({
             <CardTitle className="text-xl tracking-tight">Warning Recovery</CardTitle>
             <CardDescription>
               Resolve only the DuckDB snapshot warnings that `repair` sync can actually fix. Legacy or incompatible
-              stock-price snapshots require <code>bt market-cutover cutover</code>; N225 options coverage gaps must be
-              handled from Database Sync.
+              stock-price snapshots are outside Warning Recovery; follow the schema validation recommendation. N225
+              options coverage gaps must be handled from Database Sync.
             </CardDescription>
           </div>
         </div>
@@ -408,8 +408,8 @@ function WarningRecoverySection({
         </div>
         <p className="text-xs text-muted-foreground">
           Runs `repair` sync mode to backfill listed-market fundamentals and related non-price warnings. It does not
-          rebuild incompatible stock-price snapshots or ingest `options_225_data`; use the Market v5 cutover workflow
-          for incompatible roots, and use Database Sync with `incremental` for options gaps.
+          rebuild incompatible stock-price snapshots or ingest `options_225_data`; follow the schema validation
+          recommendation for incompatible roots, and use Database Sync with `incremental` for options gaps.
         </p>
         <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
           <div>

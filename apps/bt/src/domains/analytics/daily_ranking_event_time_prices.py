@@ -335,8 +335,8 @@ def _require_market_v5_price_columns(conn: Any) -> None:
         )
         raise RuntimeError(
             "Incompatible market.duckdb: missing required Market v5 columns "
-            f"({details}). Run bt market-cutover cutover to rebuild the "
-            "Market Data Plane."
+            f"({details}). Run RESET initial sync (mode='initial', "
+            "resetBeforeSync=true) to rebuild the Market Data Plane."
         )
 
 

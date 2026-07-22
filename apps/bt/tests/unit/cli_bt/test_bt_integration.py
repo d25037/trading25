@@ -23,6 +23,13 @@ def test_bt_help():
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
     assert "bt" in result.stdout.lower() or "help" in result.stdout.lower()
+    assert "market-cutover" not in result.stdout
+
+
+def test_market_cutover_command_is_not_registered() -> None:
+    result = runner.invoke(app, ["market-cutover", "--help"])
+
+    assert result.exit_code == 2
 
 
 def test_bt_backtest_help():

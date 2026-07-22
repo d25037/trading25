@@ -413,7 +413,7 @@ def test_open_existing_rejects_wrong_adjustment_mode(tmp_path: Path) -> None:
         factory.open_existing()
 
 
-def test_borrowed_inherited_exclusive_lease_remains_held_after_session(
+def test_borrowed_exclusive_lease_remains_held_after_session(
     tmp_path: Path,
 ) -> None:
     data_root = tmp_path / "data"

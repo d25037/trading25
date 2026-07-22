@@ -161,8 +161,8 @@ def require_market_v5_compatibility(
         missing = ", ".join(missing_tables)
         raise RuntimeError(
             "Incompatible market.duckdb: missing required Market v5 tables "
-            f"({missing}). Run bt market-cutover cutover to rebuild the "
-            "Market Data Plane."
+            f"({missing}). Run RESET initial sync (mode='initial', "
+            "resetBeforeSync=true) to rebuild the Market Data Plane."
         )
 
     version_row = conn.execute(
@@ -183,6 +183,7 @@ def require_market_v5_compatibility(
             "Incompatible market.duckdb metadata: required schema version 5 and "
             "stock_price_adjustment_mode=provider_adjusted_v1; observed "
             f"schema version {observed_version} and adjustment mode {observed_mode}. "
-            "Run bt market-cutover cutover to rebuild the Market Data Plane."
+            "Run RESET initial sync (mode='initial', resetBeforeSync=true) to "
+            "rebuild the Market Data Plane."
         )
     return _MARKET_SCHEMA_VERSION

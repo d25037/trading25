@@ -279,7 +279,7 @@ def test_run_rejects_unsupported_market_adjustment_mode(tmp_path: Path) -> None:
     finally:
         conn.close()
 
-    with pytest.raises(RuntimeError, match="market-cutover cutover"):
+    with pytest.raises(RuntimeError, match="RESET initial sync"):
         run_stop_limit_daily_classification_research(str(db_path))
 
 

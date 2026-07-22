@@ -2,7 +2,7 @@
 
 Generated from Typer command declarations. Do not edit manually.
 
-Total commands: **18**
+Total commands: **12**
 
 | Command |
 |---|
@@ -14,12 +14,6 @@ Total commands: **18**
 | `bt lab improve` |
 | `bt lab optimize` |
 | `bt list` |
-| `bt market-cutover backup` |
-| `bt market-cutover cutover` |
-| `bt market-cutover preflight` |
-| `bt market-cutover rehearse` |
-| `bt market-cutover restore` |
-| `bt market-cutover smoke` |
 | `bt market-maintain` |
 | `bt migrate-optimization-specs` |
 | `bt server` |
@@ -29,4 +23,3 @@ Total commands: **18**
 
 - `apps/bt/src/entrypoints/cli/__init__.py`
 - `apps/bt/src/entrypoints/cli/lab.py`
-- `apps/bt/src/entrypoints/cli/market_cutover.py`

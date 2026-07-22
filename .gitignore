@@ -67,7 +67,6 @@ apps/bt/config/strategies/experimental/*
 apps/bt/config/strategies/experimental/robustness/*
 !apps/bt/config/strategies/experimental/robustness/range_break_v15_target_low_pbr.yaml
 apps/bt/config/strategies/production/*
-!apps/bt/config/strategies/production/cutover_smoke.yaml
 apps/bt/config/strategies/legacy/
 
 # === ts test databases ===

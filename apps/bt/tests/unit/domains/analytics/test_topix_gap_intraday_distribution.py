@@ -220,7 +220,7 @@ def test_run_rejects_unsupported_market_adjustment_mode(
     finally:
         conn.close()
 
-    with pytest.raises(RuntimeError, match="market-cutover cutover"):
+    with pytest.raises(RuntimeError, match="RESET initial sync"):
         run_topix_gap_intraday_distribution(analytics_db_path)
 
 

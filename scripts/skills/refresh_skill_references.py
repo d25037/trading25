@@ -101,18 +101,10 @@ def _extract_commands(path: Path, decorator: str, prefix: str) -> list[str]:
 def _render_cli_reference(repo_root: Path) -> str:
     bt_main = repo_root / "apps/bt/src/entrypoints/cli/__init__.py"
     bt_lab = repo_root / "apps/bt/src/entrypoints/cli/lab.py"
-    bt_market_cutover = repo_root / "apps/bt/src/entrypoints/cli/market_cutover.py"
 
     commands = []
     commands.extend(_extract_commands(bt_main, "app", "bt"))
     commands.extend(_extract_commands(bt_lab, "lab_app", "bt lab"))
-    commands.extend(
-        _extract_commands(
-            bt_market_cutover,
-            "market_v4_cutover_app",
-            "bt market-cutover",
-        )
-    )
     commands = sorted(set(commands))
 
     lines = [
@@ -133,7 +125,6 @@ def _render_cli_reference(repo_root: Path) -> str:
             "",
             "- `apps/bt/src/entrypoints/cli/__init__.py`",
             "- `apps/bt/src/entrypoints/cli/lab.py`",
-            "- `apps/bt/src/entrypoints/cli/market_cutover.py`",
             "",
         ]
     )

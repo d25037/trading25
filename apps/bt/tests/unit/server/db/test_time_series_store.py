@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import builtins
-import os
 import shutil
 from datetime import date, timedelta
 from pathlib import Path
@@ -419,41 +418,16 @@ def test_duckdb_connection_uses_managed_temp_directory(tmp_path: Path) -> None:
     assert temp_directory == str(tmp_path / "market-timeseries" / "duckdb-tmp")
 
 
-def test_duckdb_connection_honors_isolated_temp_directory_environment(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    market_root = tmp_path / "market-timeseries"
-    isolated_relative = ".cutover-runtime-smoke/duckdb-tmp"
-    isolated_temp = market_root / isolated_relative
-    monkeypatch.setenv("TRADING25_RUNTIME_CAPABILITY", "retained_market_smoke")
-    monkeypatch.setenv("TRADING25_DUCKDB_TEMP_DIR", isolated_relative)
-
-    store = open_time_series_store(
-        duckdb_path=str(market_root / "market.duckdb"),
-        parquet_dir=str(market_root / "parquet"),
-    )
-    try:
-        temp_directory = store._conn.execute(
-            "SELECT current_setting('temp_directory')"
-        ).fetchone()[0]
-    finally:
-        store.close()
-
-    assert temp_directory == str(isolated_temp)
-    assert isolated_temp.is_dir()
-    assert not (market_root / "duckdb-tmp").exists()
-
-
 @pytest.mark.parametrize(
     ("capability", "ambient"),
     [
         (None, "/tmp/hostile-duckdb-temp"),
         ("wrong", ".cutover-runtime-smoke/duckdb-tmp"),
+        ("retained_market_smoke", ".cutover-runtime-smoke/duckdb-tmp"),
         (None, "../../hostile-duckdb-temp"),
     ],
 )
-def test_duckdb_connection_ignores_ambient_temp_without_owned_capability(
+def test_duckdb_connection_ignores_removed_ambient_temp_configuration(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capability: str | None,
@@ -477,69 +451,6 @@ def test_duckdb_connection_ignores_ambient_temp_without_owned_capability(
     assert not (tmp_path / "hostile-duckdb-temp").exists()
 
 
-@pytest.mark.parametrize(
-    "ambient",
-    [
-        "",
-        ".",
-        "..",
-        "/tmp/duckdb-tmp",
-        ".cutover-runtime-smoke",
-        ".cutover-runtime-smoke/../duckdb-tmp",
-        ".cutover-runtime-smoke//duckdb-tmp",
-        ".cutover-runtime-/duckdb-tmp",
-        ".cutover-runtime-smoke/duckdb-tmp/extra",
-    ],
-)
-def test_owned_duckdb_temp_rejects_noncanonical_ambient_path_without_creation(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    ambient: str,
-) -> None:
-    market_root = tmp_path / "market-timeseries"
-    market_root.mkdir()
-    monkeypatch.setenv("TRADING25_RUNTIME_CAPABILITY", "retained_market_smoke")
-    monkeypatch.setenv("TRADING25_DUCKDB_TEMP_DIR", ambient)
-
-    before = tuple(tmp_path.rglob("*"))
-    with pytest.raises(ValueError, match="DuckDB temp"):
-        connect_market_duckdb_for_test(market_root / "market.duckdb")
-
-    assert tuple(tmp_path.rglob("*")) == before
-
-
-@pytest.mark.parametrize("collision", ["ancestor_symlink", "leaf_symlink", "leaf_fifo"])
-def test_owned_duckdb_temp_rejects_non_directory_path_components(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    collision: str,
-) -> None:
-    market_root = tmp_path / "market-timeseries"
-    market_root.mkdir()
-    runtime = market_root / ".cutover-runtime-smoke"
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    if collision == "ancestor_symlink":
-        runtime.symlink_to(outside, target_is_directory=True)
-    else:
-        runtime.mkdir()
-        leaf = runtime / "duckdb-tmp"
-        if collision == "leaf_symlink":
-            leaf.symlink_to(outside, target_is_directory=True)
-        else:
-            os.mkfifo(leaf)
-    monkeypatch.setenv("TRADING25_RUNTIME_CAPABILITY", "retained_market_smoke")
-    monkeypatch.setenv(
-        "TRADING25_DUCKDB_TEMP_DIR",
-        ".cutover-runtime-smoke/duckdb-tmp",
-    )
-
-    with pytest.raises(ValueError, match="real director"):
-        connect_market_duckdb_for_test(market_root / "market.duckdb")
-
-    assert not (outside / "duckdb-tmp").exists()
-
-
 def test_explicit_duckdb_temp_is_authoritative_over_hostile_ambient(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -547,7 +458,6 @@ def test_explicit_duckdb_temp_is_authoritative_over_hostile_ambient(
     market_root = tmp_path / "market-timeseries"
     market_root.mkdir()
     explicit = tmp_path / "explicit" / "duckdb-tmp"
-    monkeypatch.setenv("TRADING25_RUNTIME_CAPABILITY", "retained_market_smoke")
     monkeypatch.setenv("TRADING25_DUCKDB_TEMP_DIR", "../../hostile")
 
     conn = connect_market_duckdb_for_test(

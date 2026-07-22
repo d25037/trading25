@@ -431,7 +431,7 @@ class TestDatasetManagementRoutes:
         data = resp.json()
         assert len(data["codes"]) == 2
 
-    def test_cutover_smoke_open_route_returns_nonempty_codes(self, client: TestClient) -> None:
+    def test_open_sample_route_returns_nonempty_codes(self, client: TestClient) -> None:
         resp = client.get("/api/dataset/test-market/sample?count=1")
         assert resp.status_code == 200
         assert len(resp.json()["codes"]) == 1

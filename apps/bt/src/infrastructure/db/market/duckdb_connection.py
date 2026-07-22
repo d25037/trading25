@@ -26,10 +26,6 @@ _SIZE_UNITS = {
     "tib": 1024**4,
     "tb": 1000**4,
 }
-_OWNED_TEMP_CAPABILITY = "retained_market_smoke"
-_OWNED_TEMP_PATH_RE = re.compile(
-    r"^\.cutover-runtime-[A-Za-z0-9][A-Za-z0-9._-]{0,127}/duckdb-tmp$"
-)
 _DIRECTORY_OPEN_FLAGS = (
     os.O_RDONLY
     | getattr(os, "O_DIRECTORY", 0)
@@ -140,13 +136,7 @@ def _resolve_market_duckdb_temp_directory(
 ) -> Path:
     if explicit is not None:
         return Path(explicit)
-    ambient = os.environ.get("TRADING25_DUCKDB_TEMP_DIR")
-    capability = os.environ.get("TRADING25_RUNTIME_CAPABILITY")
-    if capability != _OWNED_TEMP_CAPABILITY:
-        return db_path.parent / "duckdb-tmp"
-    if ambient is None or _OWNED_TEMP_PATH_RE.fullmatch(ambient) is None:
-        raise ValueError("DuckDB temp directory override is not canonical")
-    return db_path.parent / ambient
+    return db_path.parent / "duckdb-tmp"
 
 
 def connect_market_duckdb(

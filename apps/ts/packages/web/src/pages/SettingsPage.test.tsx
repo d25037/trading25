@@ -278,7 +278,7 @@ beforeEach(() => {
 });
 
 describe('SettingsPage', () => {
-  it('disables live reset and directs incompatible roots to market cutover', async () => {
+  it('disables live reset and directs incompatible roots to schema validation', async () => {
     const user = userEvent.setup();
     const statsState = mockUseDbStats();
     const validationState = mockUseDbValidation();
@@ -306,7 +306,7 @@ describe('SettingsPage', () => {
           resetBeforeSyncEligible: false,
         },
         recommendations: [
-          'Run `bt market-cutover cutover` to rebuild the incompatible Market root as schema v5 (current schema version: 4)',
+          "Run RESET initial sync (mode='initial', resetBeforeSync=true) to rebuild the incompatible Market root as schema v5 (current schema version: 4)",
         ],
       },
     });
@@ -316,7 +316,10 @@ describe('SettingsPage', () => {
     await user.click(screen.getByText(/Full bootstrap of the local DuckDB snapshot/i));
 
     expect(screen.getByRole('switch', { name: /Reset market\.duckdb \+ parquet first/i })).toBeDisabled();
-    expect(screen.getAllByText('bt market-cutover cutover', { selector: 'code' })).toHaveLength(2);
+    expect(
+      screen.getByText(/This Market root is not eligible.*follow the schema validation recommendation/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByText('bt market-cutover cutover', { selector: 'code' })).not.toBeInTheDocument();
     expect(
       screen.queryByText(/legacy stock-price adjustment drift requires initial sync with reset enabled/i)
     ).not.toBeInTheDocument();

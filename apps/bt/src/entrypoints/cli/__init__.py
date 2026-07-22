@@ -315,11 +315,9 @@ def server_command(
 # ラボサブコマンド登録
 from src.entrypoints.cli.lab import lab_app  # noqa: E402
 from src.entrypoints.cli.jquants import jquants_app  # noqa: E402
-from src.entrypoints.cli.market_cutover import market_v4_cutover_app  # noqa: E402
 
 app.add_typer(lab_app, name="lab")
 app.add_typer(jquants_app, name="jquants")
-app.add_typer(market_v4_cutover_app, name="market-cutover")
 
 
 if __name__ == "__main__":

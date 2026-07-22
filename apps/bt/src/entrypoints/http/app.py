@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 from typing import Any, AsyncGenerator, cast
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -50,11 +50,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.market_db import MarketDb
-from src.infrastructure.db.market.managed_root import (
-    CutoverSafetyError,
-    prepare_market_managed_root,
-)
-from src.infrastructure.db.market.market_operation_lease import MarketOperationLease
+from src.infrastructure.db.market.managed_root import prepare_market_managed_root
 from src.infrastructure.db.market.market_source_identity import (
     inspect_market_source_identity,
 )
@@ -119,19 +115,6 @@ def _status_text(status_code: int) -> str:
     return _STATUS_TEXT.get(status_code, f"Error {status_code}")
 
 
-async def _enforce_runtime_capability(request: Request) -> None:
-    capability = os.getenv("TRADING25_RUNTIME_CAPABILITY")
-    if capability != "retained_market_smoke":
-        return
-    if request.method not in {"GET", "HEAD", "OPTIONS"} and (
-        request.url.path == "/api/db" or request.url.path.startswith("/api/db/")
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail="retained_market_smoke forbids Market-mutating /api/db operations",
-        )
-
-
 async def _periodic_cleanup(interval_seconds: int = 3600) -> None:
     """古いジョブを定期的にクリーンアップ"""
     while True:
@@ -149,71 +132,30 @@ async def _periodic_cleanup(interval_seconds: int = 3600) -> None:
 @asynccontextmanager
 async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
     """アプリケーションのライフサイクル管理"""
-    capability = os.getenv("TRADING25_RUNTIME_CAPABILITY")
-    inherited_fd = os.getenv("TRADING25_MARKET_OPERATION_LOCK_FD")
-    inherited_root_fd = os.getenv("TRADING25_DATA_ROOT_FD")
-    if capability not in {None, "retained_market_smoke"}:
-        raise CutoverSafetyError("Unknown inherited runtime capability")
-    if capability == "retained_market_smoke" and (
-        inherited_fd is None or inherited_root_fd is None
-    ):
-        raise CutoverSafetyError(
-            "retained_market_smoke requires inherited root and lease descriptors"
-        )
-    retained_market_smoke = capability == "retained_market_smoke"
     settings = get_settings()
     market_root = Path(settings.market_timeseries_dir)
-    if inherited_fd is not None:
-        if inherited_root_fd is None:
-            raise CutoverSafetyError(
-                "Owned server requires an inherited Market data-root descriptor"
-            )
-        inherited_data_root = os.getenv("TRADING25_DATA_DIR")
-        if inherited_data_root is None:
-            raise CutoverSafetyError("Owned server requires TRADING25_DATA_DIR")
-        data_root = MarketOperationLease.resolve_inherited_data_root(
-            int(inherited_root_fd)
-        )
-        operation_lease = MarketOperationLease.adopt_inherited(
-            data_root,
-            int(inherited_fd),
-            root_fd=int(inherited_root_fd),
-        )
-    else:
-        data_root = market_root.parent
-        if inherited_root_fd is not None:
-            raise CutoverSafetyError(
-                "Inherited Market data-root descriptor requires an owned lease"
-            )
-        prepare_market_managed_root(data_root, market_root)
-        operation_lease = None
-    app.state.market_operation_lease = operation_lease
+    prepare_market_managed_root(market_root.parent, market_root)
+    app.state.market_operation_lease = None
     logger.info("trading25-bt API サーバーを起動しています...")
 
     # JQuants async client (Phase 3B-1)
-    jquants_client: JQuantsAsyncClient | None = None
-    if not retained_market_smoke:
-        jquants_client = JQuantsAsyncClient(
-            api_key=settings.jquants_api_key,
-            plan=settings.jquants_plan,
-        )
-    app.state.jquants_client = jquants_client
-    app.state.jquants_proxy_service = (
-        JQuantsProxyService(jquants_client) if jquants_client is not None else None
+    jquants_client = JQuantsAsyncClient(
+        api_key=settings.jquants_api_key,
+        plan=settings.jquants_plan,
     )
-    app.state.moomoo_market_data_service = None
-    if not retained_market_smoke:
-        app.state.moomoo_market_data_service = MoomooMarketDataService(
-            MoomooQuoteClient(
-                MoomooOpenDConfig(
-                    host=settings.moomoo_opend_host,
-                    port=settings.moomoo_opend_port,
-                    is_encrypt=settings.moomoo_opend_is_encrypt,
-                    enabled=settings.moomoo_opend_enabled,
-                    max_history_rows=settings.moomoo_opend_max_history_rows,
-                )
+    app.state.jquants_client = jquants_client
+    app.state.jquants_proxy_service = JQuantsProxyService(jquants_client)
+    app.state.moomoo_market_data_service = MoomooMarketDataService(
+        MoomooQuoteClient(
+            MoomooOpenDConfig(
+                host=settings.moomoo_opend_host,
+                port=settings.moomoo_opend_port,
+                is_encrypt=settings.moomoo_opend_is_encrypt,
+                enabled=settings.moomoo_opend_enabled,
+                max_history_rows=settings.moomoo_opend_max_history_rows,
             )
         )
+    )
 
     # Market time-series reader (DuckDB SoT)
     market_reader: MarketDbReader | None = None
@@ -268,7 +210,7 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.market_time_series_store = market_time_series_store
 
     portfolio_db: PortfolioDb | None = None
-    if settings.portfolio_db_path and not retained_market_smoke:
+    if settings.portfolio_db_path:
         try:
             portfolio_db = PortfolioDb(settings.portfolio_db_path)
             logger.info(f"PortfolioDb を初期化: {settings.portfolio_db_path}")
@@ -277,19 +219,16 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.portfolio_db = portfolio_db
     job_manager.set_portfolio_db(portfolio_db)
     screening_job_manager.set_portfolio_db(portfolio_db)
-    reconciled_primary_jobs: list[str] = []
-    reconciled_screening_jobs: list[str] = []
-    if not retained_market_smoke:
-        reconciled_primary_jobs = await job_manager.reconcile_orphaned_jobs(
-            job_types=_PRIMARY_ASYNC_JOB_TYPES,
-            reason="api_restart",
-            stale_after_seconds=job_manager.default_lease_seconds,
-        )
-        reconciled_screening_jobs = await screening_job_manager.reconcile_orphaned_jobs(
-            job_types=_SCREENING_JOB_TYPES,
-            reason="api_restart",
-            stale_after_seconds=screening_job_manager.default_lease_seconds,
-        )
+    reconciled_primary_jobs = await job_manager.reconcile_orphaned_jobs(
+        job_types=_PRIMARY_ASYNC_JOB_TYPES,
+        reason="api_restart",
+        stale_after_seconds=job_manager.default_lease_seconds,
+    )
+    reconciled_screening_jobs = await screening_job_manager.reconcile_orphaned_jobs(
+        job_types=_SCREENING_JOB_TYPES,
+        reason="api_restart",
+        stale_after_seconds=screening_job_manager.default_lease_seconds,
+    )
     if reconciled_primary_jobs or reconciled_screening_jobs:
         logger.warning(
             "孤立ジョブを起動時に回収しました: primary={} screening={}",
@@ -309,17 +248,14 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.warning(f"DatasetResolver の初期化に失敗: {e}")
     app.state.dataset_resolver = dataset_resolver
 
-    cleanup_task = (
-        None if retained_market_smoke else asyncio.create_task(_periodic_cleanup())
-    )
+    cleanup_task = asyncio.create_task(_periodic_cleanup())
 
     yield
 
     # クリーンアップタスクを停止
-    if cleanup_task is not None:
-        cleanup_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await cleanup_task
+    cleanup_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await cleanup_task
 
     # Phase 3D: Job manager shutdown（DB close 前に durable write を済ませる）
     from src.application.services.sync_service import sync_job_manager
@@ -332,8 +268,7 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
     await dataset_job_manager.shutdown()
 
     # JQuants client shutdown
-    if jquants_client is not None:
-        await jquants_client.close()
+    await jquants_client.close()
 
     # Close the currently installed Market generation, not startup-captured handles.
     current_market_reader = getattr(app.state, "market_reader", None)
@@ -406,16 +341,9 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Always release the operation lease, including partial startup failures."""
-    try:
-        async with _lifespan_impl(app):
-            yield
-    finally:
-        operation_lease = getattr(app.state, "market_operation_lease", None)
-        writer_session = getattr(app.state, "market_writer_session", None)
-        writer_fenced = bool(getattr(writer_session, "fenced", False))
-        if operation_lease is not None and not writer_fenced:
-            operation_lease.release()
+    """Run the normal managed-root application lifecycle."""
+    async with _lifespan_impl(app):
+        yield
 
 
 def _build_error_response(
@@ -539,7 +467,6 @@ def create_app() -> FastAPI:
     openapi_config = get_openapi_config()
     app = FastAPI(
         lifespan=lifespan,
-        dependencies=[Depends(_enforce_runtime_capability)],
         **openapi_config,
     )
     _configure_http_app(app)

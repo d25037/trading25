@@ -143,55 +143,6 @@ VERIFICATION_PATH_PREFIXES = (
     "issues/",
     ".codex/",
 )
-MARKET_CUTOVER_SKILLS = {"bt-database-management", "bt-market-sync-strategies"}
-ACTIVE_MARKET_CUTOVER_GUIDANCE_PATHS = (
-    "AGENTS.md",
-    "docs/runbooks/market-v5-cutover.md",
-)
-MARKET_CUTOVER_REQUIRED_TERMS = (
-    "bt market-cutover cutover",
-    "schema v5",
-    "provider_adjusted_v1",
-    "full rebuild",
-    "immutable backup",
-    "exact rollback",
-    "Dataset",
-    "schemaVersion: 4",
-    "retained Market v4",
-    "ineligible",
-)
-MARKET_CUTOVER_REQUIRED_CLAUSES = (
-    (
-        "full-rebuild-only cutover",
-        re.compile(r"full rebuild[^\n]*(?:唯一|only)|(?:唯一|only)[^\n]*full rebuild", re.IGNORECASE),
-    ),
-    (
-        "retained-v4 ineligibility",
-        re.compile(r"retained Market v4[^\n]*(?:ineligible|不適格|昇格しない)"),
-    ),
-    (
-        "no in-place migration or dual read",
-        re.compile(r"(?:in-place migration|自動移行)[^\n]*(?:dual read|dual-read)"),
-    ),
-    (
-        "provider vintage and Dataset4 smoke",
-        re.compile(r"providerVintage[^\n]*(?:Dataset[^\n]*schemaVersion: 4|Dataset4)"),
-    ),
-    (
-        "immutable backup atomic activation rollback",
-        re.compile(r"immutable backup[^\n]*atomic[^\n]*exact rollback"),
-    ),
-    (
-        "operator non-mutation",
-        re.compile(r"operation lock\s*/\s*staging\s*を手動変更(?:せず|しない)"),
-    ),
-    (
-        "v5 operation namespace",
-        re.compile(r"operations/market-v5-cutover"),
-    ),
-)
-
-
 def parse_frontmatter(content: str) -> dict[str, str] | None:
     fm_raw = frontmatter_text(content)
     if fm_raw is None:
@@ -540,29 +491,6 @@ def validate_react_catalog(repo_root: Path) -> list[str]:
     return validate_local_catalog(repo_root)
 
 
-def validate_market_cutover_guidance(
-    content: str,
-    skill_file: Path,
-    repo_root: Path | None = None,
-) -> list[str]:
-    del repo_root
-    errors = [
-        f"Market cutover guidance is missing {term!r}: {skill_file}"
-        for term in MARKET_CUTOVER_REQUIRED_TERMS
-        if term not in content
-    ]
-    errors.extend(
-        f"Market cutover guidance is missing structural clause {label!r}: {skill_file}"
-        for label, pattern in MARKET_CUTOVER_REQUIRED_CLAUSES
-        if pattern.search(content) is None
-    )
-    if "promote-retained" in content or "rehearse-retained" in content:
-        errors.append(f"Found obsolete retained-v4 CLI guidance: {skill_file}")
-    if re.search(r"operation lock\s*/\s*staging\s*を手動変更する", content):
-        errors.append(f"Found unsafe cutover artifact mutation guidance: {skill_file}")
-    return errors
-
-
 def validate_skill_file(skill_file: Path, repo_root: Path) -> list[str]:
     errors: list[str] = []
     content = skill_file.read_text()
@@ -616,9 +544,6 @@ def validate_skill_file(skill_file: Path, repo_root: Path) -> list[str]:
 
     if skill_name in WORKFLOW_SKILLS:
         errors.extend(validate_verification_commands(content, skill_file, repo_root))
-    if skill_name in MARKET_CUTOVER_SKILLS:
-        errors.extend(validate_market_cutover_guidance(content, skill_file, repo_root))
-
     for token in CODE_SPAN_PATTERN.findall(content):
         if not _looks_like_repo_path(token):
             continue
@@ -652,12 +577,6 @@ def main() -> int:
 
     for skill_file in skill_files:
         errors.extend(validate_skill_file(skill_file, repo_root))
-
-    for relative_path in ACTIVE_MARKET_CUTOVER_GUIDANCE_PATHS:
-        guidance_file = repo_root / relative_path
-        guidance = guidance_file.read_text()
-        if "promote-retained" in guidance or "rehearse-retained" in guidance:
-            errors.append(f"Found obsolete retained-v4 CLI guidance: {guidance_file}")
 
     errors.extend(validate_react_catalog(repo_root))
 
