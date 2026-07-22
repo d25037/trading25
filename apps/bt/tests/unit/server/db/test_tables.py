@@ -12,7 +12,7 @@ from copy import deepcopy
 from pathlib import Path
 
 import pytest
-from sqlalchemy import CheckConstraint, ForeignKeyConstraint, Integer, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, Float, ForeignKeyConstraint, Integer, Text, UniqueConstraint
 from sqlalchemy.types import REAL
 
 from src.infrastructure.db.market import tables as market_tables
@@ -51,7 +51,7 @@ def _sa_type_name(col_type: object) -> str:
     """SQLAlchemy 型を contract JSON の型名に変換"""
     if isinstance(col_type, Text):
         return "text"
-    if isinstance(col_type, REAL):
+    if isinstance(col_type, (REAL, Float)):
         return "real"
     if isinstance(col_type, Integer):
         return "integer"
@@ -131,10 +131,19 @@ class TestMarketDbContract:
         assert pk_cols == self.tables["stocks"]["properties"]["primary_key"]["const"]
 
     def test_stock_data_columns(self) -> None:
-        spec = self.tables["stock_data"]["properties"]["columns"]["properties"]
+        current_contract = _load_contract("market-db-schema-v4.json")
+        table_schema = _resolve_schema(
+            current_contract["properties"]["tables"]["properties"]["stock_data"],
+            current_contract,
+        )
+        columns_schema = _resolve_schema(
+            table_schema["properties"]["columns"],
+            current_contract,
+        )
+        spec = columns_schema["properties"]
         for col_name, col_spec in spec.items():
             col = stock_data.c[col_name]
-            expected = col_spec["const"]
+            expected = _resolve_schema(col_spec, current_contract)["const"]
             assert _sa_type_name(col.type) == expected["type"], f"stock_data.{col_name} type mismatch"
             assert col.nullable == expected["nullable"], f"stock_data.{col_name} nullable mismatch"
 
