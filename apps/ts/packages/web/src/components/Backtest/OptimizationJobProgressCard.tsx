@@ -3,7 +3,7 @@ import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 import { Loader2 } from 'lucide-react';
 import { JobStatusIcon } from '@/components/Jobs/JobStatusIcon';
 import { Surface } from '@/components/Layout/Workspace';
-import { VerificationSummarySection } from '@/components/VerificationSummarySection';
+import { FastCandidatesSection } from '@/components/FastCandidatesSection';
 import { useElapsedSeconds } from '@/hooks/useElapsedSeconds';
 import { formatElapsedSeconds } from '@/utils/formatters';
 
@@ -92,12 +92,6 @@ function StatusLabel({ status }: { status: JobStatus }) {
   return <span className="font-medium capitalize">{labels[status]}</span>;
 }
 
-function resolveStageLabel(job: OptimizationJobResponse): string | null {
-  if (!isActiveJobStatus(job.status)) return null;
-  if (job.message?.toLowerCase().includes('nautilus verification')) return 'Verification stage';
-  return 'Fast stage';
-}
-
 export function OptimizationJobProgressCard({ job, isLoading }: OptimizationJobProgressCardProps) {
   const isActive = isActiveJobStatus(job?.status);
   const elapsed = useElapsedSeconds(isActive, job?.started_at ?? job?.created_at);
@@ -119,8 +113,6 @@ export function OptimizationJobProgressCard({ job, isLoading }: OptimizationJobP
 
   const bestParamsText = stringifyParams(job.best_params);
   const worstParamsText = stringifyParams(job.worst_params);
-  const stageLabel = resolveStageLabel(job);
-
   return (
     <Surface className="mt-2 p-4 sm:p-5">
       <div className="flex items-center justify-between">
@@ -135,7 +127,6 @@ export function OptimizationJobProgressCard({ job, isLoading }: OptimizationJobP
       <div className="mt-4">
         {isActive ? (
           <div className="space-y-2">
-            {stageLabel ? <p className="text-xs font-medium text-blue-600">{stageLabel}</p> : null}
             <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
               <div className="h-full animate-progress-indeterminate rounded-full bg-blue-500" />
             </div>
@@ -146,7 +137,7 @@ export function OptimizationJobProgressCard({ job, isLoading }: OptimizationJobP
         {job.status === 'completed' ? (
           <div className="space-y-3">
             <CompletedSummary job={job} bestParamsText={bestParamsText} worstParamsText={worstParamsText} />
-            <VerificationSummarySection fastCandidates={job.fast_candidates} verification={job.verification} />
+            <FastCandidatesSection fastCandidates={job.fast_candidates} />
           </div>
         ) : null}
 

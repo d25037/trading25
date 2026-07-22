@@ -50,12 +50,13 @@ describe('OptimizationJobProgressCard', () => {
     render(<OptimizationJobProgressCard job={job} />);
 
     expect(screen.getByText('Optimizing')).toBeInTheDocument();
-    expect(screen.getByText('Fast stage')).toBeInTheDocument();
     expect(screen.getByText('trial 3/9')).toBeInTheDocument();
     expect(screen.getByText(/⏱/)).toBeInTheDocument();
+    expect(screen.queryByText('Fast stage')).not.toBeInTheDocument();
+    expect(screen.queryByText('Verification stage')).not.toBeInTheDocument();
   });
 
-  it('does not switch to verification stage without an explicit verification message', () => {
+  it('keeps the raw worker message without inferring a stage', () => {
     const job = createJob({
       status: 'running',
       progress: 0.75,
@@ -66,7 +67,8 @@ describe('OptimizationJobProgressCard', () => {
 
     render(<OptimizationJobProgressCard job={job} />);
 
-    expect(screen.getByText('Fast stage')).toBeInTheDocument();
+    expect(screen.getByText('trial 7/9')).toBeInTheDocument();
+    expect(screen.queryByText('Fast stage')).not.toBeInTheDocument();
     expect(screen.queryByText('Verification stage')).not.toBeInTheDocument();
   });
 
@@ -152,7 +154,7 @@ describe('OptimizationJobProgressCard', () => {
     expect(screen.getByText('0.2000')).toBeInTheDocument();
   });
 
-  it('renders verification summary for completed jobs', () => {
+  it('renders fast ranking without verification details for completed jobs', () => {
     const job = createJob({
       fast_candidates: [
         {
@@ -167,47 +169,12 @@ describe('OptimizationJobProgressCard', () => {
           },
         },
       ],
-      verification: {
-        overall_status: 'completed',
-        requested_top_k: 1,
-        completed_count: 1,
-        mismatch_count: 0,
-        winner_changed: false,
-        authoritative_candidate_id: 'grid_0001',
-        candidates: [
-          {
-            candidate_id: 'grid_0001',
-            fast_rank: 1,
-            fast_score: 1,
-            verification_status: 'verified',
-            fast_metrics: {
-              total_return: 10,
-              sharpe_ratio: 1.2,
-              max_drawdown: -5,
-              trade_count: 8,
-            },
-            verified_metrics: {
-              total_return: 9.5,
-              sharpe_ratio: 1.1,
-              max_drawdown: -4.8,
-              trade_count: 8,
-            },
-            delta: {
-              total_return_delta: -0.5,
-              sharpe_ratio_delta: -0.1,
-              max_drawdown_delta: 0.2,
-              trade_count_delta: 0,
-            },
-            mismatch_reasons: [],
-          },
-        ],
-      },
     });
 
     render(<OptimizationJobProgressCard job={job} />);
 
-    expect(screen.getByText('Verification')).toBeInTheDocument();
-    expect(screen.getByText('Authoritative')).toBeInTheDocument();
+    expect(screen.getByText('Fast Ranking')).toBeInTheDocument();
     expect(screen.getAllByText('grid_0001').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Verification')).not.toBeInTheDocument();
   });
 });
