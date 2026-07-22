@@ -2,7 +2,6 @@
 
 import base64
 from datetime import datetime
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -10,13 +9,7 @@ from fastapi.testclient import TestClient
 
 from src.application.contracts.backtest import BacktestResultSummary
 from src.application.contracts.jobs import JobStatus
-from src.domains.backtest.contracts import (
-    ArtifactIndex,
-    ArtifactKind,
-    ArtifactRecord,
-    ArtifactStorage,
-    EngineFamily,
-)
+from src.domains.backtest.contracts import ArtifactIndex, ArtifactKind, ArtifactRecord, ArtifactStorage
 
 
 @pytest.fixture
@@ -303,41 +296,6 @@ class TestBacktestJobEndpoints:
         data = resp.json()
         assert len(data) == 2
         assert data[0]["job_id"] == "job-1"
-
-    def test_get_job_status_hides_internal_verification_job(self, client, mock_services):
-        _, mock_jm = mock_services
-        mock_jm.get_job.return_value = _make_job(
-            "job-1",
-            JobStatus.RUNNING,
-            run_spec=SimpleNamespace(
-                parent_run_id="parent-1",
-                engine_family=EngineFamily.NAUTILUS,
-                parameters={"verification_candidate_id": "grid_0001"},
-            ),
-        )
-
-        resp = client.get("/api/backtest/jobs/job-1")
-        assert resp.status_code == 404
-
-    def test_list_jobs_excludes_internal_verification_jobs(self, client, mock_services):
-        _, mock_jm = mock_services
-        mock_jm.list_jobs.return_value = [
-            _make_job("job-1", JobStatus.RUNNING),
-            _make_job(
-                "job-2",
-                JobStatus.RUNNING,
-                run_spec=SimpleNamespace(
-                    parent_run_id="parent-1",
-                    engine_family=EngineFamily.NAUTILUS,
-                    parameters={"verification_candidate_id": "grid_0002"},
-                ),
-            ),
-        ]
-
-        resp = client.get("/api/backtest/jobs?limit=2")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert [item["job_id"] for item in data] == ["job-1"]
 
 
 class TestSignalAttributionEndpoints:

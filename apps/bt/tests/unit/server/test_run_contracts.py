@@ -64,16 +64,8 @@ class TestBuildDefaultRunSpec:
         assert run_spec.engine_family == EngineFamily.UNKNOWN
         assert run_spec.execution_policy_version is None
 
-    def test_backtest_allows_explicit_nautilus_engine(self) -> None:
-        run_spec = build_default_run_spec(
-            "backtest",
-            "demo-strategy",
-            engine_family=EngineFamily.NAUTILUS,
-        )
-
-        assert run_spec.run_type == RunType.BACKTEST
-        assert run_spec.engine_family == EngineFamily.NAUTILUS
-        assert run_spec.execution_policy_version == "nautilus-daily-verification-v1"
+    def test_engine_family_has_no_execution_alternative(self) -> None:
+        assert {item.value for item in EngineFamily} == {"vectorbt", "unknown"}
 
 
 class TestBuildRunMetadata:

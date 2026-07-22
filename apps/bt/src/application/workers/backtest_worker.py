@@ -30,9 +30,7 @@ from src.application.workers.job_runtime import (
     worker_cancel_reason,
     worker_lease_owner,
 )
-from src.domains.backtest.contracts import EngineFamily
 from src.domains.backtest.core.runner import BacktestResult, BacktestRunner
-from src.domains.backtest.nautilus_adapter import NautilusVerificationRunner
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.shared.config.settings import get_settings
 
@@ -127,7 +125,6 @@ async def run_backtest_worker(
     config_override: dict[str, Any] | None = None,
     manager: JobManager | None = None,
     runner: BacktestRunner | None = None,
-    nautilus_runner: NautilusVerificationRunner | None = None,
     heartbeat_seconds: float = DEFAULT_HEARTBEAT_SECONDS,
     timeout_seconds: int | None = None,
     exit_on_cancel: Callable[[int], None] = os._exit,
@@ -142,7 +139,6 @@ async def run_backtest_worker(
         resolved_manager.set_portfolio_db(portfolio_db)
         owns_portfolio_db = True
     resolved_runner = runner or BacktestRunner()
-    resolved_nautilus_runner = nautilus_runner or NautilusVerificationRunner()
     lease_owner = worker_lease_owner("backtest-worker")
 
     heartbeat_task: asyncio.Task[None] | None = None
@@ -175,11 +171,6 @@ async def run_backtest_worker(
             if effective_run_spec is not None
             else strategy_name
         )
-        effective_engine_family = (
-            effective_run_spec.engine_family
-            if effective_run_spec is not None
-            else EngineFamily.VECTORBT
-        )
         effective_config_override = _resolve_config_override(
             claimed,
             fallback=config_override,
@@ -208,26 +199,12 @@ async def run_backtest_worker(
             )
         )
 
-        if effective_engine_family == EngineFamily.NAUTILUS:
-            if effective_run_spec is None:
-                raise RuntimeError("Persisted run_spec is required for Nautilus verification.")
-            result = await asyncio.to_thread(
-                resolved_nautilus_runner.execute,
-                strategy=effective_strategy_name,
-                run_spec=effective_run_spec,
-                run_id=job_id,
-                progress_callback=progress_callback,
-                config_override=effective_config_override,
-            )
-        elif effective_engine_family in (EngineFamily.VECTORBT, EngineFamily.UNKNOWN):
-            result = await asyncio.to_thread(
-                resolved_runner.execute,
-                strategy=effective_strategy_name,
-                progress_callback=progress_callback,
-                config_override=effective_config_override,
-            )
-        else:
-            raise ValueError(f"Unsupported backtest engine: {effective_engine_family}")
+        result = await asyncio.to_thread(
+            resolved_runner.execute,
+            strategy=effective_strategy_name,
+            progress_callback=progress_callback,
+            config_override=effective_config_override,
+        )
         current_job = await resolved_manager.reload_job_from_storage(job_id)
         if current_job is not None:
             exit_code = terminal_worker_exit_code(current_job.status, current_job.error)
