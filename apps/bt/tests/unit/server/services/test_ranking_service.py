@@ -1620,7 +1620,7 @@ class TestGetRankings:
         assert result.periodDays == 250
         assert len(result.indexPerformance) == 2
 
-    def test_symbol_ranking_snapshot_reuses_market_ranking_and_normalizes_code(
+    def test_symbol_snapshot_matches_full_market_item_and_normalizes_code(
         self, service
     ):
         snapshot = service.get_symbol_ranking_snapshot("72030")
@@ -1641,13 +1641,27 @@ class TestGetRankings:
         assert snapshot.item == expected_item
         assert service.get_symbol_ranking_snapshot("7203").item == snapshot.item
 
-    def test_symbol_ranking_snapshot_unranked_symbol_returns_latest_date(self, service):
+    def test_symbol_snapshot_does_not_recurse_to_market_rankings(
+        self, service, monkeypatch
+    ):
+        def _raise_if_called(*_args, **_kwargs):  # noqa: ANN002, ANN003
+            raise AssertionError("symbol snapshot must not call get_rankings")
+
+        monkeypatch.setattr(service, "get_rankings", _raise_if_called)
+
+        snapshot = service.get_symbol_ranking_snapshot("72030")
+
+        assert snapshot.date == "2024-01-19"
+        assert snapshot.item is not None
+        assert normalize_equity_code(snapshot.item.code) == "7203"
+
+    def test_symbol_snapshot_unranked_symbol_returns_latest_date(self, service):
         snapshot = service.get_symbol_ranking_snapshot("9999")
 
         assert snapshot.date == "2024-01-19"
         assert snapshot.item is None
 
-    def test_symbol_ranking_snapshot_empty_database_returns_empty_snapshot(
+    def test_symbol_snapshot_empty_database_returns_empty_snapshot(
         self, monkeypatch
     ):
         class ReaderStub:

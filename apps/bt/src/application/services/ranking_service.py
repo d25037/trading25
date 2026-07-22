@@ -24,6 +24,7 @@ from src.application.services.ranking_daily_queries import (
     ranking_by_price_change as _ranking_by_price_change_query,
     ranking_by_price_change_from_days as _ranking_by_price_change_from_days_query,
     ranking_by_trading_value as _ranking_by_trading_value_query,
+    ranking_by_trading_value_symbol as _ranking_by_trading_value_symbol_query,
     ranking_by_trading_value_average as _ranking_by_trading_value_average_query,
 )
 from src.application.services.ranking_collection_filters import (
@@ -466,28 +467,59 @@ class RankingService:
                 lastUpdated=_now_iso(),
             )
 
-        response = self.get_rankings(
-            date=target_date,
-            markets=_canonical_market_label(str(stock["market_code"])),
-            limit=0,
-            lookback_days=1,
-            period_days=250,
-            include_valuation=True,
-            include_sector_strength=True,
-            sector_strength_family="balanced_sector_strength",
+        _, query_market_codes = resolve_market_codes(
+            _canonical_market_label(str(stock["market_code"]))
         )
-        item = next(
-            (
-                row
-                for row in response.rankings.tradingValue
-                if _normalize_equity_code(row.code) == normalized_code
-            ),
-            None,
+        item = _ranking_by_trading_value_symbol_query(
+            self._reader,
+            target_date,
+            normalized_code,
+            query_market_codes,
         )
+        if item is not None:
+            ranking_collections = ([item],)
+            _enrich_ranking_collections_with_daily_technical_metrics(
+                self._reader,
+                ranking_collections,
+                target_date=target_date,
+            )
+            _enrich_ranking_collections_with_valuation(
+                self._reader,
+                self._valuation_calculator,
+                ranking_collections,
+                target_date=target_date,
+                query_market_codes=query_market_codes,
+                price_basis_date=target_date,
+            )
+            _enrich_ranking_collections_with_prime_liquidity(
+                self._reader,
+                ranking_collections,
+                target_date=target_date,
+            )
+            _enrich_ranking_collections_with_technical_flags(
+                self._reader,
+                ranking_collections,
+                target_date=target_date,
+                market_codes=query_market_codes,
+            )
+            sector_strength_by_name = load_sector_score_by_name(
+                self._reader,
+                table_exists=lambda table_name: _table_exists_query(
+                    self._reader, table_name
+                ),
+                date=target_date,
+                market_codes=query_market_codes,
+                sector_strength_family="balanced_sector_strength",
+            )
+            if sector_strength_by_name:
+                _enrich_ranking_collections_with_sector_strength(
+                    ranking_collections,
+                    sector_strength_by_name=sector_strength_by_name,
+                )
         return ranking_contracts.MarketRankingSymbolResponse(
-            date=response.date,
+            date=target_date,
             item=item,
-            lastUpdated=response.lastUpdated,
+            lastUpdated=_now_iso(),
         )
 
     def get_fundamental_rankings(

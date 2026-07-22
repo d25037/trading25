@@ -85,6 +85,67 @@ def ranking_by_trading_value(
     ]
 
 
+def ranking_by_trading_value_symbol(
+    reader: MarketDbReader,
+    date: str,
+    code: str,
+    market_codes: list[str],
+) -> ranking_contracts.RankingItem | None:
+    """Return one symbol's target-session trading-value rank without materializing it."""
+    market_clause, market_params = build_stock_scope_filter(market_codes)
+    stocks_cte = stocks_canonical_cte()
+    stock_daily_cte = stock_data_dedup_cte("stock_daily", where_clause="date = ?")
+    prev_cte = stock_data_dedup_cte("prev_daily", where_clause="date = ?")
+    prev_date = get_trading_date_before(reader, date, 0)
+    sql = f"""
+        WITH
+        {stocks_cte},
+        {stock_daily_cte},
+        {prev_cte},
+        ranked AS (
+            SELECT
+                {RANKING_BASE_COLUMNS},
+                sd.normalized_code,
+                sd.close AS current_price,
+                sd.volume,
+                sd.close * sd.volume AS trading_value,
+                prev.close AS previous_price,
+                (sd.close - prev.close) AS change_amount,
+                CASE
+                    WHEN prev.close > 0 AND sd.close > 0
+                    THEN ((sd.close - prev.close) / prev.close * 100)
+                    ELSE NULL
+                END AS change_percentage,
+                ROW_NUMBER() OVER (
+                    ORDER BY sd.close * sd.volume DESC, sd.normalized_code ASC
+                ) AS ranking_rank
+            FROM stock_daily sd
+            LEFT JOIN prev_daily prev
+                ON sd.normalized_code = prev.normalized_code
+            JOIN stocks_canonical s
+                ON s.normalized_code = sd.normalized_code
+            WHERE 1 = 1{market_clause}
+        )
+        SELECT *
+        FROM ranked
+        WHERE normalized_code = ?
+    """
+    row = reader.query_one(
+        sql,
+        (date, date, prev_date or "", *market_params, code),
+    )
+    if row is None:
+        return None
+    return build_ranking_item(
+        row,
+        int(row["ranking_rank"]),
+        tradingValue=row["trading_value"],
+        previousPrice=row["previous_price"],
+        changeAmount=row["change_amount"],
+        changePercentage=row["change_percentage"],
+    )
+
+
 def ranking_by_trading_value_average(
     reader: MarketDbReader,
     date: str,
