@@ -33,10 +33,9 @@ describe('LabOptimizeForm', () => {
       random_add_entry_signals: 0,
       random_add_exit_signals: 0,
       save: true,
-      engine_policy: {
-        mode: 'fast_only',
-      },
     });
+    expect(screen.queryByText('Engine Policy')).not.toBeInTheDocument();
+    expect(screen.queryByText('Top K')).not.toBeInTheDocument();
   });
 
   it('submits fundamental-only constraints', async () => {
@@ -69,9 +68,6 @@ describe('LabOptimizeForm', () => {
       random_add_exit_signals: 0,
       save: true,
       allowed_categories: ['fundamental'],
-      engine_policy: {
-        mode: 'fast_only',
-      },
     });
   });
 
@@ -112,9 +108,6 @@ describe('LabOptimizeForm', () => {
       random_add_exit_signals: 3,
       save: true,
       seed: 42,
-      engine_policy: {
-        mode: 'fast_only',
-      },
     });
   });
 
@@ -150,9 +143,6 @@ describe('LabOptimizeForm', () => {
       random_add_entry_signals: 0,
       random_add_exit_signals: 4,
       save: true,
-      engine_policy: {
-        mode: 'fast_only',
-      },
     });
   });
 
@@ -176,9 +166,6 @@ describe('LabOptimizeForm', () => {
       random_add_entry_signals: 0,
       random_add_exit_signals: 0,
       save: true,
-      engine_policy: {
-        mode: 'fast_only',
-      },
     });
   });
 

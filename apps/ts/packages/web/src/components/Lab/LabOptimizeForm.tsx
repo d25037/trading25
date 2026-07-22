@@ -1,11 +1,9 @@
 import type {
-  EnginePolicyMode,
   LabOptimizeRequest,
   LabOptimizeTrialRecommendationResponse,
   LabSignalCategory,
 } from '@trading25/api-clients/backtest';
 import { useState } from 'react';
-import { buildEnginePolicy, EnginePolicySelector } from '@/components/EnginePolicySelector';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -74,9 +72,6 @@ export function LabOptimizeForm({ strategyName, trialRecommendation, onSubmit, d
     if (selectedCategories.length > 0) request.allowed_categories = selectedCategories;
   };
 
-  const [enginePolicyMode, setEnginePolicyMode] = useState<EnginePolicyMode>('fast_only');
-  const [verificationTopK, setVerificationTopK] = useState('5');
-
   const buildRequest = (strategy: string): LabOptimizeRequest => {
     const request: LabOptimizeRequest = {
       strategy_name: strategy,
@@ -91,7 +86,6 @@ export function LabOptimizeForm({ strategyName, trialRecommendation, onSubmit, d
     };
     applyRandomAddOptions(request);
     applyOptionalFilters(request);
-    request.engine_policy = buildEnginePolicy(enginePolicyMode, verificationTopK);
     return request;
   };
 
@@ -251,14 +245,6 @@ export function LabOptimizeForm({ strategyName, trialRecommendation, onSubmit, d
           </div>
         </div>
       )}
-
-      <EnginePolicySelector
-        mode={enginePolicyMode}
-        onModeChange={setEnginePolicyMode}
-        verificationTopK={verificationTopK}
-        onVerificationTopKChange={setVerificationTopK}
-        disabled={disabled}
-      />
 
       <Button className="w-full" onClick={handleSubmit} disabled={disabled || !strategyName}>
         Start Optimization
