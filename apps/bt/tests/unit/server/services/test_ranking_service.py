@@ -1612,6 +1612,56 @@ class TestGetRankings:
         technical_enrichment.assert_not_called()
         index_performance_loader.assert_called_once()
 
+    @pytest.mark.parametrize(
+        ("scope", "expects_average", "expected_from_days_calls"),
+        [
+            ("tradingValue", True, 0),
+            ("indexPerformance", False, 0),
+        ],
+    )
+    def test_narrow_ranking_scope_skips_unrequested_lookback_queries(
+        self,
+        service,
+        monkeypatch: pytest.MonkeyPatch,
+        scope: str,
+        expects_average: bool,
+        expected_from_days_calls: int,
+    ) -> None:
+        item = RankingItem(
+            rank=1,
+            code="72030",
+            companyName="Toyota",
+            marketCode="prime",
+            sector33Name="輸送用機器",
+            currentPrice=2540.0,
+            volume=2_000_000,
+        )
+        trading_value_average_query = MagicMock(return_value=[item])
+        price_change_from_days_query = MagicMock(return_value=[item])
+        monkeypatch.setattr(
+            ranking_service_module,
+            "_ranking_by_trading_value_average_query",
+            trading_value_average_query,
+        )
+        monkeypatch.setattr(
+            ranking_service_module,
+            "_ranking_by_price_change_from_days_query",
+            price_change_from_days_query,
+        )
+        monkeypatch.setattr(
+            ranking_service_module,
+            "load_index_performance",
+            MagicMock(return_value=[]),
+        )
+
+        response = service.get_rankings(
+            date="2024-01-19", lookback_days=3, scope=scope
+        )
+
+        assert trading_value_average_query.called is expects_average
+        assert price_change_from_days_query.call_count == expected_from_days_calls
+        assert len(response.rankings.tradingValue) == (1 if expects_average else 0)
+
     def test_default(self, service):
         result = service.get_rankings()
         assert result.date == "2024-01-19"
