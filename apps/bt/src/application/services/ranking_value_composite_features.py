@@ -110,7 +110,23 @@ def load_value_composite_technical_metrics(
         return {}
     placeholders = ",".join("?" for _ in normalized_codes)
     resolve_provider_windows(reader, normalized_codes, target_date)
-    price_ctes = provider_price_cte()
+    start_row = reader.query_one(
+        """
+        SELECT date
+        FROM (SELECT DISTINCT date FROM stock_data WHERE date <= ? ORDER BY date DESC)
+        LIMIT 1 OFFSET 252
+        """,
+        (target_date,),
+    )
+    if start_row is None:
+        start_row = reader.query_one(
+            "SELECT MIN(date) AS date FROM stock_data WHERE date <= ?",
+            (target_date,),
+        )
+    if start_row is None or start_row["date"] is None:
+        return {}
+    start_date = str(start_row["date"])
+    price_ctes = provider_price_cte("price.date >= ? AND price.date <= ?")
     sql = f"""
         WITH {price_ctes},
         stock_history AS (
@@ -297,6 +313,8 @@ def load_value_composite_technical_metrics(
     rows = reader.query(
         sql,
         (
+            start_date,
+            target_date,
             target_date,
             *normalized_codes,
             target_date,
@@ -356,7 +374,6 @@ def load_value_composite_profile_metrics(
 
     placeholders = ",".join("?" for _ in normalized_codes)
     resolve_provider_windows(reader, normalized_codes, target_date)
-    price_ctes = provider_price_cte()
     required_session_offset = 0
     if profile.min_adv60_mil_jpy is not None:
         required_session_offset = max(required_session_offset, 59)
@@ -373,12 +390,22 @@ def load_value_composite_profile_metrics(
         """,
         (target_date, required_session_offset),
     )
-    start_date = str(start_row["date"]) if start_row is not None else None
-    lower_bound_clause = " AND date >= ?" if start_date is not None else ""
+    if start_row is None:
+        start_row = reader.query_one(
+            "SELECT MIN(date) AS date FROM stock_data WHERE date < ?",
+            (target_date,),
+        )
+    if start_row is None or start_row["date"] is None:
+        return {}
+    start_date = str(start_row["date"])
+    price_ctes = provider_price_cte("price.date >= ? AND price.date <= ?")
+    lower_bound_clause = " AND date >= ?"
     params: tuple[Any, ...] = (
-        (target_date, start_date, *normalized_codes)
-        if start_date is not None
-        else (target_date, *normalized_codes)
+        start_date,
+        target_date,
+        target_date,
+        start_date,
+        *normalized_codes,
     )
 
     if profile.breakout_window is None:

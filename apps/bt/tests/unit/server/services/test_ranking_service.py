@@ -34,6 +34,7 @@ from src.application.services.ranking_service import (
 from src.application.services.ranking_fundamental_queries import (
     load_adjusted_daily_valuation_frame,
     load_adjusted_statement_metric_rows,
+    load_fundamental_stock_rows,
     resolve_provider_windows,
 )
 from src.application.services.ranking_query_helpers import (
@@ -68,6 +69,7 @@ from src.application.services.ranking_liquidity import (
     _classify_stale_overvalued_or_no_earnings_flags,
     classify_prime_liquidity_regime,
     classify_risk_flags,
+    load_prime_liquidity_metrics,
 )
 from src.application.services.ranking_technical_flags import (
     classify_technical_flags,
@@ -1123,6 +1125,64 @@ def test_ranking_valuation_preserves_canonical_nulls_and_close_verbatim(
     assert pd.isna(row["per"])
     assert pd.isna(row["forward_per"])
     assert pd.isna(row["pbr"])
+
+
+def test_fundamental_provider_price_is_bound_before_deduplication(
+    ranking_db: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _rebuild_test_adjusted_metrics(ranking_db)
+    reader = MarketDbReader(ranking_db)
+    captured_queries: list[str] = []
+    original_query = reader.query
+
+    def capture_query(sql: str, params=()):
+        if "provider_price AS (" in sql:
+            captured_queries.append(sql)
+        return original_query(sql, params)
+
+    monkeypatch.setattr(reader, "query", capture_query)
+    try:
+        load_fundamental_stock_rows(reader, "2024-01-19", ["prime"])
+    finally:
+        reader.close()
+
+    assert len(captured_queries) == 1
+    sql = captured_queries[0]
+    row_number_index = sql.index("ROW_NUMBER() OVER")
+    source_index = sql.index("FROM stock_data AS price")
+    bound_index = sql.index("WHERE price.date = ?", source_index)
+    assert row_number_index < source_index < bound_index
+
+
+def test_liquidity_provider_price_is_bounded_before_price_features(
+    ranking_db: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _rebuild_test_adjusted_metrics(ranking_db)
+    reader = MarketDbReader(ranking_db)
+    captured_queries: list[str] = []
+    original_query = reader.query
+
+    def capture_query(sql: str, params=()):
+        if "provider_price AS (" in sql:
+            captured_queries.append(sql)
+        return original_query(sql, params)
+
+    monkeypatch.setattr(reader, "query", capture_query)
+    try:
+        load_prime_liquidity_metrics(reader, "2024-01-19")
+    finally:
+        reader.close()
+
+    assert len(captured_queries) == 1
+    sql = captured_queries[0]
+    source_index = sql.index("FROM stock_data AS price")
+    bound_index = sql.index(
+        "WHERE price.date >= ? AND price.date <= ?", source_index
+    )
+    price_features_index = sql.index("price_features AS (")
+    assert source_index < bound_index < price_features_index
 
 
 @pytest.mark.parametrize("failure", ["missing", "pending"])

@@ -74,8 +74,10 @@ def _target_stock_codes(
     return [str(row["code"]) for row in rows]
 
 
-def provider_price_cte() -> str:
+def provider_price_cte(where_clause: str) -> str:
     """Canonical normalized provider-adjusted stock_data relation."""
+    if not where_clause.strip():
+        raise ValueError("provider_price_cte requires a bounded stock_data predicate")
     price_norm = normalized_code_sql("price.code")
     price_order = prefer_4digit_order_sql("price.code")
     return f"""
@@ -90,6 +92,7 @@ def provider_price_cte() -> str:
                         ORDER BY {price_order}
                     ) AS rn
                 FROM stock_data AS price
+                WHERE {where_clause}
             )
             WHERE rn = 1
         )
@@ -148,7 +151,7 @@ def load_fundamental_stock_rows(
     resolve_provider_windows(
         reader, _target_stock_codes(reader, date, market_codes), date
     )
-    price_ctes = provider_price_cte()
+    price_ctes = provider_price_cte("price.date = ?")
     stocks_cte = stocks_canonical_cte()
     sql = f"""
         WITH
@@ -160,7 +163,7 @@ def load_fundamental_stock_rows(
             ON sd.normalized_code = s.normalized_code AND sd.date = ?
         WHERE 1 = 1{market_clause}
     """
-    return reader.query(sql, (date, date, *market_params))
+    return reader.query(sql, (date, date, date, *market_params))
 
 
 def load_adjusted_daily_valuation_frame(
@@ -176,7 +179,7 @@ def load_adjusted_daily_valuation_frame(
         _target_stock_codes(reader, date, market_codes),
         date,
     )
-    price_ctes = provider_price_cte()
+    price_ctes = provider_price_cte("price.date = ?")
     stocks_cte = stocks_canonical_cte()
     valuation_norm = normalized_code_sql("code")
     valuation_order = prefer_4digit_order_sql("code")
@@ -306,7 +309,7 @@ def load_adjusted_daily_valuation_frame(
            AND provider.coverage_end = state.fundamentals_adjustment_basis_date
         WHERE 1 = 1{market_clause}
     """
-    rows = reader.query(sql, (date, date, *market_params))
+    rows = reader.query(sql, (date, date, date, *market_params))
     return pd.DataFrame([dict(row.items()) for row in rows])
 
 
@@ -323,7 +326,7 @@ def load_adjusted_statement_metric_rows(
         _target_stock_codes(reader, date, market_codes),
         date,
     )
-    price_ctes = provider_price_cte()
+    price_ctes = provider_price_cte("price.date = ?")
     stocks_cte = stocks_canonical_cte()
     metrics_norm = normalized_code_sql("metric.code")
     metrics_order = prefer_4digit_order_sql("metric.code")
@@ -401,7 +404,13 @@ def load_adjusted_statement_metric_rows(
     """
     return reader.query(
         sql,
-        (date, f"{date}T23:59:59.999999+09:00", date, *market_params),
+        (
+            date,
+            date,
+            f"{date}T23:59:59.999999+09:00",
+            date,
+            *market_params,
+        ),
     )
 
 
