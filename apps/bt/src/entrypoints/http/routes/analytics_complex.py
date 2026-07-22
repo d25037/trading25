@@ -12,6 +12,7 @@ import json
 from fastapi import APIRouter, HTTPException, Query, Request
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
+from starlette.concurrency import run_in_threadpool
 
 from src.application.contracts import factor_regression as factor_contracts
 from src.application.contracts import (
@@ -83,8 +84,12 @@ async def get_ranking_symbol_snapshot(
     reader = getattr(request.app.state, "market_reader", None)
     if reader is None:
         raise HTTPException(status_code=422, detail="Database not initialized")
+    service = RankingService(reader)
     try:
-        return RankingService(reader).get_symbol_ranking_snapshot(code)
+        return await run_in_threadpool(
+            service.get_symbol_ranking_snapshot,
+            code=code,
+        )
     except MarketDataError as error:
         raise market_data_http_exception(error) from error
     except ValueError as error:
@@ -185,7 +190,8 @@ async def get_ranking(
 
     service = RankingService(reader)
     try:
-        return service.get_rankings(
+        return await run_in_threadpool(
+            service.get_rankings,
             date=date,
             limit=limit,
             markets=markets,
@@ -251,7 +257,8 @@ async def get_fundamental_ranking(
 
     service = RankingService(reader)
     try:
-        return service.get_fundamental_rankings(
+        return await run_in_threadpool(
+            service.get_fundamental_rankings,
             limit=limit,
             markets=markets,
             metric_key=metricKey,
@@ -298,7 +305,8 @@ async def get_value_composite_ranking(
 
     service = RankingService(reader)
     try:
-        return service.get_value_composite_ranking(
+        return await run_in_threadpool(
+            service.get_value_composite_ranking,
             date=date,
             limit=limit,
             markets=markets,
@@ -341,7 +349,8 @@ async def get_value_composite_score(
 
     service = RankingService(reader)
     try:
-        return service.get_value_composite_score(
+        return await run_in_threadpool(
+            service.get_value_composite_score,
             code=code,
             date=date,
             forward_eps_mode=forwardEpsMode,
