@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { validateLabResultData } from './lab-result-schemas.js';
+import {
+  LabEvolveResultSchema,
+  LabOptimizeResultSchema,
+  validateLabResultData,
+} from './lab-result-schemas.js';
 
 const validGenerateResult = {
   lab_type: 'generate' as const,
@@ -103,7 +107,6 @@ describe('validateLabResultData', () => {
           ...validGenerateResult,
           results: [generatedItemWithoutOptionalSignals],
           saved_strategy_path: null,
-          verification: null,
         }),
         validateLabResultData({
           ...validEvolveResult,
@@ -132,6 +135,39 @@ describe('validateLabResultData', () => {
 
       expect(results.every((result) => result.success)).toBe(true);
     });
+  });
+
+  test('evolve result preserves fast candidates', () => {
+    const parsed = LabEvolveResultSchema.parse({
+      lab_type: 'evolve',
+      best_strategy_id: 'candidate-1',
+      best_score: 1.25,
+      history: [],
+      fast_candidates: [
+        { candidate_id: 'evolve_0001', rank: 1, score: 1.25, metrics: null },
+      ],
+      saved_strategy_path: null,
+      saved_history_path: null,
+    });
+
+    expect(parsed.fast_candidates?.[0]?.candidate_id).toBe('evolve_0001');
+  });
+
+  test('optimize result preserves fast candidates', () => {
+    const parsed = LabOptimizeResultSchema.parse({
+      lab_type: 'optimize',
+      best_score: 1.25,
+      best_params: {},
+      total_trials: 1,
+      history: [],
+      fast_candidates: [
+        { candidate_id: 'optimize_0001', rank: 1, score: 1.25, metrics: null },
+      ],
+      saved_strategy_path: null,
+      saved_history_path: null,
+    });
+
+    expect(parsed.fast_candidates?.[0]?.candidate_id).toBe('optimize_0001');
   });
 
   describe('invalid data', () => {

@@ -21,14 +21,7 @@ export type RunMetadata = Schemas['RunMetadata'];
 export type ArtifactRecord = Schemas['ArtifactRecord'];
 export type ArtifactIndex = Schemas['ArtifactIndex'];
 export type JobExecutionControl = Schemas['JobExecutionControl'];
-export type EnginePolicy = Schemas['EnginePolicy'];
-export type EnginePolicyMode = EnginePolicy['mode'];
 export type FastCandidateSummary = Schemas['FastCandidateSummary'];
-export type VerificationDelta = Schemas['VerificationDelta'];
-export type VerificationCandidate = Schemas['VerificationCandidateSummary'];
-export type VerificationStatus = VerificationCandidate['verification_status'];
-export type VerificationSummary = Schemas['VerificationSummary'];
-export type VerificationOverallStatus = VerificationSummary['overall_status'];
 export type CanonicalExecutionMetrics = Schemas['CanonicalExecutionMetrics'];
 export type CanonicalExecutionResult = Schemas['CanonicalExecutionResult'];
 
