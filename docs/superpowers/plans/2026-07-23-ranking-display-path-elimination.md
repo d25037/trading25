@@ -284,6 +284,8 @@ git commit -m "perf(api): isolate blocking ranking reads"
 ### Task 5: Align frontend views, query keys, and retry semantics
 
 **Files:**
+- Modify: `apps/ts/packages/contracts/openapi/bt-openapi.json`
+- Modify: `apps/ts/packages/contracts/src/clients/backtest/generated/bt-api-types.ts`
 - Modify: `apps/ts/packages/api-clients/src/analytics/AnalyticsClient.ts`
 - Modify: `apps/ts/packages/web/src/pages/RankingPage.tsx`
 - Modify: `apps/ts/packages/web/src/hooks/useRanking.ts`
@@ -297,6 +299,16 @@ git commit -m "perf(api): isolate blocking ranking reads"
 - Consumes generated `scope` query type from the OpenAPI contract.
 - Produces frontend view-to-scope mapping with no local financial calculation.
 - Produces exported/testable `shouldRetry(failureCount, error)` recognizing `ApiError` and `HttpRequestError`.
+
+- [ ] **Step 0: Synchronize the additive backend contract**
+
+Run:
+
+```bash
+bun --cwd=apps/ts run --filter @trading25/contracts bt:sync
+```
+
+Expected: the generated Ranking query type gains optional `scope`; no unrelated schema drift is introduced.
 
 - [ ] **Step 1: Write failing view-scope and URL tests**
 
@@ -328,11 +340,11 @@ Run the commands from Step 3. Expected: all tests pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/ts/packages/api-clients/src/analytics/AnalyticsClient.ts apps/ts/packages/api-clients/src/analytics/AnalyticsClient.test.ts apps/ts/packages/web/src/pages/RankingPage.tsx apps/ts/packages/web/src/pages/RankingPage.test.tsx apps/ts/packages/web/src/hooks/useRanking.ts apps/ts/packages/web/src/hooks/useRanking.test.tsx apps/ts/packages/web/src/providers/QueryProvider.tsx apps/ts/packages/web/src/providers/QueryProvider.test.ts
+git add apps/ts/packages/contracts/openapi/bt-openapi.json apps/ts/packages/contracts/src/clients/backtest/generated/bt-api-types.ts apps/ts/packages/api-clients/src/analytics/AnalyticsClient.ts apps/ts/packages/api-clients/src/analytics/AnalyticsClient.test.ts apps/ts/packages/web/src/pages/RankingPage.tsx apps/ts/packages/web/src/pages/RankingPage.test.tsx apps/ts/packages/web/src/hooks/useRanking.ts apps/ts/packages/web/src/hooks/useRanking.test.tsx apps/ts/packages/web/src/providers/QueryProvider.tsx apps/ts/packages/web/src/providers/QueryProvider.test.ts
 git commit -m "perf(web): request only visible ranking data"
 ```
 
-### Task 6: Synchronize contracts and prove the performance change
+### Task 6: Verify contracts and prove the performance change
 
 **Files:**
 - Modify: `apps/ts/packages/contracts/openapi/bt-openapi.json`
@@ -341,15 +353,15 @@ git commit -m "perf(web): request only visible ranking data"
 **Interfaces:**
 - Produces generated TypeScript query type containing optional `scope`.
 
-- [ ] **Step 1: Regenerate the OpenAPI contract**
+- [ ] **Step 1: Verify the generated OpenAPI contract is current**
 
 Run:
 
 ```bash
-bun --cwd=apps/ts run --filter @trading25/contracts bt:sync
+bun --cwd=apps/ts run --filter @trading25/contracts bt:check
 ```
 
-Expected: generated contract includes `scope` and no unrelated schema drift.
+Expected: generated contract includes `scope` and the check reports no drift.
 
 - [ ] **Step 2: Run focused and cross-project verification**
 
@@ -382,12 +394,9 @@ git diff --stat origin/main...HEAD
 
 Expected: only Ranking performance, tests, contract generation, design, and plan files are changed.
 
-- [ ] **Step 5: Commit generated contract updates**
+- [ ] **Step 5: Commit any verification-only corrections**
 
-```bash
-git add apps/ts/packages/contracts
-git commit -m "chore(contracts): sync ranking scope"
-```
+If verification exposes a real contract or implementation defect, add a failing regression test first, fix it, rerun the covering checks, and commit only those corrective files. If no defect is found, do not create an empty commit.
 
 ### Task 7: Final review and publication
 
