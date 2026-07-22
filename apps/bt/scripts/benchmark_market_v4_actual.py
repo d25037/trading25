@@ -159,7 +159,7 @@ def _seed(fixture: dict[str, object], workspace: Path) -> dict[str, object]:
         codes,
         start=date(2026, 1, 1),
     )
-    session = _factory(workspace).reset_and_open()
+    session = _factory(workspace).reset_and_open_v4()
     store = session.handles.time_series_store
     try:
         store.publish_topix_data(

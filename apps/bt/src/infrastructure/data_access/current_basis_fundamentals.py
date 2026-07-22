@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-from src.application.contracts.fundamentals_pit import FundamentalsPitSnapshotError
 from src.infrastructure.db.market.market_reader import MarketDbQueryable
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
+from src.shared.fundamentals_pit_errors import FundamentalsPitSnapshotError
 from src.shared.provider_stock_window import validate_provider_plan
 
 

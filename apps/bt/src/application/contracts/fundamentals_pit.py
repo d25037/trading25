@@ -4,20 +4,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Literal
 from collections.abc import Sequence
+from typing import Any
 
 import pandas as pd
 
 from src.infrastructure.external_api.jquants_client import StockInfo
+from src.shared.fundamentals_pit_errors import (
+    FundamentalsPitReason,
+    FundamentalsPitSnapshotError,
+)
 
-
-FundamentalsPitReason = Literal[
-    "stock_not_listed_as_of",
-    "provider_window_required",
-    "current_adjusted_metrics_required",
-    "stock_master_snapshot_required",
-    "pit_snapshot_inconsistent",
+__all__ = [
+    "FundamentalsPitReason",
+    "FundamentalsPitSnapshot",
+    "FundamentalsPitSnapshotError",
 ]
 
 
@@ -37,9 +38,3 @@ class FundamentalsPitSnapshot:
     daily_valuation: Sequence[dict[str, Any]]
     ohlcv: pd.DataFrame
     prime_liquidity_panel: pd.DataFrame
-
-
-class FundamentalsPitSnapshotError(RuntimeError):
-    def __init__(self, reason: FundamentalsPitReason, message: str) -> None:
-        self.reason = reason
-        super().__init__(message)
