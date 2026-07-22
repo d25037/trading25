@@ -68,8 +68,33 @@ class TestGetStockOhlcv:
         assert result is not None
         assert len(result) == 3
         assert result[0].date == "2024-01-15"
-        assert result[0].volume == 1000000
-        assert isinstance(result[0].volume, int)
+        assert result[0].volume == 1000000.0
+        assert isinstance(result[0].volume, float)
+
+    def test_preserves_fractional_adjusted_volume(self):
+        class MockReader:
+            def query_one(self, _sql, _params=()):
+                return {"code": "72030"}
+
+            def query(self, _sql, _params=()):
+                return [
+                    {
+                        "date": "2024-01-15",
+                        "open": 100.0,
+                        "high": 110.0,
+                        "low": 95.0,
+                        "close": 105.0,
+                        "volume": 1000.5,
+                    }
+                ]
+
+        svc = MarketDataService(cast(MarketDbReader, MockReader()))
+
+        result = svc.get_stock_ohlcv("7203")
+
+        assert result is not None
+        assert result[0].volume == 1000.5
+        assert isinstance(result[0].volume, float)
 
     def test_with_date_range(self, service):
         """日付範囲指定"""
@@ -212,7 +237,7 @@ class TestGetAllStocks:
             assert len(stock.data) > 0
             for rec in stock.data:
                 assert rec.date != ""
-                assert isinstance(rec.volume, int)
+                assert isinstance(rec.volume, float)
 
 
 class TestGetTopix:

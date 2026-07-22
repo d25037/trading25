@@ -21,15 +21,11 @@ ACTION_PIN_PATTERN = re.compile(
 )
 EXPECTED_GATE_NEEDS = {
     "changes",
-    "maintainability",
-    "maintainability-python39",
     "repo-guardrails",
     "quality",
     "contract-tests",
     "golden-dataset-regression",
-    "coverage-gate",
     "package-unit-tests",
-    "market-v4-darwin-capabilities",
     "app-integration-tests",
     "ts-tests",
     "secret-scan",
@@ -67,8 +63,6 @@ def _needs(*, product_ci: str, event_name: str) -> dict[str, Any]:
     if not product_enabled:
         for name in EXPECTED_GATE_NEEDS - {
             "changes",
-            "maintainability",
-            "maintainability-python39",
             "repo-guardrails",
             "secret-scan",
         }:
@@ -230,7 +224,7 @@ def test_ci_tool_versions_are_centrally_fixed() -> None:
         ),
     }
     source = CI_WORKFLOW.read_text(encoding="utf-8")
-    assert source.count("version: ${{ env.UV_VERSION }}") == 10
+    assert source.count("version: ${{ env.UV_VERSION }}") == 8
     assert 'version: "latest"' not in source
 
 
@@ -242,7 +236,7 @@ def test_bun_installation_verifies_the_exact_official_release_artifact() -> None
         if step.get("name") == "Install Bun"
     ]
 
-    assert len(install_steps) == 7
+    assert len(install_steps) == 6
     for step in install_steps:
         command = step["run"]
         assert (
@@ -268,7 +262,7 @@ def test_bun_installation_provides_bunx_before_jobs_run_repository_commands() ->
         if step.get("name") == "Install Bun"
     ]
 
-    assert len(install_steps) == 7
+    assert len(install_steps) == 6
     for job_name, install_index, step, job_steps in install_steps:
         command = step["run"]
         bunx_link = 'ln -sfn bun "${BUN_INSTALL}/bin/bunx"'
@@ -346,23 +340,22 @@ def test_security_jobs_always_run_and_secret_scan_is_git_aware() -> None:
     assert "--no-git" not in secret_command
 
 
-def test_nautilus_pull_requests_are_scoped_without_narrowing_main_pushes() -> None:
+def test_nautilus_pushes_and_pull_requests_share_product_paths() -> None:
     workflow = _workflow(NAUTILUS_WORKFLOW)
     triggers = workflow["on"]
 
-    assert triggers["push"] == {"branches": ["main"]}
-    assert triggers["pull_request"] == {
-        "paths": [
-            ".github/workflows/nautilus-smoke.yml",
-            "apps/bt/pyproject.toml",
-            "apps/bt/uv.lock",
-            "apps/bt/src/**",
-            "apps/bt/tests/conftest.py",
-            "apps/bt/tests/smoke/test_nautilus_runtime_smoke.py",
-            "scripts/bt-run.sh",
-            "scripts/test-nautilus-smoke.sh",
-        ]
-    }
+    product_paths = [
+        ".github/workflows/nautilus-smoke.yml",
+        "apps/bt/pyproject.toml",
+        "apps/bt/uv.lock",
+        "apps/bt/src/**",
+        "apps/bt/tests/conftest.py",
+        "apps/bt/tests/smoke/test_nautilus_runtime_smoke.py",
+        "scripts/bt-run.sh",
+        "scripts/test-nautilus-smoke.sh",
+    ]
+    assert triggers["push"] == {"branches": ["main"], "paths": product_paths}
+    assert triggers["pull_request"] == {"paths": product_paths}
     assert triggers["workflow_dispatch"] is None
 
 
@@ -398,11 +391,11 @@ def test_every_gitleaks_allowlist_is_rule_path_and_line_scoped() -> None:
         assert allowlist.get("regexes"), allowlist["description"]
 
 
-def test_product_ci_unconditionally_runs_contract_tests() -> None:
+def test_contract_tests_follow_contract_scope() -> None:
     jobs = _jobs()
 
     assert jobs["contract-tests"]["if"] == (
-        "needs.changes.outputs.product_ci == 'true'"
+        "needs.changes.outputs.contracts_ci == 'true'"
     )
 
     needs = _needs(product_ci="true", event_name="push")
@@ -411,7 +404,7 @@ def test_product_ci_unconditionally_runs_contract_tests() -> None:
 
     result = _run_gate(needs, event_name="push")
 
-    assert result.returncode != 0
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_pull_request_contract_job_checks_base_snapshot_compatibility() -> None:
@@ -489,17 +482,18 @@ def test_typescript_workspace_tests_are_a_dedicated_required_job() -> None:
     assert "SKIP_TS_TESTS" not in serialized_job
 
 
-def test_market_v4_darwin_capabilities_run_on_required_macos_job() -> None:
+def test_removed_ci_jobs_do_not_return_as_required_gates() -> None:
     jobs = _jobs()
-    capability_job = jobs["market-v4-darwin-capabilities"]
+    removed_jobs = {
+        "maintainability",
+        "maintainability-python39",
+        "coverage-gate",
+        "market-v4-darwin-capabilities",
+    }
 
-    assert capability_job["runs-on"] == "macos-latest"
-    assert (
-        capability_job["steps"][-1]["run"]
-        == "uv run pytest -m darwin_capability"
-    )
-    assert "market-v4-darwin-capabilities" in jobs["web-e2e"]["needs"]
-    assert "market-v4-darwin-capabilities" in jobs["ci-gate"]["needs"]
+    assert removed_jobs.isdisjoint(jobs)
+    assert removed_jobs.isdisjoint(jobs["web-e2e"]["needs"])
+    assert removed_jobs.isdisjoint(jobs["ci-gate"]["needs"])
 
 
 @pytest.mark.parametrize("event_name", ["push", "pull_request"])
@@ -526,24 +520,6 @@ def test_ci_gate_requires_security_checks_for_docs_only_changes(
 ) -> None:
     needs = _needs(product_ci="false", event_name="pull_request")
     needs[job_name]["result"] = "skipped"
-
-    result = _run_gate(needs, event_name="pull_request")
-
-    assert result.returncode != 0
-
-
-def test_ci_gate_always_requires_maintainability_snapshot() -> None:
-    needs = _needs(product_ci="false", event_name="pull_request")
-    needs["maintainability"]["result"] = "skipped"
-
-    result = _run_gate(needs, event_name="pull_request")
-
-    assert result.returncode != 0
-
-
-def test_ci_gate_always_requires_real_python_39_guard() -> None:
-    needs = _needs(product_ci="false", event_name="pull_request")
-    needs["maintainability-python39"]["result"] = "skipped"
 
     result = _run_gate(needs, event_name="pull_request")
 

@@ -264,60 +264,12 @@ def test_check_mode_reports_drift_and_does_not_rewrite_baseline(
     assert markdown_path.read_bytes() == original_markdown
 
 
-def test_ci_runs_maintainability_check_under_python_312() -> None:
+def test_maintainability_snapshot_is_a_local_guardrail_not_a_ci_job() -> None:
     with CI_WORKFLOW.open(encoding="utf-8") as workflow_file:
         jobs = YAML(typ="safe").load(workflow_file)["jobs"]
-    maintainability_job = jobs["maintainability"]
-    setup_python = next(
-        step
-        for step in maintainability_job["steps"]
-        if step.get("uses", "").startswith("actions/setup-python@")
-    )
-    maintainability = next(
-        step
-        for step in maintainability_job["steps"]
-        if step.get("name") == "Check maintainability snapshot"
-    )
 
-    assert "if" not in maintainability_job
-    assert setup_python["with"]["python-version"] == "3.12"
-    assert maintainability["run"] == (
-        "python scripts/maintainability_snapshot.py --root . "
-        "--json-out docs/maintainability-snapshot-latest.json "
-        "--md-out docs/maintainability-snapshot-latest.md --check"
-    )
-
-
-def test_ci_executes_real_python_39_guard_and_requires_it() -> None:
-    with CI_WORKFLOW.open(encoding="utf-8") as workflow_file:
-        jobs = YAML(typ="safe").load(workflow_file)["jobs"]
-    guard_job = jobs["maintainability-python39"]
-    setup_python = next(
-        step
-        for step in guard_job["steps"]
-        if step.get("uses", "").startswith("actions/setup-python@")
-    )
-    guard_step = next(
-        step
-        for step in guard_job["steps"]
-        if step.get("name") == "Verify Python 3.9 fail-fast guard"
-    )
-
-    assert "if" not in guard_job
-    assert setup_python["with"]["python-version"] == "3.9"
-    command = guard_step["run"]
-    assert "python scripts/maintainability_snapshot.py --root ." in command
-    assert 'test "${status}" -eq 2' in command
-    assert "test ! -s /tmp/maintainability-stdout.txt" in command
-    assert (
-        "expected='maintainability_snapshot.py requires Python >=3.12. "
-        f"Run: {RECOVERY_COMMAND}'"
-    ) in command
-    assert (
-        'test "$(cat /tmp/maintainability-stderr.txt)" = "${expected}"'
-        in command
-    )
-    assert "maintainability-python39" in jobs["ci-gate"]["needs"]
+    assert "maintainability" not in jobs
+    assert "maintainability-python39" not in jobs
 
 
 def test_prepush_runs_maintainability_check_through_bt_python() -> None:

@@ -3,6 +3,15 @@ name: Nautilus Smoke
 on:
   push:
     branches: [main]
+    paths:
+      - .github/workflows/nautilus-smoke.yml
+      - apps/bt/pyproject.toml
+      - apps/bt/uv.lock
+      - apps/bt/src/**
+      - apps/bt/tests/conftest.py
+      - apps/bt/tests/smoke/test_nautilus_runtime_smoke.py
+      - scripts/bt-run.sh
+      - scripts/test-nautilus-smoke.sh
   pull_request:
     paths:
       - .github/workflows/nautilus-smoke.yml

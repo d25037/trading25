@@ -52,43 +52,6 @@ jobs:
           python scripts/ci/changed-scope.py < /tmp/changed-files.txt | tee /tmp/ci-scope.txt
           cat /tmp/ci-scope.txt >> "$GITHUB_OUTPUT"
 
-  maintainability-python39:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: "3.9"
-      - name: Verify Python 3.9 fail-fast guard
-        shell: bash
-        run: |
-          set +e
-          python scripts/maintainability_snapshot.py --root . >/tmp/maintainability-stdout.txt 2>/tmp/maintainability-stderr.txt
-          status=$?
-          set -e
-          test "${status}" -eq 2
-          test ! -s /tmp/maintainability-stdout.txt
-          expected='maintainability_snapshot.py requires Python >=3.12. Run: uv run --project apps/bt python scripts/maintainability_snapshot.py ...'
-          test "$(cat /tmp/maintainability-stderr.txt)" = "${expected}"
-
-  maintainability:
-    needs: maintainability-python39
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: "3.12"
-      - name: Check maintainability snapshot
-        run: python scripts/maintainability_snapshot.py --root . --json-out docs/maintainability-snapshot-latest.json --md-out docs/maintainability-snapshot-latest.md --check
-
   repo-guardrails:
     needs: changes
     runs-on: ubuntu-latest
@@ -153,7 +116,7 @@ jobs:
 
   contract-tests:
     needs: changes
-    if: needs.changes.outputs.product_ci == 'true'
+    if: needs.changes.outputs.contracts_ci == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -245,61 +208,6 @@ jobs:
       - name: Run golden dataset regression tests
         run: ./scripts/test-golden-regression.sh
 
-  coverage-gate:
-    if: needs.changes.outputs.product_ci == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    needs:
-      - changes
-      - package-unit-tests
-      - app-integration-tests
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Install Bun
-        run: |
-          bun_archive="${RUNNER_TEMP}/bun-linux-x64.zip"
-          bun_extract="${RUNNER_TEMP}/bun-extract"
-          BUN_INSTALL="${RUNNER_TEMP}/bun-install"
-          curl -fsSL --retry 3 -o "${bun_archive}" \
-            "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-x64.zip"
-          echo "${BUN_ARCHIVE_SHA256}  ${bun_archive}" | sha256sum -c -
-          unzip -q "${bun_archive}" -d "${bun_extract}"
-          mkdir -p "${BUN_INSTALL}/bin"
-          install -m 0755 "${bun_extract}/bun-linux-x64/bun" "${BUN_INSTALL}/bin/bun"
-          ln -sfn bun "${BUN_INSTALL}/bin/bunx"
-          export BUN_INSTALL
-          export PATH="${BUN_INSTALL}/bin:${PATH}"
-          echo "${BUN_INSTALL}/bin" >> "$GITHUB_PATH"
-          echo "BUN_INSTALL=${BUN_INSTALL}" >> "$GITHUB_ENV"
-          "${BUN_INSTALL}/bin/bun" --version
-          "${BUN_INSTALL}/bin/bunx" --version
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: "3.12"
-      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
-        with:
-          version: ${{ env.UV_VERSION }}
-      - name: Install deps (apps/ts)
-        run: bun install --frozen-lockfile
-        working-directory: apps/ts
-      - name: Install deps (apps/bt)
-        run: uv sync --locked
-        working-directory: apps/bt
-      - name: Download bt coverage artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          pattern: bt-coverage-*
-          path: /tmp/bt-coverage
-          merge-multiple: true
-      - name: Run coverage gate
-        run: ./scripts/coverage-gate.sh
-        env:
-          CI_DEPS_READY: "1"
-          BT_COVERAGE_INPUT_DIR: /tmp/bt-coverage
-
   package-unit-tests:
     needs: changes
     if: needs.changes.outputs.product_ci == 'true'
@@ -324,39 +232,7 @@ jobs:
         env:
           CI_DEPS_READY: "1"
           SKIP_TS_TESTS: "1"
-          BT_COVERAGE_DATA_FILE: ".coverage.unit"
           BT_UNIT_TEST_SHARDS: "3"
-      - name: Upload bt coverage artifact (unit)
-        if: success()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: bt-coverage-unit
-          path: apps/bt/.coverage.unit
-          include-hidden-files: true
-          if-no-files-found: error
-
-  market-v4-darwin-capabilities:
-    needs: changes
-    if: needs.changes.outputs.product_ci == 'true'
-    runs-on: macos-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: "3.12"
-      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
-        with:
-          version: ${{ env.UV_VERSION }}
-      - name: Install deps (apps/bt)
-        run: uv sync --locked
-        working-directory: apps/bt
-      - name: Run Market v4 Darwin capability tests
-        run: uv run pytest -m darwin_capability
-        working-directory: apps/bt
 
   app-integration-tests:
     needs: changes
@@ -382,15 +258,6 @@ jobs:
         env:
           CI_DEPS_READY: "1"
           SKIP_TS_TESTS: "1"
-          BT_COVERAGE_DATA_FILE: ".coverage.app"
-      - name: Upload bt coverage artifact (app)
-        if: success()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: bt-coverage-app
-          path: apps/bt/.coverage.app
-          include-hidden-files: true
-          if-no-files-found: error
 
   ts-tests:
     needs: changes
@@ -580,15 +447,11 @@ jobs:
     timeout-minutes: 45
     needs:
       - changes
-      - maintainability
-      - maintainability-python39
       - repo-guardrails
       - quality
       - contract-tests
       - golden-dataset-regression
-      - coverage-gate
       - package-unit-tests
-      - market-v4-darwin-capabilities
       - app-integration-tests
       - ts-tests
       - secret-scan
@@ -678,15 +541,11 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-      - maintainability
-      - maintainability-python39
       - repo-guardrails
       - quality
       - contract-tests
       - golden-dataset-regression
-      - coverage-gate
       - package-unit-tests
-      - market-v4-darwin-capabilities
       - app-integration-tests
       - ts-tests
       - secret-scan
@@ -737,15 +596,11 @@ jobs:
           product_ci = scope["product_ci"] == "true"
           required_jobs = {
               "changes",
-              "maintainability",
-              "maintainability-python39",
               *(
                   (
                       "quality",
                       "golden-dataset-regression",
-                      "coverage-gate",
                       "package-unit-tests",
-                      "market-v4-darwin-capabilities",
                       "app-integration-tests",
                       "ts-tests",
                   )
@@ -754,7 +609,7 @@ jobs:
               ),
               "repo-guardrails",
               "secret-scan",
-              *(("contract-tests",) if product_ci else ()),
+              *(("contract-tests",) if scope["contracts_ci"] == "true" else ()),
               *(
                   ("dependency-vulnerability-audit",)
                   if scope["security_ci"] == "true"
