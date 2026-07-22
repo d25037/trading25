@@ -193,11 +193,9 @@ function ActiveProgressSection({
 }
 
 function CompletedResultSection({
-  mode,
   status,
   result,
 }: {
-  mode: SyncJobResponse['mode'];
   status: SyncJobResponse['status'];
   result: SyncJobResponse['result'];
 }) {
@@ -207,7 +205,6 @@ function CompletedResultSection({
 
   const failedDates = result.failedDates ?? [];
   const errors = result.errors ?? [];
-  const stocksLabel = mode === 'repair' ? 'Stocks Refreshed:' : 'Stocks Updated:';
   const hasErrors = errors.length > 0;
   const visibleErrors = errors.slice(0, 3);
 
@@ -219,7 +216,7 @@ function CompletedResultSection({
           <span className="ml-2 font-medium">{result.totalApiCalls}</span>
         </div>
         <div>
-          <span className="text-muted-foreground">{stocksLabel}</span>
+          <span className="text-muted-foreground">Stocks Updated:</span>
           <span className="ml-2 font-medium">{result.stocksUpdated}</span>
         </div>
         <div>
@@ -316,7 +313,7 @@ export function SyncStatusCard({
           latestFetchDetail={latestFetchDetail}
           recentFetchDetails={recentFetchDetails}
         />
-        <CompletedResultSection mode={job.mode} status={job.status} result={job.result} />
+        <CompletedResultSection status={job.status} result={job.result} />
         <SyncErrorSection status={job.status} error={job.error} />
         <CancelledSection status={job.status} />
       </div>

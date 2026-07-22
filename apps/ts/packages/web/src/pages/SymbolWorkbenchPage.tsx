@@ -230,7 +230,7 @@ function ErrorState({ error }: { error: unknown }) {
           )}
           {showMarketDbGuidance && (
             <p className="text-sm text-amber-700">
-              Relative mode requires local TOPIX data. Run Market DB sync or repair to restore the benchmark snapshot.
+              Relative mode requires local TOPIX data. Run incremental Market DB sync to restore the benchmark snapshot.
             </p>
           )}
         </div>

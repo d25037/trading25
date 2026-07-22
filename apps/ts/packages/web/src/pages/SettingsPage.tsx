@@ -7,7 +7,7 @@ import type {
   SyncJobResponse,
   SyncMode,
 } from '@trading25/contracts/types/api-response-types';
-import { Activity, Database, Loader2, RotateCcw, Wrench } from 'lucide-react';
+import { Activity, Database, Loader2, RotateCcw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
   CompactMetric,
@@ -46,13 +46,7 @@ import { ApiError } from '@/lib/api-client';
 import { ACTIVE_SYNC_JOB_STORAGE_KEY, readStoredString, writeStoredString } from '@/lib/persistedState';
 import { cn } from '@/lib/utils';
 import { formatBytes, formatCount, formatOptionalTimestamp } from '@/utils/formatters';
-import {
-  hasRepairTargets,
-  type RepairTargets,
-  resolveRepairTargets,
-  SnapshotStatus,
-  sumRepairTargets,
-} from './SettingsMarketDbPanels';
+import { SnapshotStatus } from './SettingsMarketDbPanels';
 import { buildStorageHelpText, resolveSnapshotObservedAt } from './SettingsMarketDbSnapshot';
 
 const RESET_CONFIRMATION_TOKEN = 'RESET';
@@ -73,31 +67,13 @@ function persistActiveSyncJobId(jobId: string | null): void {
 
 function buildStartSyncRequest(
   syncMode: SyncMode,
-  enforceBulkForStockData: boolean,
-  resetBeforeSync: boolean
+  enforceBulkForStockData: boolean
 ): StartSyncRequest {
-  const request: StartSyncRequest = { mode: syncMode, enforceBulkForStockData, resetBeforeSync: false };
-  if (syncMode === 'initial' && resetBeforeSync) {
-    request.resetBeforeSync = true;
-  }
-  return request;
-}
-
-function useResetBeforeSyncGuard(
-  syncMode: SyncMode,
-  resetBeforeSyncEligible: boolean,
-  setResetBeforeSync: (value: boolean) => void,
-  setResetConfirmOpen: (value: boolean) => void,
-  setResetConfirmationText: (value: string) => void
-): void {
-  useEffect(() => {
-    if (syncMode === 'initial' && resetBeforeSyncEligible) {
-      return;
-    }
-    setResetBeforeSync(false);
-    setResetConfirmOpen(false);
-    setResetConfirmationText('');
-  }, [syncMode, resetBeforeSyncEligible, setResetBeforeSync, setResetConfirmOpen, setResetConfirmationText]);
+  return {
+    mode: syncMode,
+    enforceBulkForStockData,
+    resetBeforeSync: syncMode === 'initial',
+  };
 }
 
 type StatusTone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger';
@@ -258,9 +234,6 @@ interface DatabaseSyncSectionProps {
   onSyncModeChange: (mode: SyncMode) => void;
   enforceBulkForStockData: boolean;
   onEnforceBulkChange: (checked: boolean) => void;
-  resetBeforeSync: boolean;
-  onResetBeforeSyncChange: (checked: boolean) => void;
-  resetBeforeSyncEligible: boolean;
   isRunning: boolean;
   isStarting: boolean;
   onStartSync: () => void;
@@ -273,9 +246,6 @@ function DatabaseSyncSection({
   onSyncModeChange,
   enforceBulkForStockData,
   onEnforceBulkChange,
-  resetBeforeSync,
-  onResetBeforeSyncChange,
-  resetBeforeSyncEligible,
   isRunning,
   isStarting,
   onStartSync,
@@ -294,7 +264,7 @@ function DatabaseSyncSection({
             <CardTitle className="text-xl tracking-tight">Database Sync</CardTitle>
             <CardDescription>
               Synchronize J-Quants market data into the local DuckDB source of truth. Use incremental to resume
-              interrupted syncs. Initial mode becomes destructive only if you enable reset below.
+              interrupted syncs. Initial RESET always deletes and rebuilds the local market snapshot.
             </CardDescription>
           </div>
         </div>
@@ -302,29 +272,12 @@ function DatabaseSyncSection({
       <CardContent className="space-y-4">
         <SyncModeSelect value={syncMode} onChange={onSyncModeChange} disabled={isRunning || isStarting} />
         {syncMode === 'initial' ? (
-          <div className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="space-y-1">
-                <Label htmlFor="reset-before-sync">Reset market.duckdb + parquet first</Label>
-                <p className="text-xs text-muted-foreground">
-                  Deletes the current market snapshot before the initial sync rebuilds the local 10-year window.
-                </p>
-              </div>
-              <Switch
-                id="reset-before-sync"
-                checked={resetBeforeSync}
-                onCheckedChange={onResetBeforeSyncChange}
-                disabled={isRunning || isStarting || !resetBeforeSyncEligible}
-              />
-            </div>
-            {!resetBeforeSyncEligible ? (
-              <p className="text-xs text-amber-700 dark:text-amber-300">
-                This Market root is not eligible for a live reset. Follow the schema validation recommendation before
-                retrying Database Sync.
-              </p>
-            ) : null}
+          <div className="space-y-2 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4">
+            <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+              Initial RESET deletes `market.duckdb` and `parquet/` before rebuilding the local 10-year window.
+            </p>
             <p className="text-xs text-muted-foreground">
-              Existing datasets must be rebuilt after a reset. `portfolio.db` is not touched.
+              Typed RESET confirmation is required. Existing datasets must be rebuilt; `portfolio.db` is not touched.
             </p>
           </div>
         ) : null}
@@ -346,94 +299,6 @@ function DatabaseSyncSection({
         <SyncActionButton isRunning={isRunning} isStarting={isStarting} onClick={onStartSync} />
 
         {errorMessage && <div className="rounded-xl bg-red-500/10 p-3 text-sm text-red-500">{errorMessage}</div>}
-      </CardContent>
-    </Card>
-  );
-}
-
-interface WarningRecoverySectionProps {
-  repairTargets: RepairTargets;
-  isValidationLoading: boolean;
-  isRunning: boolean;
-  isStarting: boolean;
-  onRepairWarnings: () => void;
-  className?: string;
-}
-
-function WarningRecoverySection({
-  repairTargets,
-  isValidationLoading,
-  isRunning,
-  isStarting,
-  onRepairWarnings,
-  className,
-}: WarningRecoverySectionProps) {
-  const canRepair = hasRepairTargets(repairTargets);
-  const repairSignals = sumRepairTargets(repairTargets);
-
-  return (
-    <Card className={cn('border-border/70 bg-[var(--app-surface)] shadow-none', className)}>
-      <CardHeader className="pb-4">
-        <SectionEyebrow>Maintenance</SectionEyebrow>
-        <div className="mt-1 flex items-start gap-3">
-          <div className="app-panel-muted flex h-10 w-10 items-center justify-center rounded-xl text-amber-700 dark:text-amber-300">
-            <Wrench className="h-5 w-5" />
-          </div>
-          <div className="space-y-1">
-            <CardTitle className="text-xl tracking-tight">Warning Recovery</CardTitle>
-            <CardDescription>
-              Resolve only the DuckDB snapshot warnings that `repair` sync can actually fix. Legacy or incompatible
-              stock-price snapshots are outside Warning Recovery; follow the schema validation recommendation. N225
-              options coverage gaps must be handled from Database Sync.
-            </CardDescription>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-              Missing listed-market fundamentals
-            </p>
-            <p className="mt-2 text-lg font-semibold">{repairTargets.missingListedMarketFundamentals}</p>
-          </div>
-          <div className="rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Failed fundamentals dates</p>
-            <p className="mt-2 text-lg font-semibold">{repairTargets.failedFundamentalsDates}</p>
-          </div>
-          <div className="rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Failed fundamentals codes</p>
-            <p className="mt-2 text-lg font-semibold">{repairTargets.failedFundamentalsCodes}</p>
-          </div>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Runs `repair` sync mode to backfill listed-market fundamentals and related non-price warnings. It does not
-          rebuild incompatible stock-price snapshots or ingest `options_225_data`; follow the schema validation
-          recommendation for incompatible roots, and use Database Sync with `incremental` for options gaps.
-        </p>
-        <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Repair signals</p>
-            <p className="mt-1 text-sm font-semibold">{repairSignals}</p>
-          </div>
-          {!canRepair && !isValidationLoading ? (
-            <span className="rounded-full border border-border/70 px-3 py-1 text-xs text-muted-foreground">
-              No repairs needed
-            </span>
-          ) : null}
-        </div>
-        <Button onClick={onRepairWarnings} disabled={isRunning || isStarting || !canRepair} className="w-full">
-          {isStarting || isRunning ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Repair Job in Progress...
-            </>
-          ) : canRepair ? (
-            'Repair Warnings'
-          ) : (
-            'No Repairs Needed'
-          )}
-        </Button>
       </CardContent>
     </Card>
   );
@@ -538,7 +403,7 @@ function ManualStockRefreshSection({
   return (
     <Card className={cn('border-border/70 bg-[var(--app-surface)] shadow-none', className)}>
       <CardHeader className="pb-4">
-        <SectionEyebrow>Targeted Repair</SectionEyebrow>
+        <SectionEyebrow>Targeted Maintenance</SectionEyebrow>
         <div className="mt-1 flex items-start gap-3">
           <div className="app-panel-muted flex h-10 w-10 items-center justify-center rounded-xl text-primary">
             <RotateCcw className="h-5 w-5" />
@@ -546,7 +411,7 @@ function ManualStockRefreshSection({
           <div className="space-y-1">
             <CardTitle className="text-xl tracking-tight">Stock Refresh (Manual)</CardTitle>
             <CardDescription>
-              Re-fetch specific DuckDB stock series when you need a one-off repair outside the chart header flow.
+              Re-fetch specific DuckDB stock series when you need a one-off refresh outside the chart header flow.
             </CardDescription>
           </div>
         </div>
@@ -666,7 +531,7 @@ function EmptyJobMonitorCard() {
           <div className="space-y-1">
             <CardTitle className="text-xl tracking-tight">Live Sync Job</CardTitle>
             <CardDescription>
-              Start a sync or repair job to inspect progress, fetch strategy details, and cancellation.
+              Start a sync job to inspect progress, fetch strategy details, and cancellation.
             </CardDescription>
           </div>
         </div>
@@ -685,7 +550,6 @@ interface MarketDbHeroProps {
   dbValidation: MarketValidationResponse | undefined;
   isValidationLoading: boolean;
   currentJob: SyncJobResponse | null;
-  repairSignalCount: number;
 }
 
 function MarketDbHero({
@@ -693,21 +557,19 @@ function MarketDbHero({
   dbValidation,
   isValidationLoading,
   currentJob,
-  repairSignalCount,
 }: MarketDbHeroProps) {
   const storageTotalBytes = dbStats?.storage?.totalBytes ?? dbStats?.databaseSize ?? 0;
   const introMetaItems = [
     { label: 'Source', value: dbStats?.timeSeriesSource ?? 'duckdb-parquet' },
     { label: 'Storage', value: formatBytes(storageTotalBytes) },
     { label: 'Status Checked', value: resolveSnapshotObservedAt(dbStats, dbValidation) },
-    { label: 'Repair Signals', value: repairSignalCount.toString() },
   ];
 
   return (
     <PageIntro
       eyebrow="Local Data Plane"
       title="Market DB"
-      description="Sync, inspect, and repair the local DuckDB market snapshot without leaving the operational workspace."
+      description="Sync and inspect the local DuckDB market snapshot without leaving the operational workspace."
       meta={<PageIntroMetaList items={introMetaItems} />}
       aside={
         <div className="grid gap-3 sm:grid-cols-2">
@@ -820,9 +682,8 @@ function MarketDbHealthColumn({
 }
 
 export function SettingsPage() {
-  const [syncMode, setSyncMode] = useState<SyncMode>('auto');
+  const [syncMode, setSyncMode] = useState<SyncMode>('incremental');
   const [enforceBulkForStockData, setEnforceBulkForStockData] = useState(false);
-  const [resetBeforeSync, setResetBeforeSync] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [resetConfirmationText, setResetConfirmationText] = useState('');
   const [activeJobId, setActiveJobId] = useState<string | null>(readPersistedActiveSyncJobId);
@@ -869,22 +730,9 @@ export function SettingsPage() {
     error: validationError,
     refetch: refetchDbValidation,
   } = useDbValidation({ isSyncRunning: isRunning });
-  const repairTargets = resolveRepairTargets(dbValidation);
   const startSyncErrorMessage = startSync.error?.message ?? null;
   const refreshErrorMessage = refreshStocks.error?.message ?? null;
   const currentJob = jobStatus ?? activeSyncJob ?? null;
-  const repairSignalCount = sumRepairTargets(repairTargets);
-  const resetBeforeSyncEligible =
-    dbStats?.schema?.resetBeforeSyncEligible === true && dbValidation?.schema?.resetBeforeSyncEligible === true;
-
-  useResetBeforeSyncGuard(
-    syncMode,
-    resetBeforeSyncEligible,
-    setResetBeforeSync,
-    setResetConfirmOpen,
-    setResetConfirmationText
-  );
-
   useEffect(() => {
     if (!isRunning) {
       return;
@@ -894,11 +742,7 @@ export function SettingsPage() {
   }, [isRunning, refetchDbStats, refetchDbValidation]);
 
   const submitStartSync = () => {
-    const request = buildStartSyncRequest(
-      syncMode,
-      enforceBulkForStockData,
-      resetBeforeSync && resetBeforeSyncEligible
-    );
+    const request = buildStartSyncRequest(syncMode, enforceBulkForStockData);
     startSync.mutate(request, {
       onSuccess: (data) => {
         setActiveJobId(data.jobId);
@@ -909,22 +753,12 @@ export function SettingsPage() {
   };
 
   const handleStartSync = () => {
-    if (syncMode === 'initial' && resetBeforeSync && resetBeforeSyncEligible) {
+    if (syncMode === 'initial') {
       setResetConfirmationText('');
       setResetConfirmOpen(true);
       return;
     }
     submitStartSync();
-  };
-
-  const handleRepairWarnings = () => {
-    setRefreshResult(null);
-    startSync.mutate(
-      { mode: 'repair', enforceBulkForStockData: false, resetBeforeSync: false },
-      {
-        onSuccess: (data) => setActiveJobId(data.jobId),
-      }
-    );
   };
 
   const handleCancel = () => {
@@ -961,40 +795,27 @@ export function SettingsPage() {
         dbValidation={dbValidation}
         isValidationLoading={isValidationLoading}
         currentJob={currentJob}
-        repairSignalCount={repairSignalCount}
       />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.88fr)]">
         <div className="space-y-6">
           <SectionHeading
             eyebrow="Operations"
-            title="Sync and repair"
-            description="The left side is for actions that change the local market DB: full syncs, warning repair, and targeted stock refresh."
+            title="Sync and maintenance"
+            description="The left side is for actions that change the local market DB: incremental updates, RESET initial sync, and targeted stock refresh."
           />
 
-          <div className="grid gap-6 lg:grid-cols-3">
+          <div className="grid gap-6 lg:grid-cols-2">
             <DatabaseSyncSection
               className="h-full"
               syncMode={syncMode}
               onSyncModeChange={setSyncMode}
               enforceBulkForStockData={enforceBulkForStockData}
               onEnforceBulkChange={setEnforceBulkForStockData}
-              resetBeforeSync={resetBeforeSync}
-              onResetBeforeSyncChange={setResetBeforeSync}
-              resetBeforeSyncEligible={resetBeforeSyncEligible}
               isRunning={isRunning}
               isStarting={startSync.isPending}
               onStartSync={handleStartSync}
               errorMessage={startSyncErrorMessage}
-            />
-
-            <WarningRecoverySection
-              className="h-full"
-              repairTargets={repairTargets}
-              isValidationLoading={isValidationLoading}
-              isRunning={isRunning}
-              isStarting={startSync.isPending}
-              onRepairWarnings={handleRepairWarnings}
             />
 
             <ProviderVintageSection dbStats={dbStats} />

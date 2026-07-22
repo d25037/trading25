@@ -3,7 +3,7 @@
 ## Decision
 - `J-Quants` は ingest/proxy 専用であり、verification path の SoT ではない。
 - `market.duckdb` は screening / charts / analytics / normal backtest / optimize / attribution / lab の SoT である。
-- Market Data Plane は schema v5 / `provider_adjusted_v1` のみを受理する。Market v4以前、malformed schema、または adjustment-mode-incompatible root は live reset で移行せず、`bt market-cutover cutover` の isolated full rebuild だけで再構築する。`resetBeforeSync` は既に compatible な Market v5 root の保守専用である。
+- Market Data Plane は schema v5 / `provider_adjusted_v1` のみを受理する。同期 API は既定の `incremental` と `resetBeforeSync=true` 必須の `initial` だけを提供する。incompatible / malformed root を含む full rebuild は `initial` が既存 `market.duckdb` / `parquet/` を削除して新しい Market v5 root を構築する。
 - `market.duckdb.stock_data_raw` は provider publication の SoT であり、raw `O/H/L/C/Vo + adjustment_factor` と provider-adjusted `AdjO/H/L/C/Vo` を同じper-code windowで保持する。
 - `market.duckdb.stock_data` は provider-adjusted current convenience projectionである。cutoff-aware Fundamentals / liquidityの入力には使わない。
 - `stock_provider_windows` はper-code coverage / provider as-of / canonical source fingerprintのSoT、`stock_adjustment_events`はそのwindowに所有されるevent ledgerのSoTである。
@@ -12,7 +12,6 @@
 - `market.duckdb.daily_valuation` は PER/PBR/PSR/forward PER/forward PSR と valuation 用 adjusted EPS/BPS、actual/forecast sales の consumer-facing SoT である。
 - `universe_preset` + `stock_master_daily` は all-stock universe selection の PIT SoT である。
 - `dataset snapshot` (`dataset.duckdb` + 物理`manifest.v2.json`) はpayload `schemaVersion: 4`のMarket v5 provider-basis bundleだけを受理する。normal run の SoT ではなく、`data_source=dataset_snapshot` + `static_universe=true` を明示した archived reproducibility run だけで使う。
-- Market v5 cutover の SoT は `bt market-cutover cutover` による isolated full rebuild である。passing rehearsal、exact provider vintage、Dataset4 semantic smoke、immutable pre-cutover backupを検証し、staged treeをatomic activationする。retained Market v4 promotionはineligibleで、v4はexact rollback backupとしてのみ保持する。
 - `SignalProcessor + compiled strategy IR + signal registry` は signal semantics の SoT である。
 - Research Published Readout の PIT universe invalidation / rerun queue は [`research-pit-invalidation-register.md`](research-pit-invalidation-register.md) を SoT とする。
 
@@ -28,7 +27,7 @@
 - `shared_config.dataset` は normal run で unsupported。`shared_config.universe_preset` を使い、物理 snapshot は `dataset_snapshot` として明示する。
 - chart overlay は `strategy_name` 指定時に `SignalProcessor` ベースで screening/backtest と同じ signal semantics を使う。
 - research readout は historical universe に latest membership を固定した headline を production / Ranking / Screening evidence として使わない。
-- cutover report / journal / backup / staging / retained-runtime / quarantine artifact は `operations/market-v5-cutover` だけを使い、旧namespaceへのfallback、in-place migration、dual readを行わない。journal は `prepared` / `exchange_started` / `activated` / `reported` を durable に記録し、fresh service は新規 preparation より先に exact same-ID recovery を行う。initial activation の `ROLLBACK_ALLOWED` caught failure だけが owned process join 後に exact immutable backup を restore する。`PRESERVE_FOR_RECOVERY` または any same-ID recovery failure は、その時点の exact active / staged / quarantine / backup / retained-runtime layout と evidence を保持し、exact same-ID retry だけで継続する。same-ID recovery が `prepared` / `exchange_started` から exchange と recovery smoke を進めた後に失敗しても backup restore は行わない。unjoined child は active / staging の両 lease を fence して recovery を defer する。operator は journal / operation lock / staging / backup / active / retained-runtime / quarantine を手動変更しない。
+- `initial` は破壊的操作として typed confirmation を必須とし、`incremental` は既存 root の更新と recoverable gap の backfill に限定する。in-place migration、dual read、旧 schema fallback は行わない。
 
 ## Provenance Contract
 - screening / fundamentals / ROE / margin / signal responses は共通 `provenance` を返す。

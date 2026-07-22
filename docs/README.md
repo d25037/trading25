@@ -28,7 +28,6 @@ and research notes can live here when a GitHub Issue or PR links back to them.
 | [`research-pit-invalidation-register.md`](research-pit-invalidation-register.md) | `living` | Cross-experiment PIT invalidation and rerun queue. Experiment READMEs remain the individual Published Readout SoT. |
 | [`ts-cli-scope.md`](ts-cli-scope.md) | `living` | TypeScript CLI deprecation and current workspace scope. |
 | [`unified-roadmap.md`](unified-roadmap.md) | `living` | Roadmap index and archive pointer. Verify linked GitHub Issue state before treating an item as open. |
-| [`runbooks/market-v5-cutover.md`](runbooks/market-v5-cutover.md) | `runbook` | The only supported operator path from a pre-v5 Market Data Plane to Market v5; no in-place migration or dual read is supported. |
 | [`phase5-reliability-observability-runbook.md`](phase5-reliability-observability-runbook.md) | `runbook` | Reliability and observability triage guidance. |
 | [`security/ci-security-triage-runbook.md`](security/ci-security-triage-runbook.md) | `runbook` | Security CI triage. |
 | [`security/runtime-secret-runbook.md`](security/runtime-secret-runbook.md) | `runbook` | Runtime secret handling and local J-Quants key setup. |

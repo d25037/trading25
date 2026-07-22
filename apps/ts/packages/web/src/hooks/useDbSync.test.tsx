@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 describe('useDbSync hooks', () => {
-  it('useStartSync starts a sync job', async () => {
+  it('useStartSync always enables reset for initial sync', async () => {
     vi.mocked(apiPost).mockResolvedValueOnce({ jobId: 'abc', mode: 'initial' });
     const { wrapper } = createTestWrapper();
     const { result } = renderHook(() => useStartSync(), { wrapper });
@@ -47,26 +47,25 @@ describe('useDbSync hooks', () => {
       mode: 'initial',
       dataPlane: { backend: 'duckdb-parquet' },
       enforceBulkForStockData: false,
-      resetBeforeSync: false,
+      resetBeforeSync: true,
     });
   });
 
-  it('useStartSync forwards resetBeforeSync when requested', async () => {
-    vi.mocked(apiPost).mockResolvedValueOnce({ jobId: 'abc', mode: 'initial' });
+  it('useStartSync defaults incremental sync to no reset', async () => {
+    vi.mocked(apiPost).mockResolvedValueOnce({ jobId: 'abc', mode: 'incremental' });
     const { wrapper } = createTestWrapper();
     const { result } = renderHook(() => useStartSync(), { wrapper });
 
     await act(async () => {
       await result.current.mutateAsync({
-        mode: 'initial',
-        resetBeforeSync: true,
+        mode: 'incremental',
       });
     });
 
     expect(apiPost).toHaveBeenCalledWith('/api/db/sync', {
-      mode: 'initial',
+      mode: 'incremental',
       enforceBulkForStockData: false,
-      resetBeforeSync: true,
+      resetBeforeSync: false,
     });
   });
 

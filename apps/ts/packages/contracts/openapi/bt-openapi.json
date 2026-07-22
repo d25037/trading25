@@ -8772,11 +8772,6 @@
             "title": "Requiredversion",
             "type": "integer"
           },
-          "resetBeforeSyncEligible": {
-            "default": false,
-            "title": "Resetbeforesynceligible",
-            "type": "boolean"
-          },
           "version": {
             "anyOf": [
               {
@@ -18686,12 +18681,10 @@
             "type": "boolean"
           },
           "mode": {
-            "default": "auto",
+            "default": "incremental",
             "enum": [
-              "auto",
               "initial",
-              "incremental",
-              "repair"
+              "incremental"
             ],
             "title": "Mode",
             "type": "string"

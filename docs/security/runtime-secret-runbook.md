@@ -72,29 +72,6 @@ unset JQUANTS_API_KEY
 
 Do not add this override to `.zshrc`, `config.env`, repo `.env`, or other persistent files.
 
-## Market v5 Full-Rebuild Cutover Commands
-
-`bt market-cutover rehearse` and `bt market-cutover cutover` deliberately fail
-before starting an owned server unless `JQUANTS_PLAN` is explicitly set to one
-of `free`, `light`, `standard`, or `premium`. They do not parse or source shell
-configuration themselves. This prevents a direct or detached cutover command
-from silently falling back to the five-requests-per-minute free limiter.
-
-Load the repo-external non-secret configuration into every shell or detached
-launcher that starts these commands:
-
-```bash
-set -a
-. "$HOME/.config/trading25/config.env"
-set +a
-uv run --directory apps/bt bt market-cutover rehearse --help
-```
-
-The API key remains an environment override or Keychain value as described
-above; never add it to `config.env`. Do not add a CLI plan override to bypass
-this environment gate. A background launcher must load `config.env` before it
-reads the Keychain and execs the cutover command.
-
 ## Rotation Procedure
 
 Use when leakage is suspected or periodic rotation is required.

@@ -240,12 +240,12 @@ describe('SyncStatusCard', () => {
     expect(screen.getByText('1')).toBeInTheDocument();
   });
 
-  it('uses repair-specific stocks label for completed repair jobs', () => {
+  it('uses the common stocks label for completed sync jobs', () => {
     render(
       <SyncStatusCard
         job={createJob({
           status: 'completed',
-          mode: 'repair',
+          mode: 'incremental',
           progress: undefined,
           result: {
             ...syncResultDefaults,
@@ -265,7 +265,8 @@ describe('SyncStatusCard', () => {
       />
     );
 
-    expect(screen.getByText('Stocks Refreshed:')).toBeInTheDocument();
+    expect(screen.getByText('Stocks Updated:')).toBeInTheDocument();
+    expect(screen.queryByText('Stocks Refreshed:')).not.toBeInTheDocument();
     expect(screen.getByText('Fundamentals Updated:')).toBeInTheDocument();
   });
 

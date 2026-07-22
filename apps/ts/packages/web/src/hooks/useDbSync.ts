@@ -68,7 +68,7 @@ function startSync(request: StartSyncInput): Promise<CreateSyncJobResponse> {
   const wireRequest: StartSyncRequest = {
     ...request,
     enforceBulkForStockData: request.enforceBulkForStockData ?? false,
-    resetBeforeSync: request.resetBeforeSync ?? false,
+    resetBeforeSync: request.mode === 'initial',
   };
   return apiPost<CreateSyncJobResponse>('/api/db/sync', wireRequest);
 }

@@ -4,10 +4,6 @@ import { cn } from '@/lib/utils';
 import { formatCount } from '@/utils/formatters';
 import {
   buildValidationDiagnosticSections,
-  hasRepairTargets,
-  type RepairTargets,
-  resolveRepairTargets,
-  sumRepairTargets,
   type ValidationDiagnostic,
 } from './SettingsMarketDbDiagnostics';
 import {
@@ -61,8 +57,6 @@ interface ValidationDiagnosticListProps {
   diagnostics: ValidationDiagnostic[];
   emptyMessage: string;
 }
-
-export { hasRepairTargets, type RepairTargets, resolveRepairTargets, sumRepairTargets };
 
 function getValidationDetailsTitle(status: MarketValidationResponse['status']): string {
   switch (status) {

@@ -7186,11 +7186,6 @@ export interface components {
              * @default 5
              */
             requiredVersion: number;
-            /**
-             * Resetbeforesynceligible
-             * @default false
-             */
-            resetBeforeSyncEligible: boolean;
             /** Version */
             version?: number | null;
         };
@@ -11319,10 +11314,10 @@ export interface components {
             enforceBulkForStockData: boolean;
             /**
              * Mode
-             * @default auto
+             * @default incremental
              * @enum {string}
              */
-            mode: "auto" | "initial" | "incremental" | "repair";
+            mode: "initial" | "incremental";
             /**
              * Resetbeforesync
              * @default false

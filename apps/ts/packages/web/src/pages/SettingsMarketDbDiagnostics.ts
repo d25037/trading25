@@ -28,18 +28,6 @@ export interface ValidationDiagnosticSections {
   informationalDiagnostics: ValidationDiagnostic[];
 }
 
-export interface RepairTargets {
-  missingListedMarketFundamentals: number;
-  failedFundamentalsDates: number;
-  failedFundamentalsCodes: number;
-}
-
-const EMPTY_REPAIR_TARGETS: RepairTargets = {
-  missingListedMarketFundamentals: 0,
-  failedFundamentalsDates: 0,
-  failedFundamentalsCodes: 0,
-};
-
 function buildSampleHint(
   sampleWindow:
     | {
@@ -205,7 +193,7 @@ export function buildValidationDiagnosticSections(
 
   appendValidationDiagnostic(warningDiagnostics, fundamentals.missingListedMarketStocksCount, {
     label: 'Missing Listed-Market Fundamentals',
-    helpText: 'Repair sync will retry these listed-market issuers.',
+    helpText: 'Incremental sync will retry these listed-market issuers.',
     sampleItems: fundamentals.missingListedMarketStocks,
     sampleLabel: 'Sample codes',
     sampleHint: buildSampleHint(sampleWindows?.missingListedMarketStocks),
@@ -236,30 +224,4 @@ export function buildValidationDiagnosticSections(
     warningDiagnostics,
     informationalDiagnostics,
   };
-}
-
-export function resolveRepairTargets(dbValidation: MarketValidationResponse | undefined): RepairTargets {
-  if (!dbValidation) {
-    return EMPTY_REPAIR_TARGETS;
-  }
-
-  const fundamentals = dbValidation.fundamentals;
-
-  return {
-    missingListedMarketFundamentals: fundamentals.missingListedMarketStocksCount ?? 0,
-    failedFundamentalsDates: fundamentals.failedDatesCount ?? 0,
-    failedFundamentalsCodes: fundamentals.failedCodesCount ?? 0,
-  };
-}
-
-export function hasRepairTargets(targets: RepairTargets): boolean {
-  return (
-    targets.missingListedMarketFundamentals > 0 ||
-    targets.failedFundamentalsDates > 0 ||
-    targets.failedFundamentalsCodes > 0
-  );
-}
-
-export function sumRepairTargets(targets: RepairTargets): number {
-  return targets.missingListedMarketFundamentals + targets.failedFundamentalsDates + targets.failedFundamentalsCodes;
 }

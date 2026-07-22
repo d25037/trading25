@@ -75,6 +75,20 @@ const invalidDbSyncBody: ApiJsonBody<DbSyncPath, 'post'> = {
   resetBeforeSync: false,
 };
 
+const invalidAutoDbSyncBody: ApiJsonBody<DbSyncPath, 'post'> = {
+  enforceBulkForStockData: false,
+  // @ts-expect-error Auto mode was removed; callers must explicitly use initial or incremental.
+  mode: 'auto',
+  resetBeforeSync: false,
+};
+
+const invalidRepairDbSyncBody: ApiJsonBody<DbSyncPath, 'post'> = {
+  enforceBulkForStockData: false,
+  // @ts-expect-error Repair mode was removed; incremental sync recovers missing data.
+  mode: 'repair',
+  resetBeforeSync: false,
+};
+
 const strategyValidationBody: ApiJsonBody<StrategyValidationPath, 'post'> = {
   config: { shared_config: { data_source: 'market' } },
 };
@@ -97,4 +111,6 @@ void invalidPortfolioPathParams;
 void dbSyncBody;
 void dbSyncResponse;
 void invalidDbSyncBody;
+void invalidAutoDbSyncBody;
+void invalidRepairDbSyncBody;
 void strategyValidationBody;

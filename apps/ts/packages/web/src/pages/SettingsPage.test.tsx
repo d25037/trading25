@@ -181,7 +181,6 @@ beforeEach(() => {
         version: 5,
         requiredVersion: 5,
         current: true,
-        resetBeforeSyncEligible: true,
       },
       lastUpdated: '2026-03-01T12:00:00Z',
     },
@@ -200,7 +199,6 @@ beforeEach(() => {
         version: 5,
         requiredVersion: 5,
         current: true,
-        resetBeforeSyncEligible: true,
       },
       topix: { count: 2450, dateRange: { min: '2016-02-29', max: '2026-02-27' } },
       stocks: { total: 3800, byMarket: { Prime: 1800 } },
@@ -263,7 +261,7 @@ beforeEach(() => {
         marginEmptySkippedCodes: { returnedCount: 1, totalCount: 1, limit: 20, truncated: false },
       },
       recommendations: [
-        'Run repair sync to backfill fundamentals for 7 listed-market stocks',
+        'Run incremental sync to backfill fundamentals for 7 listed-market stocks',
         'Run incremental sync to ingest N225 options data into options_225_data',
       ],
       lastUpdated: '2026-03-01T12:00:01Z',
@@ -273,12 +271,12 @@ beforeEach(() => {
     refetch: vi.fn(),
   });
   mockStartSyncState.mutate.mockImplementation((_, options) => {
-    options?.onSuccess?.({ jobId: 'job-1', status: 'running', mode: 'auto' });
+    options?.onSuccess?.({ jobId: 'job-1', status: 'running', mode: 'incremental' });
   });
 });
 
 describe('SettingsPage', () => {
-  it('disables live reset and directs incompatible roots to schema validation', async () => {
+  it('always requires RESET confirmation for initial sync without an eligibility switch', async () => {
     const user = userEvent.setup();
     const statsState = mockUseDbStats();
     const validationState = mockUseDbValidation();
@@ -290,7 +288,6 @@ describe('SettingsPage', () => {
           version: 4,
           requiredVersion: 5,
           current: false,
-          resetBeforeSyncEligible: false,
         },
       },
     });
@@ -303,7 +300,6 @@ describe('SettingsPage', () => {
           version: 4,
           requiredVersion: 5,
           current: false,
-          resetBeforeSyncEligible: false,
         },
         recommendations: [
           "Run RESET initial sync (mode='initial', resetBeforeSync=true) to rebuild the incompatible Market root as schema v5 (current schema version: 4)",
@@ -314,15 +310,11 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
     await user.click(screen.getByRole('combobox', { name: 'Sync Mode' }));
     await user.click(screen.getByText(/Full bootstrap of the local DuckDB snapshot/i));
+    expect(screen.queryByRole('switch', { name: /Reset market\.duckdb \+ parquet first/i })).not.toBeInTheDocument();
 
-    expect(screen.getByRole('switch', { name: /Reset market\.duckdb \+ parquet first/i })).toBeDisabled();
-    expect(
-      screen.getByText(/This Market root is not eligible.*follow the schema validation recommendation/i)
-    ).toBeInTheDocument();
-    expect(screen.queryByText('bt market-cutover cutover', { selector: 'code' })).not.toBeInTheDocument();
-    expect(
-      screen.queryByText(/legacy stock-price adjustment drift requires initial sync with reset enabled/i)
-    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Start Sync/i }));
+    expect(mockStartSyncState.mutate).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: /Reset market DB before initial sync\?/i })).toBeInTheDocument();
   });
 
   it('shows provider vintage as read-only sync state without standalone materialization controls', () => {
@@ -384,7 +376,7 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('button', { name: /Start Sync/i }));
 
     expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
-      { mode: 'auto', enforceBulkForStockData: false, resetBeforeSync: false },
+      { mode: 'incremental', enforceBulkForStockData: false, resetBeforeSync: false },
       expect.objectContaining({
         onSuccess: expect.any(Function),
       })
@@ -416,7 +408,7 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('button', { name: /Start Sync/i }));
 
     expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
-      { mode: 'auto', enforceBulkForStockData: false, resetBeforeSync: false },
+      { mode: 'incremental', enforceBulkForStockData: false, resetBeforeSync: false },
       expect.objectContaining({
         onSuccess: expect.any(Function),
       })
@@ -431,21 +423,16 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('button', { name: /Starting.../i })).toBeInTheDocument();
   });
 
-  it('sends selected sync mode', async () => {
+  it('offers only incremental and RESET initial sync modes', async () => {
     const user = userEvent.setup();
 
     render(<SettingsPage />);
 
     await user.click(screen.getByRole('combobox', { name: 'Sync Mode' }));
-    await user.click(screen.getByRole('option', { name: /Incremental Backfill/i }));
-    await user.click(screen.getByRole('button', { name: /Start Sync/i }));
-
-    expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
-      { mode: 'incremental', enforceBulkForStockData: false, resetBeforeSync: false },
-      expect.objectContaining({
-        onSuccess: expect.any(Function),
-      })
-    );
+    expect(screen.getByRole('option', { name: /Incremental/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Initial RESET/i })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Auto/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Repair/i })).not.toBeInTheDocument();
   });
 
   it('requires confirmation before reset + initial sync', async () => {
@@ -455,7 +442,6 @@ describe('SettingsPage', () => {
 
     await user.click(screen.getByRole('combobox', { name: 'Sync Mode' }));
     await user.click(screen.getByText(/Full bootstrap of the local DuckDB snapshot/i));
-    await user.click(screen.getByRole('switch', { name: /Reset market\.duckdb \+ parquet first/i }));
     await user.click(screen.getByRole('button', { name: /Start Sync/i }));
 
     expect(mockStartSyncState.mutate).not.toHaveBeenCalled();
@@ -481,7 +467,7 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('button', { name: /Start Sync/i }));
 
     expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
-      { mode: 'auto', enforceBulkForStockData: true, resetBeforeSync: false },
+      { mode: 'incremental', enforceBulkForStockData: true, resetBeforeSync: false },
       expect.objectContaining({
         onSuccess: expect.any(Function),
       })
@@ -571,13 +557,13 @@ describe('SettingsPage', () => {
     expect(screen.getByText('Sample codes: 4957')).toBeInTheDocument();
     expect(screen.getByText('Warning Details')).toBeInTheDocument();
     expect(
-      screen.getAllByText('Run repair sync to backfill fundamentals for 7 listed-market stocks').length
+      screen.getAllByText('Run incremental sync to backfill fundamentals for 7 listed-market stocks').length
     ).toBeGreaterThan(0);
     expect(
       screen.getByText('Run incremental sync to ingest N225 options data into options_225_data')
     ).toBeInTheDocument();
-    expect(screen.getByText('Warning Recovery')).toBeInTheDocument();
-    expect(screen.getByText('Repair Warnings')).toBeInTheDocument();
+    expect(screen.queryByText('Warning Recovery')).not.toBeInTheDocument();
+    expect(screen.queryByText('Repair Warnings')).not.toBeInTheDocument();
   });
 
   it('renders stale N225 options as an actionable warning instead of a silent date', () => {
@@ -882,7 +868,7 @@ describe('SettingsPage', () => {
     expect(screen.getByText('N225 UnderPx Missing Dates')).toBeInTheDocument();
   });
 
-  it('does not count N225 options sync gaps as repair targets', () => {
+  it('shows N225 options sync gaps without a repair card', () => {
     mockUseDbValidation.mockReturnValue({
       data: {
         status: 'warning',
@@ -931,8 +917,8 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
 
     expect(screen.getByText('N225 Options Missing Locally')).toBeInTheDocument();
-    expect(screen.getByText('Repair signals')).toBeInTheDocument();
-    expect(screen.getByText('No Repairs Needed')).toBeInTheDocument();
+    expect(screen.queryByText('Repair signals')).not.toBeInTheDocument();
+    expect(screen.queryByText('No Repairs Needed')).not.toBeInTheDocument();
   });
 
   it('renders partial N225 options coverage as a warning instead of in-sync status', () => {
@@ -1169,19 +1155,10 @@ describe('SettingsPage', () => {
     expect(mutate).not.toHaveBeenCalled();
   });
 
-  it('starts repair sync from warning recovery card', async () => {
-    const user = userEvent.setup();
-
+  it('does not render warning recovery actions', () => {
     render(<SettingsPage />);
-
-    await user.click(screen.getByRole('button', { name: /Repair Warnings/i }));
-
-    expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
-      { mode: 'repair', enforceBulkForStockData: false, resetBeforeSync: false },
-      expect.objectContaining({
-        onSuccess: expect.any(Function),
-      })
-    );
+    expect(screen.queryByText('Warning Recovery')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Repair Warnings/i })).not.toBeInTheDocument();
   });
 
   it('does not treat deprecated stock refresh diagnostics as repair targets', () => {
@@ -1219,10 +1196,8 @@ describe('SettingsPage', () => {
 
     render(<SettingsPage />);
 
-    expect(screen.getByText('Warning Recovery')).toBeInTheDocument();
+    expect(screen.queryByText('Warning Recovery')).not.toBeInTheDocument();
     expect(screen.queryByText('Stocks needing refresh')).not.toBeInTheDocument();
-    expect(screen.getByText('Missing listed-market fundamentals')).toBeInTheDocument();
-    expect(screen.getAllByText('0').length).toBeGreaterThan(0);
   });
 
   it('shows validation notes when status is healthy and recommendations exist', () => {

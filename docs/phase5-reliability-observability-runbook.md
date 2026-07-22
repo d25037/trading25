@@ -37,7 +37,7 @@
 - `JQUANTS_RETRY_POLICY.max_retries = 3`
 - `JQUANTS_RETRY_POLICY.initial_backoff_seconds = 1.0`（指数バックオフ）
 - `INITIAL_SYNC_JOB_TIMEOUT_MINUTES = 240`（production-scale full rebuild）
-- `SYNC_JOB_TIMEOUT_MINUTES = 35`（incremental / repair）
+- `SYNC_JOB_TIMEOUT_MINUTES = 35`（incremental）
 - `ADJUSTED_METRICS_MATERIALIZATION_TIMEOUT_MINUTES = 120`
 - `DATASET_BUILD_TIMEOUT_MINUTES = 35`
 
