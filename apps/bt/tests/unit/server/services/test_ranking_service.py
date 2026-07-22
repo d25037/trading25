@@ -1184,6 +1184,129 @@ def test_liquidity_provider_price_is_bounded_before_price_features(
     assert source_index < bound_index < price_features_index
 
 
+def test_value_composite_provider_price_is_candidate_bounded_before_deduplication(
+    ranking_db: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _rebuild_test_adjusted_metrics(ranking_db)
+    reader = MarketDbReader(ranking_db)
+    captured_queries: list[tuple[str, tuple[object, ...]]] = []
+    original_query = reader.query
+
+    def capture_query(sql: str, params=()):
+        if "signal_history AS (" in sql:
+            captured_queries.append((sql, tuple(params)))
+        return original_query(sql, params)
+
+    monkeypatch.setattr(reader, "query", capture_query)
+    try:
+        load_value_composite_technical_metrics(
+            reader,
+            target_date="2024-01-19",
+            codes=["99840", "72030", "9984"],
+        )
+    finally:
+        reader.close()
+
+    assert len(captured_queries) == 1
+    sql, params = captured_queries[0]
+    source_index = sql.index("FROM stock_data AS price")
+    code_bound_index = sql.index("ELSE price.code END IN (?,?)", source_index)
+    upper_bound_index = sql.index("price.date <= ?", code_bound_index)
+    row_number_index = sql.index("ROW_NUMBER() OVER")
+    assert row_number_index < source_index < code_bound_index < upper_bound_index
+    assert "price.date >= ?" not in sql[source_index:upper_bound_index]
+    assert params == (
+        "7203",
+        "9984",
+        "2024-01-19",
+        "2024-01-19",
+        "7203",
+        "9984",
+        "2024-01-19",
+        "7203",
+        "9984",
+    )
+
+
+def test_value_composite_technical_metrics_preserve_full_history_breakout_semantics(
+    ranking_db: str,
+) -> None:
+    session_count = 400
+    breakout_index = 100
+    start = calendar_date(2022, 12, 16)
+    target_date = start + timedelta(days=session_count - 1)
+    rows = []
+    for index in range(session_count):
+        trade_date = start + timedelta(days=index)
+        if index == breakout_index:
+            high = 200.0
+        elif index == session_count - 2:
+            high = 300.0
+        else:
+            high = 100.0
+        rows.append(
+            (
+                "99840",
+                trade_date.isoformat(),
+                90.0,
+                high,
+                80.0,
+                90.0,
+                200_000,
+                1.0,
+                None,
+            )
+        )
+    rows.append(
+        (
+            "9984",
+            (target_date - timedelta(days=1)).isoformat(),
+            90.0,
+            100.0,
+            80.0,
+            90.0,
+            200_000,
+            1.0,
+            None,
+        )
+    )
+
+    conn = duckdb.connect(ranking_db)
+    try:
+        conn.execute("DELETE FROM stock_data WHERE code IN ('9984', '99840')")
+        conn.executemany(
+            "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+            rows,
+        )
+    finally:
+        conn.close()
+    _rebuild_test_adjusted_metrics(ranking_db)
+
+    reader = MarketDbReader(ranking_db)
+    try:
+        metrics = load_value_composite_technical_metrics(
+            reader,
+            target_date=target_date.isoformat(),
+            codes=["99840"],
+        )["9984"]
+    finally:
+        reader.close()
+
+    latest_signal_row_number = session_count - 1
+    breakout_row_number = breakout_index + 1
+    expected_days_since_breakout = (
+        latest_signal_row_number - breakout_row_number
+    )
+    assert session_count > 373
+    assert breakout_index < session_count - 253
+    assert metrics["breakout_feature_date"] == (target_date - timedelta(days=1)).isoformat()
+    assert metrics["new_high_20d"] is False
+    assert metrics["new_high_120d"] is False
+    assert metrics["days_since_new_high_20d"] == expected_days_since_breakout
+    assert metrics["days_since_new_high_120d"] == expected_days_since_breakout
+
+
 @pytest.mark.parametrize("failure", ["missing", "pending"])
 def test_provider_window_resolution_fails_closed(
     ranking_db: str,

@@ -12,6 +12,7 @@ from src.application.services.ranking_fundamental_queries import (
 )
 from src.application.services.ranking_query_helpers import (
     normalize_equity_code,
+    normalized_code_sql,
 )
 from src.application.services.ranking_response_items import (
     finite_or_none,
@@ -110,23 +111,10 @@ def load_value_composite_technical_metrics(
         return {}
     placeholders = ",".join("?" for _ in normalized_codes)
     resolve_provider_windows(reader, normalized_codes, target_date)
-    start_row = reader.query_one(
-        """
-        SELECT date
-        FROM (SELECT DISTINCT date FROM stock_data WHERE date <= ? ORDER BY date DESC)
-        LIMIT 1 OFFSET 252
-        """,
-        (target_date,),
+    price_code = normalized_code_sql("price.code")
+    price_ctes = provider_price_cte(
+        f"{price_code} IN ({placeholders}) AND price.date <= ?"
     )
-    if start_row is None:
-        start_row = reader.query_one(
-            "SELECT MIN(date) AS date FROM stock_data WHERE date <= ?",
-            (target_date,),
-        )
-    if start_row is None or start_row["date"] is None:
-        return {}
-    start_date = str(start_row["date"])
-    price_ctes = provider_price_cte("price.date >= ? AND price.date <= ?")
     sql = f"""
         WITH {price_ctes},
         stock_history AS (
@@ -313,7 +301,7 @@ def load_value_composite_technical_metrics(
     rows = reader.query(
         sql,
         (
-            start_date,
+            *normalized_codes,
             target_date,
             target_date,
             *normalized_codes,
