@@ -1657,6 +1657,7 @@ class TestLabServiceSyncMethods:
         assert result["total_generated"] == 10
         assert result["saved_strategy_path"] == "/tmp/saved.yaml"
         assert len(result["results"]) == 1
+        assert not any(key.startswith("_verification") for key in result)
         assert MockEval.call_args.kwargs["n_jobs"] == -1
         assert MockEval.call_args.kwargs["shared_config_dict"]["universe_preset"] == "test"
         saved_candidate = MockYaml.return_value.save_candidate.call_args.args[0]
@@ -1837,6 +1838,7 @@ class TestLabServiceSyncMethods:
         assert len(result["history"]) == 2
         assert result["saved_strategy_path"] == "/tmp/evo.yaml"
         assert result["_job_message"] == "GA進化完了"
+        assert not any(key.startswith("_verification") for key in result)
         config = MockEvolver.call_args.kwargs["config"]
         assert config.n_jobs == -1
         assert config.entry_filter_only is True
@@ -1939,6 +1941,9 @@ class TestLabServiceSyncMethods:
         ):
             MockOpt.return_value.optimize.return_value = (mock_candidate, mock_study)
             MockOpt.return_value.get_optimization_history.return_value = mock_history
+            MockOpt.return_value.build_candidate_from_params.side_effect = AssertionError(
+                "must not rebuild every trial for verification"
+            )
             MockYaml.return_value.save_optuna_result.return_value = ("/tmp/opt.yaml", "/tmp/hist.yaml")
 
             result = service._execute_optimize_sync(
@@ -1960,6 +1965,8 @@ class TestLabServiceSyncMethods:
         assert result["best_score"] == 3.0
         assert result["total_trials"] == 2
         assert result["saved_strategy_path"] == "/tmp/opt.yaml"
+        assert [candidate["score"] for candidate in result["fast_candidates"]] == [3.0, 1.0]
+        assert not any(key.startswith("_verification") for key in result)
         config = MockOpt.call_args.kwargs["config"]
         assert config.n_jobs == -1
         assert config.entry_filter_only is True
