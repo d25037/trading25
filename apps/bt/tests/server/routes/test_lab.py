@@ -11,10 +11,6 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from src.application.services.verification_orchestrator import (
-    INTERNAL_VERIFICATION_CANDIDATES_KEY,
-    build_verification_seed,
-)
 from src.application.contracts.lab import (
     EvolutionHistoryItem,
     GenerateResultItem,
@@ -25,7 +21,6 @@ from src.application.contracts.lab import (
     LabOptimizeResult,
     OptimizeTrialItem,
 )
-from src.domains.backtest.contracts import CanonicalExecutionMetrics, EnginePolicy
 from src.entrypoints.http.app import app
 from src.entrypoints.http.schemas.lab import (
     LabEvolveRequest,
@@ -553,7 +548,7 @@ class TestLabEndpoints:
         assert data["result_data"]["lab_type"] == "generate"
         assert data["result_data"]["total_generated"] == 50
 
-    def test_get_lab_job_fast_only_result_does_not_expose_queued_verification(
+    def test_get_lab_job_result_does_not_expose_verification(
         self,
         client: TestClient,
     ) -> None:
@@ -565,28 +560,13 @@ class TestLabEndpoints:
             "results": [],
             "total_generated": 50,
             "saved_strategy_path": None,
-            INTERNAL_VERIFICATION_CANDIDATES_KEY: [
-                build_verification_seed(
-                    candidate_id="gen-001",
-                    fast_rank=1,
-                    fast_score=0.8,
-                    fast_metrics=CanonicalExecutionMetrics(
-                        total_return=10.0,
-                        sharpe_ratio=1.0,
-                        max_drawdown=-4.0,
-                        trade_count=5,
-                    ),
-                    strategy_name="reference/strategy_template",
-                    config_override={"shared_config": {"universe_preset": "demo"}},
-                ).model_dump(mode="json")
-            ],
         }
 
         response = client.get(f"/api/lab/jobs/{job_id}")
         assert response.status_code == 200
         data = response.json()
         assert data["result_data"] is not None
-        assert data["result_data"]["verification"] is None
+        assert "verification" not in data["result_data"]
 
     def test_cancel_nonexistent_job(self, client: TestClient) -> None:
         """存在しないジョブIDのキャンセルで404"""
@@ -767,7 +747,6 @@ class TestLabSubmitEndpoints:
                 universe_preset=None,
                 entry_filter_only=True,
                 allowed_categories=["fundamental"],
-                engine_policy=EnginePolicy(),
             )
 
     def test_submit_evolve(self, client: TestClient) -> None:
@@ -809,7 +788,6 @@ class TestLabSubmitEndpoints:
                 entry_filter_only=True,
                 target_scope="entry_filter_only",
                 allowed_categories=["fundamental"],
-                engine_policy=EnginePolicy(),
             )
 
     def test_submit_optimize(self, client: TestClient) -> None:
@@ -851,8 +829,28 @@ class TestLabSubmitEndpoints:
                 target_scope="entry_filter_only",
                 allowed_categories=["fundamental"],
                 scoring_weights=None,
-                engine_policy=EnginePolicy(),
             )
+
+    @pytest.mark.parametrize(
+        ("path", "payload"),
+        [
+            ("/api/lab/generate", {}),
+            ("/api/lab/evolve", {"strategy_name": "test_strategy"}),
+            ("/api/lab/optimize", {"strategy_name": "test_strategy"}),
+        ],
+    )
+    def test_submit_rejects_removed_engine_policy(
+        self,
+        client: TestClient,
+        path: str,
+        payload: dict[str, object],
+    ) -> None:
+        response = client.post(
+            path,
+            json={**payload, "engine_" + "policy": {"mode": "fast_only"}},
+        )
+
+        assert response.status_code == 422
 
     def test_submit_improve(self, client: TestClient) -> None:
         """improve サブミットが成功する"""

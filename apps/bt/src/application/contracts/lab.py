@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 
 from src.domains.backtest.contracts import (
     FastCandidateSummary,
-    VerificationSummary,
 )
 
 
@@ -60,10 +59,6 @@ class LabGenerateResult(BaseModel):
     results: list[GenerateResultItem] = Field(description="生成結果リスト")
     total_generated: int = Field(description="生成総数")
     saved_strategy_path: str | None = Field(default=None, description="保存先パス")
-    verification: VerificationSummary | None = Field(
-        default=None,
-        description="Verification summary for top-ranked candidates",
-    )
 
 
 class LabEvolveResult(BaseModel):
@@ -79,10 +74,6 @@ class LabEvolveResult(BaseModel):
     )
     saved_strategy_path: str | None = Field(default=None, description="保存先パス")
     saved_history_path: str | None = Field(default=None, description="履歴保存先パス")
-    verification: VerificationSummary | None = Field(
-        default=None,
-        description="Verification summary for top-ranked candidates",
-    )
 
 
 class LabOptimizeResult(BaseModel):
@@ -99,10 +90,6 @@ class LabOptimizeResult(BaseModel):
     )
     saved_strategy_path: str | None = Field(default=None, description="保存先パス")
     saved_history_path: str | None = Field(default=None, description="履歴保存先パス")
-    verification: VerificationSummary | None = Field(
-        default=None,
-        description="Verification summary for top-ranked candidates",
-    )
 
 
 class LabImproveResult(BaseModel):

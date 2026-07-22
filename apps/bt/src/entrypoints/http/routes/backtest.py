@@ -123,7 +123,6 @@ async def run_backtest(request: BacktestRequest) -> BacktestJobResponse:
         job_id = await backtest_service.submit_backtest(
             strategy_name=request.strategy_name,
             config_override=request.strategy_config_override,
-            engine_family=request.engine_family,
         )
 
         job = _get_job_or_404(job_id)
