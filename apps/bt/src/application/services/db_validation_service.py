@@ -380,7 +380,7 @@ def _resolve_validation_statuses(
 def validate_market_db(
     market_db: ValidationMarketDbLike,
     *,
-    time_series_store: ValidationTimeSeriesStoreLike,
+    time_series_store: ValidationTimeSeriesStoreLike | None,
 ) -> MarketValidationResponse:
     """DuckDB 時系列 SoT を基準とした整合性検証。"""
     base = _load_validation_base_snapshot(
@@ -491,7 +491,7 @@ def validate_market_db(
 def _load_validation_base_snapshot(
     *,
     market_db: ValidationMarketDbLike,
-    time_series_store: ValidationTimeSeriesStoreLike,
+    time_series_store: ValidationTimeSeriesStoreLike | None,
 ) -> _ValidationBaseSnapshot:
     initialized = market_db.is_initialized()
     legacy_stock_snapshot = market_db.is_legacy_stock_price_snapshot()
@@ -507,7 +507,14 @@ def _load_validation_base_snapshot(
     master_coverage = market_db.get_stock_master_coverage()
     missing_master_dates_count = int(master_coverage.get("missingTopixDatesCount", 0) or 0)
     missing_master_dates = [str(d) for d in master_coverage.get("missingTopixDates", [])]
-    inspection = _resolve_time_series_inspection(time_series_store)
+    if schema_valid:
+        if time_series_store is None:
+            raise RuntimeError(
+                "A compatible Market time-series store is required for validation"
+            )
+        inspection = _resolve_time_series_inspection(time_series_store)
+    else:
+        inspection = TimeSeriesInspection(source="duckdb-parquet")
     by_market = market_db.get_stock_count_by_market()
     return _ValidationBaseSnapshot(
         initialized=initialized,

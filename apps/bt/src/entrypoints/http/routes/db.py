@@ -18,6 +18,7 @@ import asyncio
 import json
 import threading
 from pathlib import Path
+from typing import cast
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -159,16 +160,18 @@ def _shared_operation_lease(request: Request) -> MarketOperationLease | None:
     return getattr(request.app.state, "market_operation_lease", None)
 
 
-def _close_resource(resource: object | None, *, label: str) -> None:
+def _close_resource(resource: object | None, *, label: str) -> BaseException | None:
     if resource is None:
-        return
+        return None
     close = getattr(resource, "close", None)
     if not callable(close):
-        return
+        return None
     try:
         close()
-    except Exception as exc:  # noqa: BLE001 - reset should remain best-effort
+    except BaseException as exc:
         logger.warning("Failed to close {} during market DB reset: {}", label, exc)
+        return exc
+    return None
 
 
 def _clear_market_resources(request: Request) -> None:
@@ -176,6 +179,36 @@ def _clear_market_resources(request: Request) -> None:
         current_market_db = getattr(request.app.state, "market_db", None)
         current_store = getattr(request.app.state, "market_time_series_store", None)
         current_reader = getattr(request.app.state, "market_reader", None)
+
+        close_errors = [
+            (label, error)
+            for label, error in (
+                (
+                    "market_reader",
+                    _close_resource(current_reader, label="market_reader"),
+                ),
+                (
+                    "market_time_series_store",
+                    _close_resource(
+                        current_store,
+                        label="market_time_series_store",
+                    ),
+                ),
+                (
+                    "market_db",
+                    _close_resource(current_market_db, label="market_db"),
+                ),
+            )
+            if error is not None
+        ]
+        if close_errors:
+            failure = RuntimeError(
+                "Market resources failed to close; Market reset was aborted"
+            )
+            failure.__cause__ = close_errors[0][1]
+            for label, error in close_errors:
+                failure.add_note(f"{label} close failure: {error}")
+            raise failure
 
         request.app.state.market_reader = None
         request.app.state.market_data_service = None
@@ -186,10 +219,6 @@ def _clear_market_resources(request: Request) -> None:
         request.app.state.chart_service = ChartService(None)
         request.app.state.market_db = None
         request.app.state.market_time_series_store = None
-
-        _close_resource(current_reader, label="market_reader")
-        _close_resource(current_store, label="market_time_series_store")
-        _close_resource(current_market_db, label="market_db")
         close_all_cached_data_access_clients()
 
 
@@ -516,7 +545,10 @@ def get_db_stats(request: Request) -> market_contracts.MarketStatsResponse:
 def get_db_validate(request: Request) -> market_contracts.MarketValidationResponse:
     with _MARKET_RESOURCE_LOCK:
         market_db = _get_market_db(request)
-        time_series_store = _get_market_time_series_store(request)
+        schema_valid = market_db.validate_schema().get("valid") is True
+        time_series_store = (
+            _get_market_time_series_store(request) if schema_valid else None
+        )
         return db_validation_service.validate_market_db(
             market_db,
             time_series_store=time_series_store,
@@ -626,7 +658,7 @@ async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
         content=CreateSyncJobResponse(
             jobId=job.job_id,
             status="pending",
-            mode=job.data.resolved_mode,
+            mode=cast(market_contracts.SyncModeLiteral, job.data.resolved_mode),
             estimatedApiCalls=strategy.estimate_api_calls(),
             message="Sync job started",
         ).model_dump(),
@@ -639,7 +671,10 @@ def _to_sync_job_response(
     return SyncJobResponse(
         jobId=job.job_id,
         status=job.status.value,
-        mode=job.data.resolved_mode or job.data.mode.value,
+        mode=cast(
+            market_contracts.SyncModeLiteral,
+            job.data.resolved_mode or job.data.mode.value,
+        ),
         enforceBulkForStockData=job.data.enforce_bulk_for_stock_data,
         maintenance=_job_maintenance(job.data),
         progress=job.progress,
@@ -659,7 +694,10 @@ def _to_sync_fetch_details_response(
     return SyncFetchDetailsResponse(
         jobId=job.job_id,
         status=job.status.value,
-        mode=job.data.resolved_mode or job.data.mode.value,
+        mode=cast(
+            market_contracts.SyncModeLiteral,
+            job.data.resolved_mode or job.data.mode.value,
+        ),
         latest=items[-1] if items else None,
         items=items,
     )

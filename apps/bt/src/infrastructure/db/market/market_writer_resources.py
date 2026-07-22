@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-import shutil
 import stat
 import threading
 from typing import ClassVar, Protocol
@@ -12,6 +11,7 @@ from typing import ClassVar, Protocol
 from .duckdb_connection import MarketWriterToken
 from .duckdb_connection import connect_market_duckdb
 from .managed_root import (
+    ManagedRootFd,
     assert_market_managed_root_safe,
     lexical_absolute,
     prepare_market_managed_root,
@@ -416,23 +416,37 @@ class MarketWriterResourceFactory:
             elif borrowed_shared_lease:
                 lease.convert(exclusive=True, blocking=blocking, timeout=timeout)
             prepare_market_managed_root(self.data_root, self.market_root)
-            for path in (
-                self.market_root / "market.duckdb",
-                self.market_root / "market.duckdb.wal",
-            ):
-                if path.exists() or path.is_symlink():
-                    mode = path.lstat().st_mode
-                    if stat.S_ISLNK(mode) or not stat.S_ISREG(mode):
-                        raise RuntimeError("Market reset target must be a regular file")
-                    path.unlink()
             parquet = self.market_root / "parquet"
-            if parquet.exists() or parquet.is_symlink():
-                mode = parquet.lstat().st_mode
-                if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
-                    raise RuntimeError(
-                        "Market parquet reset target must be a real directory"
-                    )
-                shutil.rmtree(parquet)
+            with ManagedRootFd.open(self.market_root) as managed:
+                file_targets: list[Path] = []
+                for relative in (Path("market.duckdb"), Path("market.duckdb.wal")):
+                    try:
+                        target_stat = managed.stat(relative)
+                    except FileNotFoundError:
+                        continue
+                    if not stat.S_ISREG(target_stat.st_mode):
+                        raise RuntimeError(
+                            "Market reset target must be a regular file"
+                        )
+                    file_targets.append(relative)
+
+                parquet_exists = False
+                try:
+                    parquet_stat = managed.stat(Path("parquet"))
+                except FileNotFoundError:
+                    pass
+                else:
+                    if not stat.S_ISDIR(parquet_stat.st_mode):
+                        raise RuntimeError(
+                            "Market parquet reset target must be a real directory"
+                        )
+                    managed.regular_files(Path("parquet"))
+                    parquet_exists = True
+
+                for relative in file_targets:
+                    managed.unlink(relative)
+                if parquet_exists:
+                    managed.remove_tree(Path("parquet"))
             db_path = self.market_root / "market.duckdb"
             token = MarketWriterToken._from_writer_factory(lease, db_path)
             try:

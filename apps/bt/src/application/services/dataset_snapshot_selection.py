@@ -265,7 +265,7 @@ def load_selected_price_range(
         raise DatasetSnapshotSelectionError(
             "No complete provider/current-basis coverage exists through cutoff "
             f"{cutoff} for codes: {', '.join(missing_codes)}; "
-            "sync or repair those stock prices before dataset creation"
+            "run incremental sync or targeted stock refresh before dataset creation"
         )
     date_from = max(str(row["coverage_start"]) for row in coverage)
     date_to = min(str(row["coverage_end"]) for row in coverage)

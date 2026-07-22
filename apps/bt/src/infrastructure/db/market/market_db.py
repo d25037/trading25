@@ -28,6 +28,7 @@ from src.infrastructure.db.market.market_schema import (
     PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
     STATS_TABLES as _STATS_TABLES,
     ensure_market_schema,
+    inspect_adjusted_daily_volume_physical_contract,
 )
 from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
 from src.infrastructure.db.market.stock_master_writers import (
@@ -219,25 +220,8 @@ class MarketDb:
         if version != MARKET_SCHEMA_VERSION:
             return
 
-        required_columns = {
-            ("stock_data_raw", "adjusted_volume"): "DOUBLE",
-            ("stock_data", "volume"): "DOUBLE",
-        }
-        incompatible: list[str] = []
-        for (table_name, column_name), expected_type in required_columns.items():
-            if not self._table_exists(table_name):
-                incompatible.append(f"{table_name}.{column_name}=missing")
-                continue
-            column_types = {
-                str(row[1]): str(row[2]).upper()
-                for row in self._fetchall(f"PRAGMA table_info('{table_name}')")
-                if row and len(row) > 2
-            }
-            observed_type = column_types.get(column_name)
-            if observed_type != expected_type:
-                incompatible.append(
-                    f"{table_name}.{column_name}={observed_type or 'missing'}"
-                )
+        with self._lock:
+            incompatible = inspect_adjusted_daily_volume_physical_contract(self._conn)
         if incompatible:
             details = ", ".join(incompatible)
             raise IncompatibleMarketSchemaError(
@@ -297,11 +281,18 @@ class MarketDb:
         }
         required = set(_STATS_TABLES)
         missing = required - existing
+        with self._lock:
+            physical_contract_issues = (
+                inspect_adjusted_daily_volume_physical_contract(self._conn)
+                if self.get_market_schema_version() == MARKET_SCHEMA_VERSION
+                else []
+            )
         return {
-            "valid": len(missing) == 0,
+            "valid": len(missing) == 0 and not physical_contract_issues,
             "required_tables": sorted(required),
             "existing_tables": sorted(existing & required),
             "missing_tables": sorted(missing),
+            "physical_contract_issues": physical_contract_issues,
         }
 
     def get_stock_price_adjustment_mode(self) -> str | None:

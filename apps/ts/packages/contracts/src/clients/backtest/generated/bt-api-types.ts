@@ -3713,8 +3713,11 @@ export interface components {
              * @default Sync job started
              */
             message: string;
-            /** Mode */
-            mode: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "initial" | "incremental";
             /**
              * Status
              * @default pending
@@ -11235,8 +11238,11 @@ export interface components {
             /** Jobid */
             jobId: string;
             latest?: components["schemas"]["SyncFetchDetail"] | null;
-            /** Mode */
-            mode: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "initial" | "incremental";
             /** Status */
             status: string;
         };
@@ -11254,8 +11260,11 @@ export interface components {
             /** Jobid */
             jobId: string;
             maintenance?: components["schemas"]["MarketMaintenanceRecord"];
-            /** Mode */
-            mode: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "initial" | "incremental";
             progress?: components["schemas"]["SyncProgress"] | null;
             result?: components["schemas"]["SyncResult"] | null;
             /** Startedat */

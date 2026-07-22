@@ -131,6 +131,34 @@ class TestMarketDbBasics:
         assert "margin_data" in schema["required_tables"]
         assert "sync_metadata" in schema["required_tables"]
 
+    def test_read_only_schema_validation_rejects_legacy_bigint_adjusted_volume(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path = tmp_path / "market.duckdb"
+        seeded = open_market_db(str(db_path), read_only=False)
+        seeded.close()
+        connection = duckdb.connect(str(db_path))
+        try:
+            connection.execute(
+                "ALTER TABLE stock_data_raw ALTER adjusted_volume TYPE BIGINT"
+            )
+            connection.execute("ALTER TABLE stock_data ALTER volume TYPE BIGINT")
+        finally:
+            connection.close()
+
+        read_only = open_market_db(str(db_path), read_only=True)
+        try:
+            result = read_only.validate_schema()
+        finally:
+            read_only.close()
+
+        assert result["valid"] is False
+        assert result["physical_contract_issues"] == [
+            "stock_data_raw.adjusted_volume=BIGINT (expected DOUBLE)",
+            "stock_data.volume=BIGINT (expected DOUBLE)",
+        ]
+
     def test_v5_price_and_adjustment_ledger_columns_are_exact(
         self, market_db: MarketDb
     ) -> None:

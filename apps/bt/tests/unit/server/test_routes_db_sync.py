@@ -18,7 +18,12 @@ from pydantic import ValidationError
 
 from src.entrypoints.http.app import create_app
 from src.entrypoints.http.routes import db as db_routes
-from src.entrypoints.http.schemas.db import SyncRequest
+from src.entrypoints.http.schemas.db import (
+    CreateSyncJobResponse,
+    SyncFetchDetailsResponse,
+    SyncJobResponse,
+    SyncRequest,
+)
 from src.application.contracts.jobs import JobStatus
 from src.application.services.sync_stream_manager import SyncStreamEvent
 from src.shared.contracts import market_maintenance as maintenance_contracts
@@ -27,6 +32,46 @@ from tests.unit.server.db.market_writer_test_support import (
     connect_market_duckdb_for_test,
 )
 from tests.unit.server.db.market_writer_test_support import publish_topix_data
+
+
+@pytest.mark.parametrize("removed_mode", ["auto", "repair"])
+@pytest.mark.parametrize(
+    ("response_type", "payload"),
+    [
+        (
+            CreateSyncJobResponse,
+            {
+                "jobId": "job-1",
+                "status": "pending",
+                "estimatedApiCalls": 1,
+            },
+        ),
+        (
+            SyncJobResponse,
+            {
+                "jobId": "job-1",
+                "status": "running",
+                "startedAt": "2026-07-22T00:00:00+00:00",
+            },
+        ),
+        (
+            SyncFetchDetailsResponse,
+            {
+                "jobId": "job-1",
+                "status": "running",
+            },
+        ),
+    ],
+)
+def test_sync_response_contracts_reject_removed_modes(
+    removed_mode: str,
+    response_type: type[
+        CreateSyncJobResponse | SyncJobResponse | SyncFetchDetailsResponse
+    ],
+    payload: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        response_type.model_validate({**payload, "mode": removed_mode})
 
 
 @pytest.mark.asyncio
@@ -656,6 +701,83 @@ class TestSyncRoutes:
         install_services.assert_not_called()
         factory.reset_and_open.assert_called_once_with(blocking=False, lease=None)
 
+    @pytest.mark.parametrize(
+        "failing_resource_name",
+        ["market_reader", "market_time_series_store", "market_db"],
+    )
+    def test_reset_market_resources_aborts_before_deletion_when_handle_close_fails(
+        self,
+        failing_resource_name: str,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        market_root = tmp_path / "market-timeseries"
+        market_root.mkdir()
+        duckdb_path = market_root / "market.duckdb"
+        wal_path = market_root / "market.duckdb.wal"
+        parquet_dir = market_root / "parquet"
+        parquet_dir.mkdir()
+        parquet_file = parquet_dir / "stock_data.parquet"
+        duckdb_path.write_text("original database")
+        wal_path.write_text("original wal")
+        parquet_file.write_text("original parquet")
+
+        current_reader = MagicMock()
+        current_store = MagicMock()
+        current_market_db = MagicMock()
+        resources = {
+            "market_reader": current_reader,
+            "market_time_series_store": current_store,
+            "market_db": current_market_db,
+        }
+        resources[failing_resource_name].close.side_effect = RuntimeError(
+            f"injected {failing_resource_name} close failure"
+        )
+        market_data_service = MagicMock()
+        roe_service = MagicMock()
+        margin_service = MagicMock()
+        chart_service = MagicMock()
+        request = MagicMock()
+        request.app.state = SimpleNamespace(
+            market_reader=current_reader,
+            market_data_service=market_data_service,
+            roe_service=roe_service,
+            margin_analytics_service=margin_service,
+            chart_service=chart_service,
+            market_db=current_market_db,
+            market_time_series_store=current_store,
+            market_operation_lease=None,
+        )
+        factory = MagicMock()
+        monkeypatch.setattr(
+            db_routes, "_market_timeseries_paths", lambda: (duckdb_path, parquet_dir)
+        )
+        monkeypatch.setattr(
+            db_routes, "_writer_factory", MagicMock(return_value=factory)
+        )
+        close_cached = MagicMock()
+        monkeypatch.setattr(
+            db_routes, "close_all_cached_data_access_clients", close_cached
+        )
+
+        with pytest.raises(RuntimeError, match="failed to close"):
+            db_routes._reset_market_resources(request)
+
+        factory.reset_and_open.assert_not_called()
+        assert duckdb_path.read_text() == "original database"
+        assert wal_path.read_text() == "original wal"
+        assert parquet_file.read_text() == "original parquet"
+        assert request.app.state.market_reader is current_reader
+        assert request.app.state.market_time_series_store is current_store
+        assert request.app.state.market_db is current_market_db
+        assert request.app.state.market_data_service is market_data_service
+        assert request.app.state.roe_service is roe_service
+        assert request.app.state.margin_analytics_service is margin_service
+        assert request.app.state.chart_service is chart_service
+        for resource in resources.values():
+            resource.close.assert_called_once_with()
+        close_cached.assert_not_called()
+
     def test_get_db_stats_routes_to_service(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -680,8 +802,10 @@ class TestSyncRoutes:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         request = MagicMock()
+        market_db = MagicMock()
+        market_db.validate_schema.return_value = {"valid": True}
         request.app.state = SimpleNamespace(
-            market_db=MagicMock(),
+            market_db=market_db,
             market_time_series_store=MagicMock(),
         )
         validation_response = MagicMock()
@@ -694,6 +818,51 @@ class TestSyncRoutes:
         validate_market_db.assert_called_once_with(
             request.app.state.market_db,
             time_series_store=request.app.state.market_time_series_store,
+        )
+
+    def test_db_validate_rejects_legacy_bigint_adjusted_volume_with_reset_guidance(
+        self,
+        app_client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        market_root = tmp_path / "market-timeseries"
+        db_path = market_root / "market.duckdb"
+        market_db = open_market_db(str(db_path), read_only=False)
+        market_db.set_sync_metadata("init_completed", "true")
+        market_db.close()
+        with connect_market_duckdb_for_test(str(db_path)) as connection:
+            connection.execute(
+                "ALTER TABLE stock_data_raw ALTER adjusted_volume TYPE BIGINT"
+            )
+            connection.execute("ALTER TABLE stock_data ALTER volume TYPE BIGINT")
+
+        read_only_db = open_market_db(str(db_path), read_only=True)
+        forbidden_store_open = MagicMock(
+            side_effect=AssertionError(
+                "incompatible Market data must not be opened through the time-series store"
+            )
+        )
+        monkeypatch.setattr(
+            db_routes, "_get_market_time_series_store", forbidden_store_open
+        )
+        app_client.app.state.market_db = read_only_db
+        app_client.app.state.market_time_series_store = None
+        try:
+            response = app_client.get("/api/db/validate")
+        finally:
+            read_only_db.close()
+            app_client.app.state.market_time_series_store = None
+            app_client.app.state.market_db = None
+
+        assert response.status_code == 200, response.text
+        forbidden_store_open.assert_not_called()
+        payload = response.json()
+        assert payload["status"] == "error"
+        assert any(
+            "RESET initial" in recommendation
+            and "incompatible Market root" in recommendation
+            for recommendation in payload["recommendations"]
         )
 
     def test_sync_start(self, client: TestClient) -> None:

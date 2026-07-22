@@ -159,10 +159,12 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Market time-series reader (DuckDB SoT)
     market_reader: MarketDbReader | None = None
+    market_source_compatible = False
     reader_path = Path(settings.market_timeseries_dir) / "market.duckdb"
     if reader_path.exists():
         try:
             inspect_market_source_identity(reader_path)
+            market_source_compatible = True
             market_reader = MarketDbReader(str(reader_path))
             app.state.market_data_service = MarketDataService(market_reader)
             logger.info(f"Market data reader を初期化: {reader_path}")
@@ -197,16 +199,17 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Phase 2: market data plane (DuckDB + Parquet SoT)
     market_time_series_store: MarketTimeSeriesStore | None = None
-    try:
-        timeseries_base = settings.market_timeseries_dir
-        market_time_series_store = create_time_series_store(
-            backend="duckdb-parquet",
-            duckdb_path=str((Path(timeseries_base) / "market.duckdb")),
-            parquet_dir=str((Path(timeseries_base) / "parquet")),
-            read_only=True,
-        )
-    except Exception as e:
-        logger.warning(f"Market time-series store の初期化に失敗: {e}")
+    if market_source_compatible:
+        try:
+            timeseries_base = settings.market_timeseries_dir
+            market_time_series_store = create_time_series_store(
+                backend="duckdb-parquet",
+                duckdb_path=str((Path(timeseries_base) / "market.duckdb")),
+                parquet_dir=str((Path(timeseries_base) / "parquet")),
+                read_only=True,
+            )
+        except Exception as e:
+            logger.warning(f"Market time-series store の初期化に失敗: {e}")
     app.state.market_time_series_store = market_time_series_store
 
     portfolio_db: PortfolioDb | None = None

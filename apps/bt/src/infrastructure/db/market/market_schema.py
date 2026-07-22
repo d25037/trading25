@@ -32,9 +32,43 @@ PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE = "provider_adjusted_v1"
 MARKET_SCHEMA_VERSION = 5
 INCOMPATIBLE_MARKET_SCHEMA_VERSION = 0
 
+ADJUSTED_DAILY_VOLUME_PHYSICAL_CONTRACT: tuple[tuple[str, str, str], ...] = (
+    ("stock_data_raw", "adjusted_volume", "DOUBLE"),
+    ("stock_data", "volume", "DOUBLE"),
+)
+
 
 class IncompatibleMarketSchemaError(RuntimeError):
     """Raised before a writable handle can mutate an older Market schema."""
+
+
+def inspect_adjusted_daily_volume_physical_contract(
+    connection: Any,
+) -> list[str]:
+    """Return read-only-safe Market v5 physical adjusted-volume mismatches."""
+    issues: list[str] = []
+    for table_name, column_name, expected_type in (
+        ADJUSTED_DAILY_VOLUME_PHYSICAL_CONTRACT
+    ):
+        table_exists = connection.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = ? LIMIT 1",
+            [table_name],
+        ).fetchone()
+        if table_exists is None:
+            issues.append(f"{table_name}.{column_name}=missing (expected {expected_type})")
+            continue
+        column_types = {
+            str(row[1]): str(row[2]).upper()
+            for row in connection.execute(f"PRAGMA table_info('{table_name}')").fetchall()
+            if row and len(row) > 2
+        }
+        observed_type = column_types.get(column_name)
+        if observed_type != expected_type:
+            issues.append(
+                f"{table_name}.{column_name}={observed_type or 'missing'} "
+                f"(expected {expected_type})"
+            )
+    return issues
 
 STATS_TABLES: tuple[str, ...] = (
     "market_schema_version",

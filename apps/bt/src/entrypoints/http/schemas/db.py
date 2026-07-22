@@ -35,7 +35,7 @@ class SyncRequest(BaseModel):
 class CreateSyncJobResponse(BaseModel):
     jobId: str
     status: str = "pending"
-    mode: str
+    mode: market_contracts.SyncModeLiteral
     estimatedApiCalls: int
     message: str = "Sync job started"
 
@@ -43,7 +43,7 @@ class CreateSyncJobResponse(BaseModel):
 class SyncJobResponse(BaseModel):
     jobId: str
     status: str
-    mode: str
+    mode: market_contracts.SyncModeLiteral
     enforceBulkForStockData: bool = False
     maintenance: maintenance_contracts.MarketMaintenanceRecord = Field(
         default_factory=maintenance_contracts.MarketMaintenanceRecord.never_run
@@ -74,7 +74,7 @@ class SyncFetchDetail(BaseModel):
 class SyncFetchDetailsResponse(BaseModel):
     jobId: str
     status: str
-    mode: str
+    mode: market_contracts.SyncModeLiteral
     latest: SyncFetchDetail | None = None
     items: list[SyncFetchDetail] = Field(default_factory=list)
 

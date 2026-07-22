@@ -134,6 +134,58 @@ type SyncContracts = [
   Expect<Equal<JobStatus, Schemas['JobStatus']>>,
 ];
 
+const invalidAutoCreateSyncResponse: CreateSyncJobResponse = {
+  estimatedApiCalls: 1,
+  jobId: 'sync-job-id',
+  message: 'Sync job started',
+  // @ts-expect-error Removed sync modes must not appear in create responses.
+  mode: 'auto',
+  status: 'pending',
+};
+const invalidRepairCreateSyncResponse: CreateSyncJobResponse = {
+  estimatedApiCalls: 1,
+  jobId: 'sync-job-id',
+  message: 'Sync job started',
+  // @ts-expect-error Repair mode was folded into incremental sync.
+  mode: 'repair',
+  status: 'pending',
+};
+const invalidAutoSyncJobResponse: SyncJobResponse = {
+  enforceBulkForStockData: false,
+  jobId: 'sync-job-id',
+  // @ts-expect-error Removed sync modes must not appear in job responses.
+  mode: 'auto',
+  startedAt: '2026-07-22T00:00:00+00:00',
+  status: 'running',
+};
+const invalidRepairSyncJobResponse: SyncJobResponse = {
+  enforceBulkForStockData: false,
+  jobId: 'sync-job-id',
+  // @ts-expect-error Repair mode was folded into incremental sync.
+  mode: 'repair',
+  startedAt: '2026-07-22T00:00:00+00:00',
+  status: 'running',
+};
+const invalidAutoSyncFetchDetailsResponse: SyncFetchDetailsResponse = {
+  jobId: 'sync-job-id',
+  // @ts-expect-error Removed sync modes must not appear in fetch-detail responses.
+  mode: 'auto',
+  status: 'running',
+};
+const invalidRepairSyncFetchDetailsResponse: SyncFetchDetailsResponse = {
+  jobId: 'sync-job-id',
+  // @ts-expect-error Repair mode was folded into incremental sync.
+  mode: 'repair',
+  status: 'running',
+};
+
+void invalidAutoCreateSyncResponse;
+void invalidRepairCreateSyncResponse;
+void invalidAutoSyncJobResponse;
+void invalidRepairSyncJobResponse;
+void invalidAutoSyncFetchDetailsResponse;
+void invalidRepairSyncFetchDetailsResponse;
+
 type DatasetContracts = [
   Expect<Equal<DatasetListItem, Schemas['DatasetListItem']>>,
   Expect<Equal<DatasetListResponse, ApiJsonResponse<'/api/dataset', 'get', 200>>>,

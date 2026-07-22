@@ -8,7 +8,11 @@ from pathlib import Path
 import stat
 from typing import Any, cast
 
-from .market_schema import MARKET_SCHEMA_VERSION, PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
+from .market_schema import (
+    MARKET_SCHEMA_VERSION,
+    PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
+    inspect_adjusted_daily_volume_physical_contract,
+)
 
 
 class MarketSourceIdentityError(RuntimeError):
@@ -35,6 +39,7 @@ def inspect_market_source_identity(path: Path) -> MarketSourceIdentity:
         raise MarketSourceIdentityError("Market source must be a regular file")
     duckdb = __import__("duckdb")
     connection = cast(Any, duckdb).connect(str(path), read_only=True)
+    physical_contract_issues: list[str] = []
     try:
         schema_row = connection.execute(
             "SELECT MAX(version) FROM market_schema_version"
@@ -42,6 +47,10 @@ def inspect_market_source_identity(path: Path) -> MarketSourceIdentity:
         mode_row = connection.execute(
             "SELECT value FROM sync_metadata WHERE key = 'stock_price_adjustment_mode'"
         ).fetchone()
+        if schema_row and schema_row[0] == MARKET_SCHEMA_VERSION:
+            physical_contract_issues = (
+                inspect_adjusted_daily_volume_physical_contract(connection)
+            )
     except Exception as exc:
         raise MarketSourceIdentityError(
             f"Market source must be schema v{MARKET_SCHEMA_VERSION}"
@@ -65,6 +74,13 @@ def inspect_market_source_identity(path: Path) -> MarketSourceIdentity:
         raise MarketSourceIdentityError(
             "Market source adjustment mode must be "
             f"{PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE}"
+        )
+    if physical_contract_issues:
+        raise MarketSourceIdentityError(
+            "Incompatible Market v5 daily adjusted-volume physical contract "
+            f"({', '.join(physical_contract_issues)}). Run RESET initial "
+            "(mode='initial', resetBeforeSync=true) to rebuild; compatibility "
+            "reads and in-place migration are not supported."
         )
     return MarketSourceIdentity(path, current.st_dev, current.st_ino, current.st_size, schema, mode)
 

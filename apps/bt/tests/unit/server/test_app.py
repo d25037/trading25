@@ -8,8 +8,14 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 import pytest
 from fastapi.testclient import TestClient
 
+import src.entrypoints.http.app as app_module
 from src.entrypoints.http.app import _periodic_cleanup, create_app, lifespan
 from src.infrastructure.db.market.market_operation_lease import MarketOperationLease
+from src.shared.config.settings import Settings
+from tests.unit.server.db.market_writer_test_support import (
+    connect_market_duckdb_for_test,
+    open_market_db,
+)
 
 
 class TestCreateApp:
@@ -137,6 +143,64 @@ class TestLifespan:
         assert app.state.market_operation_lease is None
         with MarketOperationLease.acquire(root, exclusive=True):
             pass
+
+    @pytest.mark.asyncio
+    async def test_lifespan_rejects_legacy_bigint_adjusted_volume_with_reset_guidance(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        market_root = tmp_path / "market-timeseries"
+        db_path = market_root / "market.duckdb"
+        seeded = open_market_db(str(db_path), read_only=False)
+        seeded.close()
+        with connect_market_duckdb_for_test(str(db_path)) as connection:
+            connection.execute(
+                "ALTER TABLE stock_data_raw ALTER adjusted_volume TYPE BIGINT"
+            )
+            connection.execute("ALTER TABLE stock_data ALTER volume TYPE BIGINT")
+
+        settings = Settings(
+            MARKET_TIMESERIES_DIR=str(market_root),
+            PORTFOLIO_DB_PATH=str(tmp_path / "portfolio.db"),
+            DATASET_BASE_PATH=str(tmp_path / "datasets"),
+        )
+        monkeypatch.setattr(app_module, "get_settings", lambda: settings)
+        reader_factory = MagicMock()
+        monkeypatch.setattr(app_module, "MarketDbReader", reader_factory)
+        monkeypatch.setattr(app_module, "MarketDb", MagicMock(return_value=MagicMock()))
+        store_factory = MagicMock(return_value=MagicMock())
+        monkeypatch.setattr(
+            app_module,
+            "create_time_series_store",
+            store_factory,
+        )
+        monkeypatch.setattr(app_module, "PortfolioDb", MagicMock(return_value=MagicMock()))
+        warning = MagicMock()
+        monkeypatch.setattr(app_module.logger, "warning", warning)
+
+        class StartupMarker(RuntimeError):
+            pass
+
+        monkeypatch.setattr(
+            app_module.job_manager,
+            "reconcile_orphaned_jobs",
+            AsyncMock(side_effect=StartupMarker("stop after Market startup")),
+        )
+        app = create_app()
+
+        with pytest.raises(StartupMarker):
+            async with lifespan(app):
+                pass
+
+        reader_factory.assert_not_called()
+        store_factory.assert_not_called()
+        assert app.state.market_reader is None
+        assert app.state.market_time_series_store is None
+        assert any(
+            "RESET initial" in str(call_args)
+            for call_args in warning.call_args_list
+        )
 
     @pytest.mark.asyncio
     async def test_lifespan_startup_shutdown(self) -> None:

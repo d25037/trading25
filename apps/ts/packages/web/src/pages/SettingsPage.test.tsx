@@ -100,7 +100,7 @@ beforeEach(() => {
       data: {
         jobId,
         status: 'running',
-        mode: 'auto',
+        mode: 'incremental',
         startedAt: '2026-02-13T00:00:00Z',
       } as SyncJobStatus,
       isLoading: false,

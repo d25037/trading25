@@ -463,6 +463,70 @@ def test_close_failure_keeps_writer_lease_fenced(
     read_only.close()
 
 
+def test_reset_preflights_invalid_wal_before_deleting_existing_market(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data"
+    market_root = data_root / "market-timeseries"
+    factory = MarketWriterResourceFactory(data_root=data_root, market_root=market_root)
+    initial = factory.reset_and_open()
+    token = initial.close_writable_handles()
+    resources = initial.reopen_read_only(token)
+    initial.release_after_read_only_reopen(token)
+    resources.close()
+
+    db_path = market_root / "market.duckdb"
+    db_before = db_path.read_bytes()
+    parquet_file = market_root / "parquet" / "stock_data.parquet"
+    parquet_file.write_text("must stay untouched")
+    parquet_before = parquet_file.read_bytes()
+    invalid_target = tmp_path / "invalid-wal-target"
+    invalid_target.write_text("must stay untouched")
+    wal_path = market_root / "market.duckdb.wal"
+    wal_path.symlink_to(invalid_target)
+
+    with pytest.raises(RuntimeError, match="regular file"):
+        factory.reset_and_open(blocking=False)
+
+    assert db_path.read_bytes() == db_before
+    assert parquet_file.read_bytes() == parquet_before
+    assert wal_path.is_symlink()
+    assert wal_path.readlink() == invalid_target
+    assert invalid_target.read_text() == "must stay untouched"
+
+
+def test_reset_preflights_invalid_parquet_before_deleting_existing_market(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data"
+    market_root = data_root / "market-timeseries"
+    factory = MarketWriterResourceFactory(data_root=data_root, market_root=market_root)
+    initial = factory.reset_and_open()
+    token = initial.close_writable_handles()
+    resources = initial.reopen_read_only(token)
+    initial.release_after_read_only_reopen(token)
+    resources.close()
+
+    db_path = market_root / "market.duckdb"
+    db_before = db_path.read_bytes()
+    wal_path = market_root / "market.duckdb.wal"
+    wal_path.write_text("must stay untouched")
+    invalid_target = tmp_path / "invalid-parquet-target"
+    invalid_target.mkdir()
+    parquet_path = market_root / "parquet"
+    shutil.rmtree(parquet_path)
+    parquet_path.symlink_to(invalid_target, target_is_directory=True)
+
+    with pytest.raises(RuntimeError, match="real directory"):
+        factory.reset_and_open(blocking=False)
+
+    assert db_path.read_bytes() == db_before
+    assert wal_path.read_text() == "must stay untouched"
+    assert parquet_path.is_symlink()
+    assert parquet_path.readlink() == invalid_target
+    assert invalid_target.is_dir()
+
+
 def test_waiting_writer_re_resolves_replacement_inode_after_lease(
     tmp_path: Path,
 ) -> None:

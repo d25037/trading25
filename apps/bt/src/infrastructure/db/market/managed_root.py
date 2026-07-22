@@ -10,11 +10,8 @@ from pathlib import Path
 import stat
 
 
-class CutoverSafetyError(RuntimeError):
+class ManagedRootError(RuntimeError):
     """A managed-root safety invariant was violated."""
-
-
-ManagedRootError = CutoverSafetyError
 
 
 _DIR_OPEN_FLAGS = (
