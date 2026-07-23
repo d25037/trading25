@@ -475,6 +475,7 @@ async def _run_price_coordinator(
         ctx,
         session=session,
         date=target_date,
+        provider_codes=stage.provider_codes,
     )
     outcome = await session.commit(ctx, stage=stage)
     return (

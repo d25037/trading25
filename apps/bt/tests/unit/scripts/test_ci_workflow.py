@@ -214,6 +214,7 @@ def test_ci_tool_versions_are_centrally_fixed() -> None:
         "BUN_ARCHIVE_SHA256": (
             "951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f"
         ),
+        "UV_VERSION": "0.11.31",
         "GITLEAKS_VERSION": "8.30.1",
         "GITLEAKS_IMAGE_DIGEST": (
             "sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f"
@@ -221,13 +222,13 @@ def test_ci_tool_versions_are_centrally_fixed() -> None:
     }
 
 
-def test_uv_version_is_project_owned_and_discovered_by_setup_uv() -> None:
+def test_uv_version_allows_dependabot_while_ci_stays_exactly_pinned() -> None:
     with BT_PYPROJECT.open("rb") as pyproject_file:
         pyproject = tomllib.load(pyproject_file)
 
-    assert pyproject["tool"]["uv"]["required-version"] == "==0.11.31"
-    assert "UV_VERSION" not in _workflow(CI_WORKFLOW)["env"]
-    assert "UV_VERSION" not in _workflow(RESEARCH_WORKFLOW).get("env", {})
+    assert pyproject["tool"]["uv"]["required-version"] == ">=0.11.8,<0.12"
+    assert _workflow(CI_WORKFLOW)["env"]["UV_VERSION"] == "0.11.31"
+    assert _workflow(RESEARCH_WORKFLOW)["env"]["UV_VERSION"] == "0.11.31"
 
     setup_uv_steps = [
         step
@@ -239,7 +240,7 @@ def test_uv_version_is_project_owned_and_discovered_by_setup_uv() -> None:
     assert len(setup_uv_steps) == 8
     for step in setup_uv_steps:
         assert step["with"]["working-directory"] == "apps/bt"
-        assert "version" not in step["with"]
+        assert step["with"]["version"] == "${{ env.UV_VERSION }}"
 
 
 def test_setup_uv_uses_bounded_push_only_caches() -> None:

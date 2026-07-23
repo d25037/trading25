@@ -194,8 +194,8 @@ class TestDbValidateRoute:
         assert resp.status_code == 200
         data = resp.json()
         # Has missing dates (topix has 2024-01-06 but stock_data doesn't)
-        assert data["status"] == "error"
-        assert data["providerVintage"]["status"] == "invalid"
+        assert data["status"] == "warning"
+        assert data["providerVintage"]["status"] == "pending"
         assert data["providerVintage"]["recoveryStage"] == "market_db_sync"
         assert data["initialized"] is True
         assert data["lastSync"] == "2024-01-06T10:00:00"

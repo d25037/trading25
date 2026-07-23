@@ -377,6 +377,7 @@ def analytics_timeseries_dir(tmp_path_factory):
     AdjustedMetricsMaterializer(market_db).rebuild_current_basis(
         ["7203", "6758", "3333"]
     )
+    market_db.materialize_daily_valuation(full_rebuild=True)
     market_db.close()
     return str(base_dir)
 

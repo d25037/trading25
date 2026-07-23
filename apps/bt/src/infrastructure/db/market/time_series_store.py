@@ -1013,6 +1013,87 @@ class DuckDbParquetTimeSeriesStore:
             [code, reason, source_fingerprint, datetime.now(UTC).isoformat()],
         )
 
+    def _upsert_statementless_current_basis_state_unlocked(
+        self,
+        *,
+        materialized_at: str,
+    ) -> None:
+        reconciliation_row = self._conn.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM stock_provider_windows AS windows
+                LEFT JOIN current_basis_fundamentals_state AS state
+                  ON state.code = windows.code
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM statements
+                    WHERE CASE
+                              WHEN length(statements.code) = 5
+                               AND right(statements.code, 1) = '0'
+                              THEN left(statements.code, 4)
+                              ELSE statements.code
+                          END = windows.code
+                )
+                  AND (
+                      state.code IS NULL
+                      OR state.fundamentals_adjustment_basis_date
+                         IS DISTINCT FROM windows.coverage_end
+                      OR state.source_fingerprint
+                         IS DISTINCT FROM windows.source_fingerprint
+                      OR state.statement_count IS DISTINCT FROM 0
+                  )
+            )
+            """
+        ).fetchone()
+        needs_reconciliation = bool(
+            reconciliation_row is not None and reconciliation_row[0]
+        )
+        if not needs_reconciliation:
+            return
+
+        self._conn.execute(
+            """
+            INSERT INTO current_basis_fundamentals_state (
+                code,
+                fundamentals_adjustment_basis_date,
+                source_fingerprint,
+                statement_count,
+                materialized_at
+            )
+            SELECT
+                windows.code,
+                windows.coverage_end,
+                windows.source_fingerprint,
+                0,
+                ?
+            FROM stock_provider_windows AS windows
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM statements
+                WHERE CASE
+                          WHEN length(statements.code) = 5
+                           AND right(statements.code, 1) = '0'
+                          THEN left(statements.code, 4)
+                          ELSE statements.code
+                      END = windows.code
+            )
+            ON CONFLICT (code) DO UPDATE SET
+                fundamentals_adjustment_basis_date =
+                    excluded.fundamentals_adjustment_basis_date,
+                source_fingerprint = excluded.source_fingerprint,
+                statement_count = excluded.statement_count,
+                materialized_at = excluded.materialized_at
+            WHERE current_basis_fundamentals_state.fundamentals_adjustment_basis_date
+                      IS DISTINCT FROM excluded.fundamentals_adjustment_basis_date
+               OR current_basis_fundamentals_state.source_fingerprint
+                      IS DISTINCT FROM excluded.source_fingerprint
+               OR current_basis_fundamentals_state.statement_count
+                      IS DISTINCT FROM excluded.statement_count
+            """,
+            [materialized_at],
+        )
+
     def _current_statement_source_fingerprint_unlocked(self, code: str) -> str:
         columns = self._STATEMENTS_UPSERT_SPEC.columns
         rows = self._conn.execute(
@@ -1663,40 +1744,8 @@ class DuckDbParquetTimeSeriesStore:
                     """,
                     [code, *desired, updated_at],
                 )
-            self._conn.execute(
-                """
-                INSERT INTO current_basis_fundamentals_state (
-                    code,
-                    fundamentals_adjustment_basis_date,
-                    source_fingerprint,
-                    statement_count,
-                    materialized_at
-                )
-                SELECT
-                    windows.code,
-                    windows.coverage_end,
-                    windows.source_fingerprint,
-                    0,
-                    ?
-                FROM stock_provider_windows AS windows
-                WHERE NOT EXISTS (
-                    SELECT 1
-                    FROM statements
-                    WHERE CASE
-                              WHEN length(statements.code) = 5
-                               AND right(statements.code, 1) = '0'
-                              THEN left(statements.code, 4)
-                              ELSE statements.code
-                          END = windows.code
-                )
-                ON CONFLICT (code) DO UPDATE SET
-                    fundamentals_adjustment_basis_date =
-                        excluded.fundamentals_adjustment_basis_date,
-                    source_fingerprint = excluded.source_fingerprint,
-                    statement_count = excluded.statement_count,
-                    materialized_at = excluded.materialized_at
-                """,
-                [updated_at],
+            self._upsert_statementless_current_basis_state_unlocked(
+                materialized_at=updated_at
             )
             for code in pending_codes:
                 self._mark_current_basis_recompute_pending_unlocked(
@@ -1970,40 +2019,8 @@ class DuckDbParquetTimeSeriesStore:
                 SELECT {", ".join(window_columns)} FROM {window_relation}
                 """
             )
-            self._conn.execute(
-                """
-                INSERT INTO current_basis_fundamentals_state (
-                    code,
-                    fundamentals_adjustment_basis_date,
-                    source_fingerprint,
-                    statement_count,
-                    materialized_at
-                )
-                SELECT
-                    windows.code,
-                    windows.coverage_end,
-                    windows.source_fingerprint,
-                    0,
-                    ?
-                FROM stock_provider_windows AS windows
-                WHERE NOT EXISTS (
-                    SELECT 1
-                    FROM statements
-                    WHERE CASE
-                              WHEN length(statements.code) = 5
-                               AND right(statements.code, 1) = '0'
-                              THEN left(statements.code, 4)
-                              ELSE statements.code
-                          END = windows.code
-                )
-                ON CONFLICT (code) DO UPDATE SET
-                    fundamentals_adjustment_basis_date =
-                        excluded.fundamentals_adjustment_basis_date,
-                    source_fingerprint = excluded.source_fingerprint,
-                    statement_count = excluded.statement_count,
-                    materialized_at = excluded.materialized_at
-                """,
-                [updated_at],
+            self._upsert_statementless_current_basis_state_unlocked(
+                materialized_at=updated_at
             )
             self._conn.execute(
                 f"""

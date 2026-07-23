@@ -6,6 +6,9 @@ on:
 permissions:
   contents: read
 
+env:
+  UV_VERSION: "0.11.31"
+
 concurrency:
   group: research-promotion-${{ github.ref }}
   cancel-in-progress: true
@@ -28,6 +31,7 @@ jobs:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           working-directory: apps/bt
+          version: ${{ env.UV_VERSION }}
           enable-cache: true
           prune-cache: true
           restore-cache: true
