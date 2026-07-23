@@ -18,9 +18,9 @@ dependencies = [
     "ruamel.yaml>=0.18.0",  # YAML library with comment preservation
     "fastapi>=0.139.2",  # FastAPI server for backtest API
     "uvicorn[standard]>=0.51.0",  # ASGI server for FastAPI
-    "sse-starlette>=3.4.5",  # Server-Sent Events for FastAPI
+    "sse-starlette>=3.4.6",  # Server-Sent Events for FastAPI
     "sqlalchemy>=2.0.51",  # Core query builder for DB access (no ORM)
-    "duckdb>=1.5.4",  # Market time-series data plane (DuckDB + Parquet)
+    "duckdb>=1.5.5",  # Market time-series data plane (DuckDB + Parquet)
     "moomoo-api>=10.9.6908",
 ]
 
