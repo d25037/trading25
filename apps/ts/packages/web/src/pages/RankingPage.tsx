@@ -2,11 +2,6 @@ import { useNavigate } from '@tanstack/react-router';
 import type { MarketRankingParams } from '@trading25/api-clients/analytics';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  FundamentalRankingFilters,
-  FundamentalRankingSummary,
-  FundamentalRankingTable,
-} from '@/components/FundamentalRanking';
-import {
   PageIntroMetaList,
   SectionEyebrow,
   SegmentedTabs,
@@ -14,6 +9,7 @@ import {
   SplitMain,
   Surface,
 } from '@/components/Layout/Workspace';
+import { BubbleFootprintBanner } from '@/components/MarketRegime/BubbleFootprintBanner';
 import {
   FORWARD_EPS_DISCLOSURE_OPTIONS,
   IndexPerformanceTable,
@@ -34,22 +30,18 @@ import {
 import { DateInput, MarketsSelect, NumberSelect } from '@/components/shared/filters';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useFundamentalRanking } from '@/hooks/useFundamentalRanking';
+import { useMarketBubbleFootprint } from '@/hooks/useMarketBubbleFootprint';
 import { useRankingRouteState } from '@/hooks/usePageRouteState';
 import { useRanking } from '@/hooks/useRanking';
 import { useWatchlists, useWatchlistWithItems } from '@/hooks/useWatchlist';
 import { formatMarketsLabel } from '@/lib/marketUtils';
 import { cn } from '@/lib/utils';
-import type { DailyRankingTableFilters, RankingDailyView, RankingPageTab, RankingParams } from '@/types/ranking';
+import type { DailyRankingTableFilters, RankingDailyView, RankingParams } from '@/types/ranking';
 
 const dailyViewTabs = [
   { value: 'stocks' as RankingDailyView, label: 'Individual Stocks' },
   { value: 'technicalEvents' as RankingDailyView, label: 'Technical Events' },
   { value: 'indices' as RankingDailyView, label: 'Indices' },
-];
-const pageModeTabs = [
-  { value: 'ranking' as RankingPageTab, label: 'Daily Ranking' },
-  { value: 'fundamentalRanking' as RankingPageTab, label: 'Fundamental Ranking' },
 ];
 const rankingMoreControlsId = 'ranking-more-controls';
 
@@ -453,18 +445,7 @@ function RankingHeaderControls({
   );
 }
 
-function buildIntroMetaItems(
-  activeSubTab: RankingPageTab,
-  activeDailyView: RankingDailyView,
-  rankingParams: RankingParams,
-  fundamentalMarkets: string | undefined
-) {
-  if (activeSubTab === 'fundamentalRanking') {
-    return [
-      { label: 'Mode', value: 'Forecast / actual EPS' },
-      { label: 'Markets', value: formatMarketsLabel((fundamentalMarkets ?? 'prime').split(',')) },
-    ];
-  }
+function buildIntroMetaItems(activeDailyView: RankingDailyView, rankingParams: RankingParams) {
   return [
     {
       label: 'Mode',
@@ -600,14 +581,10 @@ function RankingContent({
 
 export function RankingPage() {
   const {
-    activeSubTab,
     activeDailyView,
-    fundamentalRankingParams,
     rankingParams,
     rankingTableFilters,
-    setActiveSubTab,
     setActiveDailyView,
-    setFundamentalRankingParams,
     setRankingParams,
     setRankingTableFilters,
   } = useRankingRouteState();
@@ -637,21 +614,16 @@ export function RankingPage() {
     () => buildRankingScrollRestorationKey(activeDailyView, rankingParams, rankingTableFilters),
     [activeDailyView, rankingParams, rankingTableFilters]
   );
-  const rankingQuery = useRanking(rankingQueryParams, activeSubTab === 'ranking');
-  const fundamentalRankingQuery = useFundamentalRanking(
-    fundamentalRankingParams,
-    activeSubTab === 'fundamentalRanking'
-  );
+  const rankingQuery = useRanking(rankingQueryParams, true);
   const watchlistsQuery = useWatchlists();
   const selectedWatchlistQuery = useWatchlistWithItems(
     activeDailyView === 'stocks' ? (rankingTableFilters.watchlistId ?? null) : null
   );
-  const introMetaItems = buildIntroMetaItems(
-    activeSubTab,
-    activeDailyView,
-    rankingParams,
-    fundamentalRankingParams.markets
-  );
+  const footprintQuery = useMarketBubbleFootprint({
+    markets: rankingParams.markets ?? 'prime,standard,growth',
+    date: rankingParams.date,
+  });
+  const introMetaItems = buildIntroMetaItems(activeDailyView, rankingParams);
   const headerControls = (
     <RankingHeaderControls
       activeDailyView={activeDailyView}
@@ -691,23 +663,19 @@ export function RankingPage() {
             <div className="space-y-0.5">
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">Ranking</h1>
               <p className="max-w-2xl text-xs text-muted-foreground sm:text-sm">
-                {activeSubTab === 'fundamentalRanking'
-                  ? 'Forecast-to-actual EPS rankings from the current market data plane.'
-                  : 'Daily ranking, technical events, and index performance.'}
+                Daily ranking, technical events, and index performance.
               </p>
             </div>
-            <SegmentedTabs
-              items={pageModeTabs}
-              value={activeSubTab}
-              onChange={setActiveSubTab}
-              className="pt-1"
-              itemClassName="h-8 rounded-lg px-3 py-1.5 text-xs"
-            />
           </div>
           <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center lg:justify-end">
             <PageIntroMetaList
               items={introMetaItems}
               className="shrink-0 gap-x-2.5 gap-y-1 [&>div]:min-w-[6.5rem] [&>div]:pl-2"
+            />
+            <BubbleFootprintBanner
+              data={footprintQuery.data}
+              isLoading={footprintQuery.isLoading}
+              errorMessage={footprintQuery.error?.message ?? null}
             />
           </div>
         </div>
@@ -715,34 +683,21 @@ export function RankingPage() {
 
       <SplitLayout className="min-h-0 flex-1 flex-col gap-3 lg:overflow-hidden">
         <SplitMain className="gap-3 lg:overflow-hidden">
-          {activeSubTab === 'fundamentalRanking' ? (
-            <>
-              <FundamentalRankingFilters params={fundamentalRankingParams} onChange={setFundamentalRankingParams} />
-              <FundamentalRankingTable
-                rankings={fundamentalRankingQuery.data?.rankings}
-                isLoading={fundamentalRankingQuery.isLoading}
-                error={fundamentalRankingQuery.error}
-                onStockClick={handleStockClick}
-              />
-              <FundamentalRankingSummary data={fundamentalRankingQuery.data} />
-            </>
-          ) : (
-            <RankingContent
-              activeDailyView={activeDailyView}
-              rankingParams={rankingParams}
-              rankingQuery={rankingQuery}
-              rankingSortState={rankingSortState}
-              rankingTableFilters={activeDailyView === 'stocks' ? rankingTableFilters : {}}
-              watchlistsQuery={watchlistsQuery}
-              selectedWatchlistQuery={selectedWatchlistQuery}
-              headerControls={headerControls}
-              onRankingSortChange={handleRankingSortChange}
-              onRankingTableFiltersChange={setRankingTableFilters}
-              scrollRestorationKey={rankingScrollRestorationKey}
-              onStockClick={handleStockClick}
-              onIndexClick={handleIndexClick}
-            />
-          )}
+          <RankingContent
+            activeDailyView={activeDailyView}
+            rankingParams={rankingParams}
+            rankingQuery={rankingQuery}
+            rankingSortState={rankingSortState}
+            rankingTableFilters={activeDailyView === 'stocks' ? rankingTableFilters : {}}
+            watchlistsQuery={watchlistsQuery}
+            selectedWatchlistQuery={selectedWatchlistQuery}
+            headerControls={headerControls}
+            onRankingSortChange={handleRankingSortChange}
+            onRankingTableFiltersChange={setRankingTableFilters}
+            scrollRestorationKey={rankingScrollRestorationKey}
+            onStockClick={handleStockClick}
+            onIndexClick={handleIndexClick}
+          />
         </SplitMain>
       </SplitLayout>
     </div>

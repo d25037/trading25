@@ -274,13 +274,13 @@ describe('RankingPage', () => {
     expect(screen.getByRole('heading', { name: 'Ranking' })).toBeInTheDocument();
     expect(screen.getByText('Daily market ranking')).toBeInTheDocument();
     expect(screen.queryByText('Ranking Filters')).not.toBeInTheDocument();
-    expect(screen.queryByText('Market Regime')).not.toBeInTheDocument();
+    expect(screen.getByText('Market Regime')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Individual Stocks' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Technical Events' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Indices' })).toBeInTheDocument();
     expect(screen.getByLabelText('Preset')).toBeInTheDocument();
     expect(screen.getByText('More')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Fundamental Ranking' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Fundamental Ranking' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Value Scores' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'TOPIX100 Study' })).not.toBeInTheDocument();
     expect(screen.queryByText('Ranking Summary')).not.toBeInTheDocument();
@@ -308,18 +308,23 @@ describe('RankingPage', () => {
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ riskState: undefined }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ technicalState: undefined }), true);
     expect(mockUseRanking).not.toHaveBeenCalledWith(expect.objectContaining({ sortBy: 'tradingValue' }), true);
-    expect(mockUseMarketBubbleFootprint).not.toHaveBeenCalled();
+    expect(mockUseMarketBubbleFootprint).toHaveBeenCalledWith({
+      markets: 'prime',
+      date: undefined,
+    });
   });
 
-  it('enables only fundamental ranking and renders its API item in fundamental mode', () => {
+  it('keeps the latest daily UI when a stale fundamental tab remains in route state', () => {
     mockRouteState.activeSubTab = 'fundamentalRanking';
 
     render(<RankingPage />);
 
-    expect(mockUseRanking).toHaveBeenLastCalledWith(expect.anything(), false);
-    expect(mockUseFundamentalRanking).toHaveBeenLastCalledWith(mockRouteState.fundamentalRankingParams, true);
-    expect(mockUseMarketBubbleFootprint).not.toHaveBeenCalled();
-    expect(screen.getByText('fundamental-item:9432')).toBeInTheDocument();
+    expect(mockUseRanking).toHaveBeenLastCalledWith(expect.anything(), true);
+    expect(mockUseFundamentalRanking).not.toHaveBeenCalled();
+    expect(mockUseMarketBubbleFootprint).toHaveBeenCalled();
+    expect(screen.getByText('Market Regime')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Fundamental Ranking' })).not.toBeInTheDocument();
+    expect(screen.queryByText('fundamental-item:9432')).not.toBeInTheDocument();
   });
 
   it('opens More controls and closes them with outside click or Escape', async () => {
