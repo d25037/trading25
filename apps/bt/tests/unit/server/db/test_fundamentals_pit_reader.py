@@ -568,6 +568,82 @@ def test_snapshot_without_cutoff_uses_current_global_market_frontier(
     assert snapshot.effective_market_date == date(2024, 6, 28)
 
 
+def test_snapshot_accepts_current_basis_before_provider_coverage_end(
+    monkeypatch: pytest.MonkeyPatch, v5_market: Path
+) -> None:
+    _update(
+        v5_market,
+        """
+        UPDATE stock_provider_windows
+        SET coverage_end = '2024-07-02', provider_as_of = '2024-07-02'
+        WHERE code IN ('7203', '6758')
+        """,
+    )
+
+    snapshot = _reader_client(monkeypatch, v5_market).get_fundamentals_pit_snapshot(
+        "7203", None
+    )
+
+    assert snapshot.fundamentals_adjustment_basis_date == date(2024, 7, 1)
+    assert snapshot.provider_coverage_end == date(2024, 7, 2)
+
+
+@pytest.mark.parametrize(
+    "lineage_mutation",
+    [
+        "fundamentals_adjustment_basis_date = '2024-06-30'",
+        "source_fingerprint = 'stale'",
+    ],
+)
+def test_snapshot_rejects_stale_symbol_daily_valuation_lineage(
+    monkeypatch: pytest.MonkeyPatch,
+    v5_market: Path,
+    lineage_mutation: str,
+) -> None:
+    _update(
+        v5_market,
+        f"UPDATE daily_valuation SET {lineage_mutation} WHERE code = '7203'",
+    )
+
+    with pytest.raises(
+        FundamentalsPitSnapshotError,
+        match="daily valuation lineage does not match current-basis state",
+    ) as exc_info:
+        _reader_client(monkeypatch, v5_market).get_fundamentals_pit_snapshot(
+            "7203", None
+        )
+
+    assert exc_info.value.reason == "current_adjusted_metrics_required"
+
+
+@pytest.mark.parametrize(
+    "lineage_mutation",
+    [
+        "fundamentals_adjustment_basis_date = '2024-06-30'",
+        "source_fingerprint = 'stale'",
+    ],
+)
+def test_snapshot_rejects_stale_prime_panel_daily_valuation_lineage(
+    monkeypatch: pytest.MonkeyPatch,
+    v5_market: Path,
+    lineage_mutation: str,
+) -> None:
+    _update(
+        v5_market,
+        f"UPDATE daily_valuation SET {lineage_mutation} WHERE code = '6758'",
+    )
+
+    with pytest.raises(
+        FundamentalsPitSnapshotError,
+        match="daily valuation lineage does not match current-basis state",
+    ) as exc_info:
+        _reader_client(monkeypatch, v5_market).get_fundamentals_pit_snapshot(
+            "7203", None
+        )
+
+    assert exc_info.value.reason == "current_adjusted_metrics_required"
+
+
 def test_market_data_client_exposes_only_snapshot_delegate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

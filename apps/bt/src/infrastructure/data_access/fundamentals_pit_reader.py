@@ -146,6 +146,12 @@ def _resolve_shared_provider_windows(
             "provider_plan": window.provider_plan,
             "provider_as_of": window.provider_as_of,
             "source_fingerprint": window.source_fingerprint,
+            "fundamentals_adjustment_basis_date": (
+                window.fundamentals_adjustment_basis_date
+            ),
+            "fundamentals_source_fingerprint": (
+                window.fundamentals_source_fingerprint
+            ),
         }
         for code, window in windows.items()
     }
@@ -294,7 +300,8 @@ def _validate_current_metrics(
         if code not in normalized_codes:
             continue
         expected_basis_date = _as_date(
-            windows[code]["coverage_end"], field="provider coverage_end"
+            windows[code]["fundamentals_adjustment_basis_date"],
+            field="fundamentals_adjustment_basis_date",
         )
         inconsistent = inconsistent or (
             _as_date(
@@ -310,6 +317,33 @@ def _validate_current_metrics(
             "market_db_sync recovery required: current-basis statement metrics "
             "do not match the bounded statement identities/provider windows",
         )
+
+
+def _validate_daily_valuation_lineage(
+    rows: Sequence[dict[str, Any]],
+    windows: dict[str, dict[str, Any]],
+) -> None:
+    for row in rows:
+        if (
+            row.get("statement_id") is None
+            and row.get("fundamentals_adjustment_basis_date") is None
+            and row.get("source_fingerprint") is None
+        ):
+            continue
+        code = normalize_stock_code(str(row["code"]))
+        window = windows.get(code)
+        if (
+            window is None
+            or str(row.get("fundamentals_adjustment_basis_date") or "")
+            != str(window["fundamentals_adjustment_basis_date"])
+            or str(row.get("source_fingerprint") or "")
+            != str(window["fundamentals_source_fingerprint"])
+        ):
+            raise FundamentalsPitSnapshotError(
+                "current_adjusted_metrics_required",
+                "market_db_sync recovery required: daily valuation lineage does not "
+                "match current-basis state",
+            )
 
 
 def _load_statements(
@@ -398,6 +432,7 @@ def _load_valuation(
             ),
         )
     )
+    _validate_daily_valuation_lineage(rows, {normalize_stock_code(code): window})
     cutoff_timestamp = _cutoff_timestamp(knowledge_cutoff_date)
     for row in rows:
         row_date = _as_date(row["date"], field="valuation date")
@@ -491,6 +526,7 @@ def _load_prime_panel(reader: MarketDbReader, effective_market_date: date) -> pd
                    ? AS stock_master_snapshot_date,
                    aggregates.adv20_jpy, aggregates.adv60_jpy,
                    valuation.fundamentals_adjustment_basis_date,
+                   valuation.source_fingerprint,
                    provider.provider_as_of,
                    valuation.statement_disclosed_date,
                    valuation.forward_eps_disclosed_date,
@@ -512,6 +548,7 @@ def _load_prime_panel(reader: MarketDbReader, effective_market_date: date) -> pd
             ),
         )
     )
+    _validate_daily_valuation_lineage(rows, windows)
     return pd.DataFrame(rows)
 
 
@@ -552,12 +589,16 @@ def _resolve_inside_snapshot(
         )
     prime_panel = _load_prime_panel(reader, effective_market_date)
     coverage_end = _as_date(window["coverage_end"], field="provider coverage_end")
+    fundamentals_adjustment_basis_date = _as_date(
+        window["fundamentals_adjustment_basis_date"],
+        field="fundamentals_adjustment_basis_date",
+    )
     return FundamentalsPitSnapshot(
         requested_cutoff_date=cutoff_date,
         knowledge_cutoff_date=knowledge_cutoff_date,
         effective_market_date=effective_market_date,
         stock_master_snapshot_date=effective_market_date,
-        fundamentals_adjustment_basis_date=coverage_end,
+        fundamentals_adjustment_basis_date=fundamentals_adjustment_basis_date,
         provider_as_of=str(window["provider_as_of"]),
         provider_coverage_start=_as_date(
             window["coverage_start"], field="provider coverage_start"

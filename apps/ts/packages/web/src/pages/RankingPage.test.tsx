@@ -21,7 +21,6 @@ const mockSetRankingTableFilters = vi.fn((filters: Record<string, unknown>) => {
 });
 const mockUseRanking = vi.fn();
 const mockUseFundamentalRanking = vi.fn();
-const mockUseMarketBubbleFootprint = vi.fn();
 const mockUseWatchlists = vi.fn();
 const mockUseWatchlistWithItems = vi.fn();
 const mockRouteState = {
@@ -71,10 +70,6 @@ vi.mock('@/hooks/useRanking', () => ({
 
 vi.mock('@/hooks/useFundamentalRanking', () => ({
   useFundamentalRanking: (...args: unknown[]) => mockUseFundamentalRanking(...args),
-}));
-
-vi.mock('@/hooks/useMarketBubbleFootprint', () => ({
-  useMarketBubbleFootprint: (...args: unknown[]) => mockUseMarketBubbleFootprint(...args),
 }));
 
 vi.mock('@/hooks/useWatchlist', () => ({
@@ -202,7 +197,6 @@ describe('RankingPage', () => {
     mockSetRankingTableFilters.mockClear();
     mockUseRanking.mockReset();
     mockUseFundamentalRanking.mockReset();
-    mockUseMarketBubbleFootprint.mockReset();
     mockUseWatchlists.mockReset();
     mockUseWatchlistWithItems.mockReset();
     mockUseRanking.mockReturnValue({
@@ -233,29 +227,6 @@ describe('RankingPage', () => {
       isLoading: false,
       error: null,
     });
-    mockUseMarketBubbleFootprint.mockReturnValue({
-      data: {
-        date: '2026-05-29',
-        markets: ['prime', 'standard', 'growth'],
-        overallRegime: 'blowoff_watch',
-        overallScore: 4,
-        nearBlowoff: true,
-        researchExperimentId: 'market-behavior/market-bubble-footprint',
-        reratingExperimentId: 'market-behavior/rerating-bubble-regime-forward-response',
-        horizons: [
-          {
-            horizon: 60,
-            score: 3,
-            regime: 'crowded',
-            nearBlowoff: true,
-            intensityLabel: 'Near blowoff',
-            activeFlags: [],
-          },
-        ],
-      },
-      isLoading: false,
-      error: null,
-    });
     mockUseWatchlists.mockReturnValue({
       data: { watchlists: [{ id: 12, name: 'Breakout Watch' }] },
       isLoading: false,
@@ -274,7 +245,7 @@ describe('RankingPage', () => {
     expect(screen.getByRole('heading', { name: 'Ranking' })).toBeInTheDocument();
     expect(screen.getByText('Daily market ranking')).toBeInTheDocument();
     expect(screen.queryByText('Ranking Filters')).not.toBeInTheDocument();
-    expect(screen.getByText('Market Regime')).toBeInTheDocument();
+    expect(screen.queryByText('Market Regime')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Individual Stocks' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Technical Events' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Indices' })).toBeInTheDocument();
@@ -308,10 +279,6 @@ describe('RankingPage', () => {
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ riskState: undefined }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ technicalState: undefined }), true);
     expect(mockUseRanking).not.toHaveBeenCalledWith(expect.objectContaining({ sortBy: 'tradingValue' }), true);
-    expect(mockUseMarketBubbleFootprint).toHaveBeenCalledWith({
-      markets: 'prime',
-      date: undefined,
-    });
   });
 
   it('keeps the latest daily UI when a stale fundamental tab remains in route state', () => {
@@ -321,8 +288,7 @@ describe('RankingPage', () => {
 
     expect(mockUseRanking).toHaveBeenLastCalledWith(expect.anything(), true);
     expect(mockUseFundamentalRanking).not.toHaveBeenCalled();
-    expect(mockUseMarketBubbleFootprint).toHaveBeenCalled();
-    expect(screen.getByText('Market Regime')).toBeInTheDocument();
+    expect(screen.queryByText('Market Regime')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Fundamental Ranking' })).not.toBeInTheDocument();
     expect(screen.queryByText('fundamental-item:9432')).not.toBeInTheDocument();
   });

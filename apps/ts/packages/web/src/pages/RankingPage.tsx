@@ -9,7 +9,6 @@ import {
   SplitMain,
   Surface,
 } from '@/components/Layout/Workspace';
-import { BubbleFootprintBanner } from '@/components/MarketRegime/BubbleFootprintBanner';
 import {
   FORWARD_EPS_DISCLOSURE_OPTIONS,
   IndexPerformanceTable,
@@ -30,7 +29,6 @@ import {
 import { DateInput, MarketsSelect, NumberSelect } from '@/components/shared/filters';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useMarketBubbleFootprint } from '@/hooks/useMarketBubbleFootprint';
 import { useRankingRouteState } from '@/hooks/usePageRouteState';
 import { useRanking } from '@/hooks/useRanking';
 import { useWatchlists, useWatchlistWithItems } from '@/hooks/useWatchlist';
@@ -619,10 +617,6 @@ export function RankingPage() {
   const selectedWatchlistQuery = useWatchlistWithItems(
     activeDailyView === 'stocks' ? (rankingTableFilters.watchlistId ?? null) : null
   );
-  const footprintQuery = useMarketBubbleFootprint({
-    markets: rankingParams.markets ?? 'prime,standard,growth',
-    date: rankingParams.date,
-  });
   const introMetaItems = buildIntroMetaItems(activeDailyView, rankingParams);
   const headerControls = (
     <RankingHeaderControls
@@ -671,11 +665,6 @@ export function RankingPage() {
             <PageIntroMetaList
               items={introMetaItems}
               className="shrink-0 gap-x-2.5 gap-y-1 [&>div]:min-w-[6.5rem] [&>div]:pl-2"
-            />
-            <BubbleFootprintBanner
-              data={footprintQuery.data}
-              isLoading={footprintQuery.isLoading}
-              errorMessage={footprintQuery.error?.message ?? null}
             />
           </div>
         </div>
