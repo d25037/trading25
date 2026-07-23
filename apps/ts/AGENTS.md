@@ -93,7 +93,7 @@ uv run --project ../bt bt --help
 
 ## Technology Stack
 
-- **Core**: TypeScript + Bun workspaces + Biome ^2.5.4（`package.json` manifest）
+- **Core**: TypeScript + Bun workspaces + Biome ^2.5.5（`package.json` manifest）
 - **Testing**: Bun (backend) + Vitest (web)
 - **Web**: React 19 + Vite 8 + Tailwind CSS v4 + TanStack Query + Zustand
 - **API**: FastAPI (`apps/bt`, port `3002`) + OpenAPI
