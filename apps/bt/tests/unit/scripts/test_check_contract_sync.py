@@ -269,6 +269,7 @@ def test_contract_sync_runs_optional_compatibility_gate_after_drift_checks() -> 
     compat_call = 'python3 "${repo_root}/scripts/openapi_compat.py"'
     assert 'if [[ -n "${OPENAPI_BASE_SNAPSHOT:-}" ]]; then' in script
     assert '--base "${OPENAPI_BASE_SNAPSHOT}"' in script
+    assert '--base-approvals "${OPENAPI_BASE_APPROVALS}"' in script
     assert '--candidate "${tmp_openapi}"' in script
     assert (
         '--approvals "${repo_root}/contracts/openapi-breaking-approvals.json"' in script
