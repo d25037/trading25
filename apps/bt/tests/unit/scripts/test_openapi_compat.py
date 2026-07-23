@@ -1018,6 +1018,8 @@ def _run_cli(
     base: dict[str, Any],
     candidate: dict[str, Any],
     approvals: Any,
+    *,
+    base_approvals: Any | None = None,
 ) -> subprocess.CompletedProcess[str]:
     files = {
         "base.json": base,
@@ -1026,8 +1028,7 @@ def _run_cli(
     }
     for name, payload in files.items():
         (tmp_path / name).write_text(json.dumps(payload), encoding="utf-8")
-    return subprocess.run(
-        [
+    command = [
             sys.executable,
             str(SCRIPT),
             "--base",
@@ -1038,7 +1039,13 @@ def _run_cli(
             str(tmp_path / "approvals.json"),
             "--today",
             "2026-07-17",
-        ],
+        ]
+    if base_approvals is not None:
+        base_approvals_path = tmp_path / "base-approvals.json"
+        base_approvals_path.write_text(json.dumps(base_approvals), encoding="utf-8")
+        command.extend(["--base-approvals", str(base_approvals_path)])
+    return subprocess.run(
+        command,
         capture_output=True,
         text=True,
         check=False,
@@ -1065,6 +1072,87 @@ def test_exact_unexpired_approval_allows_a_breaking_finding(tmp_path: Path) -> N
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "approved" in result.stdout.lower()
+
+
+def test_unchanged_base_approval_may_be_unused_on_follow_up_pr(tmp_path: Path) -> None:
+    inherited = {
+        "version": 1,
+        "approvals": [
+            {
+                "fingerprint": "sha256:" + "a" * 64,
+                "reason": "approved on the already merged base change",
+                "expiresOn": "2026-07-18",
+            }
+        ],
+    }
+
+    result = _run_cli(
+        tmp_path,
+        _document(),
+        _document(),
+        inherited,
+        base_approvals=inherited,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_inherited_approval_still_expires_for_candidate_registry(tmp_path: Path) -> None:
+    expired = {
+        "version": 1,
+        "approvals": [
+            {
+                "fingerprint": "sha256:" + "a" * 64,
+                "reason": "expired on the already merged base change",
+                "expiresOn": "2026-07-17",
+            }
+        ],
+    }
+
+    result = _run_cli(
+        tmp_path,
+        _document(),
+        _document(),
+        expired,
+        base_approvals=expired,
+    )
+
+    assert result.returncode == 1
+    assert "expired" in (result.stdout + result.stderr).lower()
+
+
+@pytest.mark.parametrize("change", ["add", "modify"])
+def test_pr_owned_unused_approval_still_fails_closed(
+    tmp_path: Path, change: str
+) -> None:
+    inherited_entry = {
+        "fingerprint": "sha256:" + "a" * 64,
+        "reason": "approved on the already merged base change",
+        "expiresOn": "2026-07-18",
+    }
+    base_approvals = {"version": 1, "approvals": [inherited_entry]}
+    candidate_entries = [inherited_entry]
+    if change == "add":
+        candidate_entries.append(
+            {
+                "fingerprint": "sha256:" + "b" * 64,
+                "reason": "not emitted by this PR",
+                "expiresOn": "2026-07-18",
+            }
+        )
+    else:
+        candidate_entries = [inherited_entry | {"reason": "changed by this PR"}]
+
+    result = _run_cli(
+        tmp_path,
+        _document(),
+        _document(),
+        {"version": 1, "approvals": candidate_entries},
+        base_approvals=base_approvals,
+    )
+
+    assert result.returncode == 1
+    assert "unused" in (result.stdout + result.stderr).lower()
 
 
 @pytest.mark.parametrize(

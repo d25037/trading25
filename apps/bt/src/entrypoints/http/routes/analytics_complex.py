@@ -12,6 +12,7 @@ import json
 from fastapi import APIRouter, HTTPException, Query, Request
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
+from starlette.concurrency import run_in_threadpool
 
 from src.application.contracts import factor_regression as factor_contracts
 from src.application.contracts import (
@@ -68,7 +69,9 @@ def _normalize_factor_regression_symbol(symbol: str) -> str:
 @router.get(
     "/api/analytics/ranking/symbol/{code}",
     response_model=ranking_contracts.MarketRankingSymbolResponse,
-    responses={409: {"model": ErrorResponse, "description": "Ranking PIT lineage unavailable"}},
+    responses={
+        409: {"model": ErrorResponse, "description": "Ranking PIT lineage unavailable"}
+    },
     summary="Get latest Daily Ranking snapshot for a symbol",
 )
 async def get_ranking_symbol_snapshot(
@@ -82,7 +85,11 @@ async def get_ranking_symbol_snapshot(
     if reader is None:
         raise HTTPException(status_code=422, detail="Database not initialized")
     try:
-        return RankingService(reader).get_symbol_ranking_snapshot(code)
+        service = RankingService(reader)
+        return await run_in_threadpool(
+            service.get_symbol_ranking_snapshot,
+            code=code,
+        )
     except MarketDataError as error:
         raise market_data_http_exception(error) from error
     except ValueError as error:
@@ -98,20 +105,34 @@ async def get_ranking_symbol_snapshot(
 @router.get(
     "/api/analytics/ranking",
     response_model=ranking_contracts.MarketRankingResponse,
-    responses={409: {"model": ErrorResponse, "description": "Ranking PIT lineage unavailable"}},
+    responses={
+        409: {"model": ErrorResponse, "description": "Ranking PIT lineage unavailable"}
+    },
     summary="Get market rankings",
     description="Get market rankings including top stocks by trading value, price gainers, and price losers.",
 )
 async def get_ranking(
     request: Request,
     date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
-    limit: int = Query(20, ge=0, le=1000, description="Maximum rows per ranking. Use 0 for no row limit."),
+    limit: int = Query(
+        20,
+        ge=0,
+        le=1000,
+        description="Maximum rows per ranking. Use 0 for no row limit.",
+    ),
     markets: str = Query("prime"),
     lookbackDays: int = Query(1, ge=1, le=100),
     periodDays: int = Query(250, ge=1, le=250),
-    sector33Name: str | None = Query(None, description="Optional TOPIX-33/industry sector name filter"),
-    sector17Name: str | None = Query(None, description="Optional TOPIX-17 sector name filter"),
-    includeValuation: bool = Query(False, description="Include PER, forward PER, PBR, and market cap"),
+    scope: ranking_contracts.RankingScope = Query("all"),
+    sector33Name: str | None = Query(
+        None, description="Optional TOPIX-33/industry sector name filter"
+    ),
+    sector17Name: str | None = Query(
+        None, description="Optional TOPIX-17 sector name filter"
+    ),
+    includeValuation: bool = Query(
+        False, description="Include PER, forward PER, PBR, and market cap"
+    ),
     includeSectorStrength: bool = Query(
         False,
         description="Include TOPIX-33 sector strength score and bucket in ranking and index performance rows.",
@@ -169,12 +190,14 @@ async def get_ranking(
 
     service = RankingService(reader)
     try:
-        return service.get_rankings(
+        return await run_in_threadpool(
+            service.get_rankings,
             date=date,
             limit=limit,
             markets=markets,
             lookback_days=lookbackDays,
             period_days=periodDays,
+            scope=scope,
             sector33_name=sector33Name,
             sector17_name=sector17Name,
             include_valuation=includeValuation,
@@ -234,7 +257,8 @@ async def get_fundamental_ranking(
 
     service = RankingService(reader)
     try:
-        return service.get_fundamental_rankings(
+        return await run_in_threadpool(
+            service.get_fundamental_rankings,
             limit=limit,
             markets=markets,
             metric_key=metricKey,
@@ -281,7 +305,8 @@ async def get_value_composite_ranking(
 
     service = RankingService(reader)
     try:
-        return service.get_value_composite_ranking(
+        return await run_in_threadpool(
+            service.get_value_composite_ranking,
             date=date,
             limit=limit,
             markets=markets,
@@ -324,7 +349,8 @@ async def get_value_composite_score(
 
     service = RankingService(reader)
     try:
-        return service.get_value_composite_score(
+        return await run_in_threadpool(
+            service.get_value_composite_score,
             code=code,
             date=date,
             forward_eps_mode=forwardEpsMode,

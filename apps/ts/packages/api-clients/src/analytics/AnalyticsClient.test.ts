@@ -26,6 +26,7 @@ describe('AnalyticsClient', () => {
       markets: 'prime,standard',
       lookbackDays: 10,
       periodDays: 30,
+      scope: 'periodHigh',
       includeSectorStrength: true,
       sectorStrengthFamily: 'long_hybrid_leadership',
       regimeState: 'neutral_rerating',
@@ -36,7 +37,7 @@ describe('AnalyticsClient', () => {
 
     const rankingUrl = fetchSpy.mock.calls.at(-1)?.[0];
     expect(rankingUrl).toBe(
-      'http://localhost:3002/api/analytics/ranking?date=2026-02-01&limit=20&markets=prime%2Cstandard&lookbackDays=10&periodDays=30&includeSectorStrength=true&sectorStrengthFamily=long_hybrid_leadership&regimeState=neutral_rerating&fundamentalState=deep_value&riskState=overheat&technicalState=momentum_20_60_top20'
+      'http://localhost:3002/api/analytics/ranking?date=2026-02-01&limit=20&markets=prime%2Cstandard&lookbackDays=10&periodDays=30&scope=periodHigh&includeSectorStrength=true&sectorStrengthFamily=long_hybrid_leadership&regimeState=neutral_rerating&fundamentalState=deep_value&riskState=overheat&technicalState=momentum_20_60_top20'
     );
     expect(rankingUrl).not.toContain('liquidityState');
   });

@@ -162,10 +162,12 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           git show "${BASE_SHA}:apps/ts/packages/contracts/openapi/bt-openapi.json" > /tmp/bt-openapi-base.json
+          git show "${BASE_SHA}:contracts/openapi-breaking-approvals.json" > /tmp/bt-openapi-base-approvals.json
       - name: Run contract sync checks
         run: ./scripts/check-contract-sync.sh
         env:
           OPENAPI_BASE_SNAPSHOT: ${{ github.event_name == 'pull_request' && '/tmp/bt-openapi-base.json' || '' }}
+          OPENAPI_BASE_APPROVALS: ${{ github.event_name == 'pull_request' && '/tmp/bt-openapi-base-approvals.json' || '' }}
 
   golden-dataset-regression:
     needs: changes

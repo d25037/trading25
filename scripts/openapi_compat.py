@@ -978,7 +978,9 @@ def _read_object(path: Path, label: str) -> dict[str, Any]:
     return payload
 
 
-def _approval_fingerprints(registry: dict[str, Any], *, today: date) -> set[str]:
+def _approval_records(
+    registry: dict[str, Any], *, today: date | None
+) -> dict[str, tuple[str, str]]:
     if (
         set(registry) != {"version", "approvals"}
         or type(registry.get("version")) is not int
@@ -990,7 +992,7 @@ def _approval_fingerprints(registry: dict[str, Any], *, today: date) -> set[str]
     approvals = registry.get("approvals")
     if not isinstance(approvals, list):
         raise ValueError("Invalid approval registry: approvals must be an array")
-    fingerprints: set[str] = set()
+    records: dict[str, tuple[str, str]] = {}
     for index, approval in enumerate(approvals):
         if not isinstance(approval, dict) or set(approval) != {
             "fingerprint",
@@ -1007,7 +1009,7 @@ def _approval_fingerprints(registry: dict[str, Any], *, today: date) -> set[str]
             raise ValueError(f"Malformed approval fingerprint at index {index}")
         if not isinstance(reason, str) or not reason.strip():
             raise ValueError(f"Malformed approval reason at index {index}")
-        if fingerprint in fingerprints:
+        if fingerprint in records:
             raise ValueError(f"Duplicate approval fingerprint: {fingerprint}")
         if not isinstance(expires_on, str) or not re.fullmatch(
             r"[0-9]{4}-[0-9]{2}-[0-9]{2}", expires_on
@@ -1017,10 +1019,14 @@ def _approval_fingerprints(registry: dict[str, Any], *, today: date) -> set[str]
             expiry = date.fromisoformat(expires_on)
         except (TypeError, ValueError) as error:
             raise ValueError(f"Malformed approval expiry at index {index}") from error
-        if expiry <= today:
+        if today is not None and expiry <= today:
             raise ValueError(f"Expired approval fingerprint: {fingerprint}")
-        fingerprints.add(fingerprint)
-    return fingerprints
+        records[fingerprint] = (reason, expires_on)
+    return records
+
+
+def _approval_fingerprints(registry: dict[str, Any], *, today: date) -> set[str]:
+    return set(_approval_records(registry, today=today))
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -1028,6 +1034,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--base", required=True, type=Path)
     parser.add_argument("--candidate", required=True, type=Path)
     parser.add_argument("--approvals", required=True, type=Path)
+    parser.add_argument("--base-approvals", type=Path)
     parser.add_argument("--today", required=True, type=date.fromisoformat)
     return parser.parse_args(argv)
 
@@ -1038,14 +1045,28 @@ def main(argv: list[str] | None = None) -> int:
         base = _read_object(args.base, "base OpenAPI")
         candidate = _read_object(args.candidate, "candidate OpenAPI")
         approvals = _read_object(args.approvals, "approval registry")
-        approved = _approval_fingerprints(approvals, today=args.today)
+        approval_records = _approval_records(approvals, today=args.today)
+        approved = set(approval_records)
+        base_approval_records = (
+            _approval_records(
+                _read_object(args.base_approvals, "base approval registry"),
+                today=None,
+            )
+            if args.base_approvals is not None
+            else {}
+        )
     except ValueError as error:
         print(f"[openapi-compat] ERROR: {error}", file=sys.stderr)
         return 1
 
     findings = compare_openapi(base, candidate)
     emitted = {finding.fingerprint for finding in findings}
-    unused = sorted(approved - emitted)
+    inherited = {
+        fingerprint
+        for fingerprint, record in approval_records.items()
+        if base_approval_records.get(fingerprint) == record
+    }
+    unused = sorted(approved - emitted - inherited)
     if unused:
         print(
             "[openapi-compat] ERROR: unused approval fingerprints: "

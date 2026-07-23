@@ -12176,6 +12176,7 @@ export interface operations {
                 markets?: string;
                 lookbackDays?: number;
                 periodDays?: number;
+                scope?: "all" | "tradingValue" | "periodHigh" | "periodLow" | "indexPerformance";
                 /** @description Optional TOPIX-33/industry sector name filter */
                 sector33Name?: string | null;
                 /** @description Optional TOPIX-17 sector name filter */

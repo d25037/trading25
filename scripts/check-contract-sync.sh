@@ -64,11 +64,16 @@ python3 "${repo_root}/scripts/check-ts-wire-contracts.py" \
 
 if [[ -n "${OPENAPI_BASE_SNAPSHOT:-}" ]]; then
   echo "[contract] Check OpenAPI backward compatibility"
-  python3 "${repo_root}/scripts/openapi_compat.py" \
+  compat_args=(
     --base "${OPENAPI_BASE_SNAPSHOT}" \
     --candidate "${tmp_openapi}" \
     --approvals "${repo_root}/contracts/openapi-breaking-approvals.json" \
     --today "${OPENAPI_COMPAT_TODAY:-$(date -u +%F)}"
+  )
+  if [[ -n "${OPENAPI_BASE_APPROVALS:-}" ]]; then
+    compat_args+=(--base-approvals "${OPENAPI_BASE_APPROVALS}")
+  fi
+  python3 "${repo_root}/scripts/openapi_compat.py" "${compat_args[@]}"
 fi
 
 echo "[contract] PASS"

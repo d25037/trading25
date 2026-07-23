@@ -80,6 +80,7 @@ export class AnalyticsClient {
       markets: params.markets,
       lookbackDays: params.lookbackDays,
       periodDays: params.periodDays,
+      scope: params.scope,
       sector33Name: params.sector33Name,
       sector17Name: params.sector17Name,
       includeValuation: params.includeValuation,

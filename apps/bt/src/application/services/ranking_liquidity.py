@@ -201,7 +201,7 @@ def load_prime_liquidity_metrics(
         [str(row["code"]) for row in prime_code_rows],
         target_date,
     )
-    price_ctes = provider_price_cte()
+    price_ctes = provider_price_cte("price.date >= ? AND price.date <= ?")
     valuation_code = normalized_code_sql("valuation.code")
     valuation_order = prefer_4digit_order_sql("valuation.code")
     rows = reader.query(
@@ -253,7 +253,7 @@ def load_prime_liquidity_metrics(
         WHERE pf.date = ?
         ORDER BY pf.code
         """,
-        (start_date, target_date, target_date, target_date),
+        (start_date, target_date, start_date, target_date, target_date, target_date),
     )
 
     samples: list[dict[str, float | str | None]] = []

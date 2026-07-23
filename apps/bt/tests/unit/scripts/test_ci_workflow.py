@@ -390,9 +390,16 @@ def test_pull_request_contract_job_checks_base_snapshot_compatibility() -> None:
     assert 'git show "${BASE_SHA}:apps/ts/packages/contracts/openapi/bt-openapi.json"' in (
         materialize["run"]
     )
+    assert (
+        'git show "${BASE_SHA}:contracts/openapi-breaking-approvals.json"'
+        in materialize["run"]
+    )
     assert steps.index(materialize) < steps.index(contract_check)
     assert contract_check["env"]["OPENAPI_BASE_SNAPSHOT"] == (
         "${{ github.event_name == 'pull_request' && '/tmp/bt-openapi-base.json' || '' }}"
+    )
+    assert contract_check["env"]["OPENAPI_BASE_APPROVALS"] == (
+        "${{ github.event_name == 'pull_request' && '/tmp/bt-openapi-base-approvals.json' || '' }}"
     )
 
 
