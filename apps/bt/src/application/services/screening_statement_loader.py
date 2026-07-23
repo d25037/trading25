@@ -393,7 +393,7 @@ def query_adjusted_statement_metric_rows(
          AND state.source_fingerprint = m.source_fingerprint
         JOIN stock_provider_windows AS provider
           ON provider.code = state.code
-         AND provider.coverage_end = state.fundamentals_adjustment_basis_date
+         AND state.fundamentals_adjustment_basis_date <= provider.coverage_end
         JOIN statements AS source
           ON {normalized_source_code} = {normalized_metric_code}
          AND source.statement_id = m.statement_id

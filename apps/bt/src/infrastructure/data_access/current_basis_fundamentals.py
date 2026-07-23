@@ -135,7 +135,6 @@ def resolve_current_basis_provider_windows(
 
     resolved: dict[str, CurrentBasisProviderWindow] = {}
     provider_plans: set[str] = set()
-    provider_as_of_dates: set[date] = set()
     for code in normalized_codes:
         row: Any = by_code.get(code)
         if row is None:
@@ -158,6 +157,10 @@ def resolve_current_basis_provider_windows(
         state_count = row["statement_count"]
         state_basis = str(row["fundamentals_adjustment_basis_date"] or "")
         state_fingerprint = str(row["fundamentals_source_fingerprint"] or "")
+        try:
+            state_basis_date = date.fromisoformat(state_basis)
+        except ValueError:
+            state_basis_date = None
         if (
             coverage_start > effective_market_date
             or coverage_end < effective_market_date
@@ -171,7 +174,8 @@ def resolve_current_basis_provider_windows(
                 f"does not cover {effective_market_date}",
             )
         if (
-            state_basis != coverage_end.isoformat()
+            state_basis_date is None
+            or state_basis_date > coverage_end
             or not state_fingerprint.strip()
             or state_count is None
             or int(state_count) != metric_count
@@ -197,11 +201,10 @@ def resolve_current_basis_provider_windows(
             materialized_at=str(row["materialized_at"]),
         )
         provider_plans.add(provider_plan)
-        provider_as_of_dates.add(provider_as_of)
-    if len(provider_plans) != 1 or len(provider_as_of_dates) != 1:
+    if len(provider_plans) != 1:
         raise FundamentalsPitSnapshotError(
             "provider_window_required",
             "market_db_sync recovery required: provider windows do not share one "
-            "provider plan and as-of frontier",
+            "provider plan",
         )
     return resolved

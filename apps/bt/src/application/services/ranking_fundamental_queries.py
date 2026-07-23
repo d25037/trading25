@@ -306,7 +306,7 @@ def load_adjusted_daily_valuation_frame(
            AND state.source_fingerprint = v.source_fingerprint
         JOIN stock_provider_windows provider
             ON provider.code = v.normalized_code
-           AND provider.coverage_end = state.fundamentals_adjustment_basis_date
+           AND state.fundamentals_adjustment_basis_date <= provider.coverage_end
         WHERE 1 = 1{market_clause}
     """
     rows = reader.query(sql, (date, date, date, *market_params))
@@ -373,8 +373,8 @@ def load_adjusted_statement_metric_rows(
                  AND state.source_fingerprint = metric.source_fingerprint
                 JOIN stock_provider_windows AS provider
                   ON provider.code = state.code
-                 AND provider.coverage_end =
-                     state.fundamentals_adjustment_basis_date
+                 AND state.fundamentals_adjustment_basis_date <=
+                     provider.coverage_end
                 JOIN statements AS source
                   ON {source_norm} = {metrics_norm}
                  AND source.statement_id = metric.statement_id

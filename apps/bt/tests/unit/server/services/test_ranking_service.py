@@ -1393,11 +1393,56 @@ def test_provider_window_resolution_fails_closed_for_mixed_provider_plans(
         reader.close()
 
 
+def test_provider_window_resolution_accepts_unchanged_older_basis_and_per_code_as_of(
+    ranking_db: str,
+) -> None:
+    _rebuild_test_adjusted_metrics(ranking_db)
+    conn = duckdb.connect(ranking_db)
+    codes = [
+        str(row[0])
+        for row in conn.execute(
+            "SELECT code FROM stock_provider_windows ORDER BY code LIMIT 2"
+        ).fetchall()
+    ]
+    assert len(codes) == 2
+    conn.execute(
+        """
+        UPDATE current_basis_fundamentals_state
+        SET fundamentals_adjustment_basis_date = '2024-01-18'
+        WHERE code = ?
+        """,
+        (codes[0],),
+    )
+    conn.execute(
+        """
+        UPDATE statement_metrics_adjusted
+        SET fundamentals_adjustment_basis_date = '2024-01-18'
+        WHERE code = ?
+        """,
+        (codes[0],),
+    )
+    conn.execute(
+        "UPDATE stock_provider_windows SET provider_as_of = '2024-01-20' WHERE code = ?",
+        (codes[1],),
+    )
+    conn.close()
+
+    reader = MarketDbReader(ranking_db)
+    try:
+        resolved = resolve_provider_windows(reader, codes, "2024-01-19")
+    finally:
+        reader.close()
+
+    assert set(resolved) == set(codes)
+    assert resolved[codes[0]].fundamentals_adjustment_basis_date == "2024-01-18"
+    assert resolved[codes[1]].provider_as_of == "2024-01-20"
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
         "DELETE FROM current_basis_fundamentals_state WHERE code = '7203'",
-        "UPDATE current_basis_fundamentals_state SET fundamentals_adjustment_basis_date = '2024-01-18' WHERE code = '7203'",
+        "UPDATE current_basis_fundamentals_state SET fundamentals_adjustment_basis_date = '2024-01-20' WHERE code = '7203'",
         "UPDATE current_basis_fundamentals_state SET statement_count = statement_count + 1 WHERE code = '7203'",
         "UPDATE statement_metrics_adjusted SET source_fingerprint = 'stale' WHERE code = '7203'",
         "UPDATE statement_metrics_adjusted SET statement_id = 'orphan' WHERE code = '7203' AND statement_id = (SELECT MIN(statement_id) FROM statement_metrics_adjusted WHERE code = '7203')",

@@ -154,6 +154,27 @@ def test_finalizer_publishes_terminal_only_after_maintenance_evidence_and_reopen
     assert decision.maintenance.semanticDigests == {}
 
 
+def test_finalizer_snapshots_status_before_closing_writer_handles(
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+    session = _Session(tmp_path, events)
+    finalizer = MarketMaintenanceFinalizer(
+        session=session,  # type: ignore[arg-type]
+        operation="incremental_sync",
+        compactor=_Compactor(events),  # type: ignore[arg-type]
+        attach=lambda _resources, _record: events.append("attach"),  # type: ignore[arg-type]
+        before_close=lambda: events.append("snapshot"),
+    )
+
+    finalizer.finalize(
+        operation_outcome=MarketOperationOutcome.SUCCEEDED,
+        publish_terminal=lambda _decision: events.append("terminal"),
+    )
+
+    assert events[:2] == ["snapshot", "close"]
+
+
 def test_initial_finalizer_reopens_without_automatic_maintenance(
     tmp_path: Path,
 ) -> None:

@@ -292,7 +292,11 @@ def get_provider_vintage_snapshot(
         )
         raw_min = evidence.get("raw_min")
         raw_max = evidence.get("raw_max")
-        bounds_valid = bool(raw_min and raw_max) and str(raw_min) == coverage_start and str(raw_max) == coverage_end
+        bounds_valid = (
+            bool(raw_min and raw_max)
+            and coverage_start <= str(raw_min)
+            and str(raw_max) == coverage_end
+        )
         fingerprint_valid = owned_fingerprint == calculated_fingerprint
         window_valid = metadata_valid and bounds_valid and fingerprint_valid
         if window_valid:
@@ -324,12 +328,13 @@ def get_provider_vintage_snapshot(
         valid_window_count == len(ownership_codes)
         and bool(starts)
         and len(set(plans)) == 1
-        and len(set(as_ofs)) == 1
     )
     return {
         **defaults,
         "providerPlan": plans[0] if coherent else None,
-        "providerAsOf": as_ofs[0] if coherent else None,
+        "providerAsOf": (
+            as_ofs[0] if coherent and len(set(as_ofs)) == 1 else None
+        ),
         "providerAsOfMin": min(as_ofs) if as_ofs else None,
         "providerAsOfMax": max(as_ofs) if as_ofs else None,
         "effectiveCoverageStart": min(starts) if coherent else None,
@@ -425,7 +430,6 @@ def get_persisted_provider_vintage_snapshot(
         valid_count == len(windows)
         and bool(starts)
         and len(set(plans)) == 1
-        and len(set(as_ofs)) == 1
     )
     adjustment_event_count = 0
     if table_exists("stock_adjustment_events"):
@@ -438,7 +442,9 @@ def get_persisted_provider_vintage_snapshot(
     return {
         **defaults,
         "providerPlan": plans[0] if coherent else None,
-        "providerAsOf": as_ofs[0] if coherent else None,
+        "providerAsOf": (
+            as_ofs[0] if coherent and len(set(as_ofs)) == 1 else None
+        ),
         "providerAsOfMin": min(as_ofs) if as_ofs else None,
         "providerAsOfMax": max(as_ofs) if as_ofs else None,
         "effectiveCoverageStart": min(starts) if coherent else None,
@@ -484,7 +490,7 @@ def get_adjusted_metrics_source_diagnostics(
                    OR provider_window.coverage_start > provider_window.coverage_end
                    OR provider_window.provider_as_of < provider_window.coverage_end
                    OR raw.code IS NULL
-                   OR raw.coverage_start IS DISTINCT FROM provider_window.coverage_start
+                   OR raw.coverage_start < provider_window.coverage_start
                    OR raw.coverage_end IS DISTINCT FROM provider_window.coverage_end
             ), ledger_comparison AS (
                 SELECT
@@ -681,7 +687,7 @@ def get_adjusted_metrics_source_diagnostics(
                 ) OR (
                     expected_code IS NOT NULL
                     AND actual_code IS NOT NULL
-                    AND basis_date IS DISTINCT FROM actual_basis_date
+                    AND actual_basis_date > basis_date
                 )
             )
         FROM comparison

@@ -1812,6 +1812,47 @@ def test_publish_margin_data_batch_uses_semantic_delta_kernel(tmp_path: Path) ->
     store.close()
 
 
+def test_margin_history_for_delisted_stock_is_not_an_orphan(tmp_path: Path) -> None:
+    store = create_time_series_store_for_test(
+        backend="duckdb-parquet",
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    assert store is not None
+    store._conn.execute(  # noqa: SLF001
+        """
+        CREATE TABLE stock_master_daily (
+            code TEXT,
+            date TEXT
+        )
+        """
+    )
+    store._conn.execute(  # noqa: SLF001
+        "INSERT INTO stock_master_daily VALUES ('5903', '2026-07-21')"
+    )
+    store._conn.execute(  # noqa: SLF001
+        """
+        CREATE TABLE stocks (
+            code TEXT
+        )
+        """
+    )
+    store.publish_margin_data(
+        [
+            {
+                "code": "5903",
+                "date": "2026-07-21",
+                "long_margin_volume": 100.0,
+                "short_margin_volume": 10.0,
+            }
+        ]
+    )
+
+    assert store.inspect().margin_orphan_count == 0
+
+    store.close()
+
+
 def test_initial_load_relation_upsert_preserves_rows_and_statement_merge(
     tmp_path: Path,
 ) -> None:
@@ -2445,6 +2486,12 @@ def test_normal_unit_factor_append_does_not_mark_fundamentals_pending(
     assert store._conn.execute(  # noqa: SLF001
         "SELECT * FROM current_basis_recompute_pending"
     ).fetchall() == []
+    assert store._conn.execute(  # noqa: SLF001
+        """
+        SELECT code, fundamentals_adjustment_basis_date, statement_count
+        FROM current_basis_fundamentals_state
+        """
+    ).fetchall() == [("7203", "2026-02-10", 0)]
     store.close()
 
 
@@ -2471,6 +2518,36 @@ def test_normal_append_advances_rolling_provider_frontier_and_prunes_expired_row
         },
     )
     store.index_stock_data()
+    store._conn.execute(  # noqa: SLF001
+        """
+        CREATE TABLE daily_valuation (
+            code TEXT, date TEXT, price_basis_date TEXT, close DOUBLE,
+            created_at TEXT, PRIMARY KEY (code, date)
+        )
+        """
+    )
+    store._conn.execute(  # noqa: SLF001
+        """
+        CREATE TABLE daily_technical_metrics (
+            code TEXT, date TEXT, close DOUBLE, created_at TEXT,
+            PRIMARY KEY (code, date)
+        )
+        """
+    )
+    store._conn.execute(  # noqa: SLF001
+        """
+        INSERT INTO daily_valuation (
+            code, date, price_basis_date, close, created_at
+        ) VALUES ('7203', '2026-01-01', '2026-01-01', 100, 'now')
+        """
+    )
+    store._conn.execute(  # noqa: SLF001
+        """
+        INSERT INTO daily_technical_metrics (
+            code, date, close, created_at
+        ) VALUES ('7203', '2026-01-01', 100, 'now')
+        """
+    )
 
     _publish_stock_data(store, [_stock_row_for("2026-01-04")])
     store.index_stock_data()
@@ -2481,6 +2558,12 @@ def test_normal_append_advances_rolling_provider_frontier_and_prunes_expired_row
     assert store._conn.execute(  # noqa: SLF001
         "SELECT date FROM stock_data_raw ORDER BY date"
     ).fetchall() == [("2026-01-02",), ("2026-01-03",), ("2026-01-04",)]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT date FROM daily_valuation ORDER BY date"
+    ).fetchall() == []
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT date FROM daily_technical_metrics ORDER BY date"
+    ).fetchall() == []
     assert store._conn.execute(  # noqa: SLF001
         "SELECT date FROM read_parquet(?) ORDER BY date",
         [str(tmp_path / "market-timeseries" / "parquet" / "stock_data_raw" / "*" / "*.parquet")],

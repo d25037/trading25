@@ -109,6 +109,7 @@ class MarketMaintenanceFinalizer:
         ),
         now: Callable[[], str] = lambda: datetime.now(UTC).isoformat(),
         run_maintenance: bool = True,
+        before_close: Callable[[], None] = lambda: None,
     ) -> None:
         self._session = session
         self._operation = operation
@@ -118,6 +119,7 @@ class MarketMaintenanceFinalizer:
         self._evidence_writer = evidence_writer
         self._now = now
         self._run_maintenance = run_maintenance
+        self._before_close = before_close
 
     def finalize(
         self,
@@ -135,6 +137,11 @@ class MarketMaintenanceFinalizer:
         evidence: MarketMaintenanceEvidence | None = None
         lifecycle_errors: list[BaseException] = []
         ownership_released = False
+
+        try:
+            self._before_close()
+        except BaseException as exc:
+            lifecycle_errors.append(exc)
 
         try:
             token = self._session.close_writable_handles()

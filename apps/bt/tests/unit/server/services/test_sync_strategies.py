@@ -1653,10 +1653,49 @@ async def test_execute_stock_data_rest_date_preserves_api_calls_on_publish_failu
     session = sync_stock_data_fetch.StockDataIngestionSession()
 
     with pytest.raises(StockDataRestDateIngestionError) as exc_info:
-        await execute_stock_data_rest_date(ctx, session=session, date="2026-02-10")
+        await execute_stock_data_rest_date(
+            ctx,
+            session=session,
+            provider_codes=frozenset({"7203"}),
+            date="2026-02-10",
+        )
 
     assert exc_info.value.api_calls == 1
     assert str(exc_info.value) == "publish failed"
+
+
+@pytest.mark.asyncio
+async def test_execute_stock_data_rest_date_filters_rows_to_provider_scope() -> None:
+    market_db = DummyMarketDb()
+    client = DummyClient(
+        daily_quotes=[
+            _provider_daily_quote("72030", "2026-02-10"),
+            _provider_daily_quote("13050", "2026-02-10"),
+        ]
+    )
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        time_series_store=DummyTimeSeriesStore(market_db),
+    )
+    session = sync_stock_data_fetch.StockDataIngestionSession()
+    stage = _provider_stage_for_test(
+        ctx,
+        provider_as_of="2026-02-10",
+        provider_codes=frozenset({"7203"}),
+    )
+
+    outcome = await execute_stock_data_rest_date(
+        ctx,
+        session=session,
+        date="2026-02-10",
+        provider_codes=stage.provider_codes,
+    )
+    committed = await session.commit(ctx, stage=stage)
+
+    assert outcome.stocks_updated == 0
+    assert committed.appended_rows == 1
+    assert [row["code"] for row in market_db.stock_rows] == ["7203"]
 
 
 @pytest.mark.asyncio
@@ -3435,6 +3474,7 @@ async def test_execute_stock_data_bulk_fetch_defers_append_until_all_files_are_s
     outcome = await execute_stock_data_bulk_fetch(
         ctx,
         session=session,
+        provider_codes=frozenset({"7203"}),
         decision=decision,
         target_dates=["2026-02-10", "2026-02-11"],
         stage_name="stock_data_incremental",
@@ -3456,6 +3496,72 @@ async def test_execute_stock_data_bulk_fetch_defers_append_until_all_files_are_s
     assert ctx.valuation_changed_price_dates == {"2026-02-10", "2026-02-11"}
     assert store.flush_calls == 1
     assert [row["date"] for row in market_db.stock_rows] == ["2026-02-10", "2026-02-11"]
+
+
+@pytest.mark.asyncio
+async def test_execute_stock_data_bulk_fetch_filters_rows_to_provider_scope() -> None:
+    file_info = BulkFileInfo(
+        key="stock-20260210.csv.gz",
+        last_modified="2026-02-10T00:00:00Z",
+        size=123,
+        range_start=None,
+        range_end=None,
+    )
+    plan = BulkFetchPlan(
+        endpoint="/equities/bars/daily",
+        files=[file_info],
+        estimated_api_calls=1,
+        list_api_calls=1,
+        estimated_cache_hits=0,
+        estimated_cache_misses=1,
+    )
+    market_db = DummyMarketDb()
+    store = _StagedStockDataStore(market_db)
+    ctx = _build_ctx(
+        client=_PlanOnlyClient("premium"),
+        market_db=market_db,
+        time_series_store=store,
+        bulk_service=_ChunkedPlanAndFetchBulkService(
+            plan=plan,
+            chunks=[
+                [
+                    _provider_daily_quote("72030", "2026-02-10"),
+                    _provider_daily_quote("13050", "2026-02-10"),
+                ]
+            ],
+        ),
+    )
+    decision = _StageFetchDecision(
+        method="bulk",
+        planner_api_calls=1,
+        estimated_rest_calls=1,
+        estimated_bulk_calls=1,
+        plan=plan,
+        reason="bulk_estimate_lower",
+    )
+    session = sync_stock_data_fetch.StockDataIngestionSession()
+    stage = _provider_stage_for_test(
+        ctx,
+        provider_as_of="2026-02-10",
+        provider_codes=frozenset({"7203"}),
+    )
+
+    await execute_stock_data_bulk_fetch(
+        ctx,
+        session=session,
+        decision=decision,
+        target_dates=["2026-02-10"],
+        stage_name="stock_data_incremental",
+        progress_stage="stock_data",
+        current=2,
+        total=7,
+        fallback_log_message="bulk failed: {}",
+        provider_codes=stage.provider_codes,
+    )
+    committed = await session.commit(ctx, stage=stage)
+
+    assert committed.appended_rows == 1
+    assert [row["code"] for row in market_db.stock_rows] == ["7203"]
 
 
 @pytest.mark.asyncio
@@ -3506,6 +3612,7 @@ async def test_execute_initial_stock_data_bulk_fetch_flushes_each_file() -> None
     await execute_stock_data_bulk_fetch(
         ctx,
         session=session,
+        provider_codes=stage.provider_codes,
         decision=decision,
         target_dates=["2026-02-10", "2026-02-11"],
         stage_name="stock_data_initial",
@@ -3568,6 +3675,7 @@ async def test_execute_stock_data_bulk_fetch_keeps_same_file_chunks_in_one_flush
     outcome = await execute_stock_data_bulk_fetch(
         ctx,
         session=session,
+        provider_codes=frozenset({"7203"}),
         decision=decision,
         target_dates=["2026-02-10"],
         stage_name="stock_data_incremental",
@@ -3635,6 +3743,7 @@ async def test_execute_stock_data_bulk_fetch_keeps_raw_rows_without_rest_fallbac
     outcome = await execute_stock_data_bulk_fetch(
         ctx,
         session=session,
+        provider_codes=frozenset({"1301", "7203"}),
         decision=decision,
         target_dates=["2026-02-10", "2026-02-11"],
         stage_name="stock_data_initial",
@@ -3722,6 +3831,7 @@ async def test_execute_stock_data_bulk_fetch_stages_v3_style_raw_rows_in_one_pas
     outcome = await execute_stock_data_bulk_fetch(
         ctx,
         session=session,
+        provider_codes=frozenset({"7203"}),
         decision=decision,
         target_dates=["2021-09-28", "2021-09-29"],
         stage_name="stock_data_initial",
@@ -3790,6 +3900,7 @@ async def test_execute_stock_data_bulk_fetch_replay_is_zero_delta_across_same_fi
     outcome = await execute_stock_data_bulk_fetch(
         ctx,
         session=session,
+        provider_codes=frozenset({"7203"}),
         decision=decision,
         target_dates=["2026-02-10"],
         stage_name="stock_data_incremental",
@@ -3856,6 +3967,7 @@ async def test_execute_stock_data_bulk_fetch_discards_partial_file_on_failure() 
     outcome = await execute_stock_data_bulk_fetch(
         ctx,
         session=session,
+        provider_codes=frozenset({"7203"}),
         decision=decision,
         target_dates=["2026-02-10"],
         stage_name="stock_data_incremental",
@@ -7713,6 +7825,24 @@ def test_data_conversion_helpers_handle_aliases_and_invalid_rows() -> None:
     )
     assert len(index_rows_from_lower_hex_code) == 1
     assert index_rows_from_lower_hex_code[0]["code"] == "004A"
+
+    index_rows_with_blank_prices = _convert_indices_data_rows(
+        [
+            {
+                "Date": "2026-02-10",
+                "Code": "0001",
+                "O": "",
+                "H": "2",
+                "L": " ",
+                "C": "1.5",
+            }
+        ],
+        code=None,
+    )
+    assert index_rows_with_blank_prices[0]["open"] is None
+    assert index_rows_with_blank_prices[0]["high"] == 2.0
+    assert index_rows_with_blank_prices[0]["low"] is None
+    assert index_rows_with_blank_prices[0]["close"] == 1.5
 
 
 def test_convert_stock_bulk_rows_skips_invalid_dates_and_dedupes() -> None:

@@ -117,7 +117,7 @@ def test_current_basis_snapshot_reports_provider_window_and_pending(
     )
 
     assert pending["currentBasisStatementCount"] == 0
-    assert pending["currentBasisStateCount"] == 0
+    assert pending["currentBasisStateCount"] == 1
     assert pending["invalidCurrentBasisStateCount"] == 1
     assert pending["readyProviderWindowCount"] == 0
     assert pending["pendingCurrentBasisCodeCount"] == 1
@@ -164,9 +164,11 @@ def test_normal_price_append_keeps_current_basis_ready(market_db: MarketDb) -> N
     )
 
     snapshot = market_db.get_adjusted_metrics_snapshot()
+    diagnostics = market_db.get_adjusted_metrics_source_diagnostics()
     assert snapshot["invalidCurrentBasisStateCount"] == 0
     assert snapshot["pendingCurrentBasisCodeCount"] == 0
     assert snapshot["readyProviderWindowCount"] == 1
+    assert diagnostics["wrongBasisAdjustedStatementRows"] == 0
 
 
 def test_provider_vintage_does_not_require_global_provider_plan_metadata(
@@ -281,6 +283,7 @@ def test_provider_vintage_uses_constant_query_count_for_multiple_windows(
         }
         for code in ("7203", "6758")
     ]
+    raw_rows[1]["date"] = "2024-12-31"
     windows = [
         {
             "code": row["code"],
@@ -292,6 +295,7 @@ def test_provider_vintage_uses_constant_query_count_for_multiple_windows(
         }
         for row in raw_rows
     ]
+    windows[0]["coverage_start"] = "2024-12-29"
     queries: list[str] = []
 
     def counted_fetchall(sql: str, params: list[Any] | None) -> list[dict[str, Any]]:
@@ -322,6 +326,10 @@ def test_provider_vintage_uses_constant_query_count_for_multiple_windows(
 
     assert snapshot["providerWindowFingerprintCount"] == 2
     assert snapshot["invalidProviderWindowCount"] == 0
+    assert snapshot["providerWindowCoherent"] is True
+    assert snapshot["providerAsOf"] is None
+    assert snapshot["providerAsOfMin"] == "2024-12-30"
+    assert snapshot["providerAsOfMax"] == "2024-12-31"
     assert len(queries) == 2
 
 
@@ -352,7 +360,7 @@ def test_current_basis_source_diagnostics_detect_missing_stale_and_wrong_basis(
     AdjustedMetricsMaterializer(market_db).rebuild_current_basis([])
     market_db._execute(
         "UPDATE statement_metrics_adjusted SET raw_eps = 999, "
-        "fundamentals_adjustment_basis_date = '2024-12-29' "
+        "fundamentals_adjustment_basis_date = '2024-12-31' "
         "WHERE code = '7203'"
     )
     stale = market_db.get_adjusted_metrics_source_diagnostics()

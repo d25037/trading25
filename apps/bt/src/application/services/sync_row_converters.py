@@ -620,10 +620,10 @@ def convert_indices_data_rows(
             {
                 "code": row_code,
                 "date": row_date,
-                "open": d.get("O", d.get("open")),
-                "high": d.get("H", d.get("high")),
-                "low": d.get("L", d.get("low")),
-                "close": d.get("C", d.get("close")),
+                "open": _coerce_float_fast(d.get("O", d.get("open"))),
+                "high": _coerce_float_fast(d.get("H", d.get("high"))),
+                "low": _coerce_float_fast(d.get("L", d.get("low"))),
+                "close": _coerce_float_fast(d.get("C", d.get("close"))),
                 "sector_name": d.get("SectorName", d.get("sector_name")),
                 "created_at": created_at,
             }

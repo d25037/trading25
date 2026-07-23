@@ -511,7 +511,6 @@ def _build_provider_vintage_stats(
         and coverage_end
         and source_fingerprint
         and coverage_start <= coverage_end
-        and provider_as_of_min >= coverage_end
     )
     if is_empty_source:
         status = "empty_source"

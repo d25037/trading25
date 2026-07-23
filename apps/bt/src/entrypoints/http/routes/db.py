@@ -297,6 +297,8 @@ def _attach_finalized_market_resources(
         state.margin_analytics_service = margin_service
         state.chart_service = chart_service
         state.market_maintenance = evidence
+        state.market_stats_during_maintenance = None
+        state.market_validation_during_maintenance = None
         close_all_cached_data_access_clients()
 
 
@@ -346,6 +348,10 @@ def _build_market_finalizer(
         session=session,
         operation=operation,
         run_maintenance=operation != "initial_sync",
+        before_close=lambda: _snapshot_and_detach_market_resources(
+            app,
+            owner,
+        ),
         attach=lambda resources, evidence: _attach_finalized_market_resources(
             app,
             owner,
@@ -358,6 +364,31 @@ def _build_market_finalizer(
             session,
         ),
     )
+
+
+def _snapshot_and_detach_market_resources(app: object, owner: object) -> None:
+    """Keep status endpoints responsive while maintenance owns closed handles."""
+    with _MARKET_RESOURCE_LOCK:
+        state = getattr(app, "state")
+        if getattr(state, "market_writer_owner", None) is not owner:
+            raise RuntimeError("Market writer finalizer ownership changed")
+        market_db = getattr(state, "market_db", None)
+        time_series_store = getattr(state, "market_time_series_store", None)
+        if market_db is None or time_series_store is None:
+            raise RuntimeError("Market resources are missing before finalization")
+        state.market_stats_during_maintenance = db_stats_service.get_market_stats(
+            market_db,
+            time_series_store=time_series_store,
+        )
+        schema_valid = market_db.validate_schema().get("valid") is True
+        state.market_validation_during_maintenance = (
+            db_validation_service.validate_market_db(
+                market_db,
+                time_series_store=time_series_store if schema_valid else None,
+            )
+        )
+        state.market_db = None
+        state.market_time_series_store = None
 
 
 async def _finalize_direct_market_write(
@@ -527,6 +558,13 @@ def _get_jquants_client(request: Request) -> JQuantsAsyncClient:
 )
 def get_db_stats(request: Request) -> market_contracts.MarketStatsResponse:
     with _MARKET_RESOURCE_LOCK:
+        cached = getattr(
+            request.app.state,
+            "market_stats_during_maintenance",
+            None,
+        )
+        if getattr(request.app.state, "market_db", None) is None and cached is not None:
+            return cast(market_contracts.MarketStatsResponse, cached)
         market_db = _get_market_db(request)
         time_series_store = _get_market_time_series_store(request)
         return db_stats_service.get_market_stats(
@@ -545,6 +583,13 @@ def get_db_stats(request: Request) -> market_contracts.MarketStatsResponse:
 )
 def get_db_validate(request: Request) -> market_contracts.MarketValidationResponse:
     with _MARKET_RESOURCE_LOCK:
+        cached = getattr(
+            request.app.state,
+            "market_validation_during_maintenance",
+            None,
+        )
+        if getattr(request.app.state, "market_db", None) is None and cached is not None:
+            return cast(market_contracts.MarketValidationResponse, cached)
         market_db = _get_market_db(request)
         schema_valid = market_db.validate_schema().get("valid") is True
         time_series_store = (

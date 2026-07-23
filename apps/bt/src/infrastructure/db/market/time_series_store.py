@@ -1586,6 +1586,17 @@ class DuckDbParquetTimeSeriesStore:
                     "DELETE FROM stock_data WHERE code = ? AND date < ?",
                     [code, desired_start],
                 )
+                if self._table_exists("daily_valuation"):
+                    self._conn.execute(
+                        "DELETE FROM daily_valuation WHERE code = ? AND date < ?",
+                        [code, desired_start],
+                    )
+                if self._table_exists("daily_technical_metrics"):
+                    self._conn.execute(
+                        "DELETE FROM daily_technical_metrics "
+                        "WHERE code = ? AND date < ?",
+                        [code, desired_start],
+                    )
                 deleted_events = self._conn.execute(
                     "DELETE FROM stock_adjustment_events "
                     "WHERE code = ? AND date < ? RETURNING code",
@@ -1652,6 +1663,41 @@ class DuckDbParquetTimeSeriesStore:
                     """,
                     [code, *desired, updated_at],
                 )
+            self._conn.execute(
+                """
+                INSERT INTO current_basis_fundamentals_state (
+                    code,
+                    fundamentals_adjustment_basis_date,
+                    source_fingerprint,
+                    statement_count,
+                    materialized_at
+                )
+                SELECT
+                    windows.code,
+                    windows.coverage_end,
+                    windows.source_fingerprint,
+                    0,
+                    ?
+                FROM stock_provider_windows AS windows
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM statements
+                    WHERE CASE
+                              WHEN length(statements.code) = 5
+                               AND right(statements.code, 1) = '0'
+                              THEN left(statements.code, 4)
+                              ELSE statements.code
+                          END = windows.code
+                )
+                ON CONFLICT (code) DO UPDATE SET
+                    fundamentals_adjustment_basis_date =
+                        excluded.fundamentals_adjustment_basis_date,
+                    source_fingerprint = excluded.source_fingerprint,
+                    statement_count = excluded.statement_count,
+                    materialized_at = excluded.materialized_at
+                """,
+                [updated_at],
+            )
             for code in pending_codes:
                 self._mark_current_basis_recompute_pending_unlocked(
                     code,
@@ -2431,7 +2477,24 @@ class DuckDbParquetTimeSeriesStore:
             )
             margin_codes = {str(row[0]) for row in margin_codes_rows if row and row[0]}
             margin_orphan_count = 0
-            if self._table_exists("stocks"):
+            if self._table_exists("stock_master_daily"):
+                margin_orphan_row = self._conn.execute(
+                    """
+                    SELECT COUNT(DISTINCT m.code)
+                    FROM margin_data m
+                    LEFT JOIN (
+                        SELECT DISTINCT code
+                        FROM stock_master_daily
+                        WHERE code IS NOT NULL
+                    ) h ON m.code = h.code
+                    WHERE m.code IS NOT NULL
+                      AND h.code IS NULL
+                    """
+                ).fetchone()
+                margin_orphan_count = (
+                    int(margin_orphan_row[0] or 0) if margin_orphan_row else 0
+                )
+            elif self._table_exists("stocks"):
                 margin_orphan_row = self._conn.execute(
                     """
                     SELECT COUNT(DISTINCT m.code)

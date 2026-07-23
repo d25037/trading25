@@ -691,6 +691,7 @@ async def _sync_initial_stock_data_stage(
     bulk_outcome = await execute_stock_data_bulk_fetch(
         ctx,
         session=session,
+        provider_codes=provider_stage.provider_codes,
         decision=decision,
         target_dates=trading_dates,
         stage_name="stock_data_initial",
@@ -718,6 +719,7 @@ async def _sync_initial_stock_data_stage(
         rest_result = await _sync_initial_stock_data_rest(
             ctx,
             trading_dates=rest_dates,
+            provider_codes=provider_stage.provider_codes,
             decision=decision,
             used_rest_fallback=used_rest_fallback or bool(bulk_outcome.residual_dates),
             fallback_reason=(
@@ -788,6 +790,7 @@ async def _sync_initial_stock_data_rest(
     ctx: SyncContext,
     *,
     trading_dates: list[str],
+    provider_codes: frozenset[str],
     decision: Any,
     used_rest_fallback: bool,
     fallback_reason: str | None,
@@ -829,7 +832,10 @@ async def _sync_initial_stock_data_rest(
             )
         try:
             outcome = await execute_stock_data_rest_date(
-                ctx, session=session, date=date
+                ctx,
+                session=session,
+                provider_codes=provider_codes,
+                date=date,
             )
             api_calls += outcome.api_calls
             stage_api_calls += outcome.api_calls
@@ -1168,6 +1174,7 @@ async def _sync_incremental_stock_data_stage(
     bulk_outcome = await execute_stock_data_bulk_fetch(
         ctx,
         session=session,
+        provider_codes=provider_stage.provider_codes,
         decision=decision,
         target_dates=stock_target_dates,
         stage_name="stock_data_incremental",
@@ -1195,6 +1202,7 @@ async def _sync_incremental_stock_data_stage(
         rest_result = await _sync_incremental_stock_data_rest(
             ctx,
             stock_target_dates=rest_dates,
+            provider_codes=provider_stage.provider_codes,
             decision=decision,
             used_rest_fallback=used_rest_fallback or bool(bulk_outcome.residual_dates),
             fallback_reason=(
@@ -1264,6 +1272,7 @@ async def _sync_incremental_stock_data_rest(
     ctx: SyncContext,
     *,
     stock_target_dates: list[str],
+    provider_codes: frozenset[str],
     decision: Any,
     used_rest_fallback: bool,
     fallback_reason: str | None,
@@ -1296,7 +1305,10 @@ async def _sync_incremental_stock_data_rest(
             )
         try:
             outcome = await execute_stock_data_rest_date(
-                ctx, session=session, date=date
+                ctx,
+                session=session,
+                provider_codes=provider_codes,
+                date=date,
             )
             api_calls += outcome.api_calls
             stocks_updated += outcome.stocks_updated

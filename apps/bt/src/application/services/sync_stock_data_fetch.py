@@ -16,6 +16,7 @@ from src.application.services.sync_paginated_fetch import get_paginated_rows_wit
 from src.application.services.sync_row_converters import build_target_date_set
 from src.application.services.stock_refresh_service import refresh_stocks
 from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
+from src.infrastructure.db.market.query_helpers import normalize_stock_code
 from src.shared.provider_stock_window import ProviderStockStage
 from src.application.services.sync_row_converters import convert_stock_data_rows as _convert_stock_data_rows
 from src.application.services.sync_row_converters import (
@@ -318,6 +319,7 @@ async def execute_stock_data_bulk_fetch(
     ctx: Any,
     *,
     session: StockDataIngestionSession,
+    provider_codes: frozenset[str],
     decision: Any,
     target_dates: list[str],
     stage_name: str,
@@ -368,6 +370,7 @@ async def execute_stock_data_bulk_fetch(
                 incomplete_dates=set(),
                 allow_raw_only=True,
             )
+            rows = _filter_provider_stock_rows(rows, provider_codes)
             active_file_dates.update(str(row["date"]) for row in rows)
             await session.stage(
                 ctx,
@@ -430,6 +433,7 @@ async def execute_stock_data_rest_date(
     ctx: Any,
     *,
     session: StockDataIngestionSession,
+    provider_codes: frozenset[str],
     date: str,
 ) -> StockDataRestDateOutcome:
     payload, page_calls = await get_paginated_rows_with_call_count(
@@ -451,7 +455,10 @@ async def execute_stock_data_rest_date(
         batch = await run_ingestion_batch(
             stage="stock_data",
             fetch=_prefetched_stock_rows,
-            normalize=_convert_stock_data_rows,
+            normalize=lambda rows: _filter_provider_stock_rows(
+                _convert_stock_data_rows(rows),
+                provider_codes,
+            ),
             validate=lambda rows: validate_rows_required_fields(
                 rows,
                 required_fields=("code", "date", "open", "high", "low", "close", "volume"),
@@ -467,3 +474,17 @@ async def execute_stock_data_rest_date(
         api_calls=page_calls,
         stocks_updated=batch.published_count,
     )
+
+
+def _filter_provider_stock_rows(
+    rows: list[dict[str, Any]],
+    provider_codes: frozenset[str],
+) -> list[dict[str, Any]]:
+    normalized_provider_codes = {
+        normalize_stock_code(code) for code in provider_codes
+    }
+    return [
+        row
+        for row in rows
+        if normalize_stock_code(str(row.get("code", ""))) in normalized_provider_codes
+    ]

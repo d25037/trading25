@@ -274,6 +274,57 @@ def test_failed_resource_attach_keeps_writer_ownership_discoverable() -> None:
     assert state.market_data_service is None
 
 
+def test_market_status_routes_use_snapshot_while_handles_are_closed() -> None:
+    cached_stats = MagicMock()
+    cached_validation = MagicMock()
+    app = SimpleNamespace(
+        state=SimpleNamespace(
+            market_db=None,
+            market_stats_during_maintenance=cached_stats,
+            market_validation_during_maintenance=cached_validation,
+        )
+    )
+    request = MagicMock(app=app)
+
+    assert db_routes.get_db_stats(request) is cached_stats
+    assert db_routes.get_db_validate(request) is cached_validation
+
+
+def test_snapshot_and_detach_market_resources_caches_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner = object()
+    market_db = MagicMock()
+    market_db.validate_schema.return_value = {"valid": True}
+    time_series_store = MagicMock()
+    stats = MagicMock()
+    validation = MagicMock()
+    app = SimpleNamespace(
+        state=SimpleNamespace(
+            market_writer_owner=owner,
+            market_db=market_db,
+            market_time_series_store=time_series_store,
+        )
+    )
+    monkeypatch.setattr(
+        db_routes.db_stats_service,
+        "get_market_stats",
+        MagicMock(return_value=stats),
+    )
+    monkeypatch.setattr(
+        db_routes.db_validation_service,
+        "validate_market_db",
+        MagicMock(return_value=validation),
+    )
+
+    db_routes._snapshot_and_detach_market_resources(app, owner)
+
+    assert app.state.market_db is None
+    assert app.state.market_time_series_store is None
+    assert app.state.market_stats_during_maintenance is stats
+    assert app.state.market_validation_during_maintenance is validation
+
+
 async def _collect_sync_events(job_id: str) -> list[dict[str, str]]:
     return [event async for event in db_routes._sync_job_event_generator(job_id)]
 
