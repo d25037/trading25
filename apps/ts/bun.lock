@@ -93,7 +93,7 @@
     "flatted": "3.4.2",
     "js-yaml": "4.3.0",
     "minimatch": "5.1.8",
-    "monaco-editor": "0.55.1",
+    "monaco-editor": "0.56.0",
     "picomatch": "4.0.4",
     "rollup": "4.59.0",
     "ws": "8.21.0",
@@ -670,7 +670,7 @@
 
     "minimatch": ["minimatch@5.1.8", "", { "dependencies": { "brace-expansion": "^2.0.1" } }, "sha512-7RN35vit8DeBclkofOVmBY0eDAZZQd1HzmukRdSyz95CRh8FT54eqnbj0krQr3mrHR6sfRyYkyhwBWjoV5uqlQ=="],
 
-    "monaco-editor": ["monaco-editor@0.55.1", "", { "dependencies": { "dompurify": "3.2.7", "marked": "14.0.0" } }, "sha512-jz4x+TJNFHwHtwuV9vA9rMujcZRb0CEilTEwG2rRSpe/A7Jdkuj8xPKttCgOh+v/lkHy7HsZ64oj+q3xoAFl9A=="],
+    "monaco-editor": ["monaco-editor@0.56.0", "", { "dependencies": { "dompurify": "3.4.8", "marked": "14.0.0" } }, "sha512-sXboRm3BeBeLm938eaiyLMe0OxzfXIlZvbv4ir/jVgQy1zDhWjgmny0WoN45fuDKhCCQsYMbBJrv/A6jd8aCUg=="],
 
     "mrmime": ["mrmime@2.0.1", "", {}, "sha512-Y3wQdFg2Va6etvQ5I82yUhGdsKrcYox6p7FfL1LbK2J4V01F9TGlepTIhnK24t7koZibmg82KGglhA1XK5IsLQ=="],
 
