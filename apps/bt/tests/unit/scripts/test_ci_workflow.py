@@ -13,6 +13,9 @@ from ruamel.yaml import YAML
 REPO_ROOT = Path(__file__).resolve().parents[5]
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 RESEARCH_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "research-promotion.yml"
+DEPENDABOT_CONFIG = REPO_ROOT / ".github" / "dependabot.yml"
+BT_PYPROJECT = REPO_ROOT / "apps" / "bt" / "pyproject.toml"
+TS_PACKAGE = REPO_ROOT / "apps" / "ts" / "package.json"
 PREPUSH_CI = REPO_ROOT / "scripts" / "prepush-ci.sh"
 GITLEAKS_CONFIG = REPO_ROOT / ".gitleaks.toml"
 ACTION_PIN_PATTERN = re.compile(
@@ -211,15 +214,102 @@ def test_ci_tool_versions_are_centrally_fixed() -> None:
         "BUN_ARCHIVE_SHA256": (
             "951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f"
         ),
-        "UV_VERSION": "0.11.29",
         "GITLEAKS_VERSION": "8.30.1",
         "GITLEAKS_IMAGE_DIGEST": (
             "sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f"
         ),
     }
-    source = CI_WORKFLOW.read_text(encoding="utf-8")
-    assert source.count("version: ${{ env.UV_VERSION }}") == 7
-    assert 'version: "latest"' not in source
+
+
+def test_uv_version_is_project_owned_and_discovered_by_setup_uv() -> None:
+    with BT_PYPROJECT.open("rb") as pyproject_file:
+        pyproject = tomllib.load(pyproject_file)
+
+    assert pyproject["tool"]["uv"]["required-version"] == "==0.11.31"
+    assert "UV_VERSION" not in _workflow(CI_WORKFLOW)["env"]
+    assert "UV_VERSION" not in _workflow(RESEARCH_WORKFLOW).get("env", {})
+
+    setup_uv_steps = [
+        step
+        for workflow_path in (CI_WORKFLOW, RESEARCH_WORKFLOW)
+        for job in _workflow(workflow_path)["jobs"].values()
+        for step in job["steps"]
+        if step.get("uses", "").startswith("astral-sh/setup-uv@")
+    ]
+    assert len(setup_uv_steps) == 8
+    for step in setup_uv_steps:
+        assert step["with"]["working-directory"] == "apps/bt"
+        assert "version" not in step["with"]
+
+
+def test_setup_uv_uses_bounded_push_only_caches() -> None:
+    setup_uv_steps = [
+        (workflow_path.name, job_name, step)
+        for workflow_path in (CI_WORKFLOW, RESEARCH_WORKFLOW)
+        for job_name, job in _workflow(workflow_path)["jobs"].items()
+        for step in job["steps"]
+        if step.get("uses", "").startswith("astral-sh/setup-uv@")
+    ]
+
+    assert len(setup_uv_steps) == 8
+    for _, _, step in setup_uv_steps:
+        inputs = step["with"]
+        assert inputs["enable-cache"] is True
+        assert inputs["prune-cache"] is True
+        assert inputs["restore-cache"] is True
+
+    cache_writers = [
+        (workflow_name, job_name)
+        for workflow_name, job_name, step in setup_uv_steps
+        if step["with"]["save-cache"] is not False
+    ]
+    assert cache_writers == [("ci.yml", "quality")]
+    quality_step = next(
+        step
+        for workflow_name, job_name, step in setup_uv_steps
+        if (workflow_name, job_name) == ("ci.yml", "quality")
+    )
+    assert quality_step["with"]["save-cache"] == "${{ github.event_name == 'push' }}"
+
+
+def test_bun_runtime_and_ambient_types_use_the_same_exact_version() -> None:
+    workflow = _workflow(CI_WORKFLOW)
+    package = json.loads(TS_PACKAGE.read_text(encoding="utf-8"))
+
+    bun_version = workflow["env"]["BUN_VERSION"]
+    assert package["devDependencies"]["bun-types"] == bun_version
+
+
+def test_dependabot_uses_existing_labels_and_ignores_known_incompatible_majors() -> None:
+    updates = {
+        update["package-ecosystem"]: update
+        for update in _workflow(DEPENDABOT_CONFIG)["updates"]
+    }
+
+    assert updates["github-actions"]["labels"] == []
+    assert updates["bun"]["labels"] == ["ts"]
+    assert updates["uv"]["labels"] == ["bt"]
+    assert updates["bun"]["ignore"] == [
+        {"dependency-name": "js-yaml", "versions": ["5.x"]},
+        {"dependency-name": "typescript", "versions": ["7.x"]},
+    ]
+
+
+def test_web_e2e_installs_playwright_without_pr_scoped_browser_cache() -> None:
+    web_e2e_steps = _jobs()["web-e2e"]["steps"]
+
+    assert not any(
+        step.get("uses", "").startswith("actions/cache@")
+        for step in web_e2e_steps
+    )
+    install_step = next(
+        step
+        for step in web_e2e_steps
+        if step.get("name") == "Install Playwright browser (Chromium)"
+    )
+    assert "if" not in install_step
+    assert install_step["run"] == "bunx --bun playwright install chromium"
+    assert install_step["working-directory"] == "apps/ts/packages/web"
 
 
 def test_bun_installation_verifies_the_exact_official_release_artifact() -> None:

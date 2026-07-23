@@ -54,6 +54,9 @@ rust = [
     "vectorbt-rust>=1.1.0",
 ]
 
+[tool.uv]
+required-version = "==0.11.31"
+
 [tool.pyright]
 include = ["src"]
 exclude = ["**/__pycache__"]
