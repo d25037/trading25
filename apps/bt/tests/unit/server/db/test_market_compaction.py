@@ -967,6 +967,10 @@ def test_fresh_recovery_fences_same_inode_semantic_mutation_after_size_drift(
             tamper = duckdb.connect(str(source))
             try:
                 tamper.execute("UPDATE margin_data SET long_margin_volume = 101")
+                tamper.execute(
+                    "CREATE TABLE __size_drift_probe AS "
+                    "SELECT range AS value FROM range(100000)"
+                )
                 tamper.execute("CHECKPOINT")
             finally:
                 tamper.close()

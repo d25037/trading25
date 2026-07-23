@@ -55,6 +55,7 @@ class StockDataCommitOutcome:
     api_calls: int = 0
     appended_rows: int = 0
     affected_codes: frozenset[str] = frozenset()
+    affected_dates: frozenset[str] = frozenset()
     replaced_codes: int = 0
     replaced_rows: int = 0
     recomputation_errors: tuple[str, ...] = ()
@@ -71,6 +72,7 @@ class StockDataIngestionSession:
     affected_codes: set[str] = field(default_factory=set)
     staged_rows: int = 0
     _appended_rows: int = 0
+    _affected_dates: set[str] = field(default_factory=set)
     _committed: bool = False
     _finalized: bool = False
 
@@ -111,11 +113,13 @@ class StockDataIngestionSession:
             exclude_codes=frozenset(),
         )
         self._appended_rows += append_result.stats.inserted
+        self._affected_dates.update(append_result.affected_dates)
         self.staged_rows = 0
 
     async def discard(self, ctx: Any) -> None:
         await sync_publish_helpers._discard_staged_stock_data_rows(ctx)
         self.affected_codes.clear()
+        self._affected_dates.clear()
         self.staged_rows = 0
 
     async def commit(
@@ -200,6 +204,9 @@ class StockDataIngestionSession:
             api_calls=api_calls,
             appended_rows=self._appended_rows + append_result.stats.inserted,
             affected_codes=affected_codes,
+            affected_dates=frozenset(
+                self._affected_dates | set(append_result.affected_dates)
+            ),
             replaced_codes=replaced_codes,
             replaced_rows=replaced_rows,
         )
@@ -221,6 +228,7 @@ class StockDataIngestionSession:
                     ),
                 )
         self.affected_codes.clear()
+        self._affected_dates.clear()
         self.staged_rows = 0
         self._appended_rows = 0
         return outcome
@@ -246,6 +254,7 @@ class StockDataIngestionSession:
         self._committed = replaced_codes > 0
         self._finalized = True
         self.affected_codes.clear()
+        self._affected_dates.clear()
         self.staged_rows = 0
         return outcome
 
@@ -256,6 +265,8 @@ class StockDataIngestionSession:
         ctx.affected_stock_codes = len(outcome.affected_codes)
         ctx.stock_codes_replaced = outcome.replaced_codes
         ctx.stock_rows_replaced = outcome.replaced_rows
+        ctx.valuation_rebuild_codes.update(outcome.affected_codes)
+        ctx.valuation_changed_price_dates.update(outcome.affected_dates)
         on_stock_commit = getattr(ctx, "on_stock_commit", None)
         if callable(on_stock_commit):
             on_stock_commit(

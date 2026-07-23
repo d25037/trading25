@@ -45,6 +45,7 @@ async def recompute_changed_fundamentals(ctx: Any) -> None:
         ctx.changed_fundamentals_codes.clear()
         return
     await cast(Callable[[frozenset[str]], Awaitable[None]], recompute)(changed_codes)
+    ctx.valuation_rebuild_codes.update(changed_codes)
     ctx.changed_fundamentals_codes.clear()
 
 

@@ -59,6 +59,13 @@ class SyncServiceMarketDbLike(SyncMarketDbLike, Protocol):
     def get_market_schema_version(self) -> int | None: ...
     def is_market_schema_current(self) -> bool: ...
     def rebuild_daily_technical_metrics_from_stock_data(self) -> Any: ...
+    def materialize_daily_valuation(
+        self,
+        *,
+        full_rebuild: bool = False,
+        rebuild_codes: frozenset[str] = frozenset(),
+        changed_dates: frozenset[str] = frozenset(),
+    ) -> Any: ...
 
 
 class SyncServiceTimeSeriesStoreLike(SyncTimeSeriesStoreLike, Protocol):
@@ -114,6 +121,17 @@ def _requires_daily_technical_metrics_rebuild(
             result.stockCodesReplaced,
             result.stockRowsReplaced,
         )
+    )
+
+
+def _requires_daily_valuation_materialization(
+    mode: SyncMode,
+    ctx: SyncContext,
+) -> bool:
+    return (
+        mode is SyncMode.INITIAL
+        or bool(ctx.valuation_rebuild_codes)
+        or bool(ctx.valuation_changed_price_dates)
     )
 
 
@@ -326,25 +344,56 @@ async def start_sync(
                 )
             elif sync_job_manager.is_cancelled(job.job_id):
                 operation_outcome = maintenance_contracts.MarketOperationOutcome.CANCELLED
-            elif _requires_daily_technical_metrics_rebuild(mode, operation_result):
-                on_progress(
-                    "daily_technical_metrics",
-                    0,
-                    1,
-                    "Materializing daily technical metrics from stock_data...",
-                )
-                technical_result = await asyncio.to_thread(
-                    current_market_db.rebuild_daily_technical_metrics_from_stock_data
-                )
-                on_progress(
-                    "daily_technical_metrics",
-                    1,
-                    1,
-                    (
-                        "Daily technical metrics materialization complete "
-                        f"({technical_result.final_count} rows)."
-                    ),
-                )
+            else:
+                if _requires_daily_valuation_materialization(mode, ctx):
+                    on_progress(
+                        "daily_valuation",
+                        0,
+                        1,
+                        "Materializing daily valuation from current market data...",
+                    )
+                    valuation_result = await asyncio.to_thread(
+                        current_market_db.materialize_daily_valuation,
+                        full_rebuild=mode is SyncMode.INITIAL,
+                        rebuild_codes=(
+                            frozenset()
+                            if mode is SyncMode.INITIAL
+                            else frozenset(ctx.valuation_rebuild_codes)
+                        ),
+                        changed_dates=(
+                            frozenset()
+                            if mode is SyncMode.INITIAL
+                            else frozenset(ctx.valuation_changed_price_dates)
+                        ),
+                    )
+                    on_progress(
+                        "daily_valuation",
+                        1,
+                        1,
+                        (
+                            "Daily valuation materialization complete "
+                            f"({valuation_result.final_count} rows)."
+                        ),
+                    )
+                if _requires_daily_technical_metrics_rebuild(mode, operation_result):
+                    on_progress(
+                        "daily_technical_metrics",
+                        0,
+                        1,
+                        "Materializing daily technical metrics from stock_data...",
+                    )
+                    technical_result = await asyncio.to_thread(
+                        current_market_db.rebuild_daily_technical_metrics_from_stock_data
+                    )
+                    on_progress(
+                        "daily_technical_metrics",
+                        1,
+                        1,
+                        (
+                            "Daily technical metrics materialization complete "
+                            f"({technical_result.final_count} rows)."
+                        ),
+                    )
         except asyncio.TimeoutError:
             operation_outcome = maintenance_contracts.MarketOperationOutcome.TIMED_OUT
             operation_error = f"Sync timed out after {sync_timeout_minutes} minutes"

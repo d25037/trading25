@@ -2725,6 +2725,8 @@ async def test_stock_ingestion_session_appends_only_new_normal_rows(
 
     assert outcome.appended_rows == 1
     assert outcome.affected_codes == frozenset()
+    assert outcome.affected_dates == frozenset({"2026-02-11"})
+    assert ctx.valuation_changed_price_dates == {"2026-02-11"}
     assert store._conn.execute(  # noqa: SLF001
         "SELECT open FROM stock_data_raw WHERE code = '7203' AND date = '2026-02-10'"
     ).fetchone() == (10.0,)
@@ -2793,6 +2795,9 @@ async def test_stock_ingestion_session_refreshes_only_affected_code_with_observe
     assert outcome.affected_codes == frozenset({"7203"})
     assert outcome.replaced_codes == 1
     assert outcome.appended_rows == 1
+    assert outcome.affected_dates == frozenset({"2026-02-11"})
+    assert ctx.valuation_rebuild_codes == {"7203"}
+    assert ctx.valuation_changed_price_dates == {"2026-02-11"}
     assert client.calls == [
         ("/equities/bars/daily", {"code": "72030", "to": "2026-02-11"}, 10_000)
     ]
@@ -3447,6 +3452,8 @@ async def test_execute_stock_data_bulk_fetch_defers_append_until_all_files_are_s
     assert len(store.pending_stage_batches) == 2
     committed = await session.commit(ctx, stage=_provider_stage_for_test(ctx))
     assert committed.appended_rows == 2
+    assert committed.affected_dates == frozenset({"2026-02-10", "2026-02-11"})
+    assert ctx.valuation_changed_price_dates == {"2026-02-10", "2026-02-11"}
     assert store.flush_calls == 1
     assert [row["date"] for row in market_db.stock_rows] == ["2026-02-10", "2026-02-11"]
 
@@ -3513,6 +3520,7 @@ async def test_execute_initial_stock_data_bulk_fetch_flushes_each_file() -> None
     assert store.max_pending_stage_batches == 1
     committed = await session.commit(ctx, stage=stage)
     assert committed.appended_rows == 2
+    assert committed.affected_dates == frozenset({"2026-02-10", "2026-02-11"})
 
 
 @pytest.mark.asyncio
@@ -8094,6 +8102,7 @@ async def test_statement_publish_accumulates_changed_codes_for_one_recompute() -
 
     assert recomputed == [frozenset({"6758", "7203"})]
     assert ctx.changed_fundamentals_codes == set()
+    assert ctx.valuation_rebuild_codes == {"6758", "7203"}
 
 
 @pytest.mark.asyncio

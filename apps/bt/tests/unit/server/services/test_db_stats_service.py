@@ -43,6 +43,9 @@ class DummyMarketDb:
     def get_stats(self) -> dict[str, int]:
         return {"stocks": 2, "index_master": 1}
 
+    def get_status_counts(self) -> dict[str, int]:
+        return {"stocks": 2, "index_master": 1}
+
     def get_market_schema_version(self) -> int | None:
         return self._schema_version
 
@@ -100,6 +103,9 @@ class DummyMarketDb:
             "adjustmentEventCount": 3,
         }
 
+    def get_adjusted_metrics_status_snapshot(self) -> dict[str, Any]:
+        return self.get_adjusted_metrics_snapshot()
+
     def get_adjusted_metrics_source_diagnostics(self) -> dict[str, int]:
         return {}
 
@@ -131,6 +137,9 @@ class DummyMarketDb:
         })
         return snapshot
 
+    def get_provider_vintage_status_snapshot(self) -> dict[str, Any]:
+        return self.get_provider_vintage_snapshot()
+
     def get_adjustment_events_count(self) -> int:
         return 3
 
@@ -157,6 +166,48 @@ class DummyStore:
     def get_storage_stats(self) -> Any:
         self.storage_stats_calls += 1
         return self._storage_stats
+
+
+def test_get_market_stats_avoids_deep_market_integrity_scans() -> None:
+    class StatusOnlyMarketDb(DummyMarketDb):
+        def get_stats(self) -> dict[str, int]:
+            raise AssertionError("status must not count every Market table")
+
+        def get_adjusted_metrics_status_snapshot(self) -> dict[str, Any]:
+            return DummyMarketDb.get_adjusted_metrics_snapshot(self)
+
+        def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
+            raise AssertionError("status must not count the full daily_valuation table")
+
+        def get_provider_vintage_status_snapshot(self) -> dict[str, Any]:
+            return {
+                "providerPlan": "standard",
+                "providerAsOf": "2026-02-27",
+                "providerAsOfMin": "2026-02-27",
+                "providerAsOfMax": "2026-02-27",
+                "effectiveCoverageStart": "2016-02-29",
+                "effectiveCoverageEnd": "2026-02-27",
+                "providerSourceFingerprint": "a" * 64,
+                "providerWindowCoherent": True,
+                "providerWindowFingerprintCount": 2,
+            }
+
+        def get_provider_vintage_snapshot(self) -> dict[str, Any]:
+            raise AssertionError("status must not rehash every stock_data_raw row")
+
+    result = db_stats_service.get_market_stats(
+        StatusOnlyMarketDb(schema_version=5),
+        time_series_store=DummyStore(
+            TimeSeriesInspection(
+                source="duckdb-parquet",
+                stock_count=10,
+                statements_count=4,
+            )
+        ),
+    )
+
+    assert result.stocks.total == 2
+    assert result.providerVintage.status == "ready"
 
 
 def test_resolve_duckdb_size_bytes_returns_zero_when_path_is_missing() -> None:

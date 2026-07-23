@@ -352,6 +352,109 @@ def get_provider_vintage_snapshot(
     }
 
 
+def get_persisted_provider_vintage_snapshot(
+    table_exists: Callable[[str], bool],
+    fetchall_dicts: Callable[
+        [str, list[Any] | tuple[Any, ...] | None], list[dict[str, Any]]
+    ],
+) -> dict[str, Any]:
+    """Build the status snapshot from persisted per-code provider ownership."""
+    defaults: dict[str, Any] = {
+        "providerPlan": None,
+        "providerAsOf": None,
+        "providerAsOfMin": None,
+        "providerAsOfMax": None,
+        "effectiveCoverageStart": None,
+        "effectiveCoverageEnd": None,
+        "providerSourceFingerprint": None,
+        "providerWindowCoherent": False,
+        "providerWindowFingerprintCount": 0,
+        "invalidProviderWindowCount": 0,
+        "adjustmentEventCount": 0,
+    }
+    if not table_exists("stock_provider_windows"):
+        return defaults
+
+    windows = fetchall_dicts(
+        """
+        SELECT
+            coverage_start,
+            coverage_end,
+            provider_plan,
+            provider_as_of,
+            source_fingerprint
+        FROM stock_provider_windows
+        ORDER BY code
+        """,
+        None,
+    )
+    if not windows:
+        return defaults
+
+    starts: list[str] = []
+    ends: list[str] = []
+    plans: list[str] = []
+    as_ofs: list[str] = []
+    fingerprints: list[str] = []
+    valid_count = 0
+    for window in windows:
+        coverage_start = str(window.get("coverage_start", ""))
+        coverage_end = str(window.get("coverage_end", ""))
+        provider_plan = str(window.get("provider_plan", ""))
+        provider_as_of = str(window.get("provider_as_of", ""))
+        source_fingerprint = str(window.get("source_fingerprint", ""))
+        valid = bool(re.fullmatch(r"[0-9a-f]{64}", source_fingerprint))
+        try:
+            validate_provider_plan(provider_plan)
+            parsed_start = date.fromisoformat(coverage_start)
+            parsed_end = date.fromisoformat(coverage_end)
+            parsed_as_of = date.fromisoformat(provider_as_of)
+            valid = valid and parsed_start <= parsed_end <= parsed_as_of
+        except ValueError:
+            valid = False
+        if not valid:
+            continue
+        valid_count += 1
+        starts.append(coverage_start)
+        ends.append(coverage_end)
+        plans.append(provider_plan)
+        as_ofs.append(provider_as_of)
+        fingerprints.append(source_fingerprint)
+
+    coherent = (
+        valid_count == len(windows)
+        and bool(starts)
+        and len(set(plans)) == 1
+        and len(set(as_ofs)) == 1
+    )
+    adjustment_event_count = 0
+    if table_exists("stock_adjustment_events"):
+        rows = fetchall_dicts(
+            "SELECT COUNT(*) AS count FROM stock_adjustment_events",
+            None,
+        )
+        if rows:
+            adjustment_event_count = int(rows[0].get("count", 0) or 0)
+    return {
+        **defaults,
+        "providerPlan": plans[0] if coherent else None,
+        "providerAsOf": as_ofs[0] if coherent else None,
+        "providerAsOfMin": min(as_ofs) if as_ofs else None,
+        "providerAsOfMax": max(as_ofs) if as_ofs else None,
+        "effectiveCoverageStart": min(starts) if coherent else None,
+        "effectiveCoverageEnd": max(ends) if coherent else None,
+        "providerSourceFingerprint": (
+            combine_provider_stock_source_fingerprints(*fingerprints)
+            if coherent
+            else None
+        ),
+        "providerWindowCoherent": coherent,
+        "providerWindowFingerprintCount": valid_count,
+        "invalidProviderWindowCount": len(windows) - valid_count,
+        "adjustmentEventCount": adjustment_event_count,
+    }
+
+
 def get_adjusted_metrics_source_diagnostics(
     table_exists: Callable[[str], bool],
     fetchone: Callable[[str, Sequence[Any] | None], Any],
@@ -685,10 +788,12 @@ def get_adjusted_metrics_snapshot(
     table_exists: Callable[[str], bool],
     count_rows: Callable[[str], int],
     fetchone: Callable[[str, list[Any] | tuple[Any, ...] | None], Any],
+    *,
+    include_valuation_counts: bool = True,
 ) -> dict[str, Any]:
     """Current provider-basis materialization freshness snapshot."""
     coverage_row = None
-    if table_exists("daily_valuation"):
+    if include_valuation_counts and table_exists("daily_valuation"):
         coverage_row = fetchone(
             """
             WITH daily_counts AS (
@@ -884,8 +989,12 @@ def get_adjusted_metrics_snapshot(
         "currentBasisStatementCount": count_rows("statement_metrics_adjusted"),
         "currentBasisStateCount": current_state_count,
         "invalidCurrentBasisStateCount": invalid_state_count,
-        "dailyValuationRows": count_rows("daily_valuation"),
-        "dailyTechnicalMetricRows": count_rows("daily_technical_metrics"),
+        "dailyValuationRows": (
+            count_rows("daily_valuation") if include_valuation_counts else 0
+        ),
+        "dailyTechnicalMetricRows": (
+            count_rows("daily_technical_metrics") if include_valuation_counts else 0
+        ),
         "dailyValuationLatestDate": (
             str(coverage_row[0]) if coverage_row and coverage_row[0] else None
         ),

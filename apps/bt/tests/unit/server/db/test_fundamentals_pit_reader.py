@@ -187,6 +187,13 @@ def v5_market(tmp_path: Path) -> Path:
                 ),
             ],
         )
+        conn.execute(
+            """
+            UPDATE statements
+            SET type_of_document = 'EarnForecastRevision'
+            WHERE statement_id = 'toyota-revision-2024'
+            """
+        )
         conn.executemany(
             """
             INSERT INTO statement_metrics_adjusted (
@@ -288,6 +295,11 @@ def v5_market(tmp_path: Path) -> Path:
         )
     finally:
         conn.close()
+    db = open_market_db(str(path))
+    try:
+        db.materialize_daily_valuation(full_rebuild=True)
+    finally:
+        db.close()
     return path
 
 
@@ -303,6 +315,14 @@ def _update(path: Path, sql: str) -> None:
         conn.execute(sql)
     finally:
         conn.close()
+
+
+def _materialize(path: Path) -> None:
+    db = open_market_db(str(path))
+    try:
+        db.materialize_daily_valuation(full_rebuild=True)
+    finally:
+        db.close()
 
 
 def test_snapshot_resolves_weekend_with_provider_metadata_and_exact_master(
@@ -398,6 +418,7 @@ def test_snapshot_accepts_suspended_symbol_and_uses_latest_prior_observation(
         v5_market,
         "DELETE FROM stock_data WHERE code IN ('7203', '72030') AND date = '2024-06-28'",
     )
+    _materialize(v5_market)
     snapshot = _reader_client(monkeypatch, v5_market).get_fundamentals_pit_snapshot(
         "7203", date(2024, 6, 30)
     )

@@ -296,39 +296,12 @@ class TestMarketDbBasics:
             WHERE table_name = 'daily_valuation'
             """
         )
-        assert relation == ("VIEW",)
+        assert relation == ("BASE TABLE",)
         assert "basis_version" not in _table_columns(market_db, "daily_valuation")
-        view_sql = market_db._fetchone(
-            "SELECT sql FROM duckdb_views() WHERE view_name = 'daily_valuation'"
+        valuation_pk = market_db._fetchall(
+            "PRAGMA table_info('daily_valuation')"
         )
-        assert view_sql is not None
-        assert "disclosed_at" in str(view_sql[0]).split("ASOF", maxsplit=1)[1]
-
-        market_db._execute(
-            """
-            INSERT INTO stock_data
-                (code, date, open, high, low, close, volume)
-            VALUES ('7203', '2026-02-10', 100, 110, 90, 105, 1000)
-            """
-        )
-        market_db._execute(
-            """
-            INSERT INTO statement_metrics_adjusted (
-                code, statement_id, disclosed_date, disclosed_at, period_end,
-                period_type, fundamentals_adjustment_basis_date, adjusted_eps,
-                adjustment_factor_cumulative, source_fingerprint
-            ) VALUES
-                ('7203', 'a-late', '2026-02-10', '2026-02-10T15:30:00+09:00',
-                 '2026-03-31', 'FY', '2026-02-10', 15, 1, 'late-fingerprint'),
-                ('7203', 'z-early', '2026-02-10', '2026-02-10T09:00:00+09:00',
-                 '2026-03-31', 'FY', '2026-02-10', 10, 1, 'early-fingerprint'),
-                ('7203', 'future', '2026-02-11', '2026-02-11T09:00:00+09:00',
-                 '2026-03-31', 'FY', '2026-02-11', 20, 1, 'future-fingerprint')
-            """
-        )
-        assert market_db._fetchone(
-            "SELECT statement_id, eps FROM daily_valuation WHERE code = '7203'"
-        ) == ("a-late", 15.0)
+        assert [row[1] for row in valuation_pk if row[5]] == ["code", "date"]
 
     def test_v5_current_basis_recompute_pending_schema(self, market_db: MarketDb) -> None:
         assert _table_columns(market_db, "current_basis_recompute_pending") == {
@@ -364,7 +337,7 @@ class TestMarketDbBasics:
                 ('67580', 'revision', '2026-02-10', '2026-02-10T15:00:00+09:00',
                  '2025-04-01', '2026-03-31', 'FY', 'EarnForecastRevision'),
                 ('6758', 'revision', '2026-02-10', '2026-02-10T15:00:00+09:00',
-                 '2025-04-01', '2026-03-31', 'FY', 'FinancialStatements')
+                 '2025-04-01', '2026-03-31', 'FY', 'EarnForecastRevision')
             """
         )
         market_db._execute(
@@ -384,6 +357,20 @@ class TestMarketDbBasics:
                  NULL, NULL, 1, 'state-fingerprint')
             """
         )
+        market_db._execute(
+            """
+            INSERT INTO stock_provider_windows VALUES
+                ('6758', '2026-02-10', '2026-02-10', 'premium',
+                 '2026-02-10', 'window', '2026-02-10')
+            """
+        )
+        market_db._execute(
+            """
+            INSERT INTO current_basis_fundamentals_state VALUES
+                ('6758', '2026-02-10', 'state-fingerprint', 2, '2026-02-10')
+            """
+        )
+        market_db.materialize_daily_valuation(full_rebuild=True)
 
         row = market_db._fetchone(
             """
@@ -391,7 +378,7 @@ class TestMarketDbBasics:
                    market_cap, free_float_market_cap, statement_id,
                    forward_eps_disclosed_date, forward_eps_source
             FROM daily_valuation
-            WHERE code = '67580' AND date = '2026-02-10'
+            WHERE code = '6758' AND date = '2026-02-10'
             """
         )
 
@@ -400,26 +387,147 @@ class TestMarketDbBasics:
             (10.0, 100.0, 20.0, 10.5, 5.25, 1.05, 105000.0, 94500.0),
             rel=1e-9,
         )
-        assert row[8:] == ("actual", "2026-02-10", "fy")
+        assert row[8:] == ("actual", "2026-02-10", "revised")
 
-    def test_reopen_refreshes_the_schema_v5_daily_valuation_view(
+    def test_daily_valuation_populates_sales_and_operating_profit_families_asof(
+        self, market_db: MarketDb
+    ) -> None:
+        market_db._execute(
+            """
+            INSERT INTO stock_data
+                (code, date, open, high, low, close, volume)
+            VALUES ('67580', '2026-02-10', 100, 110, 90, 105, 1000)
+            """
+        )
+        market_db._execute(
+            """
+            INSERT INTO statements (
+                code, statement_id, disclosed_date, disclosed_at,
+                period_start, period_end, type_of_current_period,
+                type_of_document, sales, operating_profit,
+                forecast_sales, forecast_operating_profit
+            ) VALUES
+                ('67580', 'actual', '2026-02-09', '2026-02-09T09:00:00+09:00',
+                 '2025-04-01', '2026-03-31', 'FY', 'FinancialStatements',
+                 2000, 200, 2400, 300),
+                ('67580', 'revision', '2026-02-10', '2026-02-10T15:00:00+09:00',
+                 '2025-04-01', '2026-03-31', '2Q', 'EarnForecastRevision',
+                 NULL, NULL, 2500, 320),
+                ('67580', 'future', '2026-02-11', '2026-02-11T09:00:00+09:00',
+                 '2025-04-01', '2026-03-31', '3Q', 'EarnForecastRevision',
+                 NULL, NULL, 9999, 999)
+            """
+        )
+        market_db._execute(
+            """
+            INSERT INTO statement_metrics_adjusted (
+                code, statement_id, disclosed_date, disclosed_at, period_end,
+                period_type, fundamentals_adjustment_basis_date,
+                adjusted_eps, adjusted_bps, adjusted_forecast_eps,
+                adjusted_shares_outstanding, adjusted_treasury_shares,
+                adjustment_factor_cumulative, source_fingerprint
+            ) VALUES
+                ('6758', 'actual', '2026-02-09', '2026-02-09T09:00:00+09:00',
+                 '2026-03-31', 'FY', '2026-02-10', 10, 100, NULL,
+                 1000, 100, 1, 'state-fingerprint'),
+                ('6758', 'revision', '2026-02-10', '2026-02-10T15:00:00+09:00',
+                 '2026-03-31', '2Q', '2026-02-10', NULL, NULL, 20,
+                 NULL, NULL, 1, 'state-fingerprint'),
+                ('6758', 'future', '2026-02-11', '2026-02-11T09:00:00+09:00',
+                 '2026-03-31', '3Q', '2026-02-11', NULL, NULL, 30,
+                 NULL, NULL, 1, 'future-fingerprint')
+            """
+        )
+        market_db._execute(
+            """
+            INSERT INTO stock_provider_windows VALUES
+                ('6758', '2026-02-10', '2026-02-10', 'premium',
+                 '2026-02-10', 'window', '2026-02-10')
+            """
+        )
+        market_db._execute(
+            """
+            INSERT INTO current_basis_fundamentals_state VALUES
+                ('6758', '2026-02-10', 'state-fingerprint', 2, '2026-02-10')
+            """
+        )
+        market_db.materialize_daily_valuation(full_rebuild=True)
+
+        row = market_db._fetchone(
+            """
+            SELECT sales, forward_sales, psr, forward_psr, p_op, forward_p_op,
+                   forward_sales_disclosed_date, forward_sales_source
+            FROM daily_valuation
+            WHERE code = '6758' AND date = '2026-02-10'
+            """
+        )
+
+        assert row is not None
+        assert row[:6] == pytest.approx(
+            (2000.0, 2500.0, 52.5, 42.0, 525.0, 328.125),
+            rel=1e-9,
+        )
+        assert row[6:] == ("2026-02-10", "revised")
+
+    def test_reopen_preserves_the_schema_v5_daily_valuation_table(
         self, tmp_path: Path
     ) -> None:
-        db_path = str(tmp_path / "refresh-view.duckdb")
+        db_path = str(tmp_path / "valuation-table.duckdb")
         initial = open_market_db(db_path)
         initial._execute(
-            "CREATE OR REPLACE VIEW daily_valuation AS SELECT 'stale' AS marker"
+            """
+            INSERT INTO daily_valuation (code, date, price_basis_date)
+            VALUES ('7203', '2026-02-10', '2026-02-10')
+            """
         )
         initial.close()
 
         reopened = open_market_db(db_path)
         try:
             columns = _table_columns(reopened, "daily_valuation")
+            count = reopened._count_rows("daily_valuation")
         finally:
             reopened.close()
 
-        assert "marker" not in columns
         assert {"eps", "bps", "forward_eps", "source_fingerprint"} <= columns
+        assert count == 1
+
+    def test_materialization_promotes_an_existing_v5_valuation_view(
+        self, tmp_path: Path
+    ) -> None:
+        db_path = str(tmp_path / "legacy-valuation-view.duckdb")
+        initial = open_market_db(db_path)
+        initial.close()
+        conn = duckdb.connect(db_path)
+        try:
+            conn.execute("DROP TABLE daily_valuation")
+            conn.execute(
+                "CREATE VIEW daily_valuation AS "
+                "SELECT 'stale' AS marker WHERE FALSE"
+            )
+        finally:
+            conn.close()
+
+        reopened = open_market_db(db_path)
+        try:
+            before = reopened._fetchone(
+                """
+                SELECT table_type FROM information_schema.tables
+                WHERE table_name = 'daily_valuation'
+                """
+            )
+            reopened.materialize_daily_valuation(full_rebuild=True)
+            after = reopened._fetchone(
+                """
+                SELECT table_type FROM information_schema.tables
+                WHERE table_name = 'daily_valuation'
+                """
+            )
+        finally:
+            reopened.close()
+
+        assert before == ("VIEW",)
+        assert after == ("BASE TABLE",)
 
     def test_v5_current_basis_state_rejects_negative_statement_count(
         self, market_db: MarketDb
@@ -561,6 +669,26 @@ class TestMarketDbBasics:
                  '2026-03-31', 'FY', '2026-02-10', NULL, 20, 1, 'missing')
             """
         )
+        market_db._execute(
+            """
+            INSERT INTO stock_provider_windows VALUES
+                ('1001', '2026-02-10', '2026-02-10', 'premium',
+                 '2026-02-10', 'window-1', '2026-02-10'),
+                ('1002', '2026-02-10', '2026-02-10', 'premium',
+                 '2026-02-10', 'window-2', '2026-02-10'),
+                ('1003', '2026-02-10', '2026-02-10', 'premium',
+                 '2026-02-10', 'window-3', '2026-02-10')
+            """
+        )
+        market_db._execute(
+            """
+            INSERT INTO current_basis_fundamentals_state VALUES
+                ('1001', '2026-02-10', 'normal', 1, '2026-02-10'),
+                ('1002', '2026-02-10', 'over', 1, '2026-02-10'),
+                ('1003', '2026-02-10', 'missing', 1, '2026-02-10')
+            """
+        )
+        market_db.materialize_daily_valuation(full_rebuild=True)
 
         assert market_db._fetchall(
             """

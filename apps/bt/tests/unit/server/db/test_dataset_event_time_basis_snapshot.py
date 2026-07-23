@@ -235,7 +235,20 @@ def _build_v5_provider_market(
             _insert_provider_code(conn, code="6758", name="Sony", dates=dates)
     finally:
         conn.close()
+    db = open_market_db(str(source))
+    try:
+        db.materialize_daily_valuation(full_rebuild=True)
+    finally:
+        db.close()
     return source
+
+
+def _rematerialize_source(source: Path) -> None:
+    db = open_market_db(str(source))
+    try:
+        db.materialize_daily_valuation(full_rebuild=True)
+    finally:
+        db.close()
 
 
 def _build_readable_provider_snapshot(tmp_path: Path) -> Path:
@@ -790,7 +803,7 @@ def test_provider_copy_rejects_empty_gap_and_bound_mismatch_per_physical_family(
     try:
         if family == "valuation_interior":
             conn.execute("CREATE TABLE valuation_materialized AS SELECT * FROM daily_valuation")
-            conn.execute("DROP VIEW daily_valuation")
+            conn.execute("DROP TABLE daily_valuation")
             conn.execute("ALTER TABLE valuation_materialized RENAME TO daily_valuation")
             conn.execute("DELETE FROM daily_valuation WHERE date = '2024-01-05'")
         elif family == "raw_empty":
@@ -845,6 +858,7 @@ def test_provider_copy_accepts_shared_suspended_quote_session_subset(
         _refresh_declared_provider_fingerprint(conn)
     finally:
         conn.close()
+    _rematerialize_source(source)
     writer = _prepare_provider_copy_writer(tmp_path, source, dates=_THREE_DATES)
 
     result = writer.copy_provider_snapshot_from_source(
@@ -894,6 +908,7 @@ def test_writer_snapshot_with_all_lag_valid_basis_dates_resolves_in_reader(
         )
     finally:
         conn.close()
+    _rematerialize_source(source)
     writer = DatasetWriter(str(tmp_path / "dataset"))
     writer.upsert_stocks(
         [
@@ -1135,6 +1150,7 @@ def test_provider_copy_accepts_statementless_current_provider_snapshot(
         )
     finally:
         conn.close()
+    _rematerialize_source(source)
     writer = _prepare_provider_copy_writer(tmp_path, source)
     result = writer.copy_provider_snapshot_from_source(
         source_duckdb_path=str(source),

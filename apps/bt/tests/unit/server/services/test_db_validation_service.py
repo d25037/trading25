@@ -118,6 +118,9 @@ class DummyMarketDb:
     def get_stats(self) -> dict[str, int]:
         return {"stocks": 2, "statements": 4}
 
+    def get_status_counts(self) -> dict[str, int]:
+        return {"stocks": 2, "statements": 4}
+
     def get_market_schema_version(self) -> int | None:
         return self._schema_version
 
@@ -187,10 +190,16 @@ class DummyMarketDb:
     def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
         return dict(self._adjusted_metrics_snapshot)
 
+    def get_adjusted_metrics_status_snapshot(self) -> dict[str, Any]:
+        return dict(self._adjusted_metrics_snapshot)
+
     def get_adjusted_metrics_source_diagnostics(self) -> dict[str, int]:
         return dict(self._adjusted_metrics_source_diagnostics)
 
     def get_provider_vintage_snapshot(self) -> dict[str, Any]:
+        return dict(self._provider_vintage_snapshot)
+
+    def get_provider_vintage_status_snapshot(self) -> dict[str, Any]:
         return dict(self._provider_vintage_snapshot)
 
     def _resolve_options_225_issue_dates(self, issue_type: str) -> list[str]:
@@ -199,6 +208,32 @@ class DummyMarketDb:
         if issue_type == "conflicting":
             return list(self._options_225_conflicting_underlying_dates)
         raise ValueError(f"Unsupported options_225 issue type: {issue_type}")
+
+
+def test_validate_market_db_avoids_deep_market_integrity_scans() -> None:
+    class StatusOnlyMarketDb(DummyMarketDb):
+        def get_stats(self) -> dict[str, int]:
+            raise AssertionError("status must not count every Market table")
+
+        def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
+            raise AssertionError("status must not count the full daily_valuation table")
+
+        def get_provider_vintage_snapshot(self) -> dict[str, Any]:
+            raise AssertionError("status must not rehash every stock_data_raw row")
+
+    result = validate_market_db(
+        market_db=StatusOnlyMarketDb(),
+        time_series_store=DummyTimeSeriesStore(
+            TimeSeriesInspection(
+                source="duckdb-parquet",
+                stock_count=10,
+                statements_count=4,
+            )
+        ),
+    )
+
+    assert result.stocks.total == 2
+    assert result.providerVintage.status == "ready"
 
 
 def test_validate_market_db_uses_missing_dates_total_count_from_inspection() -> None:

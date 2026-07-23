@@ -39,6 +39,7 @@ from src.infrastructure.db.market import stock_master_queries as _stock_master_q
 from src.infrastructure.db.market.valuation_queries import (
     get_adjusted_metrics_source_diagnostics as _get_adjusted_metrics_source_diagnostics,
     get_adjusted_metrics_snapshot as _get_adjusted_metrics_snapshot,
+    get_persisted_provider_vintage_snapshot as _get_persisted_provider_vintage_snapshot,
     get_provider_vintage_snapshot as _get_provider_vintage_snapshot,
     get_adjusted_statement_metrics as _get_adjusted_statement_metrics,
     get_daily_valuation as _get_daily_valuation,
@@ -47,7 +48,9 @@ from src.infrastructure.db.market.valuation_queries import (
 from src.infrastructure.db.market.valuation_writers import (
     CurrentBasisFundamentalsSource,
     AdjustedRelationPublishResult,
+    DailyValuationMaterializationResult,
     load_current_basis_fundamentals_source as _load_current_basis_fundamentals_source,
+    materialize_daily_valuation as _materialize_daily_valuation,
     publish_current_basis_statement_metrics as _publish_current_basis_statement_metrics,
 )
 from src.shared.utils.market_code_alias import expand_market_codes
@@ -236,6 +239,13 @@ class MarketDb:
         """DB 統計情報を取得。"""
         return {table_name: self._count_rows(table_name) for table_name in _STATS_TABLES}
 
+    def get_status_counts(self) -> dict[str, int]:
+        """Return only the small-table counts rendered by status endpoints."""
+        return {
+            table_name: self._count_rows(table_name)
+            for table_name in ("stocks", "index_master")
+        }
+
     def get_market_schema_version(self) -> int | None:
         if not self._table_exists("market_schema_version"):
             return None
@@ -378,6 +388,15 @@ class MarketDb:
             self._table_exists, self._count_rows, self._fetchone
         )
 
+    def get_adjusted_metrics_status_snapshot(self) -> dict[str, Any]:
+        """Adjusted metrics status without full valuation-table counts."""
+        return _get_adjusted_metrics_snapshot(
+            self._table_exists,
+            self._count_rows,
+            self._fetchone,
+            include_valuation_counts=False,
+        )
+
     def get_adjusted_metrics_source_diagnostics(self) -> dict[str, int]:
         """Compare adjusted metrics with exact raw source keys and provenance."""
         return _get_adjusted_metrics_source_diagnostics(
@@ -391,6 +410,13 @@ class MarketDb:
     def get_provider_vintage_snapshot(self) -> dict[str, Any]:
         """Recompute provider vintage from per-code publication ownership."""
         return _get_provider_vintage_snapshot(self._table_exists, self._fetchall_dicts)
+
+    def get_provider_vintage_status_snapshot(self) -> dict[str, Any]:
+        """Read provider vintage from persisted per-code publication ownership."""
+        return _get_persisted_provider_vintage_snapshot(
+            self._table_exists,
+            self._fetchall_dicts,
+        )
 
     def get_topix_dates(
         self,
@@ -790,6 +816,23 @@ class MarketDb:
             self._conn,
             self._lock,
             self._table_exists,
+        )
+
+    def materialize_daily_valuation(
+        self,
+        *,
+        full_rebuild: bool = False,
+        rebuild_codes: frozenset[str] = frozenset(),
+        changed_dates: frozenset[str] = frozenset(),
+    ) -> DailyValuationMaterializationResult:
+        """Materialize current-provider-basis valuation rows set-wise."""
+        self._assert_writable()
+        return _materialize_daily_valuation(
+            self._conn,
+            self._lock,
+            full_rebuild=full_rebuild,
+            rebuild_codes=rebuild_codes,
+            changed_dates=changed_dates,
         )
 
     def set_sync_metadata(self, key: str, value: str) -> None:

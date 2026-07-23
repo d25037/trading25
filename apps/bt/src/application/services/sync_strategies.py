@@ -256,6 +256,8 @@ class SyncContext:
         Callable[[frozenset[str]], Awaitable[None]] | None
     ) = None
     changed_fundamentals_codes: set[str] = field(default_factory=set)
+    valuation_rebuild_codes: set[str] = field(default_factory=set)
+    valuation_changed_price_dates: set[str] = field(default_factory=set)
     on_stock_commit: Callable[[int, int, int, int], None] | None = None
     stock_rows_appended: int = 0
     affected_stock_codes: int = 0

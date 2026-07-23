@@ -121,6 +121,158 @@ def test_rebuild_current_basis_adjusts_only_strictly_later_events(
     assert raw == (2_500_000_000.0, 28.3)
 
 
+def test_materialize_daily_valuation_uses_fy_anchor_and_valid_revisions(
+    market_db: MarketDb,
+) -> None:
+    actual = _statement("actual")
+    actual.update(
+        sales=2_500_000_000.0,
+        operating_profit=250_000_000.0,
+        forecast_sales=2_800_000_000.0,
+        forecast_operating_profit=280_000_000.0,
+    )
+    revision = _statement(
+        "revision",
+        document_type="EarnForecastRevision",
+        disclosed_date="2024-06-10",
+        disclosed_at="2024-06-10T15:30:00+09:00",
+    )
+    revision.update(
+        type_of_current_period="2Q",
+        earnings_per_share=None,
+        bps=None,
+        forecast_eps=130.0,
+        shares_outstanding=None,
+        treasury_shares=None,
+        sales=None,
+        operating_profit=None,
+        forecast_sales=3_000_000_000.0,
+        forecast_operating_profit=300_000_000.0,
+    )
+    newer_actual = _statement(
+        "new-actual",
+        disclosed_date="2024-11-10",
+        disclosed_at="2024-11-10T15:30:00+09:00",
+    )
+    newer_actual.update(
+        earnings_per_share=110.0,
+        bps=1_100.0,
+        forecast_eps=None,
+        sales=2_800_000_000.0,
+        operating_profit=280_000_000.0,
+        forecast_sales=None,
+        forecast_operating_profit=None,
+    )
+    publish_stock_data(
+        market_db,
+        [
+            {
+                "code": "7203",
+                "date": "2024-07-01",
+                "open": 100.0,
+                "high": 100.0,
+                "low": 100.0,
+                "close": 100.0,
+                "volume": 1000,
+            },
+            {
+                "code": "7203",
+                "date": "2024-12-01",
+                "open": 110.0,
+                "high": 110.0,
+                "low": 110.0,
+                "close": 110.0,
+                "volume": 1000,
+            },
+        ],
+    )
+    publish_statements(market_db, [actual, revision, newer_actual])
+    AdjustedMetricsMaterializer(market_db).rebuild_current_basis(["7203"])
+
+    result = market_db.materialize_daily_valuation(full_rebuild=True)
+
+    assert result.final_count == 2
+    rows = market_db._fetchall(
+        """
+        SELECT date, eps, forward_eps, sales, forward_sales, p_op, forward_p_op,
+               forward_eps_source, forward_sales_source, price_basis_date
+        FROM daily_valuation ORDER BY date
+        """
+    )
+    assert rows[0][:5] == pytest.approx(
+        ("2024-07-01", 100.0, 130.0, 2_500_000_000.0, 3_000_000_000.0)
+    )
+    assert rows[0][5:7] == pytest.approx((4.0, 10.0 / 3.0))
+    assert rows[0][7:] == ("revised", "revised", "2024-07-01")
+    assert rows[1][0:5] == (
+        "2024-12-01",
+        110.0,
+        None,
+        2_800_000_000.0,
+        None,
+    )
+    assert rows[1][5] == pytest.approx(110.0 * 10_000_000 / 280_000_000)
+    assert rows[1][6:9] == (None, None, None)
+    assert rows[1][9] == "2024-12-01"
+
+
+def test_materialize_daily_valuation_rebuilds_codes_and_upserts_dates(
+    market_db: MarketDb,
+) -> None:
+    publish_stock_data(
+        market_db,
+        [
+            {
+                "code": code,
+                "date": date,
+                "open": close,
+                "high": close,
+                "low": close,
+                "close": close,
+                "volume": 1000,
+            }
+            for code in ("7203", "6758")
+            for date, close in (("2024-07-01", 100.0), ("2024-07-02", 101.0))
+        ],
+    )
+    for code in ("7203", "6758"):
+        publish_statements(market_db, [_statement(f"{code}-actual", code=code)])
+    AdjustedMetricsMaterializer(market_db).rebuild_current_basis(["7203", "6758"])
+    market_db.materialize_daily_valuation(full_rebuild=True)
+    market_db._execute(
+        "UPDATE stock_data SET close = 150 WHERE code = '7203' AND date = '2024-07-01'"
+    )
+    market_db._execute(
+        "UPDATE stock_data SET close = 175 WHERE code = '6758' AND date = '2024-07-02'"
+    )
+
+    result = market_db.materialize_daily_valuation(
+        rebuild_codes=frozenset({"7203"}),
+        changed_dates=frozenset({"2024-07-02"}),
+    )
+
+    assert result.final_count == 4
+    assert market_db._fetchall(
+        "SELECT code, date, close FROM daily_valuation ORDER BY code, date"
+    ) == [
+        ("6758", "2024-07-01", 100.0),
+        ("6758", "2024-07-02", 175.0),
+        ("7203", "2024-07-01", 150.0),
+        ("7203", "2024-07-02", 101.0),
+    ]
+
+    market_db._execute(
+        "DELETE FROM current_basis_fundamentals_state WHERE code = '7203'"
+    )
+    invalidated = market_db.materialize_daily_valuation(
+        rebuild_codes=frozenset({"7203"})
+    )
+    assert invalidated.stats.deleted == 2
+    assert market_db._fetchall(
+        "SELECT DISTINCT code FROM daily_valuation ORDER BY code"
+    ) == [("6758",)]
+
+
 def test_rebuild_atomically_publishes_current_basis_provenance_state(
     market_db: MarketDb,
 ) -> None:

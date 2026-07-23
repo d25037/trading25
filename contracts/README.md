@@ -21,7 +21,7 @@
 - `dataset-db-schema-v4.json`
 - `dataset-db-schema-v2.json`
 - `market-db-schema-v1.json`
-- `market-db-schema-v4.json`
+- `market-db-schema-v5.json`
 - `portfolio-db-schema-v1.json`
 - `strategy-config-v3.schema.json`
 
@@ -62,7 +62,8 @@ bun run --filter @trading25/contracts bt:sync
 | `dataset-db-schema-v4.json` | **Active** | Breaking Market v5 Dataset contract containing bounded provider raw/adjusted prices, exact daily master, raw statements, current-basis adjusted metrics, and valuation; retained basis graphs are forbidden. |
 | `dataset-db-schema-v3.json` | **Superseded** | Historical Market v4 Dataset contract with retained event-time bases/segments. Runtime rejects it. |
 | `dataset-db-schema-v2.json` | **Superseded** | Superseded by `dataset-db-schema-v3.json`; retained for historical reference only and unsupported for new snapshots. |
-| `market-db-schema-v4.json` | **Active** | Fresh-only breaking contract for physical Market Data Plane schema v5 and `provider_adjusted_v1`; provider raw/adjusted prices, a bounded adjustment-event ledger, current-basis statement metrics, and the ASOF valuation view are canonical. |
+| `market-db-schema-v5.json` | **Active** | Physical Market Data Plane schema v5 with `provider_adjusted_v1`, current-basis statement metrics, and sync-materialized `daily_valuation` keyed by `(code, date)`. |
+| `market-db-schema-v4.json` | **Superseded** | Historical Market v5 contract whose `daily_valuation` relation was an ASOF view. |
 | `market-db-schema-v3.json` | **Superseded** | Historical physical Market v4 contract with retained event-time adjustment bases. Market v5 rejects it; there is no in-place migration or dual read. |
 | `market-db-schema-v2.json` | **Superseded** | Superseded by `market-db-schema-v3.json`. It is not runtime-compatible with physical schema v4 and is retained for historical reference only. |
 | `backtest-run-manifest-v1.schema.json` | **Active** | Backtest run manifest emitted by `apps/bt`. |

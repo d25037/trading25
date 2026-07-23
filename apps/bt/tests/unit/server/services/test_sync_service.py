@@ -43,6 +43,9 @@ class DummyMarketDb:
         self.ensure_schema_calls = 0
         self.technical_rebuild_calls = 0
         self.technical_rebuild_error: Exception | None = None
+        self.valuation_materialization_calls: list[dict[str, Any]] = []
+        self.valuation_materialization_error: Exception | None = None
+        self.materialization_order: list[str] = []
         self.metadata: dict[str, str] = {}
 
     def get_sync_metadata(self, key: str) -> str | None:
@@ -69,10 +72,32 @@ class DummyMarketDb:
 
     def rebuild_daily_technical_metrics_from_stock_data(self) -> MagicMock:
         self.technical_rebuild_calls += 1
+        self.materialization_order.append("technical")
         if self.technical_rebuild_error is not None:
             raise self.technical_rebuild_error
         result = MagicMock()
         result.final_count = 42
+        return result
+
+    def materialize_daily_valuation(
+        self,
+        *,
+        full_rebuild: bool = False,
+        rebuild_codes: frozenset[str] = frozenset(),
+        changed_dates: frozenset[str] = frozenset(),
+    ) -> MagicMock:
+        self.valuation_materialization_calls.append(
+            {
+                "full_rebuild": full_rebuild,
+                "rebuild_codes": rebuild_codes,
+                "changed_dates": changed_dates,
+            }
+        )
+        self.materialization_order.append("valuation")
+        if self.valuation_materialization_error is not None:
+            raise self.valuation_materialization_error
+        result = MagicMock()
+        result.final_count = 84
         return result
 
 class DummyTimeSeriesStore:
@@ -493,6 +518,116 @@ async def test_successful_sync_materializes_daily_technical_metrics_before_compl
 
 
 @pytest.mark.asyncio
+async def test_successful_incremental_sync_materializes_daily_valuation_once_before_technical(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    class ValuationScopeStrategy:
+        async def execute(self, ctx: Any) -> SyncResult:
+            ctx.valuation_rebuild_codes.update({"7203", "6758"})
+            ctx.valuation_changed_price_dates.update(
+                {"2026-03-02", "2026-03-03"}
+            )
+            return SyncResult(success=True, totalApiCalls=1, stockRowsAppended=2)
+
+    monkeypatch.setattr(
+        sync_service,
+        "get_strategy",
+        lambda _mode: ValuationScopeStrategy(),
+    )
+    market_db = DummyMarketDb(last_sync_date="2026-03-01T00:00:00+00:00")
+
+    job = await sync_service.start_sync(
+        SyncMode.INCREMENTAL,
+        cast(sync_service.SyncServiceMarketDbLike, market_db),
+        DummyJQuantsClient(),
+        time_series_store=_time_series_store(),
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    stored = isolated_manager.get_job(job.job_id)
+    assert stored is not None and stored.status is JobStatus.COMPLETED
+    assert market_db.valuation_materialization_calls == [
+        {
+            "full_rebuild": False,
+            "rebuild_codes": frozenset({"6758", "7203"}),
+            "changed_dates": frozenset({"2026-03-02", "2026-03-03"}),
+        }
+    ]
+    assert market_db.materialization_order == ["valuation", "technical"]
+
+
+@pytest.mark.asyncio
+async def test_initial_sync_fully_materializes_daily_valuation(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    monkeypatch.setattr(
+        sync_service,
+        "get_strategy",
+        lambda _mode: StrategyProbe(emit_progress=False),
+    )
+    market_db = DummyMarketDb()
+
+    job = await sync_service.start_sync(
+        SyncMode.INITIAL,
+        None,
+        DummyJQuantsClient(),
+        reset_before_sync=True,
+        reset_market_snapshot=lambda: (market_db, _time_series_store()),
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    stored = isolated_manager.get_job(job.job_id)
+    assert stored is not None and stored.status is JobStatus.COMPLETED
+    assert market_db.valuation_materialization_calls == [
+        {
+            "full_rebuild": True,
+            "rebuild_codes": frozenset(),
+            "changed_dates": frozenset(),
+        }
+    ]
+    assert market_db.materialization_order == ["valuation", "technical"]
+
+
+@pytest.mark.asyncio
+async def test_daily_valuation_materialization_failure_fails_sync(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    class ValuationScopeStrategy:
+        async def execute(self, ctx: Any) -> SyncResult:
+            ctx.valuation_changed_price_dates.add("2026-03-02")
+            return SyncResult(success=True, totalApiCalls=1, stockRowsAppended=1)
+
+    monkeypatch.setattr(
+        sync_service,
+        "get_strategy",
+        lambda _mode: ValuationScopeStrategy(),
+    )
+    market_db = DummyMarketDb(last_sync_date="2026-03-01T00:00:00+00:00")
+    market_db.valuation_materialization_error = RuntimeError(
+        "valuation materialization failed"
+    )
+
+    job = await sync_service.start_sync(
+        SyncMode.INCREMENTAL,
+        cast(sync_service.SyncServiceMarketDbLike, market_db),
+        DummyJQuantsClient(),
+        time_series_store=_time_series_store(),
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    stored = isolated_manager.get_job(job.job_id)
+    assert stored is not None and stored.status is JobStatus.FAILED
+    assert stored.error == "valuation materialization failed"
+    assert market_db.technical_rebuild_calls == 0
+
+
+@pytest.mark.asyncio
 async def test_successful_sync_skips_technical_materialization_without_price_mutations(
     monkeypatch: pytest.MonkeyPatch,
     isolated_manager: GenericJobManager,
@@ -514,6 +649,7 @@ async def test_successful_sync_skips_technical_materialization_without_price_mut
     stored = isolated_manager.get_job(job.job_id)
     assert stored is not None and stored.status is JobStatus.COMPLETED
     assert market_db.technical_rebuild_calls == 0
+    assert market_db.valuation_materialization_calls == []
 
 
 @pytest.mark.asyncio

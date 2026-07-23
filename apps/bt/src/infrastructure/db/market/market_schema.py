@@ -218,6 +218,39 @@ DAILY_VALUATION_COLUMNS: tuple[str, ...] = (
     "source_fingerprint",
     "created_at",
 )
+DAILY_VALUATION_TABLE_DDL = """
+    CREATE TABLE daily_valuation (
+        code TEXT NOT NULL,
+        date TEXT NOT NULL,
+        price_basis_date TEXT NOT NULL,
+        close DOUBLE,
+        eps DOUBLE,
+        bps DOUBLE,
+        forward_eps DOUBLE,
+        per DOUBLE,
+        forward_per DOUBLE,
+        sales DOUBLE,
+        forward_sales DOUBLE,
+        psr DOUBLE,
+        forward_psr DOUBLE,
+        p_op DOUBLE,
+        forward_p_op DOUBLE,
+        pbr DOUBLE,
+        market_cap DOUBLE,
+        free_float_market_cap DOUBLE,
+        statement_disclosed_date TEXT,
+        forward_eps_disclosed_date TEXT,
+        forward_eps_source TEXT,
+        forward_sales_disclosed_date TEXT,
+        forward_sales_source TEXT,
+        statement_id TEXT,
+        statement_disclosed_at TEXT,
+        fundamentals_adjustment_basis_date TEXT,
+        source_fingerprint TEXT,
+        created_at TEXT,
+        PRIMARY KEY (code, date)
+    )
+"""
 
 DAILY_TECHNICAL_METRICS_COLUMNS: tuple[str, ...] = (
     "code",
@@ -813,7 +846,23 @@ def ensure_market_schema(store: Any) -> None:
         )
         return
 
+    daily_valuation_relation = store._fetchone(
+        """
+        SELECT table_type
+        FROM information_schema.tables
+        WHERE table_schema = 'main' AND table_name = 'daily_valuation'
+        """
+    )
+    daily_valuation_is_table = (
+        daily_valuation_relation is not None
+        and str(daily_valuation_relation[0]).upper() == "BASE TABLE"
+    )
     for statement in SCHEMA_STATEMENTS:
+        if (
+            daily_valuation_is_table
+            and "CREATE OR REPLACE VIEW daily_valuation AS" in statement
+        ):
+            continue
         store._execute(statement)
 
     _ensure_market_schema_version(
@@ -823,6 +872,15 @@ def ensure_market_schema(store: Any) -> None:
     )
     _ensure_statements_columns(store)
     _ensure_daily_technical_metrics_columns(store)
+    if "daily_valuation" not in existing_before:
+        store._execute("DROP VIEW daily_valuation")
+        store._execute(DAILY_VALUATION_TABLE_DDL)
+        store._execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_daily_valuation_date_code
+            ON daily_valuation(date, code)
+            """
+        )
     _ensure_stock_price_adjustment_mode_for_empty_db(store)
 
 

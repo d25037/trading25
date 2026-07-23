@@ -349,6 +349,10 @@ def _run_cycle(
         store.index_statements()
         master = market_db.publish_stock_master_daily_rows(_stock_master_rows())
         adjusted = AdjustedMetricsMaterializer(market_db).rebuild_current_basis([])
+        valuation = market_db.materialize_daily_valuation(
+            full_rebuild=reset,
+            rebuild_codes=frozenset(_PROVIDER_CODES),
+        )
         technical_mutations = 0
         if stocks.mutated_rows > 0:
             technical = market_db.rebuild_daily_technical_metrics_from_stock_data()
@@ -412,10 +416,7 @@ def _run_cycle(
                 "statement_metrics_adjusted": adjusted.mutation_stats[
                     "statements"
                 ].mutated_rows,
-                "daily_valuation": (
-                    after_counts["daily_valuation"]
-                    - before_counts["daily_valuation"]
-                ),
+                "daily_valuation": valuation.stats.mutated_rows,
                 "daily_technical_metrics": technical_mutations,
             },
             row_counts=after_counts,

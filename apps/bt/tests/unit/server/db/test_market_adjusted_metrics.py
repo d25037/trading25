@@ -103,6 +103,7 @@ def test_current_basis_snapshot_reports_provider_window_and_pending(
 
     pending = market_db.get_adjusted_metrics_snapshot()
     AdjustedMetricsMaterializer(market_db).rebuild_current_basis([])
+    market_db.materialize_daily_valuation(full_rebuild=True)
     ready = market_db.get_adjusted_metrics_snapshot()
     vintage = _build_provider_vintage_stats(
         {
@@ -463,11 +464,12 @@ def test_provider_vintage_rejects_malformed_persisted_window_metadata(
     assert snapshot["providerWindowCoherent"] is False
 
 
-def test_current_basis_readers_return_identity_rows_and_view_valuations(
+def test_current_basis_readers_return_identity_rows_and_materialized_valuations(
     market_db: MarketDb,
 ) -> None:
     _seed_current_sources(market_db)
     AdjustedMetricsMaterializer(market_db).rebuild_current_basis([])
+    market_db.materialize_daily_valuation(full_rebuild=True)
 
     metrics = market_db.get_adjusted_statement_metrics("72030")
     valuations = market_db.get_daily_valuation("72030")

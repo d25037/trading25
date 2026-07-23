@@ -131,7 +131,7 @@ class TestMarketDbContract:
         assert pk_cols == self.tables["stocks"]["properties"]["primary_key"]["const"]
 
     def test_stock_data_columns(self) -> None:
-        current_contract = _load_contract("market-db-schema-v4.json")
+        current_contract = _load_contract("market-db-schema-v5.json")
         table_schema = _resolve_schema(
             current_contract["properties"]["tables"]["properties"]["stock_data"],
             current_contract,
@@ -337,16 +337,16 @@ class TestMarketDbContractV3:
 
 
 
-class TestMarketDbContractV4:
-    """Contract v4 describes the breaking provider-adjusted Market v5 plane."""
+class TestMarketDbContractV5:
+    """Contract v5 describes materialized valuations on the Market v5 plane."""
 
     @pytest.fixture(autouse=True)
     def _load(self) -> None:
-        self.contract = _load_contract("market-db-schema-v4.json")
+        self.contract = _load_contract("market-db-schema-v5.json")
         self.tables = self.contract["properties"]["tables"]["properties"]
 
-    def test_v4_contract_requires_v5_relations_without_retained_bases(self) -> None:
-        assert self.contract["properties"]["schema_version"]["const"] == "4.0.0"
+    def test_v5_contract_requires_v5_relations_without_retained_bases(self) -> None:
+        assert self.contract["properties"]["schema_version"]["const"] == "5.0.0"
         assert self.contract["properties"]["physical_schema_version"]["const"] == 5
         assert self.contract["properties"]["stock_price_adjustment_mode"]["const"] == (
             "provider_adjusted_v1"
@@ -415,10 +415,10 @@ class TestMarketDbContractV4:
         ]
         assert state["properties"]["primary_key"]["const"] == ["code"]
 
-    def test_v4_daily_valuation_is_a_view_without_basis_dimension(self) -> None:
+    def test_v4_daily_valuation_is_a_table_without_basis_dimension(self) -> None:
         valuation = self.tables["daily_valuation"]
-        assert valuation["properties"]["relation_type"]["const"] == "view"
-        assert "primary_key" not in valuation["properties"]
+        assert valuation["properties"]["relation_type"]["const"] == "table"
+        assert valuation["properties"]["primary_key"]["const"] == ["code", "date"]
         assert "basis_version" not in valuation["properties"]["columns"]["properties"]
 
     def test_v4_contract_requires_per_code_provider_window_ledger(self) -> None:
