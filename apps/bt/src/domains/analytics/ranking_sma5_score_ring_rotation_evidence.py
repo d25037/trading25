@@ -182,8 +182,10 @@ def _first_trigger_events(
     frames: PositionSignalFrames,
 ) -> pd.DataFrame:
     indexed = frame.set_index(["date", "code"], drop=False)
-    held = frames.held_intervals.stack(future_stack=True).rename("held")
-    entries = frames.entries.stack(future_stack=True).rename("entry")
+    held = frames.held_intervals.stack(future_stack=True)
+    held.name = "held"
+    entries = frames.entries.stack(future_stack=True)
+    entries.name = "entry"
     state = pd.concat([held, entries], axis=1).reset_index()
     state["trade_id"] = state.groupby("code")["entry"].cumsum()
     state = state.loc[state["held"] & state["trade_id"].gt(0)]
@@ -307,7 +309,7 @@ def _aggregate_events(
                         "ring_id": ring_id,
                         "trigger_id": trigger_id,
                         "fee_bps": fee_bps,
-                        "year": int(year),
+                        "year": int(str(year)),
                         "event_count": len(annual_group),
                         "mean_paired_delta": float(annual_net.mean()),
                         "median_paired_delta": float(annual_net.median()),
