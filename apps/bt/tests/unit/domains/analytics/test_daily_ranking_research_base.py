@@ -92,7 +92,9 @@ def _build_market_v5_research_fixture(
             code TEXT, statement_id TEXT, disclosed_date DATE,
             disclosed_at TEXT, period_end DATE, period_type TEXT,
             fundamentals_adjustment_basis_date DATE,
-            source_fingerprint TEXT
+            source_fingerprint TEXT, adjusted_eps DOUBLE,
+            adjusted_bps DOUBLE, adjusted_forecast_eps DOUBLE,
+            adjusted_shares_outstanding DOUBLE
         );
         CREATE TABLE daily_valuation (
             code TEXT, date DATE, price_basis_date DATE, per DOUBLE,
@@ -491,7 +493,7 @@ def test_namespaced_builds_coexist_with_explicit_unique_date_schemas(
         conn.close()
 
 
-def test_signal_panel_uses_only_the_exact_current_lineage_valuation_row(
+def test_signal_panel_rejects_extra_stale_valuation_witness(
     tmp_path: Path,
 ) -> None:
     conn = _build_market_v5_research_fixture(tmp_path / "market.duckdb")
@@ -504,19 +506,44 @@ def test_signal_panel_uses_only_the_exact_current_lineage_valuation_row(
             [signal_date, signal_date, signal_date],
         )
 
+        with pytest.raises(RuntimeError, match="current fundamentals lineage"):
+            build_daily_ranking_research_base(
+                conn,
+                _request("extra_stale_valuation"),
+            )
+    finally:
+        conn.close()
+
+
+def test_signal_panel_keeps_statementless_row_as_non_eligible_fundamentals(
+    tmp_path: Path,
+) -> None:
+    conn = _build_market_v5_research_fixture(tmp_path / "market.duckdb")
+    try:
+        signal_date = date(2024, 4, 4)
+        conn.execute(
+            "UPDATE daily_valuation SET per = NULL, forward_per = NULL, pbr = NULL, "
+            "p_op = NULL, forward_p_op = NULL, market_cap = NULL, "
+            "free_float_market_cap = NULL, "
+            "fundamentals_adjustment_basis_date = NULL, source_fingerprint = NULL "
+            "WHERE code = '1111' AND date = ?",
+            [signal_date],
+        )
+
         relations = build_daily_ranking_research_base(
             conn,
-            _request("exact_current_valuation"),
+            _request("statementless_valuation"),
         )
         rows = conn.execute(
-            f"SELECT per FROM {relations.signal_panel.name} "
+            f"SELECT per, forecast_per, pbr, market_cap_bil_jpy "
+            f"FROM {relations.signal_panel.name} "
             "WHERE code = '1111' AND date = ?",
             [signal_date],
         ).fetchall()
     finally:
         conn.close()
 
-    assert rows == [(10.0,)]
+    assert rows == [(None, None, None, None)]
 
 
 def test_base_build_issues_history_from_one_event_time_projection_call(
