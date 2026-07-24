@@ -4,11 +4,41 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any, cast
 
 import pandas as pd
 
+from src.domains.analytics.daily_ranking_consumer_support import (
+    compose_daily_ranking_signal_features,
+)
+from src.domains.analytics.daily_ranking_feature_builders import (
+    AtrFeaturesRequest,
+    LongLeadershipFeaturesRequest,
+    LongScaffoldFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    ShortScaffoldFeaturesRequest,
+    SmaFeaturesRequest,
+    build_atr_features,
+    build_long_leadership_features,
+    build_long_scaffold_features,
+    build_sector_strength_features,
+    build_short_scaffold_features,
+    build_sma_features,
+)
+from src.domains.analytics.daily_ranking_research_base import (
+    DailyRankingPanelRequest,
+    DailyRankingResearchRelations,
+    build_daily_ranking_research_base,
+)
+from src.domains.analytics.readonly_duckdb_support import (
+    SourceMode,
+    open_readonly_analysis_connection,
+    require_market_v5_compatibility,
+)
+from src.domains.backtest.vectorbt_adapter import VectorbtAdapter
 from src.shared.utils.pandas_type_guards import finite_float_or_none
 
 
@@ -46,6 +76,25 @@ _REQUIRED_FEATURE_COLUMNS = frozenset(
         _LEADERSHIP_SCORE_COLUMN,
     }
 )
+_REQUIRED_MARKET_TABLES = frozenset(
+    {
+        "stock_data_raw",
+        "stock_data",
+        "topix_data",
+        "daily_valuation",
+        "stock_master_daily",
+        "indices_data",
+        "index_master",
+        "stock_provider_windows",
+        "stock_adjustment_events",
+        "current_basis_fundamentals_state",
+        "current_basis_recompute_pending",
+        "statements",
+        "statement_metrics_adjusted",
+    }
+)
+_LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
+_DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
 
 
 @dataclass(frozen=True)
@@ -55,6 +104,68 @@ class PositionSignalFrames:
     exits: pd.DataFrame
     held_intervals: pd.DataFrame
     state_events: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class ResearchVariant:
+    """One frozen score-ring and SMA5 position-state configuration."""
+
+    ring_id: str
+    entry_rule_id: str
+    exit_rule_id: str
+    max_holding_sessions: int
+    name: str | None = None
+
+
+@dataclass(frozen=True)
+class VariantExecution:
+    """VectorBT-authoritative fills paired with the independent state timeline."""
+
+    variant: ResearchVariant
+    portfolio: Any
+    signal_frames: PositionSignalFrames
+    trade_records_df: pd.DataFrame
+    daily_portfolio_returns: pd.Series
+    state_events: pd.DataFrame
+
+    @property
+    def trade_records(self) -> pd.DataFrame:
+        """Compatibility-friendly name for the normalized VectorBT ledger."""
+
+        return self.trade_records_df
+
+    @property
+    def daily_returns(self) -> pd.Series:
+        """The approved date-level equal-weight active-portfolio return series."""
+
+        return self.daily_portfolio_returns
+
+
+@dataclass(frozen=True)
+class MarketV5PitLineage:
+    """Minimal, explicit provenance for this Market v5-only study."""
+
+    data_plane_schema_version: int
+    stock_price_adjustment_mode: str
+    price_projection_verification_status: str
+    no_stock_data_fallback: bool
+
+
+@dataclass(frozen=True)
+class RankingSma5ScoreRingHardFilterResearchResult:
+    """Market v5 feature panel and provenance for score-ring execution research."""
+
+    db_path: str
+    source_mode: SourceMode
+    source_detail: str
+    analysis_start_date: str | None
+    analysis_end_date: str | None
+    bootstrap_resamples: int
+    min_trades: int
+    min_signal_dates: int
+    pit_lineage: MarketV5PitLineage
+    feature_df: pd.DataFrame
+    observation_sample_df: pd.DataFrame
 
 
 def classify_score_ring(value_score: object, leadership_score: object) -> str:
@@ -346,3 +457,323 @@ def _validate_arguments(
     missing_columns = sorted(_REQUIRED_FEATURE_COLUMNS.difference(feature_df.columns))
     if missing_columns:
         raise ValueError(f"feature_df missing required columns: {', '.join(missing_columns)}")
+
+
+def build_score_ring_feature_panel(
+    conn: Any,
+    relations: DailyRankingResearchRelations,
+) -> pd.DataFrame:
+    """Build the frozen score/SMA panel from canonical Daily Ranking builders.
+
+    Scores are produced exclusively by the shared scaffold builders.  The two
+    execution aliases below only express the SMA exit primitives in the units
+    consumed by the frozen Task 1 state machine.
+    """
+
+    signal_source = relations.ranked_signals
+    atr_features = build_atr_features(
+        conn,
+        AtrFeaturesRequest(source=signal_source, namespace="hard_filter_atr"),
+    )
+    short_features = build_short_scaffold_features(
+        conn,
+        ShortScaffoldFeaturesRequest(
+            source=signal_source,
+            atr_features=atr_features,
+            namespace="hard_filter_short",
+        ),
+    )
+    sector_features = build_sector_strength_features(
+        conn,
+        SectorStrengthFeaturesRequest(
+            source=signal_source,
+            population_source=signal_source,
+            namespace="hard_filter_sector",
+        ),
+    )
+    leadership_features = build_long_leadership_features(
+        conn,
+        LongLeadershipFeaturesRequest(
+            source=signal_source,
+            sector_features=sector_features,
+            namespace="hard_filter_leadership",
+            leadership_windows=_LEADERSHIP_WINDOWS,
+        ),
+    )
+    sma_features = build_sma_features(
+        conn,
+        SmaFeaturesRequest(
+            source=signal_source,
+            price_history=relations.price_history,
+            namespace="hard_filter_sma",
+        ),
+    )
+    long_scaffold = build_long_scaffold_features(
+        conn,
+        LongScaffoldFeaturesRequest(
+            source=signal_source,
+            leadership_features=leadership_features,
+            short_scaffold_features=short_features,
+            namespace="hard_filter_long",
+        ),
+    )
+    composed = compose_daily_ranking_signal_features(
+        conn,
+        source=signal_source,
+        features=(long_scaffold, sma_features),
+        namespace="sma5_score_ring_hard_filter",
+    )
+    panel_name = "ranking_sma5_score_ring_hard_filter_feature_panel"
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE {panel_name} AS
+        SELECT
+            composed.*,
+            CAST(composed.close_below_sma5_count_3d AS INTEGER)
+                AS sma5_below_streak,
+            CAST(
+                CASE
+                    WHEN composed.sma5 IS NOT NULL AND composed.atr20 > 0.0
+                    THEN (composed.close - composed.sma5) / composed.atr20
+                END AS DOUBLE
+            ) AS sma5_atr20_deviation
+        FROM {composed.name} AS composed
+        """
+    )
+    panel = conn.execute(
+        f"SELECT * FROM {panel_name} ORDER BY date, code"
+    ).fetchdf()
+    if "date" in panel.columns:
+        panel["date"] = pd.to_datetime(panel["date"], errors="raise")
+    return panel
+
+
+def run_ranking_sma5_score_ring_hard_filter_research(
+    db_path: str | Path,
+    *,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    bootstrap_resamples: int = 2_000,
+    min_trades: int = 10,
+    min_signal_dates: int = 10,
+    observation_sample_limit: int = _DEFAULT_OBSERVATION_SAMPLE_LIMIT,
+) -> RankingSma5ScoreRingHardFilterResearchResult:
+    """Materialize the Market v5 score-ring feature panel with strict lineage."""
+
+    _validate_research_parameters(
+        bootstrap_resamples=bootstrap_resamples,
+        min_trades=min_trades,
+        min_signal_dates=min_signal_dates,
+        observation_sample_limit=observation_sample_limit,
+    )
+    analysis_start = None if start_date is None else date.fromisoformat(start_date)
+    analysis_end = None if end_date is None else date.fromisoformat(end_date)
+    if analysis_start is not None and analysis_end is not None and analysis_start > analysis_end:
+        raise ValueError("start_date must be on or before end_date")
+
+    db_path_obj = Path(db_path).expanduser().resolve()
+    if not db_path_obj.is_file():
+        raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
+
+    with open_readonly_analysis_connection(
+        str(db_path_obj),
+        snapshot_prefix="ranking-sma5-score-ring-hard-filter-",
+    ) as ctx:
+        schema_version = require_market_v5_compatibility(
+            ctx.connection,
+            required_tables=_REQUIRED_MARKET_TABLES,
+        )
+        _assert_unambiguous_provider_adjusted_provenance(ctx.connection)
+        relations = build_daily_ranking_research_base(
+            ctx.connection,
+            DailyRankingPanelRequest(
+                namespace="sma5_score_ring_hard_filter",
+                analysis_start_date=analysis_start,
+                analysis_end_date=analysis_end,
+                horizons=(1,),
+                market_scopes=("prime",),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
+        )
+        price_lineage = relations.lineage.price
+        if (
+            relations.lineage.verification_status != "verified"
+            or price_lineage.verification_status != "verified"
+            or not price_lineage.no_stock_data_fallback
+        ):
+            raise RuntimeError(
+                "Market v5 price provenance is not verified; no stock_data fallback is allowed"
+            )
+        feature_df = build_score_ring_feature_panel(ctx.connection, relations)
+        pit_lineage = MarketV5PitLineage(
+            data_plane_schema_version=schema_version,
+            stock_price_adjustment_mode="provider_adjusted_v1",
+            price_projection_verification_status=price_lineage.verification_status,
+            no_stock_data_fallback=price_lineage.no_stock_data_fallback,
+        )
+        source_mode = ctx.source_mode
+        source_detail = ctx.source_detail
+
+    return RankingSma5ScoreRingHardFilterResearchResult(
+        db_path=str(db_path_obj),
+        source_mode=source_mode,
+        source_detail=source_detail,
+        analysis_start_date=start_date,
+        analysis_end_date=end_date,
+        bootstrap_resamples=int(bootstrap_resamples),
+        min_trades=int(min_trades),
+        min_signal_dates=int(min_signal_dates),
+        pit_lineage=pit_lineage,
+        feature_df=feature_df,
+        observation_sample_df=feature_df.head(int(observation_sample_limit)).copy(),
+    )
+
+
+def execute_variant(
+    feature_df: pd.DataFrame,
+    variant: ResearchVariant,
+    *,
+    fee_bps: float,
+) -> VariantExecution:
+    """Execute one state-machine variant using VectorBT's authoritative ledger."""
+
+    fee_bps_value = _safe_finite_float_or_none(fee_bps)
+    if fee_bps_value is None or fee_bps_value < 0.0:
+        raise ValueError("fee_bps must be a finite non-negative number")
+    frames = build_position_signal_frames(
+        feature_df,
+        ring_id=variant.ring_id,
+        entry_rule_id=variant.entry_rule_id,
+        exit_rule_id=variant.exit_rule_id,
+        max_holding_sessions=variant.max_holding_sessions,
+    )
+    portfolio = VectorbtAdapter(engine="numba").create_signal_portfolio(
+        close=frames.close,
+        entries=frames.entries,
+        exits=frames.exits,
+        direction="longonly",
+        init_cash=1_000_000.0,
+        fees=fee_bps_value / 20_000.0,
+        slippage=0.0,
+        cash_sharing=False,
+        group_by=False,
+        accumulate=False,
+        size=1.0,
+        size_type="percent",
+        freq="D",
+    )
+    trade_records = _normalize_and_reconcile_trade_records(
+        portfolio,
+        frames.state_events,
+    )
+    daily_returns = _build_active_portfolio_returns(portfolio, frames)
+    return VariantExecution(
+        variant=variant,
+        portfolio=portfolio,
+        signal_frames=frames,
+        trade_records_df=trade_records,
+        daily_portfolio_returns=daily_returns,
+        state_events=frames.state_events.copy(),
+    )
+
+
+def _validate_research_parameters(
+    *,
+    bootstrap_resamples: int,
+    min_trades: int,
+    min_signal_dates: int,
+    observation_sample_limit: int,
+) -> None:
+    for name, value in (
+        ("bootstrap_resamples", bootstrap_resamples),
+        ("min_trades", min_trades),
+        ("min_signal_dates", min_signal_dates),
+        ("observation_sample_limit", observation_sample_limit),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValueError(f"{name} must be a positive integer")
+
+
+def _assert_unambiguous_provider_adjusted_provenance(conn: Any) -> None:
+    rows = conn.execute(
+        "SELECT DISTINCT value FROM sync_metadata "
+        "WHERE key = 'stock_price_adjustment_mode'"
+    ).fetchall()
+    modes = {str(row[0]) for row in rows if row and row[0] is not None}
+    if modes != {"provider_adjusted_v1"}:
+        observed = ", ".join(sorted(modes)) if modes else "missing"
+        raise RuntimeError(
+            "Incompatible market.duckdb metadata: required "
+            "stock_price_adjustment_mode=provider_adjusted_v1; observed "
+            f"{observed}"
+        )
+
+
+def _normalize_and_reconcile_trade_records(
+    portfolio: Any,
+    state_events: pd.DataFrame,
+) -> pd.DataFrame:
+    records_readable = getattr(portfolio.trades, "records_readable", None)
+    if records_readable is None:
+        raise RuntimeError("VectorBT trade records_readable is unavailable")
+    records = pd.DataFrame(records_readable).copy().reset_index(drop=True)
+    required_columns = {"Column", "Entry Timestamp", "Exit Timestamp"}
+    missing = sorted(required_columns.difference(records.columns))
+    if missing:
+        raise RuntimeError(
+            "VectorBT trade ledger is missing required columns: " + ", ".join(missing)
+        )
+    if "Status" in records.columns and not records["Status"].eq("Closed").all():
+        raise RuntimeError("VectorBT trade ledger contains an unclosed state-machine trade")
+
+    entries = state_events.loc[state_events["event_type"].eq("entry")]
+    exits = state_events.loc[state_events["event_type"].eq("exit")]
+    if len(entries) != len(exits) or len(entries) != len(records):
+        raise RuntimeError(
+            "VectorBT trade ledger does not reconcile to the state-event pair count"
+        )
+    expected_entries = {
+        (str(row.code), pd.Timestamp(str(row.date)))
+        for row in entries.itertuples(index=False)
+    }
+    expected_exits = {
+        (str(row.code), pd.Timestamp(str(row.date)))
+        for row in exits.itertuples(index=False)
+    }
+    observed_entries = {
+        (str(row["Column"]), pd.Timestamp(str(row["Entry Timestamp"])))
+        for _, row in records.iterrows()
+    }
+    observed_exits = {
+        (str(row["Column"]), pd.Timestamp(str(row["Exit Timestamp"])))
+        for _, row in records.iterrows()
+    }
+    if observed_entries != expected_entries or observed_exits != expected_exits:
+        raise RuntimeError(
+            "VectorBT fills do not reconcile to the independently generated state events"
+        )
+    records["Column"] = records["Column"].astype(str)
+    records["Entry Timestamp"] = pd.to_datetime(records["Entry Timestamp"], errors="raise")
+    records["Exit Timestamp"] = pd.to_datetime(records["Exit Timestamp"], errors="raise")
+    records["code"] = records["Column"]
+    records["entry_date"] = records["Entry Timestamp"]
+    records["exit_date"] = records["Exit Timestamp"]
+    return records
+
+
+def _build_active_portfolio_returns(
+    portfolio: Any,
+    frames: PositionSignalFrames,
+) -> pd.Series:
+    """Average only held returns, plus entry-fill fees booked by VectorBT."""
+
+    raw_returns = pd.DataFrame(portfolio.returns()).reindex(
+        index=frames.close.index,
+        columns=frames.close.columns,
+    )
+    active_on_return_date = frames.held_intervals | frames.entries
+    included_returns = raw_returns.where(active_on_return_date)
+    daily_returns = included_returns.mean(axis=1, skipna=True).fillna(0.0)
+    daily_returns.name = "portfolio_return"
+    return daily_returns.astype(float)

@@ -1,15 +1,23 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
+import duckdb
 import pandas as pd
 import pytest
 
 from src.domains.analytics.ranking_sma5_score_ring_hard_filter_evidence import (
+    ResearchVariant,
     build_position_signal_frames,
     classify_score_ring,
     entry_rule_matches,
+    execute_variant,
     exit_rule_matches,
+    run_ranking_sma5_score_ring_hard_filter_research,
+)
+from tests.unit.domains.analytics.test_ranking_sma5_position_state_evidence import (
+    _build_sma5_position_state_db,
 )
 
 
@@ -294,6 +302,104 @@ def test_exit_rearms_only_after_entry_eligibility_becomes_false() -> None:
         pd.Timestamp("2025-01-02"),
         pd.Timestamp("2025-01-08"),
     ]
+
+
+def test_market_v5_panel_contains_frozen_scores_and_sma_features(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_hard_filter_market_v5_db(tmp_path / "market.duckdb")
+
+    result = run_ranking_sma5_score_ring_hard_filter_research(
+        db_path,
+        start_date="2024-03-01",
+        end_date="2024-04-30",
+        bootstrap_resamples=100,
+        min_trades=1,
+        min_signal_dates=1,
+    )
+
+    assert result.pit_lineage.stock_price_adjustment_mode == "provider_adjusted_v1"
+    assert {
+        "value_composite_equal_score",
+        "long_hybrid_leadership_score",
+        "sma5",
+        "sma5_above_count_5d",
+        "sma5_below_streak",
+        "sma5_atr20_deviation",
+    }.issubset(result.observation_sample_df.columns)
+
+
+@pytest.mark.parametrize(
+    ("schema_version", "adjustment_mode"),
+    [
+        (4, "provider_adjusted_v1"),
+        (5, "legacy_adjusted_v1"),
+    ],
+)
+def test_market_v5_panel_fails_closed_on_incompatible_provenance(
+    tmp_path: Path,
+    schema_version: int,
+    adjustment_mode: str,
+) -> None:
+    db_path = _build_hard_filter_market_v5_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+    conn.execute("DELETE FROM market_schema_version")
+    conn.execute("INSERT INTO market_schema_version VALUES (?, NULL, NULL)", [schema_version])
+    conn.execute(
+        "UPDATE sync_metadata SET value = ? "
+        "WHERE key = 'stock_price_adjustment_mode'",
+        [adjustment_mode],
+    )
+    conn.close()
+
+    with pytest.raises(RuntimeError, match="Incompatible market.duckdb metadata"):
+        run_ranking_sma5_score_ring_hard_filter_research(db_path)
+
+
+def test_execute_variant_uses_vectorbt_same_close_fills_and_fee_ledger() -> None:
+    feature_df = _single_code_frame(
+        [
+            ("2025-01-01", 0.5, 0.5, 1),
+            ("2025-01-02", 0.8, 0.8, 2),
+            ("2025-01-03", 0.8, 0.8, 2),
+            ("2025-01-06", 0.8, 0.8, 1),
+            ("2025-01-07", 0.5, 0.5, 1),
+        ],
+        closes=[100.0, 100.0, 110.0, 110.0, 110.0],
+    )
+
+    execution = execute_variant(
+        feature_df,
+        ResearchVariant(
+            ring_id="core_high_high",
+            entry_rule_id="E2_count_ge_2",
+            exit_rule_id="X2_count_le_1",
+            max_holding_sessions=60,
+        ),
+        fee_bps=10.0,
+    )
+
+    trades = execution.trade_records_df
+    assert len(trades) == 1
+    assert pd.Timestamp(str(trades.loc[0, "Entry Timestamp"])) == pd.Timestamp("2025-01-02")
+    assert pd.Timestamp(str(trades.loc[0, "Exit Timestamp"])) == pd.Timestamp("2025-01-06")
+    assert float(str(trades.loc[0, "Return"])) == pytest.approx(
+        ((1.0 - 0.0005) * 1.10 * (1.0 - 0.0005)) - 1.0
+    )
+    assert execution.daily_portfolio_returns.loc[pd.Timestamp("2025-01-02")] == pytest.approx(
+        -0.0005
+    )
+    assert execution.daily_portfolio_returns.loc[pd.Timestamp("2025-01-03")] == pytest.approx(
+        0.10
+    )
+    assert execution.daily_portfolio_returns.loc[pd.Timestamp("2025-01-06")] == pytest.approx(
+        -0.0005
+    )
+    assert execution.state_events["event_type"].tolist() == ["entry", "exit"]
+
+
+def _build_hard_filter_market_v5_db(db_path: Path) -> Path:
+    return _build_sma5_position_state_db(db_path)
 
 
 def _synthetic_feature_frame() -> pd.DataFrame:
