@@ -199,4 +199,3 @@ git add \
   apps/bt/docs/experiments/research-catalog-metadata.toml
 git commit -m "docs(bt): publish low-value stateful rotation appendix"
 ```
-

@@ -61,4 +61,3 @@ portfolio実装は行わない。
 - Sourceとtargetが同じappendix ringであること
 - 既存stateful episode semanticsとの一致
 - Canonical bundle値のread-only再計算
-

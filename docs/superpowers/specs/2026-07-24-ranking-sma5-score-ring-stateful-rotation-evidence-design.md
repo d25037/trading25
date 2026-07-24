@@ -116,4 +116,3 @@ X2 / X3 / X4 × ring × costについて次を出す。
 - costがeventに一度だけ適用されること
 - event-level等ウェイト集計
 - canonical bundle値のread-only再計算
-
