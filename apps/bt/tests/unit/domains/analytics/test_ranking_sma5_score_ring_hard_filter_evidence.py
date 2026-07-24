@@ -845,6 +845,33 @@ def test_evidence_ir_uses_topix_excess_returns() -> None:
     assert "topix_excess_return" in tables.portfolio_daily_df.columns
 
 
+@pytest.mark.parametrize("invalid_topix_close", [math.inf, 0.0, -1.0])
+def test_execute_variant_rejects_non_finite_or_non_positive_topix_close(
+    invalid_topix_close: float,
+) -> None:
+    feature_df = _single_code_frame(
+        [
+            ("2024-01-02", 0.5, 0.5, 1),
+            ("2024-01-03", 0.8, 0.8, 2),
+            ("2024-01-04", 0.8, 0.8, 2),
+            ("2024-01-05", 0.5, 0.5, 1),
+        ],
+        topix_closes=[100.0, invalid_topix_close, 101.0, 102.0],
+    )
+
+    with pytest.raises(ValueError, match="finite and strictly positive"):
+        execute_variant(
+            feature_df,
+            ResearchVariant(
+                "core_high_high",
+                "E2_count_ge_2",
+                "X0_no_sma5_exit",
+                60,
+            ),
+            fee_bps=10.0,
+        )
+
+
 def test_period_trade_metrics_exclude_trades_closed_after_period_end() -> None:
     feature_df = _single_code_frame(
         [

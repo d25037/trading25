@@ -129,3 +129,12 @@ Follow-up verification:
 - Focused pytest: `63 passed, 1 warning in 43.32s`.
 - Ruff: `All checks passed!`.
 - Pyright: `0 errors, 0 warnings, 0 informations`.
+
+Minor review follow-up:
+
+- Added a parameterized RED test showing that `inf`, zero, and negative
+  `topix_close` values reached `pct_change` without rejection.
+- `_build_benchmark_returns` now fails closed before return/IR calculation
+  unless every TOPIX close is finite and strictly positive.
+- Final focused verification: `66 passed, 1 warning in 43.45s`; ruff clean;
+  pyright `0 errors, 0 warnings, 0 informations`.

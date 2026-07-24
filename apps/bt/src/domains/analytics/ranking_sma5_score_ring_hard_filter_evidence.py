@@ -1743,6 +1743,13 @@ def _build_benchmark_returns(
     benchmark["topix_close"] = pd.to_numeric(
         benchmark["topix_close"], errors="coerce"
     )
+    invalid_close = (
+        benchmark["topix_close"].isna()
+        | ~np.isfinite(benchmark["topix_close"])
+        | benchmark["topix_close"].le(0.0)
+    )
+    if invalid_close.any():
+        raise ValueError("topix_close must be finite and strictly positive")
     if benchmark.groupby("date")["topix_close"].nunique(dropna=False).gt(1).any():
         raise ValueError("feature_df must contain one TOPIX close per date")
     topix_close = (
