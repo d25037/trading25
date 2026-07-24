@@ -82,9 +82,10 @@ def build_stateful_rotation_evidence(
             date: group
             for date, group in frame.loc[healthy].groupby("date", sort=False)
         }
+        needed_starts = healthy & frame["date"].isin(sources["date"].unique())
         target_episodes = _precompute_target_episodes(
             frame,
-            healthy=healthy,
+            needed_starts=needed_starts,
             sessions=sessions,
             threshold=threshold,
             holding_cap=holding_cap,
@@ -252,93 +253,88 @@ def _build_target_pair(
 def _precompute_target_episodes(
     frame: pd.DataFrame,
     *,
-    healthy: pd.Series,
+    needed_starts: pd.Series,
     sessions: pd.Index,
     threshold: float,
     holding_cap: int,
 ) -> dict[tuple[pd.Timestamp, str], dict[str, object] | None]:
     """Resolve each healthy code-date's next exit with one backward pass."""
 
-    session_position = {
-        pd.Timestamp(date): position for position, date in enumerate(sessions)
-    }
+    dates = frame["date"].to_numpy(dtype="datetime64[ns]")
+    closes = pd.to_numeric(frame["close"], errors="coerce").to_numpy(dtype=float)
+    positions = sessions.get_indexer(pd.DatetimeIndex(dates))
+    ring = _ring_mask(frame, threshold).to_numpy(dtype=bool)
+    count = pd.to_numeric(
+        frame["sma5_above_count_5d"], errors="coerce"
+    ).to_numpy(dtype=float)
+    streak = pd.to_numeric(
+        frame["sma5_below_streak"], errors="coerce"
+    ).to_numpy(dtype=float)
+    deviation = pd.to_numeric(
+        frame["sma5_atr20_deviation"], errors="coerce"
+    ).to_numpy(dtype=float)
+    reason_codes = np.zeros(len(frame), dtype=np.int8)
+    reason_codes[count <= 1.0] = 3
+    reason_codes[streak >= 3.0] = 2
+    reason_codes[deviation <= -1.0] = 1
+    reason_codes[~ring] = 4
+    reason_labels = (
+        "",
+        "X4_atr20_below_le_neg1",
+        "X3_below_streak_ge_3",
+        "X2_count_le_1",
+        "ring_exit",
+    )
+    needed = needed_starts.to_numpy(dtype=bool)
     last_global_position = len(sessions) - 1
     episodes: dict[tuple[pd.Timestamp, str], dict[str, object] | None] = {}
-    candidates = frame.assign(_healthy=healthy)
-    for code, group in candidates.groupby("code", sort=False):
-        ordered = group.sort_values("date", kind="stable").reset_index(drop=True)
-        positions = [
-            session_position[pd.Timestamp(date)] for date in ordered["date"]
-        ]
-        reasons = [
-            _target_exit_reason(row, threshold)
-            for _, row in ordered.iterrows()
-        ]
+    for code, row_indices_value in frame.groupby("code", sort=False).indices.items():
+        row_indices = np.asarray(row_indices_value, dtype=np.int64)
+        code_positions = positions[row_indices]
+        code_reasons = reason_codes[row_indices]
         next_exit_index: int | None = None
-        segment_end = len(ordered) - 1
-        for index in range(len(ordered) - 1, -1, -1):
+        segment_end = len(row_indices) - 1
+        for index in range(len(row_indices) - 1, -1, -1):
             if (
-                index == len(ordered) - 1
-                or positions[index + 1] != positions[index] + 1
+                index == len(row_indices) - 1
+                or code_positions[index + 1] != code_positions[index] + 1
             ):
                 segment_end = index
                 next_exit_index = None
-            if bool(ordered.at[index, "_healthy"]):
+            frame_index = int(row_indices[index])
+            if needed[frame_index]:
                 choices: list[tuple[int, str]] = []
                 if next_exit_index is not None:
                     choices.append(
-                        (next_exit_index, str(reasons[next_exit_index]))
+                        (
+                            next_exit_index,
+                            reason_labels[code_reasons[next_exit_index]],
+                        )
                     )
                 cap_index = index + holding_cap
                 if cap_index <= segment_end:
                     choices.append((cap_index, "holding_cap"))
-                if positions[segment_end] == last_global_position:
+                if code_positions[segment_end] == last_global_position:
                     choices.append((segment_end, "terminal_exit"))
                 choices = [choice for choice in choices if choice[0] > index]
                 key = (
-                    pd.Timestamp(cast(Any, ordered.at[index, "date"])),
+                    pd.Timestamp(dates[frame_index]),
                     str(code),
                 )
                 if not choices:
                     episodes[key] = None
                 else:
                     exit_index, reason = min(choices, key=lambda choice: choice[0])
-                    exit_close = float(cast(Any, ordered.at[exit_index, "close"]))
+                    exit_frame_index = int(row_indices[exit_index])
                     episodes[key] = {
-                        "target_exit_date": pd.Timestamp(
-                            cast(Any, ordered.at[exit_index, "date"])
-                        ),
+                        "target_exit_date": pd.Timestamp(dates[exit_frame_index]),
                         "target_exit_reason": reason,
                         "holding_sessions": exit_index - index,
-                        "target_exit_close": exit_close,
+                        "target_exit_close": float(closes[exit_frame_index]),
                     }
-            if reasons[index] is not None:
+            if code_reasons[index] != 0:
                 next_exit_index = index
     return episodes
-
-
-def _target_exit_reason(row: pd.Series, threshold: float) -> str | None:
-    row_frame = row.to_frame().T
-    if not bool(_ring_mask(row_frame, threshold).iloc[0]):
-        return "ring_exit"
-    deviation = pd.to_numeric(
-        pd.Series([row["sma5_atr20_deviation"]]), errors="coerce"
-    ).iloc[0]
-    streak = pd.to_numeric(
-        pd.Series([row["sma5_below_streak"]]), errors="coerce"
-    ).iloc[0]
-    count = pd.to_numeric(
-        pd.Series([row["sma5_above_count_5d"]]), errors="coerce"
-    ).iloc[0]
-    if deviation <= -1.0:
-        return "X4_atr20_below_le_neg1"
-    if streak >= 3.0:
-        return "X3_below_streak_ge_3"
-    if count <= 1.0:
-        return "X2_count_le_1"
-    return None
-
-
 def _aggregate_source_event(
     *,
     ring_id: str,

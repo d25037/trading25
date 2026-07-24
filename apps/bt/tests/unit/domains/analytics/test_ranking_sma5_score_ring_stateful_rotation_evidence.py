@@ -117,6 +117,48 @@ def test_missing_global_session_row_invalidates_target_episode() -> None:
     assert diagnostics["invalid_target_episode_count"] == 1
 
 
+def test_target_episode_preprocessing_does_not_iterate_pandas_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def reject_iterrows(self: pd.DataFrame) -> object:
+        raise AssertionError("iterrows is forbidden in target episode preprocessing")
+
+    monkeypatch.setattr(pd.DataFrame, "iterrows", reject_iterrows)
+
+    result = build_stateful_rotation_evidence(
+        _feature_fixture(),
+        ring_ids=("core_high_high",),
+    )
+
+    assert len(result.stateful_rotation_event_df) == 1
+
+
+@pytest.mark.parametrize("missing", [True, False])
+def test_missing_or_nonfinite_source_exit_close_excludes_pair_without_advancing(
+    missing: bool,
+) -> None:
+    feature_df = _feature_fixture()
+    source_exit = feature_df["code"].eq("1000") & feature_df["date"].eq(
+        pd.Timestamp("2024-01-06")
+    )
+    if missing:
+        feature_df = feature_df.loc[~source_exit]
+    else:
+        feature_df.loc[source_exit, "close"] = float("nan")
+
+    result = build_stateful_rotation_evidence(
+        feature_df,
+        ring_ids=("core_high_high",),
+    )
+
+    assert result.stateful_rotation_event_df.empty
+    diagnostics = result.coverage_diagnostics_df.query(
+        "source_trigger_id == 'X2_count_le_1'"
+    ).iloc[0]
+    assert diagnostics["paired_event_count"] == 0
+    assert diagnostics["invalid_target_episode_count"] == 1
+
+
 def test_cost_is_applied_once_after_equal_weight_event_aggregation() -> None:
     result = build_stateful_rotation_evidence(
         _feature_fixture(),
