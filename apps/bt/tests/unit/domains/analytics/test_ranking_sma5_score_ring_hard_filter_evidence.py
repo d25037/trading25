@@ -122,9 +122,19 @@ def test_position_state_enters_on_false_to_true_and_does_not_same_day_reenter() 
     )
 
 
-def test_entry_day_return_is_not_booked_and_exit_day_closes_exposure() -> None:
+def test_entry_day_is_excluded_and_exit_day_return_is_included_once() -> None:
+    feature_df = _single_code_frame(
+        [
+            ("2025-01-01", 0.5, 0.5, 1),
+            ("2025-01-02", 0.8, 0.8, 2),
+            ("2025-01-03", 0.8, 0.8, 2),
+            ("2025-01-06", 0.8, 0.8, 1),
+            ("2025-01-07", 0.5, 0.5, 1),
+        ],
+        closes=[100.0, 110.0, 121.0, 133.1, 146.41],
+    )
     frames = build_position_signal_frames(
-        _synthetic_feature_frame(),
+        feature_df,
         ring_id="core_high_high",
         entry_rule_id="E2_count_ge_2",
         exit_rule_id="X2_count_le_1",
@@ -133,7 +143,11 @@ def test_entry_day_return_is_not_booked_and_exit_day_closes_exposure() -> None:
 
     assert not frames.held_intervals.loc[pd.Timestamp("2025-01-02"), "1001"]
     assert frames.held_intervals.loc[pd.Timestamp("2025-01-03"), "1001"]
-    assert not frames.held_intervals.loc[pd.Timestamp("2025-01-06"), "1001"]
+    assert frames.held_intervals.loc[pd.Timestamp("2025-01-06"), "1001"]
+    returns = frames.close["1001"].pct_change(fill_method=None)
+    included_returns = returns.loc[frames.held_intervals["1001"]]
+    assert included_returns.tolist() == pytest.approx([0.10, 0.10])
+    assert included_returns.sum() == pytest.approx(0.20)
 
 
 def test_wider_rings_include_rows_classified_into_more_selective_rings() -> None:
@@ -198,12 +212,12 @@ def test_time_exit_uses_the_requested_session_cap(max_holding_sessions: int) -> 
     exit_event = frames.state_events.loc[
         frames.state_events["event_type"].eq("exit")
     ].iloc[0]
-    assert exit_event["date"] == dates[max_holding_sessions + 2]
+    assert exit_event["date"] == dates[max_holding_sessions + 1]
     assert exit_event["exit_reason"] == "time_exit"
     assert int(frames.held_intervals["1001"].sum()) == max_holding_sessions
 
 
-def test_terminal_open_position_closes_at_last_finite_close() -> None:
+def test_terminal_open_position_includes_return_into_last_finite_close() -> None:
     feature_df = _single_code_frame(
         [
             ("2025-01-01", 0.5, 0.5, 1),
@@ -225,7 +239,7 @@ def test_terminal_open_position_closes_at_last_finite_close() -> None:
     ].iloc[0]
     assert terminal_exit["date"] == pd.Timestamp("2025-01-06")
     assert terminal_exit["exit_reason"] == "terminal_exit"
-    assert not frames.held_intervals.loc[pd.Timestamp("2025-01-06"), "1001"]
+    assert frames.held_intervals.loc[pd.Timestamp("2025-01-06"), "1001"]
 
 
 def test_middle_missing_close_is_not_forward_filled() -> None:

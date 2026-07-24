@@ -279,7 +279,7 @@ def _exit_reason(
         return "ring_exit"
     if exit_rule_matches(row, exit_rule_id):
         return "sma5_exit"
-    if held_sessions >= max_holding_sessions:
+    if held_sessions >= max_holding_sessions - 1:
         return "time_exit"
     return None
 
@@ -294,7 +294,7 @@ def _emit_exit(
     events: list[dict[str, object]],
 ) -> None:
     exits.loc[date, code] = True
-    held_intervals.loc[date, code] = False
+    held_intervals.loc[date, code] = True
     events.append(
         {
             "date": date,
