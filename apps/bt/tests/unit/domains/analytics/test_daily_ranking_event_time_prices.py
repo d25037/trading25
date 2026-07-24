@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import duckdb
@@ -101,11 +102,16 @@ def _build_market_v5_fixture(path: Path) -> duckdb.DuckDBPyConnection:
             code TEXT, statement_id TEXT, disclosed_date TEXT,
             disclosed_at TEXT, period_end TEXT, period_type TEXT,
             fundamentals_adjustment_basis_date TEXT,
-            source_fingerprint TEXT
+            source_fingerprint TEXT, adjusted_eps DOUBLE,
+            adjusted_bps DOUBLE, adjusted_forecast_eps DOUBLE,
+            adjusted_shares_outstanding DOUBLE
         );
         CREATE TABLE daily_valuation (
             code TEXT, date TEXT, price_basis_date TEXT,
-            fundamentals_adjustment_basis_date TEXT, source_fingerprint TEXT
+            fundamentals_adjustment_basis_date TEXT, source_fingerprint TEXT,
+            per DOUBLE, forward_per DOUBLE, pbr DOUBLE,
+            p_op DOUBLE, forward_p_op DOUBLE, market_cap DOUBLE,
+            free_float_market_cap DOUBLE
         );
         CREATE TABLE topix_data (
             date TEXT, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE
@@ -159,10 +165,16 @@ def _build_market_v5_fixture(path: Path) -> duckdb.DuckDBPyConnection:
         ],
     )
     conn.executemany(
-        "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
-            ("1111", "2024-01-04", "2024-01-04", "2024-01-08", "fundamentals-1111"),
-            ("1111", "2024-01-08", "2024-01-08", "2024-01-08", "fundamentals-1111"),
+            (
+                "1111", "2024-01-04", "2024-01-04", "2024-01-08",
+                "fundamentals-1111", None, None, None, None, None, None, None,
+            ),
+            (
+                "1111", "2024-01-08", "2024-01-08", "2024-01-08",
+                "fundamentals-1111", None, None, None, None, None, None, None,
+            ),
         ],
     )
     conn.executemany(
@@ -431,13 +443,156 @@ def test_research_prices_reject_split_daily_valuation_witnesses(
         conn.execute(
             "INSERT INTO daily_valuation VALUES "
             "('1111', '2024-01-04', '2024-01-03', '2024-01-08', "
-            "'fundamentals-1111')"
+            "'fundamentals-1111', NULL, NULL, NULL, NULL, NULL, NULL, NULL)"
         )
 
         with pytest.raises(RuntimeError, match="current fundamentals lineage"):
             build_daily_ranking_event_time_prices(
                 conn,
                 _generic_price_request("split_valuation_witness"),
+            )
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "disclosure_kind",
+    ["pre_first", "unusable_disclosure", "statementless"],
+)
+def test_research_prices_accept_empty_pre_disclosure_valuation_witness(
+    tmp_path: Path,
+    disclosure_kind: str,
+) -> None:
+    conn = _build_market_v5_fixture(tmp_path / "market.duckdb")
+    try:
+        conn.execute(
+            "UPDATE daily_valuation SET fundamentals_adjustment_basis_date = NULL, "
+            "source_fingerprint = NULL WHERE date = '2024-01-04'"
+        )
+        if disclosure_kind == "statementless":
+            conn.execute(
+                "UPDATE daily_valuation SET fundamentals_adjustment_basis_date = NULL, "
+                "source_fingerprint = NULL"
+            )
+        else:
+            disclosed_date = (
+                "2024-01-04"
+                if disclosure_kind == "unusable_disclosure"
+                else "2024-01-08"
+            )
+            adjusted_eps = (
+                "NULL" if disclosure_kind == "unusable_disclosure" else "1"
+            )
+            conn.execute(
+                "UPDATE current_basis_fundamentals_state SET statement_count = 1"
+            )
+            conn.execute(
+                "INSERT INTO statements VALUES "
+                f"('1111', 'statement-1', '{disclosed_date}', "
+                f"'{disclosed_date}T15:00:00+09:00', '2023-12-31', 'FY')"
+            )
+            conn.execute(
+                "INSERT INTO statement_metrics_adjusted VALUES "
+                f"('1111', 'statement-1', '{disclosed_date}', "
+                f"'{disclosed_date}T15:00:00+09:00', '2023-12-31', 'FY', "
+                f"'2024-01-08', 'fundamentals-1111', {adjusted_eps}, "
+                "NULL, NULL, NULL)"
+            )
+
+        relations = build_daily_ranking_event_time_prices(
+            conn,
+            _generic_price_request(f"empty_{disclosure_kind}_witness"),
+        )
+        rows = conn.execute(
+            f"SELECT code, date FROM {relations.signal_features}"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert rows == [("1111", date(2024, 1, 4))]
+
+
+def test_research_prices_reject_non_null_metric_without_lineage(
+    tmp_path: Path,
+) -> None:
+    conn = _build_market_v5_fixture(tmp_path / "market.duckdb")
+    try:
+        conn.execute(
+            "UPDATE current_basis_fundamentals_state SET statement_count = 1"
+        )
+        conn.execute(
+            "INSERT INTO statements VALUES "
+            "('1111', 'statement-1', '2024-01-08', "
+            "'2024-01-08T15:00:00+09:00', '2023-12-31', 'FY')"
+        )
+        conn.execute(
+            "INSERT INTO statement_metrics_adjusted VALUES "
+            "('1111', 'statement-1', '2024-01-08', "
+            "'2024-01-08T15:00:00+09:00', '2023-12-31', 'FY', "
+            "'2024-01-08', 'fundamentals-1111', 1, NULL, NULL, NULL)"
+        )
+        conn.execute(
+            "UPDATE daily_valuation SET per = 10, "
+            "fundamentals_adjustment_basis_date = NULL, source_fingerprint = NULL "
+            "WHERE date = '2024-01-04'"
+        )
+
+        with pytest.raises(RuntimeError, match="current fundamentals lineage"):
+            build_daily_ranking_event_time_prices(
+                conn,
+                _generic_price_request("invalid_empty_valuation_witness"),
+            )
+    finally:
+        conn.close()
+
+
+def test_research_prices_reject_null_lineage_after_disclosure(
+    tmp_path: Path,
+) -> None:
+    conn = _build_market_v5_fixture(tmp_path / "market.duckdb")
+    try:
+        conn.execute(
+            "UPDATE current_basis_fundamentals_state SET statement_count = 1"
+        )
+        conn.execute(
+            "INSERT INTO statements VALUES "
+            "('1111', 'statement-1', '2024-01-04', "
+            "'2024-01-04T15:00:00+09:00', '2023-12-31', 'FY')"
+        )
+        conn.execute(
+            "INSERT INTO statement_metrics_adjusted VALUES "
+            "('1111', 'statement-1', '2024-01-04', "
+            "'2024-01-04T15:00:00+09:00', '2023-12-31', 'FY', "
+            "'2024-01-08', 'fundamentals-1111', 1, NULL, NULL, NULL)"
+        )
+        conn.execute(
+            "UPDATE daily_valuation SET fundamentals_adjustment_basis_date = NULL, "
+            "source_fingerprint = NULL WHERE date = '2024-01-04'"
+        )
+
+        with pytest.raises(RuntimeError, match="current fundamentals lineage"):
+            build_daily_ranking_event_time_prices(
+                conn,
+                _generic_price_request("post_disclosure_null_lineage"),
+            )
+    finally:
+        conn.close()
+
+
+def test_research_prices_reject_extra_daily_valuation_witness(
+    tmp_path: Path,
+) -> None:
+    conn = _build_market_v5_fixture(tmp_path / "market.duckdb")
+    try:
+        conn.execute(
+            "INSERT INTO daily_valuation SELECT * FROM daily_valuation "
+            "WHERE date = '2024-01-04'"
+        )
+
+        with pytest.raises(RuntimeError, match="current fundamentals lineage"):
+            build_daily_ranking_event_time_prices(
+                conn,
+                _generic_price_request("duplicate_valuation_witness"),
             )
     finally:
         conn.close()
@@ -558,6 +713,8 @@ def test_completion_outcome_uses_provider_split_or_reverse_split_adjustment(
         "UPDATE current_basis_fundamentals_state SET statement_count = 1",
         "UPDATE current_basis_fundamentals_state SET materialized_at = ''",
         "UPDATE daily_valuation SET source_fingerprint = 'mismatch'",
+        "UPDATE daily_valuation SET fundamentals_adjustment_basis_date = "
+        "'2024-01-07'",
         "INSERT INTO current_basis_fundamentals_state SELECT * "
         "FROM current_basis_fundamentals_state LIMIT 1",
     ],

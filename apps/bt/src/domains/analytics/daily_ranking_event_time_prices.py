@@ -62,6 +62,13 @@ _RESEARCH_PRICE_REQUIRED_COLUMNS = {
         "price_basis_date",
         "fundamentals_adjustment_basis_date",
         "source_fingerprint",
+        "per",
+        "forward_per",
+        "pbr",
+        "p_op",
+        "forward_p_op",
+        "market_cap",
+        "free_float_market_cap",
     },
     "stock_provider_windows": {
         "code",
@@ -91,7 +98,8 @@ _RESEARCH_PRICE_REQUIRED_COLUMNS = {
     "statement_metrics_adjusted": {
         "code", "statement_id", "disclosed_date", "disclosed_at",
         "period_end", "period_type", "fundamentals_adjustment_basis_date",
-        "source_fingerprint",
+        "source_fingerprint", "adjusted_eps", "adjusted_bps",
+        "adjusted_forecast_eps", "adjusted_shares_outstanding",
     },
     "topix_data": {"date", "open", "close"},
     "indices_data": {"code", "date", "close"},
@@ -143,6 +151,21 @@ DAILY_RANKING_PRICE_HISTORY_COLUMNS = (
     "volume",
 )
 DAILY_RANKING_VALID_RAW_BAR_PRICE_COLUMNS = ("open", "high", "low", "close")
+DAILY_RANKING_FUNDAMENTALS_CONSUMER_COLUMNS = (
+    "per",
+    "forward_per",
+    "pbr",
+    "p_op",
+    "forward_p_op",
+    "market_cap",
+    "free_float_market_cap",
+)
+DAILY_RANKING_FUNDAMENTALS_EVENT_INPUT_COLUMNS = (
+    "adjusted_eps",
+    "adjusted_bps",
+    "adjusted_forecast_eps",
+    "adjusted_shares_outstanding",
+)
 
 
 def daily_ranking_valid_raw_bar_sql(qualifier: str | None = None) -> str:
@@ -155,6 +178,58 @@ def daily_ranking_valid_raw_bar_sql(qualifier: str | None = None) -> str:
         f"{prefix}{column} > 0" for column in DAILY_RANKING_VALID_RAW_BAR_PRICE_COLUMNS
     )
     return f"{prices} AND {prefix}volume >= 0"
+
+
+def daily_ranking_valuation_witness_sql(
+    *,
+    valuation_alias: str,
+    state_alias: str,
+    signal_alias: str,
+) -> str:
+    """Return the shared PIT-safe Daily Ranking valuation witness predicate."""
+
+    for alias in (valuation_alias, state_alias, signal_alias):
+        if not _RELATION_NAMESPACE_RE.fullmatch(alias):
+            raise ValueError(f"invalid valuation witness alias: {alias!r}")
+    valuation = f"{valuation_alias}."
+    state = f"{state_alias}."
+    signal = f"{signal_alias}."
+    empty_values = " AND ".join(
+        f"{valuation}{column} IS NULL"
+        for column in DAILY_RANKING_FUNDAMENTALS_CONSUMER_COLUMNS
+    )
+    metric_code = normalize_code_sql("valuation_metric.code")
+    signal_code = normalize_code_sql(f"{signal_alias}.code")
+    usable_event = " OR ".join(
+        f"valuation_metric.{column} IS NOT NULL"
+        for column in DAILY_RANKING_FUNDAMENTALS_EVENT_INPUT_COLUMNS
+    )
+    return f"""
+        (
+            (
+                {valuation}fundamentals_adjustment_basis_date =
+                    {state}fundamentals_adjustment_basis_date
+                AND {valuation}source_fingerprint = {state}source_fingerprint
+            )
+            OR (
+                {valuation}fundamentals_adjustment_basis_date IS NULL
+                AND {valuation}source_fingerprint IS NULL
+                AND {empty_values}
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM statement_metrics_adjusted valuation_metric
+                    WHERE {metric_code} = {signal_code}
+                      AND valuation_metric.fundamentals_adjustment_basis_date =
+                          {state}fundamentals_adjustment_basis_date
+                      AND valuation_metric.source_fingerprint =
+                          {state}source_fingerprint
+                      AND CAST(valuation_metric.disclosed_date AS DATE)
+                          <= CAST({signal}date AS DATE)
+                      AND ({usable_event})
+                )
+            )
+        )
+    """
 
 
 @dataclass(frozen=True)
@@ -835,6 +910,11 @@ def _build_daily_ranking_event_time_prices(
     valuation_code = normalize_code_sql("dv.code")
     state_code = normalize_code_sql("state.code")
     window_code = normalize_code_sql("provider.code")
+    valuation_witness = daily_ranking_valuation_witness_sql(
+        valuation_alias="dv",
+        state_alias="state",
+        signal_alias="signal",
+    )
 
     raw_conditions: list[str] = []
     raw_params: list[str] = []
@@ -945,14 +1025,18 @@ def _build_daily_ranking_event_time_prices(
           AND (
               SELECT count(*)
               FROM daily_valuation dv
+              WHERE {valuation_code} = signal.code
+                AND CAST(dv.date AS DATE) = signal.date
+          ) = 1
+          AND (
+              SELECT count(*)
+              FROM daily_valuation dv
               JOIN current_basis_fundamentals_state state
                 ON {state_code} = signal.code
               WHERE {valuation_code} = signal.code
                 AND CAST(dv.date AS DATE) = signal.date
                 AND CAST(dv.price_basis_date AS DATE) = signal.date
-                AND dv.fundamentals_adjustment_basis_date =
-                    state.fundamentals_adjustment_basis_date
-                AND dv.source_fingerprint = state.source_fingerprint
+                AND {valuation_witness}
           ) = 1
         """
     )
@@ -1504,6 +1588,12 @@ def _validate_research_provider_vintage(
     pending_code = normalize_code_sql("pending.code")
     statement_code = normalize_code_sql("statement.code")
     metric_code = normalize_code_sql("metric.code")
+    valuation_code = normalize_code_sql("valuation.code")
+    valuation_witness = daily_ranking_valuation_witness_sql(
+        valuation_alias="valuation",
+        state_alias="state",
+        signal_alias="signal",
+    )
     lineage_issues = conn.execute(
         f"""
         WITH requested_codes AS (
@@ -1567,16 +1657,17 @@ def _validate_research_provider_vintage(
         UNION
         SELECT signal.code
         FROM {signal_request_relation} signal
-        WHERE (
+        WHERE (SELECT count(*) FROM daily_valuation valuation
+               WHERE {valuation_code} = signal.code
+                 AND CAST(valuation.date AS DATE) = signal.date) <> 1
+           OR (
             SELECT count(*) FROM daily_valuation valuation
             JOIN current_basis_fundamentals_state state
               ON {state_code} = signal.code
-            WHERE {normalize_code_sql("valuation.code")} = signal.code
+            WHERE {valuation_code} = signal.code
               AND CAST(valuation.date AS DATE) = signal.date
               AND CAST(valuation.price_basis_date AS DATE) = signal.date
-              AND valuation.fundamentals_adjustment_basis_date =
-                  state.fundamentals_adjustment_basis_date
-              AND valuation.source_fingerprint = state.source_fingerprint
+              AND {valuation_witness}
         ) <> 1
         """
     ).fetchall()

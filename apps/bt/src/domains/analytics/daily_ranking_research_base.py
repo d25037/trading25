@@ -30,8 +30,9 @@ from src.domains.analytics.daily_ranking_event_time_prices import (
     DailyRankingPriceLineage,
     DailyRankingPriceRequest,
     build_daily_ranking_event_time_prices,
-    daily_ranking_valid_raw_bar_sql,
     daily_ranking_forward_outcome_columns,
+    daily_ranking_valid_raw_bar_sql,
+    daily_ranking_valuation_witness_sql,
 )
 from src.domains.analytics.readonly_duckdb_support import normalize_code_sql
 from src.shared.utils.market_code_alias import (
@@ -990,6 +991,11 @@ def _materialize_signal_panel(
     market_code = normalize_code_sql("smd.code")
     valuation_code = normalize_code_sql("valuation.code")
     valuation_state_code = normalize_code_sql("valuation_state.code")
+    valuation_witness = daily_ranking_valuation_witness_sql(
+        valuation_alias="valuation",
+        state_alias="valuation_state",
+        signal_alias="price",
+    )
     market_case = _market_scope_case_sql("market_code", "market_name")
     benchmark_conditions: list[str] = []
     benchmark_params: list[date] = []
@@ -1110,9 +1116,7 @@ def _materialize_signal_panel(
              ON {valuation_code} = price.code
              AND CAST(valuation.date AS DATE) = price.date
              AND CAST(valuation.price_basis_date AS DATE) = price.date
-             AND valuation.fundamentals_adjustment_basis_date =
-                 valuation_state.fundamentals_adjustment_basis_date
-             AND valuation.source_fingerprint = valuation_state.source_fingerprint
+             AND {valuation_witness}
             LEFT JOIN topix_ranked topix USING (date)
             LEFT JOIN n225_ranked n225 USING (date)
             WHERE {market_filter}
