@@ -242,6 +242,20 @@ relatedExperiments = [
   "market-behavior/ranking-trend-slope-evidence",
 ]
 
+[experiments."market-behavior/ranking-sma5-score-ring-hard-filter-evidence"]
+family = "Ranking"
+status = "observed"
+decision = "Market v5 `provider_adjusted_v1` の Value × Long Hybrid frozen score ring で、SMA5 entry/exit hard filterを2022–2024 OOSと2025–2026-07-21 holdoutに分けて検証した。Entryは全ruleでOOS平均差が非正、Exitの `X2` / `X3` / `X4` はtailとcost sensitivityを改善したが、全ruleでmoving-block bootstrap CIがゼロを跨ぎHolm補正後pも不合格。Entry/Exitとも `insufficient_evidence`、Combinedはprerequisite不成立で `not_evaluated` とし、strategy/API/UIは変更しない。"
+promotedSurface = "Research"
+riskFlags = ["prime-only-judgment", "position-state-outcome", "same-close-optimistic-execution", "equal-weight-portfolio", "capacity-unmodeled", "partial-year-2026", "hard-filter-rejected"]
+relatedExperiments = [
+  "market-behavior/ranking-sma5-position-state-evidence",
+  "market-behavior/ranking-sma5-count-long-evidence",
+  "market-behavior/ranking-sma5-below-streak-evidence",
+  "market-behavior/ranking-sma5-atr-deviation-evidence",
+  "market-behavior/ranking-long-scaffold-value-composite-evidence",
+]
+
 [experiments."market-behavior/ranking-moving-average-replacement-evidence"]
 family = "Ranking"
 status = "observed"
