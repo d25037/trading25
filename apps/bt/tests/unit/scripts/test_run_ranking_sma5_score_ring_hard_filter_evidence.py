@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import duckdb
 import pandas as pd
+import pytest
 
 from scripts.research import run_ranking_sma5_score_ring_hard_filter_evidence as runner
 from src.domains.analytics.ranking_sma5_score_ring_hard_filter_evidence import (
@@ -128,7 +130,10 @@ def test_bundle_writes_exact_tables_and_canonical_market_v5_metadata(tmp_path: P
     assert manifest["result_metadata"] == {
         "execution_policy": "close_proxy_same_session",
         "execution_is_optimistic": True,
+        "market_schema_version": 5,
         "stock_price_adjustment_mode": "provider_adjusted_v1",
+        "market_source": "unit fixture",
+        "source_mode": "live",
         "primary_ring": "core_high_high",
         "primary_holding_cap": 60,
         "robustness_holding_cap": 20,
@@ -138,6 +143,65 @@ def test_bundle_writes_exact_tables_and_canonical_market_v5_metadata(tmp_path: P
     }
     assert not (bundle.bundle_dir / "summary.json").exists()
     assert "published_summary" not in bundle.manifest_path.read_text(encoding="utf-8")
+
+
+def test_frozen_variant_execution_builds_signal_frames_once_per_variant(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = _domain_result(tmp_path / "market.duckdb")
+    build_frames = runner.build_position_signal_frames
+    calls = 0
+
+    def counting_build_frames(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+        nonlocal calls
+        calls += 1
+        return build_frames(*args, **kwargs)
+
+    monkeypatch.setattr(runner, "build_position_signal_frames", counting_build_frames)
+
+    executions = runner._execute_frozen_variants(
+        result.feature_df,
+        cost_levels=(0.0, 10.0, 20.0),
+    )
+
+    assert calls == len(runner._frozen_variants())
+    assert len(executions) == len(runner._frozen_variants()) * 3
+    assert all(not hasattr(execution, "portfolio") for execution in executions)
+    assert all(not hasattr(execution, "signal_frames") for execution in executions)
+
+
+@pytest.mark.parametrize(
+    ("lineage", "message"),
+    [
+        (
+            HardFilterPitLineage(4, "provider_adjusted_v1", "unit fixture", "live"),
+            "market_schema_version=5",
+        ),
+        (
+            HardFilterPitLineage(5, "legacy_adjusted_v1", "unit fixture", "live"),
+            "stock_price_adjustment_mode=provider_adjusted_v1",
+        ),
+        (
+            HardFilterPitLineage(5, "provider_adjusted_v1", "", "live"),
+            "market_source",
+        ),
+    ],
+)
+def test_bundle_rejects_incompatible_or_incomplete_lineage(
+    tmp_path: Path,
+    lineage: HardFilterPitLineage,
+    message: str,
+) -> None:
+    result = replace(_domain_result(tmp_path / "market.duckdb"), pit_lineage=lineage)
+
+    with pytest.raises(ValueError, match=message):
+        runner.write_ranking_sma5_score_ring_hard_filter_bundle(
+            result,
+            output_root=tmp_path / "bundles",
+            run_id="bad-lineage",
+            resamples=10,
+        )
 
 
 def _domain_result(db_path: Path) -> RankingSma5ScoreRingHardFilterResearchResult:

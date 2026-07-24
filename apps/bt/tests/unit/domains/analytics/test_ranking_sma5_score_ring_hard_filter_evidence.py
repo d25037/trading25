@@ -315,8 +315,8 @@ def test_market_v5_panel_contains_frozen_scores_and_sma_features(
 
     result = run_ranking_sma5_score_ring_hard_filter_research(
         db_path,
-        start_date="2024-03-01",
-        end_date="2024-04-30",
+        start_date="2024-01-01",
+        end_date="2024-12-31",
         bootstrap_resamples=100,
         min_trades=1,
         min_signal_dates=1,
@@ -335,11 +335,26 @@ def test_market_v5_panel_contains_frozen_scores_and_sma_features(
         "sma5_atr20_deviation",
     }.issubset(result.observation_sample_df.columns)
     panel = result.feature_df
+    assert result.analysis_start_date == panel["date"].min().date().isoformat()
+    assert result.analysis_end_date == panel["date"].max().date().isoformat()
+    assert result.analysis_end_date != "2024-12-31"
     expected_below_streak = pd.Series(0, index=panel.index, dtype="int64")
     expected_below_streak.loc[panel["close_below_sma5_flag"].eq(1)] = 1
     expected_below_streak.loc[panel["below_sma5_streak_ge3_flag"].eq(True)] = 3
     assert panel["sma5_below_streak"].fillna(-1).astype(int).equals(
         expected_below_streak
+    )
+    default_end_result = run_ranking_sma5_score_ring_hard_filter_research(
+        db_path,
+        start_date="2024-01-01",
+        bootstrap_resamples=100,
+        min_trades=1,
+        min_signal_dates=1,
+    )
+    assert default_end_result.analysis_start_date is not None
+    assert default_end_result.analysis_end_date is not None
+    assert default_end_result.analysis_end_date == (
+        default_end_result.feature_df["date"].max().date().isoformat()
     )
 
 
@@ -411,6 +426,8 @@ def test_execute_variant_uses_vectorbt_same_close_fills_and_fee_ledger() -> None
         -0.0005
     )
     assert execution.state_events["event_type"].tolist() == ["entry", "exit"]
+    assert not hasattr(execution, "portfolio")
+    assert not hasattr(execution, "signal_frames")
 
 
 def test_execute_variant_does_not_dilute_held_return_with_new_entry_fee() -> None:
@@ -449,12 +466,7 @@ def test_execute_variant_does_not_dilute_held_return_with_new_entry_fee() -> Non
     return_on_shared_date = execution.daily_portfolio_returns.loc[
         pd.Timestamp("2025-01-03")
     ]
-    raw_returns = pd.DataFrame(execution.portfolio.returns())
-    held_return = raw_returns.loc[pd.Timestamp("2025-01-03"), "1001"]
-    entry_fee = raw_returns.loc[pd.Timestamp("2025-01-03"), "1002"]
-    assert held_return == pytest.approx(0.10)
-    assert entry_fee == pytest.approx(-0.0005, abs=3e-7)
-    assert return_on_shared_date == pytest.approx(held_return + (entry_fee / 2.0))
+    assert return_on_shared_date == pytest.approx(0.10 - ((0.0005 / 1.0005) / 2.0))
     assert return_on_shared_date > 0.09
 
 

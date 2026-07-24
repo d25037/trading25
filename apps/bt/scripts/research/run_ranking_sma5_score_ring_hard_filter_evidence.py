@@ -35,6 +35,7 @@ from src.domains.analytics.ranking_sma5_score_ring_hard_filter_evidence import (
     VariantExecution,
     build_decision_gate_df,
     build_evidence_tables,
+    build_position_signal_frames,
     execute_variant,
     run_ranking_sma5_score_ring_hard_filter_research,
 )
@@ -142,6 +143,7 @@ def write_ranking_sma5_score_ring_hard_filter_bundle(
 ) -> ResearchBundleInfo:
     """Execute frozen variants and write the canonical twelve-table bundle."""
 
+    _validate_bundle_lineage(result)
     resolved_cost_levels = _require_approved_cost_levels(cost_levels)
     resolved_resamples = result.bootstrap_resamples if resamples is None else resamples
     executions = _execute_frozen_variants(
@@ -198,7 +200,10 @@ def write_ranking_sma5_score_ring_hard_filter_bundle(
         result_metadata={
             "execution_policy": "close_proxy_same_session",
             "execution_is_optimistic": True,
-            "stock_price_adjustment_mode": "provider_adjusted_v1",
+            "market_schema_version": result.pit_lineage.market_schema_version,
+            "stock_price_adjustment_mode": result.pit_lineage.stock_price_adjustment_mode,
+            "market_source": result.pit_lineage.market_source,
+            "source_mode": result.pit_lineage.source_mode,
             "primary_ring": "core_high_high",
             "primary_holding_cap": PRIMARY_HOLDING_CAP,
             "robustness_holding_cap": ROBUSTNESS_HOLDING_CAP,
@@ -246,11 +251,25 @@ def _execute_frozen_variants(
     cost_levels: tuple[float, ...],
 ) -> list[VariantExecution]:
     variants = _frozen_variants()
-    return [
-        execute_variant(feature_df, variant, fee_bps=fee_bps)
-        for fee_bps in cost_levels
-        for variant in variants
-    ]
+    executions: list[VariantExecution] = []
+    for variant in variants:
+        frames = build_position_signal_frames(
+            feature_df,
+            ring_id=variant.ring_id,
+            entry_rule_id=variant.entry_rule_id,
+            exit_rule_id=variant.exit_rule_id,
+            max_holding_sessions=variant.max_holding_sessions,
+        )
+        executions.extend(
+            execute_variant(
+                feature_df,
+                variant,
+                fee_bps=fee_bps,
+                signal_frames=frames,
+            )
+            for fee_bps in cost_levels
+        )
+    return executions
 
 
 def _frozen_variants() -> tuple[ResearchVariant, ...]:
@@ -309,6 +328,24 @@ def _require_approved_cost_levels(cost_levels: Iterable[float]) -> tuple[float, 
     if set(levels) != set(DEFAULT_COST_LEVELS) or len(levels) != len(DEFAULT_COST_LEVELS):
         raise ValueError("cost-levels must contain exactly 0,10,20 bps")
     return tuple(cost for cost in DEFAULT_COST_LEVELS)
+
+
+def _validate_bundle_lineage(
+    result: RankingSma5ScoreRingHardFilterResearchResult,
+) -> None:
+    lineage = result.pit_lineage
+    if lineage.market_schema_version != 5:
+        raise ValueError("bundle requires market_schema_version=5")
+    if lineage.stock_price_adjustment_mode != "provider_adjusted_v1":
+        raise ValueError(
+            "bundle requires stock_price_adjustment_mode=provider_adjusted_v1"
+        )
+    if not lineage.market_source.strip():
+        raise ValueError("bundle requires a non-empty market_source")
+    if lineage.source_mode not in {"live", "snapshot"}:
+        raise ValueError("bundle requires source_mode live or snapshot")
+    if result.source_mode != lineage.source_mode or not result.source_detail.strip():
+        raise ValueError("bundle result source fields do not match provenance")
 
 
 def _concat_evidence_frames(frames: tuple[pd.DataFrame, ...]) -> pd.DataFrame:

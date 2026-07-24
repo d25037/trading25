@@ -136,12 +136,10 @@ class BootstrapInterval:
 
 @dataclass(frozen=True)
 class VariantExecution:
-    """VectorBT-authoritative fills paired with the independent state timeline."""
+    """Compact VectorBT-derived execution evidence for one frozen variant."""
 
     variant: ResearchVariant
     fee_bps: float
-    portfolio: Any
-    signal_frames: PositionSignalFrames
     trade_records_df: pd.DataFrame
     daily_portfolio_returns: pd.Series
     benchmark_daily_returns: pd.Series
@@ -1667,12 +1665,17 @@ def run_ranking_sma5_score_ring_hard_filter_research(
         source_mode = ctx.source_mode
         source_detail = ctx.source_detail
 
+    effective_start_date, effective_end_date = _resolve_effective_analysis_dates(
+        feature_df,
+        requested_start=analysis_start,
+        requested_end=analysis_end,
+    )
     return RankingSma5ScoreRingHardFilterResearchResult(
         db_path=str(db_path_obj),
         source_mode=source_mode,
         source_detail=source_detail,
-        analysis_start_date=start_date,
-        analysis_end_date=end_date,
+        analysis_start_date=effective_start_date,
+        analysis_end_date=effective_end_date,
         bootstrap_resamples=int(bootstrap_resamples),
         min_trades=int(min_trades),
         min_signal_dates=int(min_signal_dates),
@@ -1687,13 +1690,19 @@ def execute_variant(
     variant: ResearchVariant,
     *,
     fee_bps: float,
+    signal_frames: PositionSignalFrames | None = None,
 ) -> VariantExecution:
-    """Execute one state-machine variant using VectorBT's authoritative ledger."""
+    """Execute one state-machine variant using VectorBT's authoritative ledger.
+
+    Callers running multiple cost levels may supply the prebuilt state frames
+    for this variant.  The returned evidence deliberately retains only compact
+    tabular/series outputs after VectorBT accounting is extracted.
+    """
 
     fee_bps_value = _safe_finite_float_or_none(fee_bps)
     if fee_bps_value is None or fee_bps_value < 0.0:
         raise ValueError("fee_bps must be a finite non-negative number")
-    frames = build_position_signal_frames(
+    frames = signal_frames or build_position_signal_frames(
         feature_df,
         ring_id=variant.ring_id,
         entry_rule_id=variant.entry_rule_id,
@@ -1724,13 +1733,33 @@ def execute_variant(
     return VariantExecution(
         variant=variant,
         fee_bps=fee_bps_value,
-        portfolio=portfolio,
-        signal_frames=frames,
         trade_records_df=trade_records,
         daily_portfolio_returns=daily_returns,
         benchmark_daily_returns=benchmark_returns,
         state_events=frames.state_events.copy(),
     )
+
+
+def _resolve_effective_analysis_dates(
+    feature_df: pd.DataFrame,
+    *,
+    requested_start: date | None,
+    requested_end: date | None,
+) -> tuple[str, str]:
+    if "date" not in feature_df.columns:
+        raise RuntimeError("score-ring feature panel is missing date coverage")
+    dates = pd.to_datetime(feature_df["date"], errors="coerce").dropna()
+    if dates.empty:
+        raise RuntimeError("score-ring feature panel has no effective date coverage")
+    effective_start = dates.min().date()
+    effective_end = dates.max().date()
+    if requested_start is not None:
+        effective_start = max(effective_start, requested_start)
+    if requested_end is not None:
+        effective_end = min(effective_end, requested_end)
+    if effective_start > effective_end:
+        raise RuntimeError("score-ring feature panel has no coverage within requested dates")
+    return effective_start.isoformat(), effective_end.isoformat()
 
 
 def _build_benchmark_returns(
