@@ -327,6 +327,13 @@ def test_market_v5_panel_contains_frozen_scores_and_sma_features(
         "sma5_below_streak",
         "sma5_atr20_deviation",
     }.issubset(result.observation_sample_df.columns)
+    panel = result.feature_df
+    expected_below_streak = pd.Series(0, index=panel.index, dtype="int64")
+    expected_below_streak.loc[panel["close_below_sma5_flag"].eq(1)] = 1
+    expected_below_streak.loc[panel["below_sma5_streak_ge3_flag"].eq(True)] = 3
+    assert panel["sma5_below_streak"].fillna(-1).astype(int).equals(
+        expected_below_streak
+    )
 
 
 @pytest.mark.parametrize(
@@ -396,6 +403,51 @@ def test_execute_variant_uses_vectorbt_same_close_fills_and_fee_ledger() -> None
         -0.0005
     )
     assert execution.state_events["event_type"].tolist() == ["entry", "exit"]
+
+
+def test_execute_variant_does_not_dilute_held_return_with_new_entry_fee() -> None:
+    held_code = _single_code_frame(
+        [
+            ("2025-01-01", 0.5, 0.5, 1),
+            ("2025-01-02", 0.8, 0.8, 2),
+            ("2025-01-03", 0.8, 0.8, 2),
+            ("2025-01-06", 0.5, 0.5, 1),
+        ],
+        code="1001",
+        closes=[100.0, 100.0, 110.0, 110.0],
+    )
+    entering_code = _single_code_frame(
+        [
+            ("2025-01-01", 0.5, 0.5, 1),
+            ("2025-01-02", 0.5, 0.5, 1),
+            ("2025-01-03", 0.8, 0.8, 2),
+            ("2025-01-06", 0.8, 0.8, 2),
+        ],
+        code="1002",
+        closes=[100.0, 100.0, 100.0, 100.0],
+    )
+
+    execution = execute_variant(
+        pd.concat([held_code, entering_code], ignore_index=True),
+        ResearchVariant(
+            ring_id="core_high_high",
+            entry_rule_id="E2_count_ge_2",
+            exit_rule_id="X2_count_le_1",
+            max_holding_sessions=60,
+        ),
+        fee_bps=10.0,
+    )
+
+    return_on_shared_date = execution.daily_portfolio_returns.loc[
+        pd.Timestamp("2025-01-03")
+    ]
+    raw_returns = pd.DataFrame(execution.portfolio.returns())
+    held_return = raw_returns.loc[pd.Timestamp("2025-01-03"), "1001"]
+    entry_fee = raw_returns.loc[pd.Timestamp("2025-01-03"), "1002"]
+    assert held_return == pytest.approx(0.10)
+    assert entry_fee == pytest.approx(-0.0005, abs=3e-7)
+    assert return_on_shared_date == pytest.approx(held_return + (entry_fee / 2.0))
+    assert return_on_shared_date > 0.09
 
 
 def _build_hard_filter_market_v5_db(db_path: Path) -> Path:

@@ -529,8 +529,13 @@ def build_score_ring_feature_panel(
         CREATE OR REPLACE TEMP TABLE {panel_name} AS
         SELECT
             composed.*,
-            CAST(composed.close_below_sma5_count_3d AS INTEGER)
-                AS sma5_below_streak,
+            CAST(
+                CASE
+                    WHEN composed.below_sma5_streak_ge3_flag THEN 3
+                    WHEN composed.close_below_sma5_flag = 1 THEN 1
+                    ELSE 0
+                END AS INTEGER
+            ) AS sma5_below_streak,
             CAST(
                 CASE
                     WHEN composed.sma5 IS NOT NULL AND composed.atr20 > 0.0
@@ -772,8 +777,15 @@ def _build_active_portfolio_returns(
         index=frames.close.index,
         columns=frames.close.columns,
     )
-    active_on_return_date = frames.held_intervals | frames.entries
-    included_returns = raw_returns.where(active_on_return_date)
-    daily_returns = included_returns.mean(axis=1, skipna=True).fillna(0.0)
+    held_returns = raw_returns.where(frames.held_intervals)
+    held_count = frames.held_intervals.sum(axis=1).astype(float)
+    held_mean = held_returns.sum(axis=1, min_count=1).div(held_count.where(held_count > 0))
+
+    entry_fee_returns = raw_returns.where(frames.entries)
+    entry_count = frames.entries.sum(axis=1).astype(float)
+    entry_fee_adjustment = entry_fee_returns.sum(axis=1, min_count=1).fillna(0.0).div(
+        (held_count + entry_count).where((held_count + entry_count) > 0)
+    ).fillna(0.0)
+    daily_returns = held_mean.fillna(0.0) + entry_fee_adjustment
     daily_returns.name = "portfolio_return"
     return daily_returns.astype(float)
