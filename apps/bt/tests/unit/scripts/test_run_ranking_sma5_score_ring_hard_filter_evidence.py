@@ -150,14 +150,23 @@ def test_frozen_variant_execution_builds_signal_frames_once_per_variant(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     result = _domain_result(tmp_path / "market.duckdb")
+    prepare_panel = runner.prepare_position_signal_panel
+    prepare_calls = 0
+    build_calls = 0
+
+    def counting_prepare_panel(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+        nonlocal prepare_calls
+        prepare_calls += 1
+        return prepare_panel(*args, **kwargs)
+
     build_frames = runner.build_position_signal_frames
-    calls = 0
 
     def counting_build_frames(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
-        nonlocal calls
-        calls += 1
+        nonlocal build_calls
+        build_calls += 1
         return build_frames(*args, **kwargs)
 
+    monkeypatch.setattr(runner, "prepare_position_signal_panel", counting_prepare_panel)
     monkeypatch.setattr(runner, "build_position_signal_frames", counting_build_frames)
 
     executions = runner._execute_frozen_variants(
@@ -165,7 +174,8 @@ def test_frozen_variant_execution_builds_signal_frames_once_per_variant(
         cost_levels=(0.0, 10.0, 20.0),
     )
 
-    assert calls == len(runner._frozen_variants())
+    assert prepare_calls == 1
+    assert build_calls == len(runner._frozen_variants())
     assert len(executions) == len(runner._frozen_variants()) * 3
     assert all(not hasattr(execution, "portfolio") for execution in executions)
     assert all(not hasattr(execution, "signal_frames") for execution in executions)
@@ -202,6 +212,39 @@ def test_bundle_rejects_incompatible_or_incomplete_lineage(
             run_id="bad-lineage",
             resamples=10,
         )
+
+
+def test_bundle_rejects_source_detail_that_does_not_match_lineage(tmp_path: Path) -> None:
+    result = replace(
+        _domain_result(tmp_path / "market.duckdb"),
+        source_detail="different source",
+    )
+
+    with pytest.raises(ValueError, match="source fields do not match provenance"):
+        runner.write_ranking_sma5_score_ring_hard_filter_bundle(
+            result,
+            output_root=tmp_path / "bundles",
+            run_id="bad-source-detail",
+            resamples=10,
+        )
+
+
+def test_2024_smoke_bundle_does_not_claim_a_future_holdout(tmp_path: Path) -> None:
+    result = replace(
+        _domain_result(tmp_path / "market.duckdb"),
+        analysis_start_date="2024-01-02",
+        analysis_end_date="2024-01-04",
+    )
+
+    bundle = runner.write_ranking_sma5_score_ring_hard_filter_bundle(
+        result,
+        output_root=tmp_path / "bundles",
+        run_id="smoke-2024",
+        resamples=10,
+    )
+    manifest = json.loads(bundle.manifest_path.read_text(encoding="utf-8"))
+
+    assert manifest["result_metadata"]["holdout_period"] is None
 
 
 def _domain_result(db_path: Path) -> RankingSma5ScoreRingHardFilterResearchResult:

@@ -37,6 +37,7 @@ from src.domains.analytics.ranking_sma5_score_ring_hard_filter_evidence import (
     build_evidence_tables,
     build_position_signal_frames,
     execute_variant,
+    prepare_position_signal_panel,
     run_ranking_sma5_score_ring_hard_filter_research,
 )
 from src.domains.analytics.research_bundle import (  # noqa: E402
@@ -209,7 +210,7 @@ def write_ranking_sma5_score_ring_hard_filter_bundle(
             "robustness_holding_cap": ROBUSTNESS_HOLDING_CAP,
             "discovery_period": ["2018-01-01", "2021-12-31"],
             "validation_period": ["2022-01-01", "2024-12-31"],
-            "holdout_period": ["2025-01-01", result.analysis_end_date],
+            "holdout_period": _holdout_period(result.analysis_end_date),
         },
         result_tables=result_tables,
         summary_markdown=_build_summary_markdown(result),
@@ -251,10 +252,11 @@ def _execute_frozen_variants(
     cost_levels: tuple[float, ...],
 ) -> list[VariantExecution]:
     variants = _frozen_variants()
+    prepared_panel = prepare_position_signal_panel(feature_df)
     executions: list[VariantExecution] = []
     for variant in variants:
         frames = build_position_signal_frames(
-            feature_df,
+            prepared_panel,
             ring_id=variant.ring_id,
             entry_rule_id=variant.entry_rule_id,
             exit_rule_id=variant.exit_rule_id,
@@ -344,8 +346,18 @@ def _validate_bundle_lineage(
         raise ValueError("bundle requires a non-empty market_source")
     if lineage.source_mode not in {"live", "snapshot"}:
         raise ValueError("bundle requires source_mode live or snapshot")
-    if result.source_mode != lineage.source_mode or not result.source_detail.strip():
+    if (
+        result.source_mode != lineage.source_mode
+        or result.source_detail != lineage.market_source
+        or not result.source_detail.strip()
+    ):
         raise ValueError("bundle result source fields do not match provenance")
+
+
+def _holdout_period(analysis_end_date: str | None) -> list[str] | None:
+    if analysis_end_date is None or analysis_end_date < "2025-01-01":
+        return None
+    return ["2025-01-01", analysis_end_date]
 
 
 def _concat_evidence_frames(frames: tuple[pd.DataFrame, ...]) -> pd.DataFrame:

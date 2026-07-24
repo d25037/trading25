@@ -6,6 +6,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 import pytest
+from pandas.testing import assert_frame_equal
 
 from src.domains.analytics.ranking_sma5_score_ring_hard_filter_evidence import (
     ResearchVariant,
@@ -18,6 +19,7 @@ from src.domains.analytics.ranking_sma5_score_ring_hard_filter_evidence import (
     exit_rule_matches,
     holm_adjust,
     moving_block_bootstrap_delta_ci,
+    prepare_position_signal_panel,
     run_ranking_sma5_score_ring_hard_filter_research,
 )
 from tests.unit.domains.analytics.test_ranking_sma5_position_state_evidence import (
@@ -120,7 +122,6 @@ def test_position_state_enters_on_false_to_true_and_does_not_same_day_reenter() 
         exit_rule_id="X2_count_le_1",
         max_holding_sessions=60,
     )
-
     events = frames.state_events
     assert events.loc[events["event_type"].eq("entry"), "date"].tolist() == [
         pd.Timestamp("2025-01-02"),
@@ -133,6 +134,52 @@ def test_position_state_enters_on_false_to_true_and_does_not_same_day_reenter() 
         .any()
     )
 
+
+def test_prepared_signal_panel_preserves_public_position_state_semantics() -> None:
+    feature_df = _synthetic_feature_frame()
+    direct = build_position_signal_frames(
+        feature_df,
+        ring_id="core_high_high",
+        entry_rule_id="E2_count_ge_2",
+        exit_rule_id="X2_count_le_1",
+        max_holding_sessions=60,
+    )
+    prepared = prepare_position_signal_panel(feature_df)
+    reused = build_position_signal_frames(
+        prepared,
+        ring_id="core_high_high",
+        entry_rule_id="E2_count_ge_2",
+        exit_rule_id="X2_count_le_1",
+        max_holding_sessions=60,
+    )
+
+    assert_frame_equal(reused.close, direct.close)
+    assert_frame_equal(reused.entries, direct.entries)
+    assert_frame_equal(reused.exits, direct.exits)
+    assert_frame_equal(reused.held_intervals, direct.held_intervals)
+    assert_frame_equal(reused.state_events, direct.state_events)
+
+
+def test_prepared_signal_panel_builds_variant_frames_without_dataframe_row_iteration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prepared = prepare_position_signal_panel(_synthetic_feature_frame())
+
+    def fail_dataframe_row_iteration(*args: object, **kwargs: object) -> object:
+        raise AssertionError("variant generation must not iterate DataFrame rows")
+
+    monkeypatch.setattr(pd.DataFrame, "iterrows", fail_dataframe_row_iteration)
+    monkeypatch.setattr(pd.DataFrame, "to_dict", fail_dataframe_row_iteration)
+
+    frames = build_position_signal_frames(
+        prepared,
+        ring_id="near_high_high_1",
+        entry_rule_id="E4_count_ge_2_and_avoid_chase",
+        exit_rule_id="X3_below_streak_ge_3",
+        max_holding_sessions=20,
+    )
+
+    assert not frames.close.empty
 
 def test_entry_day_is_excluded_and_exit_day_return_is_included_once() -> None:
     feature_df = _single_code_frame(

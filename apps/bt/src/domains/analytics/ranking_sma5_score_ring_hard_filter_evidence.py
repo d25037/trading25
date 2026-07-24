@@ -8,10 +8,11 @@ from datetime import date
 import math
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, TypedDict, cast
+from typing import Any, TypedDict
 
 import numpy as np
 import pandas as pd
+from numba import njit
 
 from src.domains.analytics.daily_ranking_consumer_support import (
     compose_daily_ranking_signal_features,
@@ -107,6 +108,20 @@ class PositionSignalFrames:
     exits: pd.DataFrame
     held_intervals: pd.DataFrame
     state_events: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class PreparedPositionSignalPanel:
+    """One immutable, matrix-backed normalization of the research feature panel."""
+
+    dates: pd.DatetimeIndex
+    codes: pd.Index
+    close: pd.DataFrame
+    row_present: np.ndarray
+    valid_close: np.ndarray
+    ring_membership_masks: Mapping[str, np.ndarray]
+    entry_rule_masks: Mapping[str, np.ndarray]
+    exit_rule_masks: Mapping[str, np.ndarray]
 
 
 @dataclass(frozen=True)
@@ -1267,7 +1282,7 @@ def exit_rule_matches(row: Mapping[str, object], rule_id: str) -> bool:
 
 
 def build_position_signal_frames(
-    feature_df: pd.DataFrame,
+    feature_df: pd.DataFrame | PreparedPositionSignalPanel,
     *,
     ring_id: str,
     entry_rule_id: str,
@@ -1279,49 +1294,38 @@ def build_position_signal_frames(
     Membership is threshold based, so a wider ring contains every qualifying row,
     including those classified into a more selective label.
     """
-    _validate_arguments(
-        feature_df,
+    _validate_variant_arguments(
         ring_id=ring_id,
         entry_rule_id=entry_rule_id,
         exit_rule_id=exit_rule_id,
         max_holding_sessions=max_holding_sessions,
     )
-    prepared = feature_df.copy()
-    prepared["date"] = pd.to_datetime(prepared["date"], errors="raise")
-    prepared["code"] = prepared["code"].astype(str)
-    if prepared.duplicated(["date", "code"]).any():
-        raise ValueError("feature_df must contain at most one row per date and code")
-    prepared = prepared.sort_values(["code", "date"], kind="stable")
-
-    dates = pd.DatetimeIndex(sorted(prepared["date"].unique()), name="date")
-    codes = pd.Index(sorted(prepared["code"].unique()), name="code")
-    close = (
-        prepared.assign(close=pd.to_numeric(prepared["close"], errors="coerce"))
-        .pivot(index="date", columns="code", values="close")
-        .reindex(index=dates, columns=codes)
+    prepared = (
+        feature_df
+        if isinstance(feature_df, PreparedPositionSignalPanel)
+        else prepare_position_signal_panel(feature_df)
     )
-    entries = pd.DataFrame(False, index=dates, columns=codes, dtype=bool)
-    exits = pd.DataFrame(False, index=dates, columns=codes, dtype=bool)
-    held_intervals = pd.DataFrame(False, index=dates, columns=codes, dtype=bool)
-    events: list[dict[str, object]] = []
-
-    for code, code_frame in prepared.groupby("code", sort=False):
-        _build_code_position_state(
-            code_frame,
-            code=str(code),
-            ring_id=ring_id,
-            entry_rule_id=entry_rule_id,
-            exit_rule_id=exit_rule_id,
-            max_holding_sessions=max_holding_sessions,
-            entries=entries,
-            exits=exits,
-            held_intervals=held_intervals,
-            events=events,
-        )
-
-    state_events = pd.DataFrame(
-        events,
-        columns=["date", "code", "event_type", "exit_reason"],
+    entries_array, exits_array, held_array, exit_reason_codes = _build_state_arrays(
+        prepared.row_present,
+        prepared.valid_close,
+        prepared.ring_membership_masks[ring_id],
+        prepared.entry_rule_masks[entry_rule_id],
+        prepared.exit_rule_masks[exit_rule_id],
+        max_holding_sessions,
+    )
+    entries = pd.DataFrame(entries_array, index=prepared.dates, columns=prepared.codes)
+    exits = pd.DataFrame(exits_array, index=prepared.dates, columns=prepared.codes)
+    held_intervals = pd.DataFrame(
+        held_array,
+        index=prepared.dates,
+        columns=prepared.codes,
+    )
+    state_events = _build_state_events(
+        prepared.dates,
+        prepared.codes,
+        entries_array,
+        exits_array,
+        exit_reason_codes,
     )
     if not state_events.empty:
         event_order = {"exit": 0, "entry": 1}
@@ -1332,7 +1336,7 @@ def build_position_signal_frames(
             .reset_index(drop=True)
         )
     return PositionSignalFrames(
-        close=close,
+        close=prepared.close,
         entries=entries,
         exits=exits,
         held_intervals=held_intervals,
@@ -1340,132 +1344,203 @@ def build_position_signal_frames(
     )
 
 
-def _build_code_position_state(
-    code_frame: pd.DataFrame,
-    *,
-    code: str,
-    ring_id: str,
-    entry_rule_id: str,
-    exit_rule_id: str,
-    max_holding_sessions: int,
-    entries: pd.DataFrame,
-    exits: pd.DataFrame,
-    held_intervals: pd.DataFrame,
-    events: list[dict[str, object]],
-) -> None:
-    rows = cast(list[dict[str, Any]], code_frame.to_dict(orient="records"))
-    finite_close_dates = [
-        pd.Timestamp(row["date"])
-        for row in rows
-        if _numeric_value(row, "close") is not None
-    ]
-    if not finite_close_dates:
-        return
-    last_finite_close_date = finite_close_dates[-1]
-    active = False
-    held_sessions = 0
-    previous_entry_eligibility = False
+def prepare_position_signal_panel(feature_df: pd.DataFrame) -> PreparedPositionSignalPanel:
+    """Normalize the full panel once for all frozen score-ring variants."""
+    _validate_feature_frame(feature_df)
+    normalized = feature_df.copy()
+    normalized["date"] = pd.to_datetime(normalized["date"], errors="raise")
+    normalized["code"] = normalized["code"].astype(str)
+    if normalized.duplicated(["date", "code"]).any():
+        raise ValueError("feature_df must contain at most one row per date and code")
+    normalized = normalized.sort_values(["date", "code"], kind="stable")
+    dates = pd.DatetimeIndex(normalized["date"].unique(), name="date")
+    codes = pd.Index(normalized["code"].unique(), name="code")
+    shape = (len(dates), len(codes))
+    date_positions = dates.get_indexer(pd.Index(normalized["date"]))
+    code_positions = codes.get_indexer(pd.Index(normalized["code"]))
+    row_present = np.zeros(shape, dtype=bool, order="F")
+    row_present[date_positions, code_positions] = True
 
-    for row in rows:
-        date = pd.Timestamp(row["date"])
-        has_close = _numeric_value(row, "close") is not None
-        ring_member = _row_is_in_ring(row, ring_id)
-        entry_eligible = (
-            has_close and ring_member and entry_rule_matches(row, entry_rule_id)
+    def numeric_matrix(column: str) -> np.ndarray:
+        source = (
+            normalized[column]
+            if column in normalized.columns
+            else pd.Series(np.nan, index=normalized.index)
         )
-
-        if active:
-            exit_reason = _exit_reason(
-                row,
-                ring_member=ring_member,
-                exit_rule_id=exit_rule_id,
-                held_sessions=held_sessions,
-                max_holding_sessions=max_holding_sessions,
-            )
-            if has_close and exit_reason is not None:
-                _emit_exit(
-                    date,
-                    code,
-                    exit_reason,
-                    exits=exits,
-                    held_intervals=held_intervals,
-                    events=events,
-                )
-                active = False
-                held_sessions = 0
-            elif has_close:
-                held_intervals.loc[date, code] = True
-                held_sessions += 1
-        elif entry_eligible and not previous_entry_eligibility:
-            if date != last_finite_close_date:
-                entries.loc[date, code] = True
-                events.append(
-                    {
-                        "date": date,
-                        "code": code,
-                        "event_type": "entry",
-                        "exit_reason": None,
-                    }
-                )
-                active = True
-                held_sessions = 0
-
-        previous_entry_eligibility = entry_eligible
-
-    if active:
-        _emit_exit(
-            last_finite_close_date,
-            code,
-            "terminal_exit",
-            exits=exits,
-            held_intervals=held_intervals,
-            events=events,
+        values = pd.to_numeric(source, errors="coerce").to_numpy(
+            dtype=float,
+            na_value=np.nan,
         )
+        matrix = np.full(shape, np.nan, dtype=float, order="F")
+        matrix[date_positions, code_positions] = values
+        return matrix
 
-
-def _exit_reason(
-    row: Mapping[str, object],
-    *,
-    ring_member: bool,
-    exit_rule_id: str,
-    held_sessions: int,
-    max_holding_sessions: int,
-) -> str | None:
-    if not ring_member:
-        return "ring_exit"
-    if exit_rule_matches(row, exit_rule_id):
-        return "sma5_exit"
-    if held_sessions >= max_holding_sessions - 1:
-        return "time_exit"
-    return None
-
-
-def _emit_exit(
-    date: pd.Timestamp,
-    code: str,
-    exit_reason: str,
-    *,
-    exits: pd.DataFrame,
-    held_intervals: pd.DataFrame,
-    events: list[dict[str, object]],
-) -> None:
-    exits.loc[date, code] = True
-    held_intervals.loc[date, code] = True
-    events.append(
-        {
-            "date": date,
-            "code": code,
-            "event_type": "exit",
-            "exit_reason": exit_reason,
-        }
+    close_values = numeric_matrix("close")
+    value_scores = numeric_matrix(_VALUE_SCORE_COLUMN)
+    leadership_scores = numeric_matrix(_LEADERSHIP_SCORE_COLUMN)
+    sma5 = numeric_matrix("sma5")
+    above_count = numeric_matrix("sma5_above_count_5d")
+    below_streak = numeric_matrix("sma5_below_streak")
+    atr_deviation = numeric_matrix("sma5_atr20_deviation")
+    valid_close = np.isfinite(close_values)
+    finite_value_scores = np.isfinite(value_scores)
+    finite_leadership_scores = np.isfinite(leadership_scores)
+    ring_masks = {
+        ring_id: (
+            finite_value_scores
+            & finite_leadership_scores
+            & (value_scores >= threshold)
+            & (leadership_scores >= threshold)
+        )
+        for ring_id, threshold in SCORE_RING_THRESHOLDS.items()
+    }
+    finite_sma5 = np.isfinite(sma5)
+    finite_above_count = np.isfinite(above_count)
+    finite_below_streak = np.isfinite(below_streak)
+    finite_atr_deviation = np.isfinite(atr_deviation)
+    entry_masks = {
+        "E0_no_sma5_filter": row_present.copy(),
+        "E1_close_above_sma5": valid_close & finite_sma5 & (close_values >= sma5),
+        "E2_count_ge_2": finite_above_count & (above_count >= 2.0),
+        "E3_avoid_atr20_chase": finite_atr_deviation & (atr_deviation < 1.0),
+        "E4_count_ge_2_and_avoid_chase": (
+            finite_above_count
+            & (above_count >= 2.0)
+            & finite_atr_deviation
+            & (atr_deviation < 1.0)
+        ),
+    }
+    exit_masks = {
+        "X0_no_sma5_exit": np.zeros(shape, dtype=bool, order="F"),
+        "X1_close_below_sma5": valid_close & finite_sma5 & (close_values < sma5),
+        "X2_count_le_1": finite_above_count & (above_count <= 1.0),
+        "X3_below_streak_ge_3": finite_below_streak & (below_streak >= 3.0),
+        "X4_atr20_below_le_neg1": finite_atr_deviation & (atr_deviation <= -1.0),
+    }
+    immutable_arrays = [row_present, valid_close, *ring_masks.values(), *entry_masks.values(), *exit_masks.values()]
+    for array in immutable_arrays:
+        array.setflags(write=False)
+    close_values.setflags(write=False)
+    return PreparedPositionSignalPanel(
+        dates=dates,
+        codes=codes,
+        close=pd.DataFrame(close_values, index=dates, columns=codes, copy=False),
+        row_present=row_present,
+        valid_close=valid_close,
+        ring_membership_masks=MappingProxyType(ring_masks),
+        entry_rule_masks=MappingProxyType(entry_masks),
+        exit_rule_masks=MappingProxyType(exit_masks),
     )
 
 
-def _row_is_in_ring(row: Mapping[str, object], ring_id: str) -> bool:
-    threshold = SCORE_RING_THRESHOLDS[ring_id]
-    value = _numeric_value(row, _VALUE_SCORE_COLUMN)
-    leadership = _numeric_value(row, _LEADERSHIP_SCORE_COLUMN)
-    return value is not None and leadership is not None and value >= threshold and leadership >= threshold
+@njit
+def _build_state_arrays(
+    row_present: np.ndarray,
+    valid_close: np.ndarray,
+    ring_member: np.ndarray,
+    entry_rule: np.ndarray,
+    exit_rule: np.ndarray,
+    max_holding_sessions: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    row_count, code_count = row_present.shape
+    entries = np.zeros((row_count, code_count), dtype=np.bool_)
+    exits = np.zeros((row_count, code_count), dtype=np.bool_)
+    held_intervals = np.zeros((row_count, code_count), dtype=np.bool_)
+    exit_reasons = np.zeros((row_count, code_count), dtype=np.int8)
+    for code_index in range(code_count):
+        last_finite_index = -1
+        for row_index in range(row_count):
+            if valid_close[row_index, code_index]:
+                last_finite_index = row_index
+        if last_finite_index < 0:
+            continue
+        active = False
+        held_sessions = 0
+        previous_entry_eligibility = False
+        for row_index in range(row_count):
+            if not row_present[row_index, code_index]:
+                continue
+            has_close = valid_close[row_index, code_index]
+            is_ring_member = ring_member[row_index, code_index]
+            entry_eligible = has_close and is_ring_member and entry_rule[row_index, code_index]
+            if active:
+                exit_reason = 0
+                if not is_ring_member:
+                    exit_reason = 1
+                elif exit_rule[row_index, code_index]:
+                    exit_reason = 2
+                elif held_sessions >= max_holding_sessions - 1:
+                    exit_reason = 3
+                if has_close and exit_reason != 0:
+                    exits[row_index, code_index] = True
+                    held_intervals[row_index, code_index] = True
+                    exit_reasons[row_index, code_index] = exit_reason
+                    active = False
+                    held_sessions = 0
+                elif has_close:
+                    held_intervals[row_index, code_index] = True
+                    held_sessions += 1
+            elif entry_eligible and not previous_entry_eligibility:
+                if row_index != last_finite_index:
+                    entries[row_index, code_index] = True
+                    active = True
+                    held_sessions = 0
+            previous_entry_eligibility = entry_eligible
+        if active:
+            exits[last_finite_index, code_index] = True
+            held_intervals[last_finite_index, code_index] = True
+            exit_reasons[last_finite_index, code_index] = 4
+    return entries, exits, held_intervals, exit_reasons
+
+
+def _build_state_events(
+    dates: pd.DatetimeIndex,
+    codes: pd.Index,
+    entries: np.ndarray,
+    exits: np.ndarray,
+    exit_reason_codes: np.ndarray,
+) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    reason_names = (None, "ring_exit", "sma5_exit", "time_exit", "terminal_exit")
+    exit_rows, exit_codes = np.nonzero(exits)
+    for row_index, code_index in zip(exit_rows, exit_codes, strict=True):
+        row_position = int(row_index)
+        code_position = int(code_index)
+        rows.append(
+            {
+                "date": dates[row_position],
+                "code": str(codes[code_position]),
+                "event_type": "exit",
+                "exit_reason": reason_names[
+                    int(exit_reason_codes[row_position, code_position])
+                ],
+            }
+        )
+    entry_rows, entry_codes = np.nonzero(entries)
+    for row_index, code_index in zip(entry_rows, entry_codes, strict=True):
+        row_position = int(row_index)
+        code_position = int(code_index)
+        rows.append(
+            {
+                "date": dates[row_position],
+                "code": str(codes[code_position]),
+                "event_type": "entry",
+                "exit_reason": None,
+            }
+        )
+    state_events = pd.DataFrame(
+        rows,
+        columns=["date", "code", "event_type", "exit_reason"],
+    )
+    if state_events.empty:
+        return state_events
+    event_order = {"exit": 0, "entry": 1}
+    return (
+        state_events.assign(_event_order=state_events["event_type"].map(event_order))
+        .sort_values(["date", "code", "_event_order"], kind="stable")
+        .drop(columns="_event_order")
+        .reset_index(drop=True)
+    )
 
 
 def _numeric_value(row: Mapping[str, object], column: str) -> float | None:
@@ -1479,8 +1554,7 @@ def _safe_finite_float_or_none(value: object) -> float | None:
         return None
 
 
-def _validate_arguments(
-    feature_df: pd.DataFrame,
+def _validate_variant_arguments(
     *,
     ring_id: str,
     entry_rule_id: str,
@@ -1499,6 +1573,11 @@ def _validate_arguments(
         or max_holding_sessions <= 0
     ):
         raise ValueError("max_holding_sessions must be a positive integer")
+
+
+def _validate_feature_frame(
+    feature_df: pd.DataFrame,
+) -> None:
     missing_columns = sorted(_REQUIRED_FEATURE_COLUMNS.difference(feature_df.columns))
     if missing_columns:
         raise ValueError(f"feature_df missing required columns: {', '.join(missing_columns)}")
