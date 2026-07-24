@@ -161,9 +161,11 @@ def resolve_current_basis_provider_windows(
             state_basis_date = date.fromisoformat(state_basis)
         except ValueError:
             state_basis_date = None
+        # Observed quote coverage may lag for suspended or no-trade symbols.
+        # provider_as_of is the authoritative request/stage frontier.
         if (
             coverage_start > effective_market_date
-            or coverage_end < effective_market_date
+            or provider_as_of < effective_market_date
             or coverage_start > coverage_end
             or provider_as_of < coverage_end
             or not str(row["provider_source_fingerprint"] or "").strip()

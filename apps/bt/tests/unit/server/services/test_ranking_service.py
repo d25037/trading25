@@ -1088,6 +1088,65 @@ def test_target_date_adjusted_valuation_uses_current_provider_relation(
     assert set(frame["provider_as_of"]) == {"2024-12-31"}
 
 
+def test_valuation_ranking_skips_listed_stock_without_target_date_price_bar(
+    ranking_db: str,
+) -> None:
+    conn = duckdb.connect(ranking_db)
+    try:
+        conn.execute(
+            "DELETE FROM stock_data WHERE code = '67580' AND date = '2024-01-19'"
+        )
+    finally:
+        conn.close()
+
+    _rebuild_test_adjusted_metrics(ranking_db)
+    setup = None
+    conn = duckdb.connect(ranking_db)
+    try:
+        setup = conn.execute(
+            """
+            SELECT provider.coverage_end,
+                   provider.provider_as_of,
+                   EXISTS (
+                       SELECT 1
+                       FROM stock_master_daily AS master
+                       WHERE master.code = '67580'
+                         AND master.date = '2024-01-19'
+                   ) AS listed_on_target,
+                   EXISTS (
+                       SELECT 1
+                       FROM stock_data AS price
+                       WHERE price.code = '67580'
+                         AND price.date = '2024-01-19'
+                   ) AS has_target_bar
+            FROM stock_provider_windows AS provider
+            WHERE provider.code = '6758'
+            """
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert setup == ("2024-01-18", "2024-12-31", True, False)
+
+    reader = MarketDbReader(ranking_db)
+    try:
+        result = RankingService(reader).get_rankings(
+            date="2024-01-19",
+            markets="prime",
+            limit=0,
+            scope="tradingValue",
+            include_valuation=True,
+            include_sector_strength=True,
+        )
+    finally:
+        reader.close()
+
+    returned_codes = {item.code for item in result.rankings.tradingValue}
+    assert result.date == "2024-01-19"
+    assert "72030" in returned_codes
+    assert "67580" not in returned_codes
+
+
 def test_ranking_valuation_preserves_canonical_nulls_and_close_verbatim(
     ranking_db: str,
 ) -> None:
@@ -1331,20 +1390,39 @@ def test_provider_window_resolution_fails_closed(
         reader.close()
 
 
-def test_provider_window_resolution_fails_closed_for_under_coverage(
+def test_provider_window_resolution_fails_closed_for_stale_provider_frontier(
     ranking_db: str,
 ) -> None:
+    conn = duckdb.connect(ranking_db)
+    try:
+        conn.execute(
+            "DELETE FROM stock_data WHERE code = '67580' AND date = '2024-01-19'"
+        )
+    finally:
+        conn.close()
+
     _rebuild_test_adjusted_metrics(ranking_db)
     conn = duckdb.connect(ranking_db)
-    conn.execute(
-        "UPDATE stock_provider_windows SET coverage_end = '2024-01-18' WHERE code = '7203'"
-    )
-    conn.close()
+    try:
+        conn.execute(
+            """
+            UPDATE stock_provider_windows
+            SET provider_as_of = '2024-01-18'
+            WHERE code = '6758'
+            """
+        )
+    finally:
+        conn.close()
 
     reader = MarketDbReader(ranking_db)
     try:
-        with pytest.raises(ValueError, match="market_db_sync"):
-            resolve_provider_windows(reader, ["7203"], "2024-01-19")
+        with pytest.raises(
+            ValueError,
+            match=(
+                "provider window for 6758 does not cover 2024-01-19"
+            ),
+        ):
+            resolve_provider_windows(reader, ["6758"], "2024-01-19")
     finally:
         reader.close()
 
