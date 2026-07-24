@@ -281,6 +281,18 @@ relatedExperiments = [
   "market-behavior/ranking-long-scaffold-value-composite-evidence",
 ]
 
+[experiments."market-behavior/ranking-sma5-stateful-rotation-low-value-appendix"]
+family = "Ranking"
+status = "observed"
+decision = "Long Hybrid `>= 0.7`を固定し、Value `<= 0.2 / 0.3 / 0.4`のLow-Value 3群で同じone-hop stateful rotationをappendix評価した。Core・10bps中央値はX2 `-14.43 bps`、X3 `-25.42 bps`、X4 `+37.20 bps`。X4はpositive event `53.23%`、Core・20bps `+27.20 bps`だが、Near1 `-1.70 bps`、positive year `4/9`で固定条件を満たさず、全triggerを `insufficient_evidence` とした。High-Value群のX2効果はLow-Value群へ一般化せず、Low-Value X4は観察材料に留める。"
+promotedSurface = "Research"
+riskFlags = ["prime-only-judgment", "position-state-outcome", "same-close-optimistic-execution", "one-hop-stateful-outcome", "exploratory-appendix", "overlapping-episodes", "equal-weight-basket", "capacity-unmodeled", "partial-year-2026", "rotation-rule-rejected"]
+relatedExperiments = [
+  "market-behavior/ranking-sma5-score-ring-stateful-rotation-evidence",
+  "market-behavior/ranking-sma5-score-ring-rotation-evidence",
+  "market-behavior/ranking-long-scaffold-value-composite-evidence",
+]
+
 [experiments."market-behavior/ranking-moving-average-replacement-evidence"]
 family = "Ranking"
 status = "observed"
