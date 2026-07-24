@@ -256,6 +256,18 @@ relatedExperiments = [
   "market-behavior/ranking-long-scaffold-value-composite-evidence",
 ]
 
+[experiments."market-behavior/ranking-sma5-score-ring-rotation-evidence"]
+family = "Ranking"
+status = "observed"
+decision = "Market v5 `provider_adjusted_v1` のValue × Long Hybrid frozen score ringで、保有中にX2 / X3 / X4へ初めて到達した銘柄を、同日・同一ringの全trigger非該当basketへ持ち替える翌Close効果を探索した。X2はCore・10bpsでmedian `+3.43 bps`、outperform `51.50%`、positive year `6/9`だったが、Near1 / Near2と20bpsで負へ反転。X3 / X4もCore・10bpsで負のため全triggerを `insufficient_evidence` とし、機械的rotation ruleには採用しない。"
+promotedSurface = "Research"
+riskFlags = ["prime-only-judgment", "position-state-outcome", "same-close-optimistic-execution", "one-day-outcome", "exploratory-after-holdout", "equal-weight-basket", "capacity-unmodeled", "partial-year-2026", "rotation-rule-rejected"]
+relatedExperiments = [
+  "market-behavior/ranking-sma5-score-ring-hard-filter-evidence",
+  "market-behavior/ranking-sma5-position-state-evidence",
+  "market-behavior/ranking-long-scaffold-value-composite-evidence",
+]
+
 [experiments."market-behavior/ranking-moving-average-replacement-evidence"]
 family = "Ranking"
 status = "observed"
