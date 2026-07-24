@@ -80,6 +80,8 @@
   - Value × Long Hybrid の frozen score ring 内でSMA5 entry/exit hard filterをMarket v5のOOS・holdout・cost・bootstrap二重ゲートで検証する実験。全family不採用。
 - [market-behavior/ranking-sma5-score-ring-rotation-evidence/](./market-behavior/ranking-sma5-score-ring-rotation-evidence/README.md)
   - X2 / X3 / X4到達時に同日・同一Value × Long Hybrid score ringの健全銘柄へ持ち替える翌日効果を検証する探索的実験。全trigger不採用。
+- [market-behavior/ranking-sma5-score-ring-stateful-rotation-evidence/](./market-behavior/ranking-sma5-score-ring-stateful-rotation-evidence/README.md)
+  - X2 / X3 / X4到達時に同日healthy basketへ一度だけ持ち替え、次triggerまでの累積returnを同期間source継続保有と比較する探索的実験。X2を次段階候補とする。
 - [market-behavior/ranking-moving-average-replacement-evidence/](./market-behavior/ranking-moving-average-replacement-evidence/README.md)
   - Daily Ranking の `20D/60D` 定点比較と `Overheat` を、`SMA20/SMA60`・`EMA20/EMA60` 乖離・符号判定で代替した場合の forward response 変化を検証する実験。
 - [market-behavior/ranking-trend-acceleration-conditional-lift/](./market-behavior/ranking-trend-acceleration-conditional-lift/README.md)

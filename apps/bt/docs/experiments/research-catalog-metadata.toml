@@ -268,6 +268,19 @@ relatedExperiments = [
   "market-behavior/ranking-long-scaffold-value-composite-evidence",
 ]
 
+[experiments."market-behavior/ranking-sma5-score-ring-stateful-rotation-evidence"]
+family = "Ranking"
+status = "observed"
+decision = "Market v5 `provider_adjusted_v1` のValue × Long Hybrid frozen score ringで、X2 / X3 / X4到達日に同日healthy basketへ一度だけ持ち替え、各targetの次triggerまでの累積returnを同期間source継続保有とpaired比較した。X2はCore・10bpsでmedian `+49.71 bps`、positive event `59.50%`、positive year `5/9`、Near1 / Near2とCore・20bpsも正で `stateful_rotation_candidate`。X3はCoreで正だがNear1・10bpsが `-0.31 bps`、X4は全ringで負のため `insufficient_evidence`。X2はproduction採用せずrecursive portfolio研究の候補とする。"
+promotedSurface = "Research"
+riskFlags = ["prime-only-judgment", "position-state-outcome", "same-close-optimistic-execution", "one-hop-stateful-outcome", "exploratory-after-holdout", "overlapping-episodes", "equal-weight-basket", "capacity-unmodeled", "partial-year-2026"]
+relatedExperiments = [
+  "market-behavior/ranking-sma5-score-ring-rotation-evidence",
+  "market-behavior/ranking-sma5-score-ring-hard-filter-evidence",
+  "market-behavior/ranking-sma5-position-state-evidence",
+  "market-behavior/ranking-long-scaffold-value-composite-evidence",
+]
+
 [experiments."market-behavior/ranking-moving-average-replacement-evidence"]
 family = "Ranking"
 status = "observed"
