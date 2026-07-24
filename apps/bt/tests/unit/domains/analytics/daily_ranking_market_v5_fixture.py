@@ -132,6 +132,9 @@ def upgrade_daily_ranking_fixture_to_market_v5(conn: Any) -> None:
             code VARCHAR, statement_id VARCHAR, disclosed_date DATE,
             disclosed_at TEXT, period_end DATE, period_type VARCHAR,
             fundamentals_adjustment_basis_date DATE,
+            adjusted_eps DOUBLE, adjusted_bps DOUBLE,
+            adjusted_forecast_eps DOUBLE,
+            adjusted_shares_outstanding DOUBLE,
             source_fingerprint VARCHAR
         )
         """
