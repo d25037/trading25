@@ -9,11 +9,15 @@ import pytest
 
 from src.domains.analytics.ranking_sma5_score_ring_hard_filter_evidence import (
     ResearchVariant,
+    build_decision_gate_df,
+    build_evidence_tables,
     build_position_signal_frames,
     classify_score_ring,
     entry_rule_matches,
     execute_variant,
     exit_rule_matches,
+    holm_adjust,
+    moving_block_bootstrap_delta_ci,
     run_ranking_sma5_score_ring_hard_filter_research,
 )
 from tests.unit.domains.analytics.test_ranking_sma5_position_state_evidence import (
@@ -318,7 +322,10 @@ def test_market_v5_panel_contains_frozen_scores_and_sma_features(
         min_signal_dates=1,
     )
 
+    assert result.pit_lineage.market_schema_version == 5
     assert result.pit_lineage.stock_price_adjustment_mode == "provider_adjusted_v1"
+    assert result.pit_lineage.market_source
+    assert result.pit_lineage.source_mode == result.source_mode
     assert {
         "value_composite_equal_score",
         "long_hybrid_leadership_score",
@@ -390,11 +397,12 @@ def test_execute_variant_uses_vectorbt_same_close_fills_and_fee_ledger() -> None
     assert len(trades) == 1
     assert pd.Timestamp(str(trades.loc[0, "Entry Timestamp"])) == pd.Timestamp("2025-01-02")
     assert pd.Timestamp(str(trades.loc[0, "Exit Timestamp"])) == pd.Timestamp("2025-01-06")
+    # VectorBT normalizes net PnL by gross entry value; fees do not compound.
     assert float(str(trades.loc[0, "Return"])) == pytest.approx(
-        ((1.0 - 0.0005) * 1.10 * (1.0 - 0.0005)) - 1.0
+        0.10 - 0.0005 - (1.10 * 0.0005)
     )
     assert execution.daily_portfolio_returns.loc[pd.Timestamp("2025-01-02")] == pytest.approx(
-        -0.0005
+        -0.0005 / 1.0005
     )
     assert execution.daily_portfolio_returns.loc[pd.Timestamp("2025-01-03")] == pytest.approx(
         0.10
@@ -450,8 +458,301 @@ def test_execute_variant_does_not_dilute_held_return_with_new_entry_fee() -> Non
     assert return_on_shared_date > 0.09
 
 
+def test_moving_block_bootstrap_is_paired_and_reproducible() -> None:
+    baseline = pd.Series([0.0, -0.01, 0.0, -0.01] * 20)
+    candidate = baseline + 0.002
+
+    first = moving_block_bootstrap_delta_ci(
+        candidate,
+        baseline,
+        block_length=4,
+        resamples=500,
+        seed=20260724,
+    )
+    second = moving_block_bootstrap_delta_ci(
+        candidate,
+        baseline,
+        block_length=4,
+        resamples=500,
+        seed=20260724,
+    )
+
+    assert first == second
+    assert first.lower > 0.0
+
+
+def test_moving_block_bootstrap_aligns_union_dates_with_inactive_cash_returns() -> None:
+    candidate = pd.Series(
+        [0.03, 0.01],
+        index=pd.to_datetime(["2025-01-02", "2025-01-03"]),
+    )
+    baseline = pd.Series(
+        [0.02, -0.02],
+        index=pd.to_datetime(["2025-01-03", "2025-01-06"]),
+    )
+
+    interval = moving_block_bootstrap_delta_ci(
+        candidate,
+        baseline,
+        block_length=1,
+        resamples=100,
+        seed=20260724,
+    )
+
+    assert interval.estimate == pytest.approx((0.03 - 0.01 + 0.02) / 3.0)
+
+
+def test_holm_adjustment_preserves_original_order() -> None:
+    adjusted = holm_adjust([0.01, 0.04, 0.03, None])
+
+    assert adjusted == pytest.approx([0.03, 0.06, 0.06, None])
+
+
+@pytest.mark.parametrize(
+    ("target", "column", "value", "failed_gate"),
+    [
+        ("primary", "ci_lower", 0.0, "passes_bootstrap_ci"),
+        ("primary", "adjusted_p_value", 0.05, "passes_adjusted_p"),
+        ("primary", "trade_count", 199, "passes_trade_count"),
+        ("primary", "signal_date_count", 99, "passes_signal_date_count"),
+        ("primary", "annualized_ir_delta", 0.149, "passes_ir_lift"),
+        ("primary", "tail_improvement_ratio", 0.0999, "passes_tail_improvement"),
+        ("primary", "turnover_ratio", 1.501, "passes_turnover"),
+        ("stress_cost", "net_mean_return_delta", -0.0001, "passes_cost_sensitivity"),
+        ("annual", "net_mean_return_delta", -0.001, "passes_annual_stability"),
+        ("holdout", "net_mean_return_delta", -0.001, "passes_holdout_direction"),
+        ("near", "net_mean_return_delta", -0.001, "passes_robustness_sign"),
+    ],
+)
+def test_decision_gate_independently_fails_each_frozen_boundary(
+    target: str,
+    column: str,
+    value: object,
+    failed_gate: str,
+) -> None:
+    evidence, annual, costs = _passing_decision_gate_inputs()
+    if target == "primary":
+        evidence.loc[evidence["period"].eq("oos") & evidence["is_primary"], column] = value
+    elif target == "holdout":
+        evidence.loc[evidence["period"].eq("holdout"), column] = value
+    elif target == "near":
+        evidence.loc[evidence["ring_id"].eq("near_high_high_1"), column] = value
+    elif target == "annual":
+        annual.loc[annual["year"].isin([2023, 2024]), column] = value
+    else:
+        costs.loc[costs["cost_bps"].eq(20.0), column] = value
+
+    decision = build_decision_gate_df(evidence, annual, costs)
+
+    variant = decision.loc[decision["row_type"].eq("variant")].iloc[0]
+    assert not bool(variant[failed_gate])
+    assert variant["decision"] == "insufficient_evidence"
+
+
+def test_decision_gate_accepts_exact_inclusive_operational_boundaries() -> None:
+    evidence, annual, costs = _passing_decision_gate_inputs()
+    primary_mask = evidence["period"].eq("oos") & evidence["is_primary"]
+    evidence.loc[primary_mask, "trade_count"] = 200
+    evidence.loc[primary_mask, "signal_date_count"] = 100
+    evidence.loc[primary_mask, "annualized_ir_delta"] = 0.15
+    evidence.loc[primary_mask, "tail_improvement_ratio"] = 0.10
+    evidence.loc[primary_mask, "turnover_ratio"] = 1.5
+
+    decision = build_decision_gate_df(evidence, annual, costs)
+
+    variant = decision.loc[decision["row_type"].eq("variant")].iloc[0]
+    assert variant["decision"] == "production_candidate"
+    assert bool(variant["all_required_gates"])
+    entry = decision.loc[
+        decision["row_type"].eq("family") & decision["family"].eq("entry")
+    ].iloc[0]
+    assert entry["decision"] == "production_candidate"
+
+
+def test_decision_gate_keeps_holm_families_and_combined_outcome_independent() -> None:
+    entry_evidence, entry_annual, entry_costs = _passing_decision_gate_inputs()
+    exit_evidence = entry_evidence.assign(
+        family="exit",
+        variant_id="X1_close_below_sma5",
+    )
+    exit_annual = entry_annual.assign(
+        family="exit",
+        variant_id="X1_close_below_sma5",
+    )
+    exit_costs = entry_costs.assign(
+        family="exit",
+        variant_id="X1_close_below_sma5",
+    )
+    evidence = pd.concat([entry_evidence, exit_evidence], ignore_index=True)
+    annual = pd.concat([entry_annual, exit_annual], ignore_index=True)
+    costs = pd.concat([entry_costs, exit_costs], ignore_index=True)
+
+    decision = build_decision_gate_df(evidence, annual, costs)
+
+    family = decision.loc[decision["row_type"].eq("family")].set_index("family")
+    assert family.loc["entry", "decision"] == "production_candidate"
+    assert family.loc["exit", "decision"] == "production_candidate"
+    assert family.loc["combined", "decision"] == "insufficient_evidence"
+
+    evidence.loc[evidence["family"].eq("exit") & evidence["period"].eq("holdout"), "net_mean_return_delta"] = -0.001
+    decision = build_decision_gate_df(evidence, annual, costs)
+    family = decision.loc[decision["row_type"].eq("family")].set_index("family")
+    assert family.loc["exit", "decision"] == "insufficient_evidence"
+    assert family.loc["combined", "decision"] == "insufficient_evidence"
+
+
+def test_decision_gate_leaves_combined_not_evaluated_without_pre_holdout_passes() -> None:
+    evidence, annual, costs = _passing_decision_gate_inputs()
+    evidence.loc[
+        evidence["period"].eq("oos") & evidence["is_primary"], "adjusted_p_value"
+    ] = 0.05
+
+    decision = build_decision_gate_df(evidence, annual, costs)
+
+    combined = decision.loc[
+        decision["row_type"].eq("family") & decision["family"].eq("combined")
+    ].iloc[0]
+    assert combined["decision"] == "not_evaluated"
+
+
+def test_evidence_tables_report_frozen_metrics_and_correct_entry_baseline() -> None:
+    feature_df = _single_code_frame(
+        [
+            ("2024-01-02", 0.5, 0.5, 1),
+            ("2024-01-03", 0.8, 0.8, 2),
+            ("2024-01-04", 0.8, 0.8, 2),
+            ("2024-01-05", 0.5, 0.5, 1),
+        ],
+        closes=[100.0, 100.0, 110.0, 110.0],
+    )
+    baseline = ResearchVariant(
+        ring_id="core_high_high",
+        entry_rule_id="E0_no_sma5_filter",
+        exit_rule_id="X0_no_sma5_exit",
+        max_holding_sessions=60,
+    )
+    candidate = ResearchVariant(
+        ring_id="core_high_high",
+        entry_rule_id="E2_count_ge_2",
+        exit_rule_id="X0_no_sma5_exit",
+        max_holding_sessions=60,
+    )
+    executions = [
+        execute_variant(feature_df, variant, fee_bps=fee_bps)
+        for fee_bps in (0.0, 10.0, 20.0)
+        for variant in (baseline, candidate)
+    ]
+
+    tables = build_evidence_tables(
+        executions,
+        block_length=2,
+        resamples=100,
+        seed=20260724,
+    )
+
+    row = tables.entry_rule_evidence_df.loc[
+        tables.entry_rule_evidence_df["variant_id"].eq("E2_count_ge_2")
+        & tables.entry_rule_evidence_df["period"].eq("oos")
+    ].iloc[0]
+    assert row["baseline_variant_id"] == "E0_no_sma5_filter"
+    assert row["trade_count"] == 1
+    assert row["signal_date_count"] == 1
+    assert row["turnover"] == pytest.approx(0.5)
+    assert {
+        "gross_mean_return",
+        "gross_median_return",
+        "net_mean_return",
+        "net_median_return",
+        "annualized_ir",
+        "max_drawdown",
+        "expected_shortfall_5pct",
+        "turnover",
+        "net_mean_return_delta",
+        "annualized_ir_delta",
+        "tail_improvement_ratio",
+        "turnover_ratio",
+        "adjusted_p_value",
+    }.issubset(tables.entry_rule_evidence_df.columns)
+    assert not tables.bootstrap_effect_ci_df.empty
+    assert set(tables.cost_sensitivity_df["cost_bps"]) == {10.0, 20.0}
+
+
 def _build_hard_filter_market_v5_db(db_path: Path) -> Path:
     return _build_sma5_position_state_db(db_path)
+
+
+def _passing_decision_gate_inputs() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    common = {
+        "family": "entry",
+        "variant_id": "E2_count_ge_2",
+        "ci_lower": 0.0001,
+        "ci_upper": 0.002,
+        "adjusted_p_value": 0.049,
+        "trade_count": 200,
+        "signal_date_count": 100,
+        "annualized_ir_delta": 0.15,
+        "tail_improvement_ratio": 0.10,
+        "turnover_ratio": 1.5,
+        "net_mean_return_delta": 0.001,
+    }
+    evidence = pd.DataFrame(
+        [
+            {
+                **common,
+                "ring_id": "core_high_high",
+                "max_holding_sessions": 60,
+                "period": "oos",
+                "is_primary": True,
+            },
+            {
+                **common,
+                "ring_id": "core_high_high",
+                "max_holding_sessions": 60,
+                "period": "holdout",
+                "is_primary": True,
+            },
+            {
+                **common,
+                "ring_id": "near_high_high_1",
+                "max_holding_sessions": 20,
+                "period": "oos",
+                "is_primary": False,
+            },
+            {
+                **common,
+                "ring_id": "near_high_high_2",
+                "max_holding_sessions": 20,
+                "period": "oos",
+                "is_primary": False,
+            },
+        ]
+    )
+    annual = pd.DataFrame(
+        [
+            {
+                "family": "entry",
+                "variant_id": "E2_count_ge_2",
+                "year": year,
+                "net_mean_return_delta": 0.001,
+            }
+            for year in (2022, 2023, 2024)
+        ]
+    )
+    costs = pd.DataFrame(
+        [
+            {
+                "family": "entry",
+                "variant_id": "E2_count_ge_2",
+                "ring_id": "core_high_high",
+                "max_holding_sessions": 60,
+                "period": "oos",
+                "cost_bps": cost_bps,
+                "net_mean_return_delta": 0.001,
+            }
+            for cost_bps in (10.0, 20.0)
+        ]
+    )
+    return evidence, annual, costs
 
 
 def _synthetic_feature_frame() -> pd.DataFrame:

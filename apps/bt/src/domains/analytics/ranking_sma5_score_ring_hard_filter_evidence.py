@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
+import math
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, cast
+from typing import Any, TypedDict, cast
 
+import numpy as np
 import pandas as pd
 
 from src.domains.analytics.daily_ranking_consumer_support import (
@@ -118,10 +120,25 @@ class ResearchVariant:
 
 
 @dataclass(frozen=True)
+class BootstrapInterval:
+    """Deterministic paired moving-block bootstrap summary."""
+
+    estimate: float
+    lower: float
+    upper: float
+    p_value: float
+    observations: int
+    block_length: int
+    resamples: int
+    seed: int
+
+
+@dataclass(frozen=True)
 class VariantExecution:
     """VectorBT-authoritative fills paired with the independent state timeline."""
 
     variant: ResearchVariant
+    fee_bps: float
     portfolio: Any
     signal_frames: PositionSignalFrames
     trade_records_df: pd.DataFrame
@@ -142,13 +159,61 @@ class VariantExecution:
 
 
 @dataclass(frozen=True)
-class MarketV5PitLineage:
-    """Minimal, explicit provenance for this Market v5-only study."""
+class HardFilterPitLineage:
+    """Experiment-local Market v5 provenance contract."""
 
-    data_plane_schema_version: int
+    market_schema_version: int
     stock_price_adjustment_mode: str
-    price_projection_verification_status: str
-    no_stock_data_fallback: bool
+    market_source: str
+    source_mode: SourceMode
+
+
+@dataclass(frozen=True)
+class HardFilterEvidenceTables:
+    rule_registry_df: pd.DataFrame
+    coverage_diagnostics_df: pd.DataFrame
+    trade_ledger_df: pd.DataFrame
+    portfolio_daily_df: pd.DataFrame
+    entry_rule_evidence_df: pd.DataFrame
+    exit_rule_evidence_df: pd.DataFrame
+    combined_rule_evidence_df: pd.DataFrame
+    annual_stability_df: pd.DataFrame
+    bootstrap_effect_ci_df: pd.DataFrame
+    cost_sensitivity_df: pd.DataFrame
+
+
+class _PeriodExecutionSlice(TypedDict):
+    returns: pd.Series
+    trades: pd.DataFrame
+    signal_dates: int
+    turnover_events: int
+
+
+class _PortfolioMetrics(TypedDict):
+    annualized_ir: float | None
+    max_drawdown: float | None
+    expected_shortfall_5pct: float | None
+    turnover: float | None
+
+
+@dataclass(frozen=True)
+class RankingSma5ScoreRingHardFilterResult:
+    db_path: str
+    analysis_start_date: str | None
+    analysis_end_date: str | None
+    pit_lineage: HardFilterPitLineage
+    rule_registry_df: pd.DataFrame
+    coverage_diagnostics_df: pd.DataFrame
+    trade_ledger_df: pd.DataFrame
+    portfolio_daily_df: pd.DataFrame
+    entry_rule_evidence_df: pd.DataFrame
+    exit_rule_evidence_df: pd.DataFrame
+    combined_rule_evidence_df: pd.DataFrame
+    annual_stability_df: pd.DataFrame
+    bootstrap_effect_ci_df: pd.DataFrame
+    cost_sensitivity_df: pd.DataFrame
+    decision_gate_df: pd.DataFrame
+    observation_sample_df: pd.DataFrame
 
 
 @dataclass(frozen=True)
@@ -163,9 +228,878 @@ class RankingSma5ScoreRingHardFilterResearchResult:
     bootstrap_resamples: int
     min_trades: int
     min_signal_dates: int
-    pit_lineage: MarketV5PitLineage
+    pit_lineage: HardFilterPitLineage
     feature_df: pd.DataFrame
     observation_sample_df: pd.DataFrame
+
+
+def moving_block_bootstrap_delta_ci(
+    candidate: pd.Series,
+    baseline: pd.Series,
+    *,
+    block_length: int,
+    resamples: int,
+    seed: int,
+) -> BootstrapInterval:
+    """Bootstrap the paired candidate-minus-baseline mean on trading dates.
+
+    The union index represents the comparison calendar.  A strategy without an
+    active position on a date earns the cash return of zero.
+    """
+
+    if isinstance(block_length, bool) or not isinstance(block_length, int) or block_length <= 0:
+        raise ValueError("block_length must be a positive integer")
+    if isinstance(resamples, bool) or not isinstance(resamples, int) or resamples <= 0:
+        raise ValueError("resamples must be a positive integer")
+    if isinstance(seed, bool) or not isinstance(seed, int):
+        raise ValueError("seed must be an integer")
+    if not candidate.index.is_unique or not baseline.index.is_unique:
+        raise ValueError("candidate and baseline indexes must be unique")
+
+    union_index = candidate.index.union(baseline.index).sort_values()
+    if union_index.empty:
+        raise ValueError("candidate and baseline must contain at least one return")
+    candidate_values = pd.to_numeric(
+        candidate.reindex(union_index), errors="coerce"
+    ).fillna(0.0)
+    baseline_values = pd.to_numeric(
+        baseline.reindex(union_index), errors="coerce"
+    ).fillna(0.0)
+    deltas = candidate_values.to_numpy(dtype=float) - baseline_values.to_numpy(dtype=float)
+    if not np.isfinite(deltas).all():
+        raise ValueError("candidate and baseline returns must be finite")
+
+    observation_count = len(deltas)
+    block_count = math.ceil(observation_count / block_length)
+    rng = np.random.default_rng(seed)
+    sampled_means = np.empty(resamples, dtype=float)
+    offsets = np.arange(block_length)
+    for sample_index in range(resamples):
+        starts = rng.integers(0, observation_count, size=block_count)
+        sampled_positions = (starts[:, None] + offsets) % observation_count
+        sampled_means[sample_index] = float(
+            deltas[sampled_positions.ravel()[:observation_count]].mean()
+        )
+
+    non_positive = int(np.count_nonzero(sampled_means <= 0.0))
+    non_negative = int(np.count_nonzero(sampled_means >= 0.0))
+    empirical_p = min(
+        1.0,
+        2.0 * (min(non_positive, non_negative) + 1.0) / (resamples + 1.0),
+    )
+    lower, upper = np.quantile(sampled_means, [0.025, 0.975])
+    return BootstrapInterval(
+        estimate=float(deltas.mean()),
+        lower=float(lower),
+        upper=float(upper),
+        p_value=float(empirical_p),
+        observations=observation_count,
+        block_length=block_length,
+        resamples=resamples,
+        seed=seed,
+    )
+
+
+def holm_adjust(p_values: Sequence[float | None]) -> list[float | None]:
+    """Return Holm step-down adjusted p-values in their original order."""
+
+    indexed: list[tuple[int, float]] = []
+    for index, value in enumerate(p_values):
+        if value is None:
+            continue
+        numeric = float(value)
+        if not math.isfinite(numeric) or numeric < 0.0 or numeric > 1.0:
+            raise ValueError("p-values must be finite numbers between zero and one")
+        indexed.append((index, numeric))
+
+    adjusted: list[float | None] = [None] * len(p_values)
+    running_max = 0.0
+    family_size = len(indexed)
+    for rank, (original_index, p_value) in enumerate(
+        sorted(indexed, key=lambda item: item[1])
+    ):
+        running_max = max(running_max, (family_size - rank) * p_value)
+        adjusted[original_index] = min(1.0, running_max)
+    return adjusted
+
+
+def build_evidence_tables(
+    executions: Sequence[VariantExecution],
+    *,
+    block_length: int,
+    resamples: int,
+    seed: int,
+) -> HardFilterEvidenceTables:
+    """Aggregate frozen variant executions into the approved evidence tables."""
+
+    execution_map: dict[tuple[str, str, int, str, float], VariantExecution] = {}
+    for execution in executions:
+        variant = execution.variant
+        key = (
+            variant.ring_id,
+            variant.entry_rule_id,
+            variant.max_holding_sessions,
+            variant.exit_rule_id,
+            float(execution.fee_bps),
+        )
+        if key in execution_map:
+            raise ValueError(f"duplicate execution for variant/cost: {key}")
+        execution_map[key] = execution
+    if not execution_map:
+        raise ValueError("executions must not be empty")
+
+    variant_keys = sorted({key[:4] for key in execution_map})
+    for variant_key in variant_keys:
+        missing_costs = [
+            cost_bps
+            for cost_bps in (0.0, 10.0, 20.0)
+            if (*variant_key, cost_bps) not in execution_map
+        ]
+        if missing_costs:
+            raise ValueError(
+                f"variant {variant_key} missing required cost executions: {missing_costs}"
+            )
+
+    registry_rows = [
+        {
+            "family": family,
+            "variant_id": variant_id,
+            "ring_id": ring_id,
+            "entry_rule_id": entry_rule_id,
+            "exit_rule_id": exit_rule_id,
+            "max_holding_sessions": cap,
+            "is_primary": ring_id == "core_high_high" and cap == 60,
+        }
+        for ring_id, entry_rule_id, cap, exit_rule_id in variant_keys
+        if (
+            family := _variant_family(entry_rule_id, exit_rule_id)
+        )
+        is not None
+        for variant_id in [_variant_id(family, entry_rule_id, exit_rule_id)]
+    ]
+    rule_registry_df = pd.DataFrame(registry_rows)
+
+    ledger_frames: list[pd.DataFrame] = []
+    daily_frames: list[pd.DataFrame] = []
+    for key, execution in sorted(execution_map.items()):
+        ring_id, entry_rule_id, cap, exit_rule_id, cost_bps = key
+        family = _variant_family(entry_rule_id, exit_rule_id) or "baseline"
+        variant_id = _variant_id(family, entry_rule_id, exit_rule_id)
+        ledger = execution.trade_records_df.copy()
+        ledger.insert(0, "cost_bps", cost_bps)
+        ledger.insert(0, "max_holding_sessions", cap)
+        ledger.insert(0, "ring_id", ring_id)
+        ledger.insert(0, "variant_id", variant_id)
+        ledger.insert(0, "family", family)
+        ledger_frames.append(ledger)
+        daily_frames.append(
+            execution.daily_portfolio_returns.rename("portfolio_return")
+            .rename_axis("date")
+            .reset_index()
+            .assign(
+                family=family,
+                variant_id=variant_id,
+                ring_id=ring_id,
+                max_holding_sessions=cap,
+                cost_bps=cost_bps,
+            )
+        )
+    trade_ledger_df = pd.concat(ledger_frames, ignore_index=True)
+    portfolio_daily_df = pd.concat(daily_frames, ignore_index=True)
+
+    periods = (
+        ("discovery", pd.Timestamp("2018-01-01"), pd.Timestamp("2021-12-31")),
+        ("oos", pd.Timestamp("2022-01-01"), pd.Timestamp("2024-12-31")),
+        ("holdout", pd.Timestamp("2025-01-01"), None),
+    )
+    evidence_rows: list[dict[str, object]] = []
+    bootstrap_rows: list[dict[str, object]] = []
+    cost_rows: list[dict[str, object]] = []
+    annual_rows: list[dict[str, object]] = []
+    for ring_id, entry_rule_id, cap, exit_rule_id in variant_keys:
+        family = _variant_family(entry_rule_id, exit_rule_id)
+        if family is None:
+            continue
+        variant_id = _variant_id(family, entry_rule_id, exit_rule_id)
+        baseline_entry, baseline_exit = _baseline_rule_pair(family)
+        baseline_key = (ring_id, baseline_entry, cap, baseline_exit)
+        if not all((*baseline_key, cost) in execution_map for cost in (0.0, 10.0, 20.0)):
+            raise ValueError(
+                f"missing correct {family} baseline for {ring_id}/{cap}/{variant_id}"
+            )
+
+        candidate_by_cost = {
+            cost: execution_map[(ring_id, entry_rule_id, cap, exit_rule_id, cost)]
+            for cost in (0.0, 10.0, 20.0)
+        }
+        baseline_by_cost = {
+            cost: execution_map[(*baseline_key, cost)]
+            for cost in (0.0, 10.0, 20.0)
+        }
+        for period, start, end in periods:
+            gross_candidate = _slice_execution(candidate_by_cost[0.0], start, end)
+            net_candidate = _slice_execution(candidate_by_cost[10.0], start, end)
+            net_baseline = _slice_execution(baseline_by_cost[10.0], start, end)
+            candidate_metrics = _portfolio_metrics(
+                net_candidate["returns"],
+                turnover_events=int(net_candidate["turnover_events"]),
+            )
+            baseline_metrics = _portfolio_metrics(
+                net_baseline["returns"],
+                turnover_events=int(net_baseline["turnover_events"]),
+            )
+            gross_trade_returns = _trade_returns(gross_candidate["trades"])
+            net_trade_returns = _trade_returns(net_candidate["trades"])
+            interval = _optional_bootstrap_interval(
+                net_candidate["returns"],
+                net_baseline["returns"],
+                block_length=block_length,
+                resamples=resamples,
+                seed=seed,
+            )
+            max_drawdown_improvement = _relative_loss_improvement(
+                candidate_metrics["max_drawdown"],
+                baseline_metrics["max_drawdown"],
+            )
+            expected_shortfall_improvement = _relative_loss_improvement(
+                candidate_metrics["expected_shortfall_5pct"],
+                baseline_metrics["expected_shortfall_5pct"],
+            )
+            tail_improvement_values = [
+                value
+                for value in (
+                    max_drawdown_improvement,
+                    expected_shortfall_improvement,
+                )
+                if value is not None
+            ]
+            turnover_ratio = _safe_ratio(
+                candidate_metrics["turnover"],
+                baseline_metrics["turnover"],
+            )
+            evidence_row = {
+                "family": family,
+                "variant_id": variant_id,
+                "baseline_variant_id": _variant_id(
+                    "baseline", baseline_entry, baseline_exit
+                ),
+                "ring_id": ring_id,
+                "max_holding_sessions": cap,
+                "period": period,
+                "is_primary": ring_id == "core_high_high" and cap == 60,
+                "trade_count": len(net_candidate["trades"]),
+                "signal_date_count": int(net_candidate["signal_dates"]),
+                "gross_mean_return": _series_stat(gross_trade_returns, "mean"),
+                "gross_median_return": _series_stat(gross_trade_returns, "median"),
+                "net_mean_return": _series_stat(net_trade_returns, "mean"),
+                "net_median_return": _series_stat(net_trade_returns, "median"),
+                "annualized_ir": candidate_metrics["annualized_ir"],
+                "max_drawdown": candidate_metrics["max_drawdown"],
+                "expected_shortfall_5pct": candidate_metrics[
+                    "expected_shortfall_5pct"
+                ],
+                "turnover": candidate_metrics["turnover"],
+                "net_mean_return_delta": _mean_delta(
+                    net_candidate["returns"], net_baseline["returns"]
+                ),
+                "annualized_ir_delta": _difference(
+                    candidate_metrics["annualized_ir"],
+                    baseline_metrics["annualized_ir"],
+                ),
+                "max_drawdown_improvement_ratio": max_drawdown_improvement,
+                "expected_shortfall_improvement_ratio": expected_shortfall_improvement,
+                "tail_improvement_ratio": (
+                    max(tail_improvement_values) if tail_improvement_values else None
+                ),
+                "turnover_ratio": turnover_ratio,
+                "ci_lower": None if interval is None else interval.lower,
+                "ci_upper": None if interval is None else interval.upper,
+                "raw_p_value": None if interval is None else interval.p_value,
+                "adjusted_p_value": None,
+            }
+            evidence_rows.append(evidence_row)
+            bootstrap_rows.append(
+                {
+                    "family": family,
+                    "variant_id": variant_id,
+                    "ring_id": ring_id,
+                    "max_holding_sessions": cap,
+                    "period": period,
+                    "estimate": None if interval is None else interval.estimate,
+                    "ci_lower": None if interval is None else interval.lower,
+                    "ci_upper": None if interval is None else interval.upper,
+                    "raw_p_value": None if interval is None else interval.p_value,
+                    "observations": 0 if interval is None else interval.observations,
+                    "block_length": block_length,
+                    "resamples": resamples,
+                    "seed": seed,
+                }
+            )
+            for cost_bps in (10.0, 20.0):
+                candidate_cost_returns = _slice_returns(
+                    candidate_by_cost[cost_bps].daily_portfolio_returns, start, end
+                )
+                baseline_cost_returns = _slice_returns(
+                    baseline_by_cost[cost_bps].daily_portfolio_returns, start, end
+                )
+                cost_rows.append(
+                    {
+                        "family": family,
+                        "variant_id": variant_id,
+                        "ring_id": ring_id,
+                        "max_holding_sessions": cap,
+                        "period": period,
+                        "cost_bps": cost_bps,
+                        "net_mean_return_delta": _mean_delta(
+                            candidate_cost_returns, baseline_cost_returns
+                        ),
+                    }
+                )
+
+        paired = _align_cash_returns(
+            candidate_by_cost[10.0].daily_portfolio_returns,
+            baseline_by_cost[10.0].daily_portfolio_returns,
+        )
+        for year, year_rows in paired.groupby(paired.index.year):
+            annual_rows.append(
+                {
+                    "family": family,
+                    "variant_id": variant_id,
+                    "ring_id": ring_id,
+                    "max_holding_sessions": cap,
+                    "year": int(year),
+                    "net_mean_return_delta": float(
+                        (year_rows["candidate"] - year_rows["baseline"]).mean()
+                    ),
+                }
+            )
+
+    evidence_df = pd.DataFrame(evidence_rows)
+    if not evidence_df.empty:
+        for _, indexes in evidence_df.groupby(
+            ["family", "ring_id", "max_holding_sessions", "period"],
+            sort=False,
+        ).groups.items():
+            index_list = list(indexes)
+            adjusted = holm_adjust(
+                [
+                    _finite_number(value)
+                    for value in evidence_df.loc[index_list, "raw_p_value"]
+                ]
+            )
+            evidence_df.loc[index_list, "adjusted_p_value"] = adjusted
+    evidence_columns = list(evidence_df.columns)
+
+    coverage_diagnostics_df = pd.DataFrame(
+        [
+            {
+                "execution_count": len(execution_map),
+                "variant_count": len(variant_keys),
+                "first_date": (
+                    portfolio_daily_df["date"].min()
+                    if not portfolio_daily_df.empty
+                    else None
+                ),
+                "last_date": (
+                    portfolio_daily_df["date"].max()
+                    if not portfolio_daily_df.empty
+                    else None
+                ),
+            }
+        ]
+    )
+    return HardFilterEvidenceTables(
+        rule_registry_df=rule_registry_df,
+        coverage_diagnostics_df=coverage_diagnostics_df,
+        trade_ledger_df=trade_ledger_df,
+        portfolio_daily_df=portfolio_daily_df,
+        entry_rule_evidence_df=evidence_df.loc[
+            evidence_df["family"].eq("entry"), evidence_columns
+        ].reset_index(drop=True),
+        exit_rule_evidence_df=evidence_df.loc[
+            evidence_df["family"].eq("exit"), evidence_columns
+        ].reset_index(drop=True),
+        combined_rule_evidence_df=evidence_df.loc[
+            evidence_df["family"].eq("combined"), evidence_columns
+        ].reset_index(drop=True),
+        annual_stability_df=pd.DataFrame(annual_rows),
+        bootstrap_effect_ci_df=pd.DataFrame(bootstrap_rows),
+        cost_sensitivity_df=pd.DataFrame(cost_rows),
+    )
+
+
+def _variant_family(entry_rule_id: str, exit_rule_id: str) -> str | None:
+    entry_is_baseline = entry_rule_id == "E0_no_sma5_filter"
+    exit_is_baseline = exit_rule_id == "X0_no_sma5_exit"
+    if entry_is_baseline and exit_is_baseline:
+        return None
+    if not entry_is_baseline and exit_is_baseline:
+        return "entry"
+    if entry_is_baseline and not exit_is_baseline:
+        return "exit"
+    return "combined"
+
+
+def _variant_id(family: str, entry_rule_id: str, exit_rule_id: str) -> str:
+    if family == "entry":
+        return entry_rule_id
+    if family == "exit":
+        return exit_rule_id
+    if family == "baseline":
+        return "E0_no_sma5_filter"
+    return f"{entry_rule_id}__{exit_rule_id}"
+
+
+def _baseline_rule_pair(family: str) -> tuple[str, str]:
+    if family in {"entry", "exit", "combined"}:
+        return "E0_no_sma5_filter", "X0_no_sma5_exit"
+    raise ValueError(f"unknown evidence family: {family}")
+
+
+def _slice_execution(
+    execution: VariantExecution,
+    start: pd.Timestamp,
+    end: pd.Timestamp | None,
+) -> _PeriodExecutionSlice:
+    returns = _slice_returns(execution.daily_portfolio_returns, start, end)
+    trades = execution.trade_records_df
+    entry_dates = pd.to_datetime(trades["Entry Timestamp"], errors="coerce")
+    trade_mask = entry_dates.ge(start)
+    if end is not None:
+        trade_mask &= entry_dates.le(end)
+    period_trades = trades.loc[trade_mask].copy()
+    events = execution.state_events
+    event_dates = pd.to_datetime(events["date"], errors="coerce")
+    signal_mask = events["event_type"].eq("entry") & event_dates.ge(start)
+    if end is not None:
+        signal_mask &= event_dates.le(end)
+    signal_dates = event_dates.loc[signal_mask].nunique()
+    turnover_mask = events["event_type"].isin(["entry", "exit"]) & event_dates.ge(start)
+    if end is not None:
+        turnover_mask &= event_dates.le(end)
+    return {
+        "returns": returns,
+        "trades": period_trades,
+        "signal_dates": signal_dates,
+        "turnover_events": int(turnover_mask.sum()),
+    }
+
+
+def _slice_returns(
+    returns: pd.Series,
+    start: pd.Timestamp,
+    end: pd.Timestamp | None,
+) -> pd.Series:
+    normalized = pd.Series(returns, dtype=float).copy()
+    normalized.index = pd.to_datetime(normalized.index, errors="raise")
+    mask = normalized.index >= start
+    if end is not None:
+        mask &= normalized.index <= end
+    return normalized.loc[mask]
+
+
+def _align_cash_returns(candidate: pd.Series, baseline: pd.Series) -> pd.DataFrame:
+    union_index = candidate.index.union(baseline.index).sort_values()
+    return pd.DataFrame(
+        {
+            "candidate": pd.to_numeric(
+                candidate.reindex(union_index), errors="coerce"
+            ).fillna(0.0),
+            "baseline": pd.to_numeric(
+                baseline.reindex(union_index), errors="coerce"
+            ).fillna(0.0),
+        },
+        index=union_index,
+    )
+
+
+def _optional_bootstrap_interval(
+    candidate: pd.Series,
+    baseline: pd.Series,
+    *,
+    block_length: int,
+    resamples: int,
+    seed: int,
+) -> BootstrapInterval | None:
+    if candidate.empty and baseline.empty:
+        return None
+    return moving_block_bootstrap_delta_ci(
+        candidate,
+        baseline,
+        block_length=block_length,
+        resamples=resamples,
+        seed=seed,
+    )
+
+
+def _portfolio_metrics(
+    returns: pd.Series,
+    *,
+    turnover_events: int,
+) -> _PortfolioMetrics:
+    values = pd.to_numeric(returns, errors="coerce").dropna()
+    if values.empty:
+        return {
+            "annualized_ir": None,
+            "max_drawdown": None,
+            "expected_shortfall_5pct": None,
+            "turnover": None,
+        }
+    standard_deviation = float(values.std(ddof=1))
+    annualized_ir = (
+        float(values.mean() / standard_deviation * math.sqrt(252.0))
+        if standard_deviation > 0.0
+        else 0.0
+    )
+    nav = (1.0 + values).cumprod()
+    max_drawdown = float((nav / nav.cummax() - 1.0).min())
+    threshold = float(values.quantile(0.05))
+    expected_shortfall = float(values.loc[values <= threshold].mean())
+    turnover = float(turnover_events / values.index.size)
+    return {
+        "annualized_ir": annualized_ir,
+        "max_drawdown": max_drawdown,
+        "expected_shortfall_5pct": expected_shortfall,
+        "turnover": turnover,
+    }
+
+
+def _trade_returns(trades: pd.DataFrame) -> pd.Series:
+    if "Return" not in trades.columns:
+        return pd.Series(dtype=float)
+    return pd.to_numeric(trades["Return"], errors="coerce").dropna()
+
+
+def _series_stat(values: pd.Series, operation: str) -> float | None:
+    if values.empty:
+        return None
+    if operation == "mean":
+        return float(values.mean())
+    if operation == "median":
+        return float(values.median())
+    raise ValueError(f"unknown series statistic: {operation}")
+
+
+def _mean_delta(candidate: pd.Series, baseline: pd.Series) -> float | None:
+    paired = _align_cash_returns(candidate, baseline)
+    if paired.empty:
+        return None
+    return float((paired["candidate"] - paired["baseline"]).mean())
+
+
+def _difference(candidate: float | None, baseline: float | None) -> float | None:
+    if candidate is None or baseline is None:
+        return None
+    return candidate - baseline
+
+
+def _relative_loss_improvement(
+    candidate: float | None,
+    baseline: float | None,
+) -> float | None:
+    if candidate is None or baseline is None or abs(baseline) == 0.0:
+        return None
+    return (abs(baseline) - abs(candidate)) / abs(baseline)
+
+
+def _safe_ratio(numerator: float | None, denominator: float | None) -> float | None:
+    if numerator is None or denominator is None:
+        return None
+    if denominator == 0.0:
+        return 0.0 if numerator == 0.0 else None
+    return numerator / denominator
+
+
+def build_decision_gate_df(
+    evidence_df: pd.DataFrame,
+    annual_stability_df: pd.DataFrame,
+    cost_sensitivity_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Apply the frozen primary, robustness, and operational adoption gates."""
+
+    evidence_columns = {
+        "family",
+        "variant_id",
+        "ring_id",
+        "max_holding_sessions",
+        "period",
+        "is_primary",
+        "ci_lower",
+        "ci_upper",
+        "adjusted_p_value",
+        "trade_count",
+        "signal_date_count",
+        "annualized_ir_delta",
+        "tail_improvement_ratio",
+        "turnover_ratio",
+        "net_mean_return_delta",
+    }
+    annual_columns = {"family", "variant_id", "year", "net_mean_return_delta"}
+    cost_columns = {
+        "family",
+        "variant_id",
+        "ring_id",
+        "max_holding_sessions",
+        "period",
+        "cost_bps",
+        "net_mean_return_delta",
+    }
+    _require_columns(evidence_df, evidence_columns, frame_name="evidence_df")
+    _require_columns(
+        annual_stability_df,
+        annual_columns,
+        frame_name="annual_stability_df",
+    )
+    _require_columns(
+        cost_sensitivity_df,
+        cost_columns,
+        frame_name="cost_sensitivity_df",
+    )
+
+    variant_rows: list[dict[str, object]] = []
+    primary = evidence_df.loc[
+        evidence_df["ring_id"].eq("core_high_high")
+        & pd.to_numeric(
+            evidence_df["max_holding_sessions"], errors="coerce"
+        ).eq(60)
+        & evidence_df["period"].eq("oos")
+        & evidence_df["is_primary"].eq(True)
+        & evidence_df["family"].isin(["entry", "exit", "combined"])
+    ]
+    for (family, variant_id), rows in primary.groupby(
+        ["family", "variant_id"], sort=True, dropna=False
+    ):
+        primary_valid = len(rows) == 1
+        row = rows.iloc[0]
+        family_text = str(family)
+        variant_text = str(variant_id)
+
+        ci_lower = _finite_number(row["ci_lower"])
+        ci_upper = _finite_number(row["ci_upper"])
+        adjusted_p = _finite_number(row["adjusted_p_value"])
+        trade_count = _finite_number(row["trade_count"])
+        signal_date_count = _finite_number(row["signal_date_count"])
+        ir_delta = _finite_number(row["annualized_ir_delta"])
+        tail_improvement = _finite_number(row["tail_improvement_ratio"])
+        turnover_ratio = _finite_number(row["turnover_ratio"])
+        net_delta = _finite_number(row["net_mean_return_delta"])
+
+        passes_bootstrap_ci = bool(
+            primary_valid
+            and ci_lower is not None
+            and ci_upper is not None
+            and ci_lower > 0.0
+            and ci_upper > 0.0
+        )
+        passes_adjusted_p = bool(
+            primary_valid and adjusted_p is not None and adjusted_p < 0.05
+        )
+        passes_trade_count = bool(
+            primary_valid and trade_count is not None and trade_count >= 200.0
+        )
+        passes_signal_date_count = bool(
+            primary_valid
+            and signal_date_count is not None
+            and signal_date_count >= 100.0
+        )
+        passes_ir_lift = bool(
+            primary_valid and ir_delta is not None and ir_delta >= 0.15
+        )
+        passes_tail_improvement = bool(
+            primary_valid
+            and tail_improvement is not None
+            and tail_improvement >= 0.10
+        )
+        passes_turnover = bool(
+            primary_valid and turnover_ratio is not None and turnover_ratio <= 1.5
+        )
+        passes_base_cost = bool(
+            primary_valid and net_delta is not None and net_delta > 0.0
+        )
+
+        holdout = evidence_df.loc[
+            evidence_df["family"].eq(family_text)
+            & evidence_df["variant_id"].eq(variant_text)
+            & evidence_df["ring_id"].eq("core_high_high")
+            & pd.to_numeric(
+                evidence_df["max_holding_sessions"], errors="coerce"
+            ).eq(60)
+            & evidence_df["period"].eq("holdout")
+        ]
+        holdout_delta = (
+            _finite_number(holdout.iloc[0]["net_mean_return_delta"])
+            if len(holdout) == 1
+            else None
+        )
+        passes_holdout_direction = bool(
+            holdout_delta is not None and holdout_delta > 0.0
+        )
+
+        robustness = evidence_df.loc[
+            evidence_df["family"].eq(family_text)
+            & evidence_df["variant_id"].eq(variant_text)
+            & evidence_df["ring_id"].isin(
+                ["near_high_high_1", "near_high_high_2"]
+            )
+            & pd.to_numeric(
+                evidence_df["max_holding_sessions"], errors="coerce"
+            ).eq(20)
+            & evidence_df["period"].eq("oos")
+        ]
+        robustness_by_ring = {
+            ring_id: group
+            for ring_id, group in robustness.groupby("ring_id", sort=False)
+        }
+        passes_robustness_sign = all(
+            ring_id in robustness_by_ring
+            and len(robustness_by_ring[ring_id]) == 1
+            and (
+                robustness_delta := _finite_number(
+                    robustness_by_ring[ring_id].iloc[0]["net_mean_return_delta"]
+                )
+            )
+            is not None
+            and robustness_delta > 0.0
+            for ring_id in ("near_high_high_1", "near_high_high_2")
+        )
+
+        annual = annual_stability_df.loc[
+            annual_stability_df["family"].eq(family_text)
+            & annual_stability_df["variant_id"].eq(variant_text)
+        ]
+        annual_deltas = pd.to_numeric(
+            annual["net_mean_return_delta"], errors="coerce"
+        )
+        valid_annual = annual_deltas.notna() & np.isfinite(annual_deltas)
+        total_years = int(valid_annual.sum())
+        positive_years = int(annual_deltas.loc[valid_annual].gt(0.0).sum())
+        passes_annual_stability = bool(
+            total_years >= 2
+            and positive_years >= 2
+            and positive_years > total_years / 2.0
+        )
+
+        costs = cost_sensitivity_df.loc[
+            cost_sensitivity_df["family"].eq(family_text)
+            & cost_sensitivity_df["variant_id"].eq(variant_text)
+            & cost_sensitivity_df["ring_id"].eq("core_high_high")
+            & pd.to_numeric(
+                cost_sensitivity_df["max_holding_sessions"], errors="coerce"
+            ).eq(60)
+            & cost_sensitivity_df["period"].eq("oos")
+        ]
+        cost_delta_by_level: dict[float, float | None] = {}
+        for cost_bps in (10.0, 20.0):
+            cost_rows = costs.loc[
+                pd.to_numeric(costs["cost_bps"], errors="coerce").eq(cost_bps)
+            ]
+            cost_delta_by_level[cost_bps] = (
+                _finite_number(cost_rows.iloc[0]["net_mean_return_delta"])
+                if len(cost_rows) == 1
+                else None
+            )
+        base_cost_delta = cost_delta_by_level[10.0]
+        stress_cost_delta = cost_delta_by_level[20.0]
+        passes_cost_sensitivity = bool(
+            base_cost_delta is not None
+            and base_cost_delta > 0.0
+            and stress_cost_delta is not None
+            and stress_cost_delta > 0.0
+        )
+
+        pre_holdout_values = (
+            passes_bootstrap_ci,
+            passes_adjusted_p,
+            passes_trade_count,
+            passes_signal_date_count,
+            passes_ir_lift,
+            passes_tail_improvement,
+            passes_turnover,
+            passes_base_cost,
+            passes_cost_sensitivity,
+            passes_annual_stability,
+            passes_robustness_sign,
+        )
+        passes_pre_holdout = all(pre_holdout_values)
+        all_required_gates = bool(
+            passes_pre_holdout and passes_holdout_direction
+        )
+        variant_rows.append(
+            {
+                "row_type": "variant",
+                "family": family_text,
+                "variant_id": variant_text,
+                "passes_bootstrap_ci": passes_bootstrap_ci,
+                "passes_adjusted_p": passes_adjusted_p,
+                "passes_trade_count": passes_trade_count,
+                "passes_signal_date_count": passes_signal_date_count,
+                "passes_ir_lift": passes_ir_lift,
+                "passes_tail_improvement": passes_tail_improvement,
+                "passes_turnover": passes_turnover,
+                "passes_base_cost": passes_base_cost,
+                "passes_cost_sensitivity": passes_cost_sensitivity,
+                "passes_annual_stability": passes_annual_stability,
+                "passes_robustness_sign": passes_robustness_sign,
+                "passes_holdout_direction": passes_holdout_direction,
+                "passes_pre_holdout": passes_pre_holdout,
+                "all_required_gates": all_required_gates,
+                "decision": (
+                    "production_candidate"
+                    if all_required_gates
+                    else "insufficient_evidence"
+                ),
+            }
+        )
+
+    family_rows: list[dict[str, object]] = []
+    entry_pre_holdout = any(
+        row["family"] == "entry" and bool(row["passes_pre_holdout"])
+        for row in variant_rows
+    )
+    exit_pre_holdout = any(
+        row["family"] == "exit" and bool(row["passes_pre_holdout"])
+        for row in variant_rows
+    )
+    for family in ("entry", "exit", "combined"):
+        rows = [row for row in variant_rows if row["family"] == family]
+        if family == "combined" and not (entry_pre_holdout and exit_pre_holdout):
+            family_decision = "not_evaluated"
+        elif any(row["decision"] == "production_candidate" for row in rows):
+            family_decision = "production_candidate"
+        else:
+            family_decision = "insufficient_evidence"
+        family_rows.append(
+            {
+                "row_type": "family",
+                "family": family,
+                "variant_id": None,
+                "passes_pre_holdout": (
+                    entry_pre_holdout and exit_pre_holdout
+                    if family == "combined"
+                    else any(bool(row["passes_pre_holdout"]) for row in rows)
+                ),
+                "all_required_gates": any(
+                    bool(row["all_required_gates"]) for row in rows
+                ),
+                "decision": family_decision,
+            }
+        )
+    return pd.DataFrame([*variant_rows, *family_rows])
+
+
+def _require_columns(
+    frame: pd.DataFrame,
+    required: set[str],
+    *,
+    frame_name: str,
+) -> None:
+    missing = sorted(required.difference(frame.columns))
+    if missing:
+        raise ValueError(f"{frame_name} missing required columns: {missing}")
+
+
+def _finite_number(value: object) -> float | None:
+    return _safe_finite_float_or_none(value)
 
 
 def classify_score_ring(value_score: object, leadership_score: object) -> str:
@@ -611,11 +1545,11 @@ def run_ranking_sma5_score_ring_hard_filter_research(
                 "Market v5 price provenance is not verified; no stock_data fallback is allowed"
             )
         feature_df = build_score_ring_feature_panel(ctx.connection, relations)
-        pit_lineage = MarketV5PitLineage(
-            data_plane_schema_version=schema_version,
+        pit_lineage = HardFilterPitLineage(
+            market_schema_version=schema_version,
             stock_price_adjustment_mode="provider_adjusted_v1",
-            price_projection_verification_status=price_lineage.verification_status,
-            no_stock_data_fallback=price_lineage.no_stock_data_fallback,
+            market_source=ctx.source_detail,
+            source_mode=ctx.source_mode,
         )
         source_mode = ctx.source_mode
         source_detail = ctx.source_detail
@@ -675,6 +1609,7 @@ def execute_variant(
     daily_returns = _build_active_portfolio_returns(portfolio, frames)
     return VariantExecution(
         variant=variant,
+        fee_bps=fee_bps_value,
         portfolio=portfolio,
         signal_frames=frames,
         trade_records_df=trade_records,
