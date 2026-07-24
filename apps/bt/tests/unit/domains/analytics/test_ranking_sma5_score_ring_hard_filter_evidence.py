@@ -181,6 +181,49 @@ def test_prepared_signal_panel_builds_variant_frames_without_dataframe_row_itera
 
     assert not frames.close.empty
 
+
+def test_position_frames_use_globally_sorted_codes_for_staggered_listings() -> None:
+    later_codes = [
+        _single_code_frame(
+            [
+                ("2025-01-02", 0.8, 0.8, 2),
+                ("2025-01-03", 0.8, 0.8, 2),
+            ],
+            code=code,
+        )
+        for code in ("1000", "2000")
+    ]
+    earlier_code = _single_code_frame(
+        [
+            ("2025-01-01", 0.5, 0.5, 0),
+            ("2025-01-02", 0.8, 0.8, 2),
+            ("2025-01-03", 0.8, 0.8, 2),
+        ],
+        code="3000",
+    )
+    feature_df = pd.concat([earlier_code, *later_codes], ignore_index=True)
+
+    frames = build_position_signal_frames(
+        feature_df,
+        ring_id="core_high_high",
+        entry_rule_id="E2_count_ge_2",
+        exit_rule_id="X0_no_sma5_exit",
+        max_holding_sessions=60,
+    )
+
+    expected_codes = ["1000", "2000", "3000"]
+    assert frames.close.columns.tolist() == expected_codes
+    assert frames.entries.columns.tolist() == expected_codes
+    assert frames.exits.columns.tolist() == expected_codes
+    assert frames.held_intervals.columns.tolist() == expected_codes
+    assert frames.state_events.loc[
+        frames.state_events["event_type"].eq("entry"), "code"
+    ].tolist() == expected_codes
+    assert frames.state_events.loc[
+        frames.state_events["event_type"].eq("exit"), "code"
+    ].tolist() == expected_codes
+
+
 def test_entry_day_is_excluded_and_exit_day_return_is_included_once() -> None:
     feature_df = _single_code_frame(
         [

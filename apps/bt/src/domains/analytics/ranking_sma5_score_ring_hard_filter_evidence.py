@@ -1354,7 +1354,7 @@ def prepare_position_signal_panel(feature_df: pd.DataFrame) -> PreparedPositionS
         raise ValueError("feature_df must contain at most one row per date and code")
     normalized = normalized.sort_values(["date", "code"], kind="stable")
     dates = pd.DatetimeIndex(normalized["date"].unique(), name="date")
-    codes = pd.Index(normalized["code"].unique(), name="code")
+    codes = pd.Index(sorted(normalized["code"].unique()), name="code")
     shape = (len(dates), len(codes))
     date_positions = dates.get_indexer(pd.Index(normalized["date"]))
     code_positions = codes.get_indexer(pd.Index(normalized["code"]))
