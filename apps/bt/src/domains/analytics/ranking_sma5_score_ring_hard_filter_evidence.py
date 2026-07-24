@@ -74,6 +74,7 @@ _REQUIRED_FEATURE_COLUMNS = frozenset(
         "date",
         "code",
         "close",
+        "topix_close",
         _VALUE_SCORE_COLUMN,
         _LEADERSHIP_SCORE_COLUMN,
     }
@@ -143,6 +144,7 @@ class VariantExecution:
     signal_frames: PositionSignalFrames
     trade_records_df: pd.DataFrame
     daily_portfolio_returns: pd.Series
+    benchmark_daily_returns: pd.Series
     state_events: pd.DataFrame
 
     @property
@@ -184,6 +186,7 @@ class HardFilterEvidenceTables:
 
 class _PeriodExecutionSlice(TypedDict):
     returns: pd.Series
+    benchmark_returns: pd.Series
     trades: pd.DataFrame
     signal_dates: int
     turnover_events: int
@@ -393,7 +396,18 @@ def build_evidence_tables(
         ledger.insert(0, "family", family)
         ledger_frames.append(ledger)
         daily_frames.append(
-            execution.daily_portfolio_returns.rename("portfolio_return")
+            pd.concat(
+                [
+                    execution.daily_portfolio_returns.rename("portfolio_return"),
+                    execution.benchmark_daily_returns.rename("benchmark_return"),
+                ],
+                axis=1,
+            )
+            .assign(
+                topix_excess_return=lambda frame: (
+                    frame["portfolio_return"] - frame["benchmark_return"]
+                )
+            )
             .rename_axis("date")
             .reset_index()
             .assign(
@@ -442,10 +456,12 @@ def build_evidence_tables(
             net_baseline = _slice_execution(baseline_by_cost[10.0], start, end)
             candidate_metrics = _portfolio_metrics(
                 net_candidate["returns"],
+                benchmark_returns=net_candidate["benchmark_returns"],
                 turnover_events=int(net_candidate["turnover_events"]),
             )
             baseline_metrics = _portfolio_metrics(
                 net_baseline["returns"],
+                benchmark_returns=net_baseline["benchmark_returns"],
                 turnover_events=int(net_baseline["turnover_events"]),
             )
             gross_trade_returns = _trade_returns(gross_candidate["trades"])
@@ -556,23 +572,32 @@ def build_evidence_tables(
                     }
                 )
 
-        paired = _align_cash_returns(
-            candidate_by_cost[10.0].daily_portfolio_returns,
-            baseline_by_cost[10.0].daily_portfolio_returns,
-        )
-        for year, year_rows in paired.groupby(paired.index.year):
-            annual_rows.append(
-                {
-                    "family": family,
-                    "variant_id": variant_id,
-                    "ring_id": ring_id,
-                    "max_holding_sessions": cap,
-                    "year": int(year),
-                    "net_mean_return_delta": float(
-                        (year_rows["candidate"] - year_rows["baseline"]).mean()
-                    ),
-                }
+        if ring_id == "core_high_high" and cap == 60:
+            candidate_oos = _slice_returns(
+                candidate_by_cost[10.0].daily_portfolio_returns,
+                pd.Timestamp("2022-01-01"),
+                pd.Timestamp("2024-12-31"),
             )
+            baseline_oos = _slice_returns(
+                baseline_by_cost[10.0].daily_portfolio_returns,
+                pd.Timestamp("2022-01-01"),
+                pd.Timestamp("2024-12-31"),
+            )
+            paired = _align_cash_returns(candidate_oos, baseline_oos)
+            for year, year_rows in paired.groupby(paired.index.year):
+                annual_rows.append(
+                    {
+                        "family": family,
+                        "variant_id": variant_id,
+                        "ring_id": ring_id,
+                        "max_holding_sessions": cap,
+                        "period": "oos",
+                        "year": int(year),
+                        "net_mean_return_delta": float(
+                            (year_rows["candidate"] - year_rows["baseline"]).mean()
+                        ),
+                    }
+                )
 
     evidence_df = pd.DataFrame(evidence_rows)
     if not evidence_df.empty:
@@ -664,9 +689,11 @@ def _slice_execution(
     returns = _slice_returns(execution.daily_portfolio_returns, start, end)
     trades = execution.trade_records_df
     entry_dates = pd.to_datetime(trades["Entry Timestamp"], errors="coerce")
-    trade_mask = entry_dates.ge(start)
+    exit_dates = pd.to_datetime(trades["Exit Timestamp"], errors="coerce")
+    # Period trade statistics use only closed trades fully contained in the slice.
+    trade_mask = entry_dates.ge(start) & exit_dates.ge(start)
     if end is not None:
-        trade_mask &= entry_dates.le(end)
+        trade_mask &= entry_dates.le(end) & exit_dates.le(end)
     period_trades = trades.loc[trade_mask].copy()
     events = execution.state_events
     event_dates = pd.to_datetime(events["date"], errors="coerce")
@@ -679,6 +706,9 @@ def _slice_execution(
         turnover_mask &= event_dates.le(end)
     return {
         "returns": returns,
+        "benchmark_returns": _slice_returns(
+            execution.benchmark_daily_returns, start, end
+        ),
         "trades": period_trades,
         "signal_dates": signal_dates,
         "turnover_events": int(turnover_mask.sum()),
@@ -735,6 +765,7 @@ def _optional_bootstrap_interval(
 def _portfolio_metrics(
     returns: pd.Series,
     *,
+    benchmark_returns: pd.Series,
     turnover_events: int,
 ) -> _PortfolioMetrics:
     values = pd.to_numeric(returns, errors="coerce").dropna()
@@ -745,9 +776,15 @@ def _portfolio_metrics(
             "expected_shortfall_5pct": None,
             "turnover": None,
         }
-    standard_deviation = float(values.std(ddof=1))
+    benchmark = pd.to_numeric(
+        benchmark_returns.reindex(values.index), errors="coerce"
+    )
+    if benchmark.isna().any():
+        raise ValueError("benchmark returns must cover every portfolio return date")
+    excess_returns = values - benchmark
+    standard_deviation = float(excess_returns.std(ddof=1))
     annualized_ir = (
-        float(values.mean() / standard_deviation * math.sqrt(252.0))
+        float(excess_returns.mean() / standard_deviation * math.sqrt(252.0))
         if standard_deviation > 0.0
         else 0.0
     )
@@ -834,7 +871,15 @@ def build_decision_gate_df(
         "turnover_ratio",
         "net_mean_return_delta",
     }
-    annual_columns = {"family", "variant_id", "year", "net_mean_return_delta"}
+    annual_columns = {
+        "family",
+        "variant_id",
+        "ring_id",
+        "max_holding_sessions",
+        "period",
+        "year",
+        "net_mean_return_delta",
+    }
     cost_columns = {
         "family",
         "variant_id",
@@ -966,17 +1011,36 @@ def build_decision_gate_df(
         annual = annual_stability_df.loc[
             annual_stability_df["family"].eq(family_text)
             & annual_stability_df["variant_id"].eq(variant_text)
+            & annual_stability_df["ring_id"].eq("core_high_high")
+            & pd.to_numeric(
+                annual_stability_df["max_holding_sessions"], errors="coerce"
+            ).eq(60)
+            & annual_stability_df["period"].eq("oos")
         ]
-        annual_deltas = pd.to_numeric(
-            annual["net_mean_return_delta"], errors="coerce"
+        annual_by_year = (
+            annual.assign(
+                year_numeric=pd.to_numeric(annual["year"], errors="coerce"),
+                delta_numeric=pd.to_numeric(
+                    annual["net_mean_return_delta"], errors="coerce"
+                ),
+            )
+            .dropna(subset=["year_numeric", "delta_numeric"])
+            .groupby("year_numeric", sort=True)["delta_numeric"]
+            .mean()
         )
-        valid_annual = annual_deltas.notna() & np.isfinite(annual_deltas)
-        total_years = int(valid_annual.sum())
-        positive_years = int(annual_deltas.loc[valid_annual].gt(0.0).sum())
-        passes_annual_stability = bool(
+        annual_by_year = annual_by_year.loc[np.isfinite(annual_by_year)]
+        total_years = int(len(annual_by_year))
+        positive_years = int(annual_by_year.gt(0.0).sum())
+        passes_positive_year_majority = bool(
+            total_years >= 2 and positive_years > total_years / 2.0
+        )
+        passes_not_single_year_dependent = bool(
             total_years >= 2
-            and positive_years >= 2
-            and positive_years > total_years / 2.0
+            and float(annual_by_year.sum() - annual_by_year.max()) > 0.0
+        )
+        passes_annual_stability = bool(
+            passes_positive_year_majority
+            and passes_not_single_year_dependent
         )
 
         costs = cost_sensitivity_df.loc[
@@ -1038,6 +1102,12 @@ def build_decision_gate_df(
                 "passes_turnover": passes_turnover,
                 "passes_base_cost": passes_base_cost,
                 "passes_cost_sensitivity": passes_cost_sensitivity,
+                "distinct_annual_year_count": total_years,
+                "positive_annual_year_count": positive_years,
+                "passes_positive_year_majority": passes_positive_year_majority,
+                "passes_not_single_year_dependent": (
+                    passes_not_single_year_dependent
+                ),
                 "passes_annual_stability": passes_annual_stability,
                 "passes_robustness_sign": passes_robustness_sign,
                 "passes_holdout_direction": passes_holdout_direction,
@@ -1051,20 +1121,60 @@ def build_decision_gate_df(
             }
         )
 
+    raw_pre_holdout = {
+        (str(row["family"]), str(row["variant_id"])): bool(
+            row["passes_pre_holdout"]
+        )
+        for row in variant_rows
+    }
+    for row in variant_rows:
+        prerequisite = True
+        if (
+            row["family"] == "entry"
+            and row["variant_id"] == "E4_count_ge_2_and_avoid_chase"
+        ):
+            prerequisite = bool(
+                raw_pre_holdout.get(("entry", "E2_count_ge_2"), False)
+                and raw_pre_holdout.get(("entry", "E3_avoid_atr20_chase"), False)
+            )
+        row["passes_confirmatory_prerequisite"] = prerequisite
+        if not prerequisite:
+            row["all_required_gates"] = False
+            row["decision"] = "not_evaluated"
+
+    effective_pre_holdout = {
+        (str(row["family"]), str(row["variant_id"])): bool(
+            row["passes_pre_holdout"]
+            and row["passes_confirmatory_prerequisite"]
+        )
+        for row in variant_rows
+        if row["family"] != "combined"
+    }
+    for row in variant_rows:
+        if row["family"] != "combined":
+            continue
+        components = str(row["variant_id"]).split("__", maxsplit=1)
+        prerequisite = bool(
+            len(components) == 2
+            and effective_pre_holdout.get(("entry", components[0]), False)
+            and effective_pre_holdout.get(("exit", components[1]), False)
+        )
+        row["passes_confirmatory_prerequisite"] = prerequisite
+        if not prerequisite:
+            row["all_required_gates"] = False
+            row["decision"] = "not_evaluated"
+
     family_rows: list[dict[str, object]] = []
-    entry_pre_holdout = any(
-        row["family"] == "entry" and bool(row["passes_pre_holdout"])
-        for row in variant_rows
-    )
-    exit_pre_holdout = any(
-        row["family"] == "exit" and bool(row["passes_pre_holdout"])
-        for row in variant_rows
-    )
     for family in ("entry", "exit", "combined"):
         rows = [row for row in variant_rows if row["family"] == family]
-        if family == "combined" and not (entry_pre_holdout and exit_pre_holdout):
+        eligible_rows = [
+            row for row in rows if bool(row["passes_confirmatory_prerequisite"])
+        ]
+        if family == "combined" and not eligible_rows:
             family_decision = "not_evaluated"
-        elif any(row["decision"] == "production_candidate" for row in rows):
+        elif any(
+            row["decision"] == "production_candidate" for row in eligible_rows
+        ):
             family_decision = "production_candidate"
         else:
             family_decision = "insufficient_evidence"
@@ -1073,10 +1183,13 @@ def build_decision_gate_df(
                 "row_type": "family",
                 "family": family,
                 "variant_id": None,
-                "passes_pre_holdout": (
-                    entry_pre_holdout and exit_pre_holdout
-                    if family == "combined"
-                    else any(bool(row["passes_pre_holdout"]) for row in rows)
+                "passes_confirmatory_prerequisite": bool(eligible_rows),
+                "passes_pre_holdout": any(
+                    bool(
+                        row["passes_pre_holdout"]
+                        and row["passes_confirmatory_prerequisite"]
+                    )
+                    for row in rows
                 ),
                 "all_required_gates": any(
                     bool(row["all_required_gates"]) for row in rows
@@ -1607,6 +1720,7 @@ def execute_variant(
         frames.state_events,
     )
     daily_returns = _build_active_portfolio_returns(portfolio, frames)
+    benchmark_returns = _build_benchmark_returns(feature_df, frames.close.index)
     return VariantExecution(
         variant=variant,
         fee_bps=fee_bps_value,
@@ -1614,8 +1728,33 @@ def execute_variant(
         signal_frames=frames,
         trade_records_df=trade_records,
         daily_portfolio_returns=daily_returns,
+        benchmark_daily_returns=benchmark_returns,
         state_events=frames.state_events.copy(),
     )
+
+
+def _build_benchmark_returns(
+    feature_df: pd.DataFrame,
+    comparison_dates: pd.Index,
+) -> pd.Series:
+    normalized_dates = pd.DatetimeIndex(comparison_dates)
+    benchmark = feature_df.loc[:, ["date", "topix_close"]].copy()
+    benchmark["date"] = pd.to_datetime(benchmark["date"], errors="raise")
+    benchmark["topix_close"] = pd.to_numeric(
+        benchmark["topix_close"], errors="coerce"
+    )
+    if benchmark.groupby("date")["topix_close"].nunique(dropna=False).gt(1).any():
+        raise ValueError("feature_df must contain one TOPIX close per date")
+    topix_close = (
+        benchmark.drop_duplicates("date")
+        .set_index("date")["topix_close"]
+        .reindex(normalized_dates)
+    )
+    if topix_close.isna().any():
+        raise ValueError("feature_df must contain a finite TOPIX close for every date")
+    returns = topix_close.pct_change(fill_method=None).fillna(0.0).astype(float)
+    returns.name = "benchmark_return"
+    return returns
 
 
 def _validate_research_parameters(

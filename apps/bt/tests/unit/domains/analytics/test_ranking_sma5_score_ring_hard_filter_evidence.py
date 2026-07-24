@@ -592,13 +592,13 @@ def test_decision_gate_keeps_holm_families_and_combined_outcome_independent() ->
     family = decision.loc[decision["row_type"].eq("family")].set_index("family")
     assert family.loc["entry", "decision"] == "production_candidate"
     assert family.loc["exit", "decision"] == "production_candidate"
-    assert family.loc["combined", "decision"] == "insufficient_evidence"
+    assert family.loc["combined", "decision"] == "not_evaluated"
 
     evidence.loc[evidence["family"].eq("exit") & evidence["period"].eq("holdout"), "net_mean_return_delta"] = -0.001
     decision = build_decision_gate_df(evidence, annual, costs)
     family = decision.loc[decision["row_type"].eq("family")].set_index("family")
     assert family.loc["exit", "decision"] == "insufficient_evidence"
-    assert family.loc["combined", "decision"] == "insufficient_evidence"
+    assert family.loc["combined", "decision"] == "not_evaluated"
 
 
 def test_decision_gate_leaves_combined_not_evaluated_without_pre_holdout_passes() -> None:
@@ -613,6 +613,130 @@ def test_decision_gate_leaves_combined_not_evaluated_without_pre_holdout_passes(
         decision["row_type"].eq("family") & decision["family"].eq("combined")
     ].iloc[0]
     assert combined["decision"] == "not_evaluated"
+
+
+def test_annual_gate_uses_distinct_core_60_oos_years_only() -> None:
+    evidence, annual, costs = _passing_decision_gate_inputs()
+    annual = pd.concat(
+        [
+            annual,
+            annual.loc[annual["year"].eq(2022)],
+            annual.assign(ring_id="near_high_high_1", net_mean_return_delta=-100.0),
+            annual.assign(max_holding_sessions=20, net_mean_return_delta=-100.0),
+            annual.assign(period="holdout", net_mean_return_delta=-100.0),
+        ],
+        ignore_index=True,
+    )
+
+    decision = build_decision_gate_df(evidence, annual, costs)
+
+    variant = decision.loc[decision["row_type"].eq("variant")].iloc[0]
+    assert variant["distinct_annual_year_count"] == 3
+    assert variant["positive_annual_year_count"] == 3
+    assert bool(variant["passes_positive_year_majority"])
+    assert bool(variant["passes_not_single_year_dependent"])
+
+
+def test_annual_gate_separately_rejects_single_best_year_dependence() -> None:
+    evidence, annual, costs = _passing_decision_gate_inputs()
+    annual["net_mean_return_delta"] = annual["year"].map(
+        {2022: 0.30, 2023: 0.01, 2024: -0.02}
+    )
+
+    decision = build_decision_gate_df(evidence, annual, costs)
+
+    variant = decision.loc[decision["row_type"].eq("variant")].iloc[0]
+    assert bool(variant["passes_positive_year_majority"])
+    assert not bool(variant["passes_not_single_year_dependent"])
+    assert not bool(variant["passes_annual_stability"])
+
+
+def test_combined_variant_requires_its_exact_entry_and_exit_components() -> None:
+    entry_evidence, entry_annual, entry_costs = _passing_decision_gate_inputs()
+    exit_evidence, exit_annual, exit_costs = _decision_inputs_for(
+        "exit", "X1_close_below_sma5"
+    )
+    combined_evidence, combined_annual, combined_costs = _decision_inputs_for(
+        "combined", "E2_count_ge_2__X2_count_le_1"
+    )
+
+    decision = build_decision_gate_df(
+        pd.concat(
+            [entry_evidence, exit_evidence, combined_evidence], ignore_index=True
+        ),
+        pd.concat([entry_annual, exit_annual, combined_annual], ignore_index=True),
+        pd.concat([entry_costs, exit_costs, combined_costs], ignore_index=True),
+    )
+
+    combined_variant = decision.loc[
+        decision["row_type"].eq("variant")
+        & decision["family"].eq("combined")
+    ].iloc[0]
+    combined_family = decision.loc[
+        decision["row_type"].eq("family")
+        & decision["family"].eq("combined")
+    ].iloc[0]
+    assert combined_variant["decision"] == "not_evaluated"
+    assert combined_family["decision"] == "not_evaluated"
+
+
+def test_combined_variant_is_evaluated_when_exact_components_pass_pre_holdout() -> None:
+    entry_evidence, entry_annual, entry_costs = _passing_decision_gate_inputs()
+    exit_evidence, exit_annual, exit_costs = _decision_inputs_for(
+        "exit", "X1_close_below_sma5"
+    )
+    combined_evidence, combined_annual, combined_costs = _decision_inputs_for(
+        "combined", "E2_count_ge_2__X1_close_below_sma5"
+    )
+
+    decision = build_decision_gate_df(
+        pd.concat(
+            [entry_evidence, exit_evidence, combined_evidence], ignore_index=True
+        ),
+        pd.concat([entry_annual, exit_annual, combined_annual], ignore_index=True),
+        pd.concat([entry_costs, exit_costs, combined_costs], ignore_index=True),
+    )
+
+    combined_variant = decision.loc[
+        decision["row_type"].eq("variant")
+        & decision["family"].eq("combined")
+    ].iloc[0]
+    assert combined_variant["decision"] == "production_candidate"
+
+
+def test_e4_is_not_evaluated_until_e2_and_e3_pass_pre_holdout() -> None:
+    e4_evidence, e4_annual, e4_costs = _decision_inputs_for(
+        "entry", "E4_count_ge_2_and_avoid_chase"
+    )
+
+    decision = build_decision_gate_df(e4_evidence, e4_annual, e4_costs)
+
+    e4 = decision.loc[decision["row_type"].eq("variant")].iloc[0]
+    assert e4["decision"] == "not_evaluated"
+    assert not bool(e4["passes_confirmatory_prerequisite"])
+
+
+def test_e4_is_confirmatory_when_e2_and_e3_pass_pre_holdout() -> None:
+    inputs = [
+        _decision_inputs_for("entry", variant_id)
+        for variant_id in (
+            "E2_count_ge_2",
+            "E3_avoid_atr20_chase",
+            "E4_count_ge_2_and_avoid_chase",
+        )
+    ]
+    decision = build_decision_gate_df(
+        pd.concat([item[0] for item in inputs], ignore_index=True),
+        pd.concat([item[1] for item in inputs], ignore_index=True),
+        pd.concat([item[2] for item in inputs], ignore_index=True),
+    )
+
+    e4 = decision.loc[
+        decision["row_type"].eq("variant")
+        & decision["variant_id"].eq("E4_count_ge_2_and_avoid_chase")
+    ].iloc[0]
+    assert bool(e4["passes_confirmatory_prerequisite"])
+    assert e4["decision"] == "production_candidate"
 
 
 def test_evidence_tables_report_frozen_metrics_and_correct_entry_baseline() -> None:
@@ -677,6 +801,83 @@ def test_evidence_tables_report_frozen_metrics_and_correct_entry_baseline() -> N
     assert set(tables.cost_sensitivity_df["cost_bps"]) == {10.0, 20.0}
 
 
+def test_evidence_ir_uses_topix_excess_returns() -> None:
+    feature_df = _single_code_frame(
+        [
+            ("2024-01-02", 0.5, 0.5, 1),
+            ("2024-01-03", 0.8, 0.8, 2),
+            ("2024-01-04", 0.8, 0.8, 2),
+            ("2024-01-05", 0.5, 0.5, 1),
+        ],
+        closes=[100.0, 100.0, 110.0, 110.0],
+        topix_closes=[100.0, 102.0, 101.0, 103.0],
+    )
+    baseline = ResearchVariant(
+        "core_high_high", "E0_no_sma5_filter", "X0_no_sma5_exit", 60
+    )
+    candidate = ResearchVariant(
+        "core_high_high", "E2_count_ge_2", "X0_no_sma5_exit", 60
+    )
+    executions = [
+        execute_variant(feature_df, variant, fee_bps=fee_bps)
+        for fee_bps in (0.0, 10.0, 20.0)
+        for variant in (baseline, candidate)
+    ]
+
+    tables = build_evidence_tables(
+        executions, block_length=2, resamples=100, seed=20260724
+    )
+
+    execution = next(
+        item
+        for item in executions
+        if item.variant == candidate and item.fee_bps == 10.0
+    )
+    excess = (
+        execution.daily_portfolio_returns - execution.benchmark_daily_returns
+    )
+    expected_ir = excess.mean() / excess.std(ddof=1) * math.sqrt(252.0)
+    row = tables.entry_rule_evidence_df.loc[
+        tables.entry_rule_evidence_df["period"].eq("oos")
+    ].iloc[0]
+    assert row["annualized_ir"] == pytest.approx(expected_ir)
+    assert "benchmark_return" in tables.portfolio_daily_df.columns
+    assert "topix_excess_return" in tables.portfolio_daily_df.columns
+
+
+def test_period_trade_metrics_exclude_trades_closed_after_period_end() -> None:
+    feature_df = _single_code_frame(
+        [
+            ("2024-12-27", 0.5, 0.5, 1),
+            ("2024-12-30", 0.8, 0.8, 2),
+            ("2025-01-02", 0.8, 0.8, 2),
+            ("2025-01-03", 0.5, 0.5, 1),
+        ],
+        closes=[100.0, 100.0, 110.0, 110.0],
+    )
+    baseline = ResearchVariant(
+        "core_high_high", "E0_no_sma5_filter", "X0_no_sma5_exit", 60
+    )
+    candidate = ResearchVariant(
+        "core_high_high", "E2_count_ge_2", "X0_no_sma5_exit", 60
+    )
+    executions = [
+        execute_variant(feature_df, variant, fee_bps=fee_bps)
+        for fee_bps in (0.0, 10.0, 20.0)
+        for variant in (baseline, candidate)
+    ]
+
+    tables = build_evidence_tables(
+        executions, block_length=2, resamples=100, seed=20260724
+    )
+
+    oos = tables.entry_rule_evidence_df.loc[
+        tables.entry_rule_evidence_df["period"].eq("oos")
+    ].iloc[0]
+    assert oos["trade_count"] == 0
+    assert pd.isna(oos["net_mean_return"])
+
+
 def _build_hard_filter_market_v5_db(db_path: Path) -> Path:
     return _build_sma5_position_state_db(db_path)
 
@@ -732,6 +933,9 @@ def _passing_decision_gate_inputs() -> tuple[pd.DataFrame, pd.DataFrame, pd.Data
             {
                 "family": "entry",
                 "variant_id": "E2_count_ge_2",
+                "ring_id": "core_high_high",
+                "max_holding_sessions": 60,
+                "period": "oos",
                 "year": year,
                 "net_mean_return_delta": 0.001,
             }
@@ -753,6 +957,18 @@ def _passing_decision_gate_inputs() -> tuple[pd.DataFrame, pd.DataFrame, pd.Data
         ]
     )
     return evidence, annual, costs
+
+
+def _decision_inputs_for(
+    family: str,
+    variant_id: str,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    evidence, annual, costs = _passing_decision_gate_inputs()
+    return (
+        evidence.assign(family=family, variant_id=variant_id),
+        annual.assign(family=family, variant_id=variant_id),
+        costs.assign(family=family, variant_id=variant_id),
+    )
 
 
 def _synthetic_feature_frame() -> pd.DataFrame:
@@ -786,9 +1002,12 @@ def _single_code_frame(
     *,
     code: str = "1001",
     closes: list[float | None] | None = None,
+    topix_closes: list[float] | None = None,
 ) -> pd.DataFrame:
     if closes is None:
         closes = [100.0 + index for index in range(len(rows))]
+    if topix_closes is None:
+        topix_closes = [100.0] * len(rows)
     return pd.DataFrame(
         {
             "date": [date for date, _, _, _ in rows],
@@ -800,5 +1019,6 @@ def _single_code_frame(
             "sma5_above_count_5d": [count for _, _, _, count in rows],
             "sma5_below_streak": [0] * len(rows),
             "sma5_atr20_deviation": [0.0] * len(rows),
+            "topix_close": topix_closes,
         }
     )
