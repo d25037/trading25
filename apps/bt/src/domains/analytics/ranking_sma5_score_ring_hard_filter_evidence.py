@@ -38,6 +38,7 @@ from src.domains.analytics.daily_ranking_research_base import (
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
+    normalize_code_sql,
     open_readonly_analysis_connection,
     require_market_v5_compatibility,
 )
@@ -1713,6 +1714,7 @@ def run_ranking_sma5_score_ring_hard_filter_research(
             required_tables=_REQUIRED_MARKET_TABLES,
         )
         _assert_unambiguous_provider_adjusted_provenance(ctx.connection)
+        _install_value_score_eligible_master(ctx.connection)
         relations = build_daily_ranking_research_base(
             ctx.connection,
             DailyRankingPanelRequest(
@@ -1761,6 +1763,37 @@ def run_ranking_sma5_score_ring_hard_filter_research(
         pit_lineage=pit_lineage,
         feature_df=feature_df,
         observation_sample_df=feature_df.head(int(observation_sample_limit)).copy(),
+    )
+
+
+def _install_value_score_eligible_master(conn: Any) -> None:
+    """Limit this experiment to code-dates with usable frozen value inputs."""
+
+    master_code = normalize_code_sql("master.code")
+    valuation_code = normalize_code_sql("valuation.code")
+    conn.execute(
+        f"""
+        CREATE TEMP TABLE sma5_hard_filter_value_eligible_master AS
+        SELECT master.*
+        FROM stock_master_daily master
+        WHERE EXISTS (
+            SELECT 1
+            FROM daily_valuation valuation
+            WHERE {valuation_code} = {master_code}
+              AND CAST(valuation.date AS DATE) = CAST(master.date AS DATE)
+              AND CAST(valuation.price_basis_date AS DATE) = CAST(master.date AS DATE)
+              AND isfinite(valuation.forward_per)
+              AND valuation.forward_per > 0
+              AND isfinite(valuation.pbr)
+              AND valuation.pbr > 0
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TEMP VIEW stock_master_daily AS
+        SELECT * FROM sma5_hard_filter_value_eligible_master
+        """
     )
 
 

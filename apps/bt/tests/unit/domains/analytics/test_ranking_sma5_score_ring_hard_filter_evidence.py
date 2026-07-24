@@ -448,6 +448,35 @@ def test_market_v5_panel_contains_frozen_scores_and_sma_features(
     )
 
 
+def test_market_v5_panel_excludes_code_dates_without_usable_value_inputs(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_hard_filter_market_v5_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+    conn.execute(
+        """
+        UPDATE daily_valuation
+        SET forward_per = NULL,
+            pbr = NULL,
+            fundamentals_adjustment_basis_date = NULL,
+            source_fingerprint = NULL
+        WHERE code = '1111'
+        """
+    )
+    conn.close()
+
+    result = run_ranking_sma5_score_ring_hard_filter_research(
+        db_path,
+        start_date="2024-01-01",
+        end_date="2024-12-31",
+        bootstrap_resamples=100,
+        min_trades=1,
+        min_signal_dates=1,
+    )
+
+    assert "1111" not in set(result.feature_df["code"].astype(str))
+
+
 @pytest.mark.parametrize(
     ("schema_version", "adjustment_mode"),
     [
