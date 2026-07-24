@@ -515,7 +515,7 @@ def _rolling_source_and_history(
         CREATE TEMP TABLE {history_name} AS
         SELECT code, date, valuation_basis_id AS price_basis_id,
                close AS open, close AS high, close AS low, close,
-               1000::BIGINT AS volume
+               1000::DOUBLE AS volume
         FROM {_SOURCE_NAME}
         """
     )
